@@ -9,7 +9,7 @@ A forward pass is a deterministic geometric map. The industry treats 15 training
 ## One Command, Zero Configuration
 
 ```bash
-mc train run --model /path/to/model --data /path/to/dataset --output /path/to/adapter
+poetry run mc train run --model /path/to/model --data /path/to/dataset --output /path/to/adapter
 ```
 
 No learning rate. No rank selection. No warmup schedule. No gradient clipping. The optimizer (Cayley-Stiefel retraction on the Stiefel manifold) and step size (MASS: `eta = min(eta_ceiling, eta_sps, eta_weyl)`) are derived from the weight matrices at initialization.
@@ -44,6 +44,7 @@ Full derivations with formulas: [Geometric Hyperparameter Rosetta Stone](docs/re
 git clone https://github.com/Ethyros-AI/ModelCypher.git
 cd ModelCypher
 poetry install          # Python 3.11+
+poetry run mc --help    # Verify CLI install
 ```
 
 ```bash
@@ -54,10 +55,10 @@ poetry run mc train run --model /path/to/model --data /path/to/data.jsonl --outp
 poetry run mc model info /path/to/model
 
 # Layer-wise intrinsic dimension profile
-poetry run mc analyze dimension-profile --model /path/to/model --prompt "What is 2+2?"
+poetry run mc analyze dimension-profile --model /path/to/model --samples 50
 
 # LoRA adapter spectral analysis
-poetry run mc analyze lora-svd --adapter /path/to/adapter
+poetry run mc analyze lora-svd /path/to/adapter --base /path/to/model
 ```
 
 ## Results
