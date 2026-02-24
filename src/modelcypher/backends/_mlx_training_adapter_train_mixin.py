@@ -32,6 +32,7 @@ from modelcypher.core.domain.training.geometric_early_stopping import (  # noqa:
     check_val_loss_converged,
 )
 from modelcypher.core.domain.training.spectral_budget import (  # noqa: F401
+    DTYPE_THRESHOLD_F32,
     compute_budget_ratios,
     compute_projected_residuals,
     is_budget_exhausted,

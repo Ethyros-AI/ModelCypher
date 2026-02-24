@@ -45,6 +45,8 @@ class _FakeTrainResult:
     min_cka: float | None = None
     mean_cka: float | None = None
     per_layer_cka: dict[int, float] | None = None
+    per_layer_gram_epsilon: dict[int, float] | None = None
+    per_layer_cka_bound: dict[int, float] | None = None
     min_cka_layer: int | None = None
     adapter_saturation_median_ratio: float | None = None
     seq_length_used: int = 64
@@ -203,7 +205,8 @@ def test_safety_cap_hit_is_failure(tmp_path):
     assert "safety_cap_hit" in result.counterexamples[0].failure_modes
 
 
-def test_cka_degraded_is_failure(tmp_path):
+def test_cka_shift_without_bound_data_is_not_failure(tmp_path):
+    """CKA shift alone (no bound data) is diagnostic, not a structural fail."""
     service, model_dir, data_file = _make_service(tmp_path, [
         _FakeTrainResult(
             baseline_loss=2.0,
@@ -217,8 +220,59 @@ def test_cka_degraded_is_failure(tmp_path):
         model_path=model_dir, dataset_path=data_file,
         eval_dataset_path=None, trials=1, base_seed=1,
     )
+    # CKA shift without bound data: no structural failure.
+    assert result.all_passed is True
+    trial = result.trial_results[0]
+    assert "cka_bound_violation" not in trial.failure_modes
+    assert trial.cka_margin_to_bound is None
+
+
+def test_cka_bound_violation_is_failure(tmp_path):
+    """Actual CKA below theoretical bound triggers structural failure."""
+    service, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.4,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+            min_cka=0.5,
+            per_layer_cka={0: 0.99, 1: 0.5},
+            per_layer_cka_bound={0: 0.95, 1: 0.9},
+        ),
+    ])
+    result = service.validate(
+        model_path=model_dir, dataset_path=data_file,
+        eval_dataset_path=None, trials=1, base_seed=1,
+    )
     assert result.all_passed is False
-    assert "cka_degraded" in result.counterexamples[0].failure_modes
+    trial = result.counterexamples[0]
+    assert "cka_bound_violation" in trial.failure_modes
+    # margin = min(0.99-0.95, 0.5-0.9) = min(0.04, -0.4) = -0.4
+    assert trial.cka_margin_to_bound == pytest.approx(-0.4, abs=0.01)
+
+
+def test_cka_margin_positive_no_violation(tmp_path):
+    """When actual CKA >= theoretical bound everywhere, no violation."""
+    service, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.4,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+            min_cka=0.93,
+            per_layer_cka={0: 0.99, 1: 0.93},
+            per_layer_cka_bound={0: 0.85, 1: 0.47},
+        ),
+    ])
+    result = service.validate(
+        model_path=model_dir, dataset_path=data_file,
+        eval_dataset_path=None, trials=1, base_seed=1,
+    )
+    assert result.all_passed is True
+    trial = result.trial_results[0]
+    assert "cka_bound_violation" not in trial.failure_modes
+    # margin = min(0.99-0.85, 0.93-0.47) = min(0.14, 0.46) = 0.14
+    assert trial.cka_margin_to_bound == pytest.approx(0.14, abs=0.01)
 
 
 def test_adapter_saturation_exceeded_is_failure(tmp_path):
@@ -281,6 +335,8 @@ def test_trial_to_dict_includes_adapter_saturation(tmp_path):
 
 
 def test_phase5_cka_shift_inference_healthy(tmp_path, monkeypatch):
+    """CKA shift with healthy inference: structural passes (shift is diagnostic),
+    inference passes, co-occurrence shows cka_shift_without_inference_degradation."""
     service, model_dir, data_file = _make_service(tmp_path, [
         _FakeTrainResult(
             baseline_loss=2.0,
@@ -289,6 +345,7 @@ def test_phase5_cka_shift_inference_healthy(tmp_path, monkeypatch):
             post_perplexity=4.0,
             min_cka=0.5,
             per_layer_cka={0: 0.99, 1: 0.5},
+            per_layer_cka_bound={0: 0.85, 1: 0.40},
             min_cka_layer=1,
         ),
     ])
@@ -317,9 +374,10 @@ def test_phase5_cka_shift_inference_healthy(tmp_path, monkeypatch):
     )
 
     trial = result.trial_results[0]
-    assert trial.structural_passed is False
+    # CKA shift is diagnostic only; actual >= bound, so no structural failure.
+    assert trial.structural_passed is True
     assert trial.inference_passed is True
-    assert "cka_degraded" in trial.failure_modes
+    assert "cka_bound_violation" not in trial.failure_modes
     assert "online_eval_degraded" not in trial.failure_modes
     assert "fourgram_degenerated" not in trial.failure_modes
     assert trial.cooccurrence_class == "cka_shift_without_inference_degradation"

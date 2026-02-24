@@ -678,6 +678,70 @@ def compute_linear_cka_from_activations(
     return compute_linear_cka_gram(K1, K2, backend)
 
 
+def compute_gram_perturbation_ratio(
+    activations_base: "Array",
+    activations_adapted: "Array",
+    backend: "Backend | None" = None,
+) -> tuple[float, float]:
+    """Compute Gram perturbation ratio ε and theoretical CKA lower bound.
+
+    For centered Gram matrices K_base_c and K_adapted_c:
+        ΔK_c = K_adapted_c - K_base_c
+        ε = ||ΔK_c||_F / ||K_base_c||_F
+        CKA_bound = (1 - ε) / (1 + ε)
+
+    Reference: first-order perturbation bound on CKA (Cauchy-Schwarz).
+
+    Args:
+        activations_base: [n_samples, features] base model activations.
+        activations_adapted: [n_samples, features] adapted model activations.
+        backend: Backend protocol. If None, uses default.
+
+    Returns:
+        (epsilon, cka_lower_bound) tuple.
+    """
+    if backend is None:
+        backend = get_default_backend()
+
+    n = int(activations_base.shape[0])
+    if n <= 1 or activations_base.shape[0] != activations_adapted.shape[0]:
+        return 0.0, 1.0
+
+    activations_base = backend.astype(
+        activations_base, precision_dtype(backend, reference=activations_base)
+    )
+    activations_adapted = backend.astype(
+        activations_adapted, precision_dtype(backend, reference=activations_adapted)
+    )
+    backend.eval(activations_base, activations_adapted)
+
+    K_base = backend.matmul(activations_base, backend.transpose(activations_base))
+    K_adapted = backend.matmul(activations_adapted, backend.transpose(activations_adapted))
+    backend.eval(K_base, K_adapted)
+
+    K_base_c = _center_gram_matrix(K_base, backend)
+    K_adapted_c = _center_gram_matrix(K_adapted, backend)
+    backend.eval(K_base_c, K_adapted_c)
+
+    delta_K_c = K_adapted_c - K_base_c
+    backend.eval(delta_K_c)
+
+    norm_delta = float(backend.to_scalar(
+        sqrt_scalar(float(backend.to_scalar(backend.sum(delta_K_c * delta_K_c))), backend)
+    ))
+    norm_base = float(backend.to_scalar(
+        sqrt_scalar(float(backend.to_scalar(backend.sum(K_base_c * K_base_c))), backend)
+    ))
+
+    eps = machine_epsilon(backend, K_base_c)
+    if norm_base < eps:
+        return 0.0, 1.0
+
+    epsilon = norm_delta / norm_base
+    cka_bound = (1.0 - epsilon) / (1.0 + epsilon) if epsilon < 1.0 else 0.0
+    return epsilon, max(0.0, cka_bound)
+
+
 def compute_geodesic_cka(
     activations_x: "Array",
     activations_y: "Array",

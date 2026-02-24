@@ -94,6 +94,8 @@ class DatasetTrainResult:
     min_cka: float | None = None
     mean_cka: float | None = None
     per_layer_cka: dict[int, float] | None = None
+    per_layer_gram_epsilon: dict[int, float] | None = None
+    per_layer_cka_bound: dict[int, float] | None = None
     min_cka_layer: int | None = None
     # G3: Weyl adapter saturation monitoring (not model-space capacity)
     adapter_saturation_median_ratio: float | None = None
@@ -145,6 +147,10 @@ class DatasetTrainResult:
             result["mean_cka"] = self.mean_cka
         if self.per_layer_cka is not None:
             result["per_layer_cka"] = self.per_layer_cka
+        if self.per_layer_gram_epsilon is not None:
+            result["per_layer_gram_epsilon"] = self.per_layer_gram_epsilon
+        if self.per_layer_cka_bound is not None:
+            result["per_layer_cka_bound"] = self.per_layer_cka_bound
         if self.min_cka_layer is not None:
             result["min_cka_layer"] = self.min_cka_layer
         if self.adapter_saturation_median_ratio is not None:
@@ -989,6 +995,8 @@ class DatasetTrainingService:
         min_cka = None
         mean_cka = None
         per_layer_cka = None
+        per_layer_gram_epsilon = None
+        per_layer_cka_bound = None
         min_cka_layer = None
         if base_activations:
             logger.info("Starting CKA verification...")
@@ -999,6 +1007,8 @@ class DatasetTrainingService:
             min_cka = cka_result.get("min_cka")
             mean_cka = cka_result.get("mean_cka")
             per_layer_cka = cka_result.get("per_layer_cka")
+            per_layer_gram_epsilon = cka_result.get("per_layer_gram_epsilon")
+            per_layer_cka_bound = cka_result.get("per_layer_cka_bound")
             if per_layer_cka:
                 min_cka_layer = min(per_layer_cka, key=per_layer_cka.get)
             logger.info(
@@ -1105,6 +1115,8 @@ class DatasetTrainingService:
             min_cka=min_cka,
             mean_cka=mean_cka,
             per_layer_cka=per_layer_cka,
+            per_layer_gram_epsilon=per_layer_gram_epsilon,
+            per_layer_cka_bound=per_layer_cka_bound,
             min_cka_layer=min_cka_layer,
             adapter_saturation_median_ratio=adapter_saturation_median_ratio,
             seq_length_used=int(seq_length),
@@ -1418,7 +1430,10 @@ class DatasetTrainingService:
         Returns dict with min_cka, mean_cka, per_layer_cka, n_probes.
         """
         try:
-            from modelcypher.core.domain.geometry.cka import compute_linear_cka_from_activations
+            from modelcypher.core.domain.geometry.cka import (
+                compute_gram_perturbation_ratio,
+                compute_linear_cka_from_activations,
+            )
 
             if seq_length is not None:
                 probe_texts = self._derive_probe_texts(eval_samples, tokenizer, seq_length)
@@ -1440,8 +1455,10 @@ class DatasetTrainingService:
                     self._backend.eval(pooled)
                     adapted_acts.setdefault(layer_idx, []).append(pooled)
 
-            # Compute CKA per layer
+            # Compute CKA and Gram perturbation per layer
             cka_scores: dict[int, float] = {}
+            gram_epsilons: dict[int, float] = {}
+            cka_bounds: dict[int, float] = {}
             for layer_idx in base_activations:
                 if layer_idx not in adapted_acts:
                     continue
@@ -1458,6 +1475,12 @@ class DatasetTrainingService:
                     base_stack, adapted_stack, self._backend,
                 )
                 cka_scores[layer_idx] = cka
+
+                eps_layer, bound_layer = compute_gram_perturbation_ratio(
+                    base_stack, adapted_stack, self._backend,
+                )
+                gram_epsilons[layer_idx] = eps_layer
+                cka_bounds[layer_idx] = bound_layer
 
             if not cka_scores:
                 raise TrainingDerivationError(
@@ -1481,6 +1504,8 @@ class DatasetTrainingService:
                 "min_cka": min_cka,
                 "mean_cka": mean_cka,
                 "per_layer_cka": cka_scores,
+                "per_layer_gram_epsilon": gram_epsilons,
+                "per_layer_cka_bound": cka_bounds,
                 "n_probes": len(probe_texts),
             }
         except TrainingDerivationError:

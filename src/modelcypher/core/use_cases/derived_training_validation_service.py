@@ -84,6 +84,9 @@ class DerivedTrainingTrial:
     mean_cka: float | None
     min_cka_layer: int | None
     per_layer_cka: dict[int, float] | None
+    per_layer_gram_epsilon: dict[int, float] | None
+    per_layer_cka_bound: dict[int, float] | None
+    cka_margin_to_bound: float | None
     adapter_saturation_median_ratio: float | None
     online_eval_baseline_correct: int | None
     online_eval_baseline_total: int | None
@@ -118,6 +121,9 @@ class DerivedTrainingTrial:
             "mean_cka": self.mean_cka,
             "min_cka_layer": self.min_cka_layer,
             "per_layer_cka": self.per_layer_cka,
+            "per_layer_gram_epsilon": self.per_layer_gram_epsilon,
+            "per_layer_cka_bound": self.per_layer_cka_bound,
+            "cka_margin_to_bound": self.cka_margin_to_bound,
             "adapter_saturation_median_ratio": self.adapter_saturation_median_ratio,
             "online_eval_baseline_correct": self.online_eval_baseline_correct,
             "online_eval_baseline_total": self.online_eval_baseline_total,
@@ -376,8 +382,25 @@ class DerivedTrainingValidationService:
             if getattr(train_result, "min_cka", None) is not None
             else None
         )
-        if min_cka is not None and min_cka < 1.0 - sqrt_eps:
-            structural_failure_modes.append("cka_degraded")
+        # CKA shift is a diagnostic signal for co-occurrence tracking,
+        # NOT a structural fail criterion.  The structural fail criterion
+        # is bound violation: actual CKA below the perturbation-theory
+        # lower bound (1-ε)/(1+ε) minus numerical tolerance.
+        cka_shift = min_cka is not None and min_cka < 1.0 - sqrt_eps
+
+        per_layer_cka_bound_raw = getattr(train_result, "per_layer_cka_bound", None)
+        per_layer_cka_raw = getattr(train_result, "per_layer_cka", None)
+        cka_margin_to_bound: float | None = None
+        if per_layer_cka_raw and per_layer_cka_bound_raw:
+            margins = []
+            for layer, actual in per_layer_cka_raw.items():
+                bound = per_layer_cka_bound_raw.get(layer)
+                if bound is not None:
+                    margins.append(float(actual) - float(bound))
+            if margins:
+                cka_margin_to_bound = min(margins)
+                if cka_margin_to_bound < -sqrt_eps:
+                    structural_failure_modes.append("cka_bound_violation")
 
         sat = getattr(train_result, "adapter_saturation_median_ratio", None)
         sat = float(sat) if sat is not None else None
@@ -416,7 +439,8 @@ class DerivedTrainingValidationService:
         failure_modes = tuple(structural_failure_modes + inference_failure_modes)
         passed = len(failure_modes) == 0
 
-        cka_shift = "cka_degraded" in structural_failure_modes
+        # cka_shift already computed above (bool); co-occurrence tracks
+        # whether CKA moved at all, regardless of bound violation.
         inference_degraded = len(inference_failure_modes) > 0
         if cka_shift and inference_degraded:
             cooccurrence_class = "cka_shift_and_inference_degraded"
@@ -432,6 +456,19 @@ class DerivedTrainingValidationService:
             per_layer_cka = {
                 int(layer): float(score)
                 for layer, score in dict(per_layer_cka).items()
+            }
+        per_layer_gram_epsilon_raw = getattr(train_result, "per_layer_gram_epsilon", None)
+        per_layer_gram_epsilon = None
+        if per_layer_gram_epsilon_raw is not None:
+            per_layer_gram_epsilon = {
+                int(layer): float(val)
+                for layer, val in dict(per_layer_gram_epsilon_raw).items()
+            }
+        per_layer_cka_bound_out = None
+        if per_layer_cka_bound_raw is not None:
+            per_layer_cka_bound_out = {
+                int(layer): float(val)
+                for layer, val in dict(per_layer_cka_bound_raw).items()
             }
         min_cka_layer = getattr(train_result, "min_cka_layer", None)
         if min_cka_layer is None and per_layer_cka:
@@ -463,6 +500,9 @@ class DerivedTrainingValidationService:
             mean_cka=mean_cka,
             min_cka_layer=min_cka_layer,
             per_layer_cka=per_layer_cka,
+            per_layer_gram_epsilon=per_layer_gram_epsilon,
+            per_layer_cka_bound=per_layer_cka_bound_out,
+            cka_margin_to_bound=cka_margin_to_bound,
             adapter_saturation_median_ratio=sat,
             online_eval_baseline_correct=online_eval_baseline_correct,
             online_eval_baseline_total=online_eval_baseline_total,

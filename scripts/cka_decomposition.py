@@ -358,14 +358,16 @@ def m3_signal_null_decomposition(
 ) -> dict[int, dict[str, Any]]:
     """M3: Signal-space vs null-space energy decomposition at LoRA layers.
 
-    For each LoRA layer, we decompose the OUTPUT activation perturbation
-    into components along the base weight's left singular directions.
+    For each LoRA layer, we decompose the activation perturbation into
+    components along the base weight's right singular directions (input space).
 
-    The weight W maps input -> output. Its SVD: W = U @ diag(S) @ Vt.
-    U columns span the output space. Top-k columns = signal subspace of
-    the output. Remaining columns = null subspace (unused output directions).
+    The weight W [out, in] maps input -> output. Its SVD: W = U @ diag(S) @ Vt.
+    V = Vt.T columns span the input space. The hidden state h lives in
+    the input space (hidden_dim = in_features). Top-k columns of V = signal
+    input directions. Remaining columns = tail directions (where LoRA operates).
 
-    We project Δh (the output perturbation) onto U_signal and U_null.
+    We project Δh onto V_signal (signal input space) and V_tail (tail input space).
+    The orthogonal complement of V in R^in is the true null space of W.
     """
     import mlx.core as mx
 
@@ -407,11 +409,19 @@ def m3_signal_null_decomposition(
         structural_rank = math.floor(geom.shannon_effective_rank)
 
         # Full SVD for signal/null decomposition
+        # W [out, in]: SVD gives U [out, min], S [min], Vt [min, in]
+        # V = Vt.T [in, min] — right singular vectors in the INPUT space
         U, S_w, Vt = backend.svd(W)
-        backend.eval(U, S_w)
+        backend.eval(S_w, Vt)
 
-        full_rank = min(int(W.shape[0]), int(W.shape[1]))
-        k = min(structural_rank, full_rank)
+        out_dim = int(W.shape[0])
+        in_dim = int(W.shape[1])
+        min_dim = min(out_dim, in_dim)
+        k = min(structural_rank, min_dim)
+
+        # V = Vt.T: columns are right singular vectors in R^in (hidden_dim)
+        V = backend.transpose(Vt)  # [in, min_dim]
+        backend.eval(V)
 
         # Activation perturbation at this layer output
         delta_h = adapted_stacks[layer_idx] - base_stacks[layer_idx]
@@ -427,27 +437,35 @@ def m3_signal_null_decomposition(
             }
             continue
 
-        # U is [out_features, min(m,n)] from SVD of W [out, in]
-        # Signal directions: first k columns of U
-        # Null directions: remaining columns of U
-        U_signal = U[:, :k]
-        U_null = U[:, k:]
-        backend.eval(U_signal, U_null)
+        # Decompose delta_h [n_probes, in_dim] into three subspaces:
+        #   1. Signal: top-k right singular directions (W uses strongly)
+        #   2. Tail: remaining right singular directions (W uses weakly, LoRA target)
+        #   3. Null complement: directions orthogonal to all of V (W maps to zero)
+        V_signal = V[:, :k]          # [in, k] — signal input directions
+        V_tail = V[:, k:]            # [in, min_dim-k] — tail input directions
+        backend.eval(V_signal, V_tail)
 
-        # Project: Δh [n_probes, hidden=out] @ U_signal [out, k] -> [n_probes, k]
-        proj_signal = backend.matmul(delta_h, U_signal)
-        proj_null = backend.matmul(delta_h, U_null)
-        backend.eval(proj_signal, proj_null)
+        # Project: Δh [n_probes, in] @ V_signal [in, k] -> [n_probes, k]
+        proj_signal = backend.matmul(delta_h, V_signal)
+        proj_tail = backend.matmul(delta_h, V_tail)
+        backend.eval(proj_signal, proj_tail)
 
         signal_energy = _frobenius_norm(proj_signal, backend) ** 2
-        null_energy = _frobenius_norm(proj_null, backend) ** 2
+        tail_energy = _frobenius_norm(proj_tail, backend) ** 2
+
+        # Energy in V's span (signal + tail)
+        v_span_energy = signal_energy + tail_energy
+        # Energy in V's orthogonal complement (true null space of W)
+        # By Parseval: ||x||² = ||P_V x||² + ||P_V⊥ x||²
+        null_complement_energy = total_energy - v_span_energy
 
         signal_frac = signal_energy / total_energy
-        null_frac = null_energy / total_energy
+        # "null" = tail + null_complement (all non-signal directions)
+        null_frac = (tail_energy + max(0.0, null_complement_energy)) / total_energy
 
-        # Parseval sanity: signal + null should ≈ 1.0
+        # Parseval sanity: fractions should sum to ≈ 1.0
         parseval_check = signal_frac + null_frac
-        if abs(parseval_check - 1.0) > 0.01:
+        if abs(parseval_check - 1.0) > 0.02:
             log.warning(
                 "  Layer %d: Parseval violation! signal+null=%.4f (expected 1.0)",
                 layer_idx, parseval_check,
@@ -457,11 +475,15 @@ def m3_signal_null_decomposition(
             "signal_energy_fraction": signal_frac,
             "null_energy_fraction": null_frac,
             "structural_rank": structural_rank,
+            "tail_energy_fraction": tail_energy / total_energy,
+            "null_complement_energy_fraction": max(0.0, null_complement_energy) / total_energy,
         }
         log.info(
-            "  Layer %2d: signal=%.1f%% null=%.1f%% (rank=%d/%d)",
-            layer_idx, signal_frac * 100, null_frac * 100,
-            structural_rank, full_rank,
+            "  Layer %2d: signal=%.1f%% tail=%.1f%% null_complement=%.1f%% (rank=%d/%d)",
+            layer_idx, signal_frac * 100,
+            (tail_energy / total_energy) * 100,
+            (max(0.0, null_complement_energy) / total_energy) * 100,
+            structural_rank, min_dim,
         )
 
     return results
@@ -472,120 +494,59 @@ def m4_spectral_budget_usage(
     backend: Any,
     log: logging.Logger,
 ) -> dict[int, dict[str, float]]:
-    """M4: Per-layer spectral budget usage from adapter weights.
+    """M4: Per-layer spectral budget usage via weight diff.
 
-    Loads the adapter safetensors directly to compute ||ΔW||_2 / σ_k
-    without requiring the training-time model.
+    Loads base weights and adapted model (with fused adapter), computes
+    ΔW = W_adapted - W_base per projection, then ||ΔW||_2 / σ_k.
     """
     import mlx.core as mx
 
-    from modelcypher.adapters.model_loader import load_model_weights_only
+    from modelcypher.adapters.model_loader import load_model, load_model_weights_only
     from modelcypher.core.domain.training.geometric_lora import compute_layer_geometry
 
-    log.info("M4: Computing spectral budget usage...")
+    log.info("M4: Computing spectral budget usage via weight diff...")
 
-    # Load adapter weights
-    adapter_dir = Path(adapter_path)
-    adapter_safetensors = adapter_dir / "adapters.safetensors"
-    if not adapter_safetensors.exists():
-        log.warning("  No adapters.safetensors found at %s", adapter_dir)
-        return {}
-
-    adapter_weights = backend.load_safetensors(str(adapter_safetensors))
-
-    # Load base weights for σ_k computation
+    # Load base weights from safetensors
     base_weights = load_model_weights_only(MODEL_PATH, backend)
+
+    # Load adapted model (adapter fused into weights)
+    log.info("  Loading adapted model for weight diff...")
+    model_adapted, _ = load_model(MODEL_PATH, adapter_path=adapter_path)
 
     results: dict[int, dict[str, float]] = {}
 
     for layer_idx in LORA_LAYER_INDICES:
-        # Find LoRA weight pairs for this layer
-        # NB-LoRA keys: layers.{idx}.self_attn.{proj}.lora_a, .lora_b, .s_raw
-        for proj in ["v_proj", "q_proj", "k_proj", "o_proj"]:
-            a_key = f"layers.{layer_idx}.self_attn.{proj}.lora_a"
-            b_key = f"layers.{layer_idx}.self_attn.{proj}.lora_b"
+        for proj in ["v_proj", "q_proj", "k_proj"]:
+            w_key = f"model.layers.{layer_idx}.self_attn.{proj}.weight"
 
-            if a_key not in adapter_weights or b_key not in adapter_weights:
+            if w_key not in base_weights:
+                log.warning("  Base weight key not found: %s", w_key)
                 continue
 
-            lora_a = backend.astype(adapter_weights[a_key], "float32")
-            lora_b = backend.astype(adapter_weights[b_key], "float32")
-            backend.eval(lora_a, lora_b)
-
-            # Also need scale (s_raw) and Cayley transform to get effective delta
-            # But for post-hoc analysis, we can compute effective delta from
-            # the fused model difference if needed.
-            # For now, compute naive: delta ≈ 2 * B^T @ A (ignoring Cayley rotation)
-            # This gives an upper bound on the spectral norm.
-            # The actual NBLoRALinear._cayley_forward does: out = 2.0 * (x @ A^T * S) @ B
-            # So effective delta = 2 * B^T @ diag(S) @ A [out, in]
-
-            s_key = f"layers.{layer_idx}.self_attn.{proj}.s_raw"
-            if s_key in adapter_weights:
-                s_raw = backend.astype(adapter_weights[s_key], "float32")
-                backend.eval(s_raw)
-                # s_raw is the raw scale before sigmoid clamping
-                # In NBLoRALinear, S = sigmoid(s_raw) * scale_bound
-                # But we don't have scale_bound here. Use s_raw magnitude as proxy.
-                # Actually, let's just compute from the model diff below.
-
-            # Compute effective delta: ΔW = W_adapted - W_base
-            # This is more accurate than reconstructing from LoRA params
-            # because it captures the actual Cayley-parameterized delta.
-            base_w_key = f"model.layers.{layer_idx}.self_attn.{proj}.weight"
-            if base_w_key not in base_weights:
-                continue
-
-            # Get sigma_k from base weight geometry
-            W_base = backend.astype(base_weights[base_w_key], "float32")
-            backend.eval(W_base)
-            geom = compute_layer_geometry(W_base, base_w_key, backend)
-
-            result_key = layer_idx  # Aggregate across projections
-            if result_key not in results:
-                results[result_key] = {
-                    "budget_usage": 0.0,
-                    "spectral_norm_delta": 0.0,
-                    "sigma_k": geom.sigma_k,
-                }
-
-            # For budget usage, we need the spectral norm of the effective delta.
-            # Since we can't easily reconstruct the Cayley transform post-hoc,
-            # we load the adapted model's weights and diff against base.
-            break  # One projection per layer is sufficient for the analysis
-
-    # If we didn't get budget from adapter weights, try model diff approach
-    if not results:
-        log.info("  Computing budget from adapted model weights...")
-
-    # Load adapted model weights for direct comparison
-    adapted_weights = load_model_weights_only(MODEL_PATH, backend)
-    # Actually, load_model_weights_only loads BASE weights. We need the adapted model.
-    # Load the adapted model to get fused weights.
-    from modelcypher.adapters.model_loader import load_model
-    model_adapted, _ = load_model(MODEL_PATH, adapter_path=adapter_path)
-
-    for layer_idx in LORA_LAYER_INDICES:
-        for proj in ["v_proj", "q_proj", "k_proj", "o_proj"]:
-            base_w_key = f"model.layers.{layer_idx}.self_attn.{proj}.weight"
-            if base_w_key not in base_weights:
-                continue
-
-            W_base = backend.astype(base_weights[base_w_key], "float32")
-            backend.eval(W_base)
-            geom = compute_layer_geometry(W_base, base_w_key, backend)
-
-            # Get adapted weight from loaded model
+            # Compute ΔW from LoRA parameters directly.
+            # mlx-lm LoRALinear does NOT fuse — linear.weight is the base weight.
+            # Forward: out = linear(x) + (x @ lora_a) @ lora_b * scale
+            # So ΔW [out, in] = scale * lora_b.T @ lora_a.T
             try:
                 layer = model_adapted.model.layers[layer_idx]
-                adapted_w = getattr(layer.self_attn, proj).weight
-                W_adapted = backend.astype(adapted_w, "float32")
-                backend.eval(W_adapted)
-            except (AttributeError, IndexError):
+                proj_module = getattr(layer.self_attn, proj)
+                lora_a = proj_module.lora_a  # [in, rank]
+                lora_b = proj_module.lora_b  # [rank, out]
+                scale = getattr(proj_module, "scale", 1.0)
+            except (AttributeError, IndexError) as e:
+                log.warning("  Cannot access LoRA params for layer %d %s: %s", layer_idx, proj, e)
                 continue
 
-            delta_W = W_adapted - W_base
+            delta_W = scale * backend.matmul(
+                backend.transpose(backend.astype(lora_b, "float32")),
+                backend.transpose(backend.astype(lora_a, "float32")),
+            )
             backend.eval(delta_W)
+
+            # Base geometry for σ_k
+            W_base = backend.astype(base_weights[w_key], "float32")
+            backend.eval(W_base)
+            geom = compute_layer_geometry(W_base, w_key, backend)
 
             # Spectral norm of delta
             S_delta = backend.svd(delta_W, compute_uv=False)

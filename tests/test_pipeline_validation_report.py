@@ -52,7 +52,7 @@ def test_build_report_includes_dual_verdict_fields():
             "counterexamples": [
                 {
                     "seed": 123,
-                    "failure_modes": ["cka_degraded"],
+                    "failure_modes": ["cka_bound_violation"],
                     "loss_delta": 1.2,
                     "perplexity_delta": 14.4,
                     "stop_reason": "certificate",
