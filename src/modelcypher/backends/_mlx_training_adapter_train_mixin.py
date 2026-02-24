@@ -28,10 +28,13 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.backends.mlx_training_adapter_core import *  # noqa: F403
 from modelcypher.core.domain.training.geometric_early_stopping import (  # noqa: F401
+    check_loss_stable,
     check_val_loss_converged,
 )
 from modelcypher.core.domain.training.spectral_budget import (  # noqa: F401
     compute_budget_ratios,
+    compute_projected_residuals,
+    is_budget_exhausted,
 )
 
 if TYPE_CHECKING:
