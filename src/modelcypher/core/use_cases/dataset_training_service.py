@@ -96,6 +96,9 @@ class DatasetTrainResult:
     per_layer_cka: dict[int, float] | None = None
     per_layer_gram_epsilon: dict[int, float] | None = None
     per_layer_cka_bound: dict[int, float] | None = None
+    per_layer_null_observability: dict[int, dict[str, float | int]] | None = None
+    per_layer_null_accessibility: dict[int, dict[str, float | int]] | None = None
+    per_module_null_accessibility: dict[str, dict[str, float | int]] | None = None
     min_cka_layer: int | None = None
     # G3: Weyl adapter saturation monitoring (not model-space capacity)
     adapter_saturation_median_ratio: float | None = None
@@ -153,6 +156,12 @@ class DatasetTrainResult:
             result["per_layer_gram_epsilon"] = self.per_layer_gram_epsilon
         if self.per_layer_cka_bound is not None:
             result["per_layer_cka_bound"] = self.per_layer_cka_bound
+        if self.per_layer_null_observability is not None:
+            result["per_layer_null_observability"] = self.per_layer_null_observability
+        if self.per_layer_null_accessibility is not None:
+            result["per_layer_null_accessibility"] = self.per_layer_null_accessibility
+        if self.per_module_null_accessibility is not None:
+            result["per_module_null_accessibility"] = self.per_module_null_accessibility
         if self.min_cka_layer is not None:
             result["min_cka_layer"] = self.min_cka_layer
         if self.adapter_saturation_median_ratio is not None:
@@ -1001,6 +1010,9 @@ class DatasetTrainingService:
         per_layer_cka = None
         per_layer_gram_epsilon = None
         per_layer_cka_bound = None
+        per_layer_null_observability = None
+        per_layer_null_accessibility = None
+        per_module_null_accessibility = None
         min_cka_layer = None
         if base_activations:
             logger.info("Starting CKA verification...")
@@ -1013,6 +1025,9 @@ class DatasetTrainingService:
             per_layer_cka = cka_result.get("per_layer_cka")
             per_layer_gram_epsilon = cka_result.get("per_layer_gram_epsilon")
             per_layer_cka_bound = cka_result.get("per_layer_cka_bound")
+            per_layer_null_observability = cka_result.get("per_layer_null_observability")
+            per_layer_null_accessibility = cka_result.get("per_layer_null_accessibility")
+            per_module_null_accessibility = cka_result.get("per_module_null_accessibility")
             if per_layer_cka:
                 min_cka_layer = min(per_layer_cka, key=per_layer_cka.get)
             logger.info(
@@ -1132,6 +1147,9 @@ class DatasetTrainingService:
             per_layer_cka=per_layer_cka,
             per_layer_gram_epsilon=per_layer_gram_epsilon,
             per_layer_cka_bound=per_layer_cka_bound,
+            per_layer_null_observability=per_layer_null_observability,
+            per_layer_null_accessibility=per_layer_null_accessibility,
+            per_module_null_accessibility=per_module_null_accessibility,
             min_cka_layer=min_cka_layer,
             adapter_saturation_median_ratio=adapter_saturation_median_ratio,
             seq_length_used=int(seq_length),
@@ -1450,6 +1468,11 @@ class DatasetTrainingService:
                 compute_gram_perturbation_ratio,
                 compute_linear_cka_from_activations,
             )
+            from modelcypher.core.domain.geometry.null_space_accessibility import (
+                aggregate_layer_accessibility,
+                analyze_layer_null_observability,
+                analyze_module_null_accessibility,
+            )
 
             if seq_length is not None:
                 probe_texts = self._derive_probe_texts(eval_samples, tokenizer, seq_length)
@@ -1475,6 +1498,7 @@ class DatasetTrainingService:
             cka_scores: dict[int, float] = {}
             gram_epsilons: dict[int, float] = {}
             cka_bounds: dict[int, float] = {}
+            base_stacks: dict[int, Any] = {}
             for layer_idx in base_activations:
                 if layer_idx not in adapted_acts:
                     continue
@@ -1486,6 +1510,7 @@ class DatasetTrainingService:
                 base_stack = self._backend.stack(base_list)
                 adapted_stack = self._backend.stack(adapted_list)
                 self._backend.eval(base_stack, adapted_stack)
+                base_stacks[layer_idx] = base_stack
 
                 cka = compute_linear_cka_from_activations(
                     base_stack, adapted_stack, self._backend,
@@ -1497,6 +1522,48 @@ class DatasetTrainingService:
                 )
                 gram_epsilons[layer_idx] = eps_layer
                 cka_bounds[layer_idx] = bound_layer
+
+            per_layer_null_observability: dict[int, dict[str, float | int]] = {}
+            for layer_idx, base_stack in base_stacks.items():
+                per_layer_null_observability[layer_idx] = analyze_layer_null_observability(
+                    base_stack,
+                    self._backend,
+                )
+
+            per_module_null_accessibility: dict[str, dict[str, float | int]] | None = None
+            per_layer_null_accessibility: dict[int, dict[str, float | int]] | None = None
+            extract_delta_fn = getattr(self._adapter, "extract_lora_weight_deltas", None)
+            if callable(extract_delta_fn) and base_stacks:
+                try:
+                    module_metrics: dict[str, dict[str, float | int]] = {}
+                    delta_by_module = extract_delta_fn(model) or {}
+                    for module_key, delta_w in dict(delta_by_module).items():
+                        parts = module_key.split(".")
+                        layer_idx: int | None = None
+                        for idx, part in enumerate(parts):
+                            if part == "layers" and idx + 1 < len(parts):
+                                try:
+                                    layer_idx = int(parts[idx + 1])
+                                except ValueError:
+                                    layer_idx = None
+                                break
+                        if layer_idx is None:
+                            continue
+                        layer_acts = base_stacks.get(layer_idx)
+                        if layer_acts is None:
+                            continue
+                        module_metrics[module_key] = analyze_module_null_accessibility(
+                            delta_w,
+                            layer_acts,
+                            self._backend,
+                        )
+                    if module_metrics:
+                        per_module_null_accessibility = module_metrics
+                        per_layer_null_accessibility = aggregate_layer_accessibility(
+                            module_metrics,
+                        )
+                except Exception:
+                    logger.exception("Null-space accessibility diagnostics unavailable")
 
             if not cka_scores:
                 raise TrainingDerivationError(
@@ -1522,6 +1589,9 @@ class DatasetTrainingService:
                 "per_layer_cka": cka_scores,
                 "per_layer_gram_epsilon": gram_epsilons,
                 "per_layer_cka_bound": cka_bounds,
+                "per_layer_null_observability": per_layer_null_observability,
+                "per_layer_null_accessibility": per_layer_null_accessibility,
+                "per_module_null_accessibility": per_module_null_accessibility,
                 "n_probes": len(probe_texts),
             }
         except TrainingDerivationError:

@@ -47,6 +47,8 @@ def test_build_report_includes_dual_verdict_fields():
                     "max_4gram_repeat_delta": 0.0,
                     "min_cka": 0.934,
                     "min_cka_layer": 7,
+                    "null_access_min_behavioral_preserved_fraction": 0.22,
+                    "null_access_min_behavioral_preserved_layer": 7,
                 },
             ],
             "counterexamples": [
@@ -61,6 +63,12 @@ def test_build_report_includes_dual_verdict_fields():
                     "min_cka_layer": 7,
                     "online_eval_delta_correct": 0,
                     "max_4gram_repeat_delta": 0.0,
+                    "null_access_min_behavioral_preserved_fraction": 0.22,
+                    "null_access_min_behavioral_preserved_layer": 7,
+                    "null_observability_max_condition_number": 15.5,
+                    "null_observability_max_condition_layer": 9,
+                    "online_eval_first_pre_degraded_epoch": 2,
+                    "online_eval_first_post_degraded_epoch": 3,
                 },
             ],
         },
@@ -79,4 +87,7 @@ def test_build_report_includes_dual_verdict_fields():
     assert "online_eval_delta_correct" in report
     assert "max_4gram_repeat_delta" in report
     assert "CKA worst layer" in report
+    assert "Null-access min preserved" in report
     assert "cooccurrence_class=cka_shift_without_inference_degradation" in report
+    assert "null_access_min_behavioral_preserved_fraction=0.220000 (layer=7)" in report
+    assert "null_observability_max_condition_number=15.500000 (layer=9)" in report

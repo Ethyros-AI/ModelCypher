@@ -205,6 +205,28 @@ class _MLXTrainingAdapterCoreMixin:
         )
         return weights
 
+    def extract_lora_weight_deltas(self, model) -> dict[str, Any]:
+        """Extract current LoRA-induced weight deltas for injected NB-LoRA modules.
+
+        Returns:
+            Mapping:
+                "model.layers.{idx}.(self_attn|mlp).{proj}.weight" -> delta_W [out, in]
+        """
+        deltas: dict[str, Any] = {}
+
+        for key, nb_lora in self._iter_nb_lora_modules(model):
+            try:
+                lora_a, lora_b = nb_lora.to_standard_lora()
+                # LoRA delta in model weight layout [out, in].
+                delta_w = mx.matmul(mx.transpose(lora_b), mx.transpose(lora_a))
+                mx.eval(delta_w)
+                deltas[key] = delta_w
+            except Exception as exc:
+                logger.warning("Failed to extract LoRA delta for %s: %s", key, exc)
+
+        logger.info("Extracted %d LoRA weight deltas", len(deltas))
+        return deltas
+
     def inject_nb_lora(
         self,
         model,

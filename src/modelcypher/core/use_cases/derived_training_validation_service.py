@@ -86,7 +86,17 @@ class DerivedTrainingTrial:
     per_layer_cka: dict[int, float] | None
     per_layer_gram_epsilon: dict[int, float] | None
     per_layer_cka_bound: dict[int, float] | None
+    per_layer_null_observability: dict[int, dict[str, float | int]] | None
+    per_layer_null_accessibility: dict[int, dict[str, float | int]] | None
+    per_module_null_accessibility: dict[str, dict[str, float | int]] | None
     cka_margin_to_bound: float | None
+    null_access_min_behavioral_preserved_fraction: float | None
+    null_access_min_behavioral_preserved_layer: int | None
+    null_observability_max_condition_number: float | None
+    null_observability_max_condition_layer: int | None
+    online_eval_first_pre_degraded_epoch: int | None
+    online_eval_first_post_degraded_epoch: int | None
+    epoch_geometry_trace: list[dict[str, Any]] | None
     adapter_saturation_median_ratio: float | None
     max_effective_gain_ratio: float | None
     online_eval_baseline_correct: int | None
@@ -124,7 +134,25 @@ class DerivedTrainingTrial:
             "per_layer_cka": self.per_layer_cka,
             "per_layer_gram_epsilon": self.per_layer_gram_epsilon,
             "per_layer_cka_bound": self.per_layer_cka_bound,
+            "per_layer_null_observability": self.per_layer_null_observability,
+            "per_layer_null_accessibility": self.per_layer_null_accessibility,
+            "per_module_null_accessibility": self.per_module_null_accessibility,
             "cka_margin_to_bound": self.cka_margin_to_bound,
+            "null_access_min_behavioral_preserved_fraction": (
+                self.null_access_min_behavioral_preserved_fraction
+            ),
+            "null_access_min_behavioral_preserved_layer": (
+                self.null_access_min_behavioral_preserved_layer
+            ),
+            "null_observability_max_condition_number": (
+                self.null_observability_max_condition_number
+            ),
+            "null_observability_max_condition_layer": (
+                self.null_observability_max_condition_layer
+            ),
+            "online_eval_first_pre_degraded_epoch": self.online_eval_first_pre_degraded_epoch,
+            "online_eval_first_post_degraded_epoch": self.online_eval_first_post_degraded_epoch,
+            "epoch_geometry_trace": self.epoch_geometry_trace,
             "adapter_saturation_median_ratio": self.adapter_saturation_median_ratio,
             "max_effective_gain_ratio": self.max_effective_gain_ratio,
             "online_eval_baseline_correct": self.online_eval_baseline_correct,
@@ -460,6 +488,13 @@ class DerivedTrainingValidationService:
         else:
             cooccurrence_class = "no_shift_no_inference_degradation"
 
+        def _normalize_metric_value(value: Any) -> float | int:
+            if isinstance(value, bool):
+                return int(value)
+            if isinstance(value, int):
+                return int(value)
+            return float(value)
+
         per_layer_cka = getattr(train_result, "per_layer_cka", None)
         if per_layer_cka is not None:
             per_layer_cka = {
@@ -479,6 +514,122 @@ class DerivedTrainingValidationService:
                 int(layer): float(val)
                 for layer, val in dict(per_layer_cka_bound_raw).items()
             }
+        per_layer_null_observability_raw = getattr(
+            train_result,
+            "per_layer_null_observability",
+            None,
+        )
+        per_layer_null_observability = None
+        if per_layer_null_observability_raw is not None:
+            per_layer_null_observability = {
+                int(layer): {
+                    str(metric): _normalize_metric_value(metric_val)
+                    for metric, metric_val in dict(layer_metrics).items()
+                }
+                for layer, layer_metrics in dict(per_layer_null_observability_raw).items()
+            }
+        per_layer_null_accessibility_raw = getattr(
+            train_result,
+            "per_layer_null_accessibility",
+            None,
+        )
+        per_layer_null_accessibility = None
+        if per_layer_null_accessibility_raw is not None:
+            per_layer_null_accessibility = {
+                int(layer): {
+                    str(metric): _normalize_metric_value(metric_val)
+                    for metric, metric_val in dict(layer_metrics).items()
+                }
+                for layer, layer_metrics in dict(per_layer_null_accessibility_raw).items()
+            }
+        per_module_null_accessibility_raw = getattr(
+            train_result,
+            "per_module_null_accessibility",
+            None,
+        )
+        per_module_null_accessibility = None
+        if per_module_null_accessibility_raw is not None:
+            per_module_null_accessibility = {
+                str(module): {
+                    str(metric): _normalize_metric_value(metric_val)
+                    for metric, metric_val in dict(module_metrics).items()
+                }
+                for module, module_metrics in dict(per_module_null_accessibility_raw).items()
+            }
+
+        null_access_min_behavioral_preserved_fraction: float | None = None
+        null_access_min_behavioral_preserved_layer: int | None = None
+        if per_layer_null_accessibility:
+            for layer_idx, metrics in per_layer_null_accessibility.items():
+                preserved = metrics.get("behavioral_preserved_fraction")
+                if preserved is None:
+                    continue
+                preserved_val = float(preserved)
+                if (
+                    null_access_min_behavioral_preserved_fraction is None
+                    or preserved_val < null_access_min_behavioral_preserved_fraction
+                ):
+                    null_access_min_behavioral_preserved_fraction = preserved_val
+                    null_access_min_behavioral_preserved_layer = int(layer_idx)
+
+        null_observability_max_condition_number: float | None = None
+        null_observability_max_condition_layer: int | None = None
+        if per_layer_null_observability:
+            for layer_idx, metrics in per_layer_null_observability.items():
+                condition_number = metrics.get("condition_number")
+                if condition_number is None:
+                    continue
+                condition_val = float(condition_number)
+                if (
+                    null_observability_max_condition_number is None
+                    or condition_val > null_observability_max_condition_number
+                ):
+                    null_observability_max_condition_number = condition_val
+                    null_observability_max_condition_layer = int(layer_idx)
+
+        epoch_metrics_raw = getattr(train_result, "epoch_metrics", None)
+        online_eval_first_pre_degraded_epoch: int | None = None
+        online_eval_first_post_degraded_epoch: int | None = None
+        epoch_geometry_trace: list[dict[str, Any]] | None = None
+        if isinstance(epoch_metrics_raw, list):
+            epoch_geometry_trace = []
+            for epoch_idx, metric_obj in enumerate(epoch_metrics_raw):
+                if not isinstance(metric_obj, dict):
+                    continue
+                epoch_field = metric_obj.get("epoch")
+                if isinstance(epoch_field, (int, float)):
+                    epoch_num = int(epoch_field)
+                else:
+                    epoch_num = int(epoch_idx)
+
+                pre_degraded = metric_obj.get("online_eval_pre_degraded")
+                post_degraded = metric_obj.get("online_eval_post_degraded")
+                if pre_degraded is True and online_eval_first_pre_degraded_epoch is None:
+                    online_eval_first_pre_degraded_epoch = epoch_num
+                if post_degraded is True and online_eval_first_post_degraded_epoch is None:
+                    online_eval_first_post_degraded_epoch = epoch_num
+
+                epoch_geometry_trace.append(
+                    {
+                        "epoch": epoch_num,
+                        "adapter_saturation_median_ratio": metric_obj.get(
+                            "adapter_saturation_median_ratio",
+                        ),
+                        "dim_final_used_fraction": metric_obj.get("dim_final_used_fraction"),
+                        "dim_final_null_fraction": metric_obj.get("dim_final_null_fraction"),
+                        "dim_null_recruitment_from_baseline": metric_obj.get(
+                            "dim_null_recruitment_from_baseline",
+                        ),
+                        "online_eval_pre_n_correct": metric_obj.get("online_eval_pre_n_correct"),
+                        "online_eval_pre_n_total": metric_obj.get("online_eval_pre_n_total"),
+                        "online_eval_pre_degraded": metric_obj.get("online_eval_pre_degraded"),
+                        "online_eval_post_n_correct": metric_obj.get("online_eval_post_n_correct"),
+                        "online_eval_post_n_total": metric_obj.get("online_eval_post_n_total"),
+                        "online_eval_post_degraded": metric_obj.get("online_eval_post_degraded"),
+                    }
+                )
+            if len(epoch_geometry_trace) == 0:
+                epoch_geometry_trace = None
         min_cka_layer = getattr(train_result, "min_cka_layer", None)
         if min_cka_layer is None and per_layer_cka:
             min_cka_layer = int(min(per_layer_cka, key=per_layer_cka.get))
@@ -511,7 +662,25 @@ class DerivedTrainingValidationService:
             per_layer_cka=per_layer_cka,
             per_layer_gram_epsilon=per_layer_gram_epsilon,
             per_layer_cka_bound=per_layer_cka_bound_out,
+            per_layer_null_observability=per_layer_null_observability,
+            per_layer_null_accessibility=per_layer_null_accessibility,
+            per_module_null_accessibility=per_module_null_accessibility,
             cka_margin_to_bound=cka_margin_to_bound,
+            null_access_min_behavioral_preserved_fraction=(
+                null_access_min_behavioral_preserved_fraction
+            ),
+            null_access_min_behavioral_preserved_layer=(
+                null_access_min_behavioral_preserved_layer
+            ),
+            null_observability_max_condition_number=(
+                null_observability_max_condition_number
+            ),
+            null_observability_max_condition_layer=(
+                null_observability_max_condition_layer
+            ),
+            online_eval_first_pre_degraded_epoch=online_eval_first_pre_degraded_epoch,
+            online_eval_first_post_degraded_epoch=online_eval_first_post_degraded_epoch,
+            epoch_geometry_trace=epoch_geometry_trace,
             adapter_saturation_median_ratio=sat,
             max_effective_gain_ratio=max_gain_ratio,
             online_eval_baseline_correct=online_eval_baseline_correct,

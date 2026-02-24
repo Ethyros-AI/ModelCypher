@@ -272,13 +272,13 @@ def _build_report(
         "| Model | Structural | Inference | Composite | Structural pass/fail "
         "| Inference pass/fail | Composite pass/fail | "
         "online_eval_delta_correct (mean) | max_4gram_repeat_delta (max) | "
-        "CKA worst layer |"
+        "CKA worst layer | Null-access min preserved |"
     )
     lines.append(
         "|-------|------------|-----------|-----------|----------------------|"
         "---------------------|---------------------|"
         "----------------------------------|----------------------------|"
-        "----------------|"
+        "----------------|----------------------------|"
     )
 
     for scale in SCALE_ORDER:
@@ -286,7 +286,9 @@ def _build_report(
             continue
         r = all_results[scale]
         if "error" in r:
-            lines.append(f"| {scale} | ERROR | - | - | - | - | - | {r['error']} |")
+            lines.append(
+                f"| {scale} | ERROR | - | - | - | - | - | - | - | - | {r['error']} |",
+            )
             continue
 
         pass_count = int(r.get("pass_count", 0))
@@ -335,6 +337,26 @@ def _build_report(
         else:
             cka_worst_str = "n/a"
 
+        null_access_trials = [
+            trial for trial in trial_results
+            if trial.get("null_access_min_behavioral_preserved_fraction") is not None
+        ]
+        if null_access_trials:
+            null_access_worst = min(
+                null_access_trials,
+                key=lambda trial: float(trial["null_access_min_behavioral_preserved_fraction"]),
+            )
+            null_layer = null_access_worst.get("null_access_min_behavioral_preserved_layer")
+            null_fraction = float(
+                null_access_worst["null_access_min_behavioral_preserved_fraction"],
+            )
+            if null_layer is None:
+                null_access_str = f"{null_fraction:.6f} @ layer ?"
+            else:
+                null_access_str = f"{null_fraction:.6f} @ layer {int(null_layer)}"
+        else:
+            null_access_str = "n/a"
+
         lines.append(
             f"| {scale} | {structural_status} | {inference_status} | {status} "
             f"| {structural_pass}/{structural_fail} "
@@ -342,7 +364,8 @@ def _build_report(
             f"| {pass_count}/{fail_count} "
             f"| {delta_correct_str} "
             f"| {rep_delta_str} "
-            f"| {cka_worst_str} |"
+            f"| {cka_worst_str} "
+            f"| {null_access_str} |"
         )
 
     lines.append("")
@@ -375,6 +398,12 @@ def _build_report(
                 cooccurrence = cx.get("cooccurrence_class")
                 delta_correct = cx.get("online_eval_delta_correct")
                 rep_delta = cx.get("max_4gram_repeat_delta")
+                null_access_min = cx.get("null_access_min_behavioral_preserved_fraction")
+                null_access_layer = cx.get("null_access_min_behavioral_preserved_layer")
+                null_obs_max_cond = cx.get("null_observability_max_condition_number")
+                null_obs_max_cond_layer = cx.get("null_observability_max_condition_layer")
+                first_pre_degraded = cx.get("online_eval_first_pre_degraded_epoch")
+                first_post_degraded = cx.get("online_eval_first_post_degraded_epoch")
                 lines.append(f"- **Seed {seed}**: {', '.join(modes)}")
                 lines.append(f"  - loss_delta={loss_d:.4f}, ppl_delta={ppl_d:.4f}")
                 lines.append(f"  - stop_reason={stop}")
@@ -393,6 +422,39 @@ def _build_report(
                     lines.append(f"  - online_eval_delta_correct={int(delta_correct):+d}")
                 if rep_delta is not None:
                     lines.append(f"  - max_4gram_repeat_delta={float(rep_delta):+.6f}")
+                if null_access_min is not None:
+                    if null_access_layer is None:
+                        lines.append(
+                            "  - null_access_min_behavioral_preserved_fraction="
+                            f"{float(null_access_min):.6f}",
+                        )
+                    else:
+                        lines.append(
+                            "  - null_access_min_behavioral_preserved_fraction="
+                            f"{float(null_access_min):.6f} (layer={int(null_access_layer)})",
+                        )
+                if null_obs_max_cond is not None:
+                    if null_obs_max_cond_layer is None:
+                        lines.append(
+                            "  - null_observability_max_condition_number="
+                            f"{float(null_obs_max_cond):.6f}",
+                        )
+                    else:
+                        lines.append(
+                            "  - null_observability_max_condition_number="
+                            f"{float(null_obs_max_cond):.6f} "
+                            f"(layer={int(null_obs_max_cond_layer)})",
+                        )
+                if first_pre_degraded is not None:
+                    lines.append(
+                        "  - online_eval_first_pre_degraded_epoch="
+                        f"{int(first_pre_degraded)}",
+                    )
+                if first_post_degraded is not None:
+                    lines.append(
+                        "  - online_eval_first_post_degraded_epoch="
+                        f"{int(first_post_degraded)}",
+                    )
             lines.append("")
 
     return "\n".join(lines) + "\n"

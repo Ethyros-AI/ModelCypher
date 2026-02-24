@@ -14,9 +14,13 @@ from typer.testing import CliRunner
 
 import modelcypher.core.use_cases.dataset_training_service as dataset_training_service_module
 from modelcypher.cli.app import app
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 from modelcypher.core.domain.training.regime_selection import PerTypeRegime
-from modelcypher.core.use_cases.dataset_training_service import DatasetTrainingService
+from modelcypher.core.use_cases.dataset_training_service import (
+    DatasetTrainResult,
+    DatasetTrainingService,
+)
 
 runner = CliRunner()
 
@@ -931,3 +935,75 @@ def test_train_from_dataset_research_controls_validate_values(tmp_path: Path):
             auto_regime=False,
             research_outcome_selector="invalid_selector",
         )
+
+
+def test_dataset_train_result_to_dict_includes_null_space_diagnostics():
+    result = DatasetTrainResult(
+        train_iters=10,
+        initial_loss=2.0,
+        final_loss=1.0,
+        stop_reason="certificate",
+        baseline_loss=2.0,
+        baseline_perplexity=8.0,
+        post_loss=1.0,
+        post_perplexity=4.0,
+        n_lora_layers=1,
+        n_trainable_params=100,
+        adapter_path=None,
+        spectral_bounds_ok=True,
+        max_spectral_ratio=0.5,
+        training_time_seconds=1.0,
+        per_layer_null_observability={0: {"condition_number": 10.0, "coverage_ratio": 1.5}},
+        per_layer_null_accessibility={0: {"behavioral_preserved_fraction": 0.25}},
+        per_module_null_accessibility={
+            "model.layers.0.self_attn.q_proj.weight": {
+                "behavioral_preserved_fraction": 0.25,
+            }
+        },
+    )
+    payload = result.to_dict()
+    assert payload["per_layer_null_observability"][0]["condition_number"] == pytest.approx(10.0)
+    assert payload["per_layer_null_accessibility"][0]["behavioral_preserved_fraction"] == pytest.approx(0.25)
+    assert (
+        payload["per_module_null_accessibility"][
+            "model.layers.0.self_attn.q_proj.weight"
+        ]["behavioral_preserved_fraction"]
+        == pytest.approx(0.25)
+    )
+
+
+def test_verify_capability_preservation_without_delta_extractor_keeps_null_access_none(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    backend = get_default_backend()
+    service = DatasetTrainingService(adapter=_DummyAdapter(), backend=backend)
+
+    def _fake_collect_hidden_activations(_self, _model, _tokenizer, texts):
+        text = str(texts[0])
+        val = float(len(text))
+        layer = backend.array([[[val, 0.0, 0.0]]], dtype="float32")
+        return {0: layer}
+
+    monkeypatch.setattr(
+        type(backend),
+        "collect_hidden_activations",
+        _fake_collect_hidden_activations,
+    )
+
+    base_activations = {
+        0: [
+            backend.array([1.0, 0.0, 0.0], dtype="float32"),
+            backend.array([2.0, 0.0, 0.0], dtype="float32"),
+        ],
+    }
+    eval_samples = [{"text": "a"}, {"text": "ab"}]
+    result = service._verify_capability_preservation(
+        model=object(),
+        tokenizer=object(),
+        base_activations=base_activations,
+        eval_samples=eval_samples,
+    )
+
+    assert result["per_layer_null_observability"] is not None
+    assert result["per_layer_null_accessibility"] is None
+    assert result["per_module_null_accessibility"] is None

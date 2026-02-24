@@ -47,9 +47,13 @@ class _FakeTrainResult:
     per_layer_cka: dict[int, float] | None = None
     per_layer_gram_epsilon: dict[int, float] | None = None
     per_layer_cka_bound: dict[int, float] | None = None
+    per_layer_null_observability: dict[int, dict[str, float | int]] | None = None
+    per_layer_null_accessibility: dict[int, dict[str, float | int]] | None = None
+    per_module_null_accessibility: dict[str, dict[str, float | int]] | None = None
     min_cka_layer: int | None = None
     adapter_saturation_median_ratio: float | None = None
     max_effective_gain_ratio: float | None = None
+    epoch_metrics: list[dict[str, object]] | None = None
     seq_length_used: int = 64
     adapter_path: str | None = "adapter-path"
 
@@ -570,3 +574,126 @@ def test_phase5_probe_derivation_is_deterministic(tmp_path, monkeypatch):
     assert result_a.phase5_probe_seed == result_b.phase5_probe_seed
     assert service_a._dataset_training_service.derive_regime_calls == 1
     assert service_b._dataset_training_service.derive_regime_calls == 1
+
+
+def test_null_space_diagnostics_round_trip_and_summaries(tmp_path):
+    service, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.4,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+            per_layer_null_observability={
+                0: {"condition_number": 12.0, "coverage_ratio": 1.2},
+                1: {"condition_number": 20.0, "coverage_ratio": 1.3},
+            },
+            per_layer_null_accessibility={
+                0: {"behavioral_preserved_fraction": 0.41, "module_count": 3},
+                1: {"behavioral_preserved_fraction": 0.22, "module_count": 3},
+            },
+            per_module_null_accessibility={
+                "model.layers.0.self_attn.q_proj.weight": {
+                    "behavioral_preserved_fraction": 0.50,
+                    "condition_number": 12.0,
+                },
+                "model.layers.1.self_attn.q_proj.weight": {
+                    "behavioral_preserved_fraction": 0.20,
+                    "condition_number": 20.0,
+                },
+            },
+        ),
+    ])
+
+    result = service.validate(
+        model_path=model_dir,
+        dataset_path=data_file,
+        eval_dataset_path=None,
+        trials=1,
+        base_seed=11,
+    )
+    trial = result.trial_results[0]
+
+    assert trial.per_layer_null_observability is not None
+    assert trial.per_layer_null_accessibility is not None
+    assert trial.per_module_null_accessibility is not None
+    assert trial.null_access_min_behavioral_preserved_fraction == pytest.approx(0.22)
+    assert trial.null_access_min_behavioral_preserved_layer == 1
+    assert trial.null_observability_max_condition_number == pytest.approx(20.0)
+    assert trial.null_observability_max_condition_layer == 1
+
+    payload = trial.to_dict()
+    assert payload["per_layer_null_observability"][1]["condition_number"] == pytest.approx(20.0)
+    assert payload["per_layer_null_accessibility"][1]["behavioral_preserved_fraction"] == pytest.approx(0.22)
+    assert (
+        payload["per_module_null_accessibility"][
+            "model.layers.1.self_attn.q_proj.weight"
+        ]["behavioral_preserved_fraction"]
+        == pytest.approx(0.20)
+    )
+
+
+def test_epoch_geometry_trace_and_first_degraded_epochs(tmp_path):
+    service, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.4,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+            epoch_metrics=[
+                {
+                    "epoch": 1,
+                    "adapter_saturation_median_ratio": 0.12,
+                    "dim_final_used_fraction": 0.41,
+                    "dim_final_null_fraction": 0.59,
+                    "dim_null_recruitment_from_baseline": 0.01,
+                    "online_eval_pre_n_correct": 1,
+                    "online_eval_pre_n_total": 2,
+                    "online_eval_pre_degraded": False,
+                    "online_eval_post_n_correct": 1,
+                    "online_eval_post_n_total": 2,
+                    "online_eval_post_degraded": False,
+                },
+                {
+                    "epoch": 2,
+                    "adapter_saturation_median_ratio": 0.18,
+                    "dim_final_used_fraction": 0.44,
+                    "dim_final_null_fraction": 0.56,
+                    "dim_null_recruitment_from_baseline": 0.03,
+                    "online_eval_pre_n_correct": 0,
+                    "online_eval_pre_n_total": 2,
+                    "online_eval_pre_degraded": True,
+                    "online_eval_post_n_correct": 1,
+                    "online_eval_post_n_total": 2,
+                    "online_eval_post_degraded": False,
+                },
+                {
+                    "epoch": 3,
+                    "adapter_saturation_median_ratio": 0.22,
+                    "dim_final_used_fraction": 0.45,
+                    "dim_final_null_fraction": 0.55,
+                    "dim_null_recruitment_from_baseline": 0.04,
+                    "online_eval_pre_n_correct": 0,
+                    "online_eval_pre_n_total": 2,
+                    "online_eval_pre_degraded": True,
+                    "online_eval_post_n_correct": 0,
+                    "online_eval_post_n_total": 2,
+                    "online_eval_post_degraded": True,
+                },
+            ],
+        ),
+    ])
+
+    result = service.validate(
+        model_path=model_dir,
+        dataset_path=data_file,
+        eval_dataset_path=None,
+        trials=1,
+        base_seed=21,
+    )
+    trial = result.trial_results[0]
+    assert trial.online_eval_first_pre_degraded_epoch == 2
+    assert trial.online_eval_first_post_degraded_epoch == 3
+    assert trial.epoch_geometry_trace is not None
+    assert len(trial.epoch_geometry_trace) == 3
+    assert trial.epoch_geometry_trace[0]["epoch"] == 1
+    assert trial.epoch_geometry_trace[1]["online_eval_pre_degraded"] is True
