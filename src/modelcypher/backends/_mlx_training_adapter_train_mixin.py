@@ -532,22 +532,17 @@ class _MLXTrainingAdapterTrainMixin:
                     max_effective_gain_this_epoch, gain_ratio,
                 )
 
-            # Track displacement-to-remaining ratio
+            # Track displacement-to-remaining ratio (epoch-level diagnostic).
+            # NOTE: remaining_budget is NOT decremented per step. Weyl per-step
+            # displacement is an upper bound that overestimates cumulative
+            # spectral impact by ~50× (updates spread across singular
+            # directions and partially cancel). The epoch-boundary spectral
+            # measurement is the sole source of truth for remaining budget.
             if remaining_budget is not None and remaining_budget > 0:
                 disp_ratio = displacement_val / remaining_budget
                 max_disp_to_remaining_this_epoch = max(
                     max_disp_to_remaining_this_epoch, disp_ratio,
                 )
-                if disp_ratio > 0.5:
-                    logger.warning(
-                        "Single step consuming %.1f%% of remaining budget "
-                        "(disp=%.4e, remaining=%.4e)",
-                        disp_ratio * 100, displacement_val, remaining_budget,
-                    )
-
-            # Decrement remaining budget by this step's displacement
-            if remaining_budget is not None:
-                remaining_budget = max(0.0, remaining_budget - displacement_val)
 
             optimizer.learning_rate = mx.array(eta_step)
 
