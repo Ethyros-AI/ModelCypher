@@ -167,6 +167,11 @@ def _patch_lightweight_training(monkeypatch: pytest.MonkeyPatch, service: Datase
         lambda *_args, **_kwargs: {},
     )
     monkeypatch.setattr(
+        service,
+        "_collect_inference_probe_activations",
+        lambda *_args, **_kwargs: {},
+    )
+    monkeypatch.setattr(
         dataset_training_service_module,
         "analyze_weight_geometries",
         lambda *_args, **_kwargs: {

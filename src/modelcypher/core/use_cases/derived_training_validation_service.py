@@ -525,11 +525,12 @@ class DerivedTrainingValidationService:
         cka_blindness_ratio: float | None = None
         cka_blindness_worst_layer: int | None = None
         cka_delta_gap: float | None = None
+        eval_gram_eps_raw = getattr(train_result, "per_layer_gram_epsilon", None)
         inference_per_layer_gram_epsilon_raw = getattr(
             train_result, "inference_per_layer_gram_epsilon", None,
         )
         if (
-            per_layer_gram_epsilon_raw is not None
+            eval_gram_eps_raw is not None
             and inference_per_layer_gram_epsilon_raw is not None
         ):
             ratios: dict[int, float] = {}
@@ -537,9 +538,9 @@ class DerivedTrainingValidationService:
                 inference_per_layer_gram_epsilon_raw
             ).items():
                 layer_int = int(layer_key)
-                eps_eval = per_layer_gram_epsilon_raw.get(layer_key)
+                eps_eval = eval_gram_eps_raw.get(layer_key)
                 if eps_eval is None:
-                    eps_eval = per_layer_gram_epsilon_raw.get(layer_int)
+                    eps_eval = eval_gram_eps_raw.get(layer_int)
                 if eps_eval is not None and float(eps_eval) > eps:
                     ratios[layer_int] = float(eps_inf) / float(eps_eval)
             if ratios:
