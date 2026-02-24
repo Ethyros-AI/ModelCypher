@@ -262,7 +262,10 @@ class TestDatasetTrainResultEpochMetrics:
             max_spectral_ratio=0.49,
             training_time_seconds=120.0,
             epoch_metrics=[{"epoch": 1, "eta": 0.01}],
+            per_layer_cka={0: 0.99, 1: 0.97},
+            min_cka_layer=1,
             adapter_saturation_median_ratio=0.42,
+            seq_length_used=320,
             dim_final_used_fraction=0.12,
             dim_final_null_fraction=0.88,
             dim_null_recruitment_from_baseline=0.03,
@@ -271,6 +274,10 @@ class TestDatasetTrainResultEpochMetrics:
         assert "epoch_metrics" in d
         assert d["epoch_metrics"][0]["epoch"] == 1
         assert d["adapter_saturation_median_ratio"] == pytest.approx(0.42)
+        assert d["seq_length_used"] == 320
+        assert d["per_layer_cka"][0] == pytest.approx(0.99)
+        assert d["per_layer_cka"][1] == pytest.approx(0.97)
+        assert d["min_cka_layer"] == 1
         assert d["dim_final_used_fraction"] == pytest.approx(0.12)
         assert d["dim_final_null_fraction"] == pytest.approx(0.88)
         assert d["dim_null_recruitment_from_baseline"] == pytest.approx(0.03)

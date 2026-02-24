@@ -23,13 +23,44 @@ counterexamples where post-training metrics fail to improve over baseline.
 
 from __future__ import annotations
 
+import gc
 import hashlib
 import math
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.star.problem_generator import StarProblem, StarProblemGenerator
+from modelcypher.core.domain.training.online_eval import (
+    OnlineEvalResult,
+    create_eval_problem_set,
+    evaluate_correctness,
+)
+
+
+@dataclass(frozen=True)
+class _Phase5Metrics:
+    baseline_n_correct: int
+    baseline_n_total: int
+    adapted_n_correct: int
+    adapted_n_total: int
+    baseline_max_4gram_repeat: float
+    adapted_max_4gram_repeat: float
+
+
+@dataclass
+class _Phase5Context:
+    enabled: bool
+    probe_count: int
+    probe_seed: int
+    artifact_root: Path
+    keep_all_artifacts: bool
+    probe_problems: list[StarProblem]
+    baseline_eval: OnlineEvalResult | None = None
+    baseline_max_4gram_repeat: float | None = None
+    max_tokens: int | None = None
 
 
 @dataclass(frozen=True)
@@ -51,7 +82,20 @@ class DerivedTrainingTrial:
     training_time_seconds: float
     min_cka: float | None
     mean_cka: float | None
+    min_cka_layer: int | None
+    per_layer_cka: dict[int, float] | None
     adapter_saturation_median_ratio: float | None
+    online_eval_baseline_correct: int | None
+    online_eval_baseline_total: int | None
+    online_eval_adapted_correct: int | None
+    online_eval_adapted_total: int | None
+    online_eval_delta_correct: int | None
+    baseline_max_4gram_repeat: float | None
+    adapted_max_4gram_repeat: float | None
+    max_4gram_repeat_delta: float | None
+    structural_passed: bool
+    inference_passed: bool
+    cooccurrence_class: str
     passed: bool
     failure_modes: tuple[str, ...]
 
@@ -72,7 +116,20 @@ class DerivedTrainingTrial:
             "training_time_seconds": self.training_time_seconds,
             "min_cka": self.min_cka,
             "mean_cka": self.mean_cka,
+            "min_cka_layer": self.min_cka_layer,
+            "per_layer_cka": self.per_layer_cka,
             "adapter_saturation_median_ratio": self.adapter_saturation_median_ratio,
+            "online_eval_baseline_correct": self.online_eval_baseline_correct,
+            "online_eval_baseline_total": self.online_eval_baseline_total,
+            "online_eval_adapted_correct": self.online_eval_adapted_correct,
+            "online_eval_adapted_total": self.online_eval_adapted_total,
+            "online_eval_delta_correct": self.online_eval_delta_correct,
+            "baseline_max_4gram_repeat": self.baseline_max_4gram_repeat,
+            "adapted_max_4gram_repeat": self.adapted_max_4gram_repeat,
+            "max_4gram_repeat_delta": self.max_4gram_repeat_delta,
+            "structural_passed": self.structural_passed,
+            "inference_passed": self.inference_passed,
+            "cooccurrence_class": self.cooccurrence_class,
             "passed": self.passed,
             "failure_modes": list(self.failure_modes),
         }
@@ -86,10 +143,17 @@ class DerivedTrainingValidationResult:
     dataset_path: str
     eval_dataset_path: str | None
     trials_requested: int
+    phase5_inference_enabled: bool
+    phase5_probe_count: int | None
+    phase5_probe_seed: int | None
     trial_results: tuple[DerivedTrainingTrial, ...]
     counterexamples: tuple[DerivedTrainingTrial, ...]
     pass_count: int
     fail_count: int
+    structural_pass_count: int
+    structural_fail_count: int
+    inference_pass_count: int
+    inference_fail_count: int
     all_passed: bool
     seed_source: str
     seeds: tuple[int, ...]
@@ -104,8 +168,15 @@ class DerivedTrainingValidationResult:
             "dataset_path": self.dataset_path,
             "eval_dataset_path": self.eval_dataset_path,
             "trials_requested": self.trials_requested,
+            "phase5_inference_enabled": self.phase5_inference_enabled,
+            "phase5_probe_count": self.phase5_probe_count,
+            "phase5_probe_seed": self.phase5_probe_seed,
             "pass_count": self.pass_count,
             "fail_count": self.fail_count,
+            "structural_pass_count": self.structural_pass_count,
+            "structural_fail_count": self.structural_fail_count,
+            "inference_pass_count": self.inference_pass_count,
+            "inference_fail_count": self.inference_fail_count,
             "all_passed": self.all_passed,
             "seed_source": self.seed_source,
             "seeds": list(self.seeds),
@@ -133,6 +204,10 @@ class DerivedTrainingValidationService:
         trials: int,
         base_seed: int | None = None,
         seq_length: int | None = None,
+        enable_phase5_inference: bool = False,
+        phase5_probe_count: int | None = None,
+        phase5_probe_seed: int | None = None,
+        artifact_root: str | Path | None = None,
     ) -> DerivedTrainingValidationResult:
         if trials <= 0:
             raise ValueError("trials must be positive")
@@ -156,25 +231,57 @@ class DerivedTrainingValidationService:
             seed_source = "user_supplied_base_seed"
 
         seeds = tuple(seed_root + idx for idx in range(trials))
+        phase5_ctx = self._build_phase5_context(
+            enabled=enable_phase5_inference,
+            probe_count=phase5_probe_count,
+            probe_seed=phase5_probe_seed,
+            artifact_root=artifact_root,
+            model_path=resolved_model_path,
+            dataset_path=resolved_dataset_path,
+            eval_dataset_path=resolved_eval_path,
+            seed_root=seed_root,
+        )
 
         trials_out: list[DerivedTrainingTrial] = []
         loss_deltas: list[float] = []
         ppl_deltas: list[float] = []
 
         for index, seed in enumerate(seeds):
+            trial_output_dir = None
+            train_kwargs: dict[str, Any] = {
+                "model_path": resolved_model_path,
+                "dataset_path": resolved_dataset_path,
+                "eval_dataset_path": resolved_eval_path,
+                "seed": seed,
+                "seq_length": seq_length,
+                "auto_regime": True,
+                "no_save": (not phase5_ctx.enabled),
+            }
+            if phase5_ctx.enabled:
+                trial_output_dir = phase5_ctx.artifact_root / (
+                    f"trial_{index:03d}_seed_{seed}"
+                )
+                trial_output_dir.mkdir(parents=True, exist_ok=True)
+                train_kwargs["output_path"] = trial_output_dir
+                train_kwargs["no_save"] = False
+
             result = self._dataset_training_service.train_from_dataset_research(
-                model_path=resolved_model_path,
-                dataset_path=resolved_dataset_path,
-                eval_dataset_path=resolved_eval_path,
-                seed=seed,
-                seq_length=seq_length,
-                auto_regime=True,
-                no_save=True,
+                **train_kwargs,
             )
+
             loss_delta = float(result.baseline_loss - result.post_loss)
             perplexity_delta = float(result.baseline_perplexity - result.post_perplexity)
             loss_deltas.append(loss_delta)
             ppl_deltas.append(perplexity_delta)
+
+            phase5_metrics = None
+            if phase5_ctx.enabled:
+                phase5_metrics = self._run_phase5_for_trial(
+                    context=phase5_ctx,
+                    model_path=resolved_model_path,
+                    train_result=result,
+                    epoch_index=index,
+                )
 
             trial = self._build_trial(
                 index=index,
@@ -182,11 +289,27 @@ class DerivedTrainingValidationService:
                 train_result=result,
                 loss_delta=loss_delta,
                 perplexity_delta=perplexity_delta,
+                phase5_metrics=phase5_metrics,
             )
             trials_out.append(trial)
 
+            if (
+                phase5_ctx.enabled
+                and not phase5_ctx.keep_all_artifacts
+                and trial_output_dir is not None
+                and trial.passed
+                and trial_output_dir.exists()
+            ):
+                shutil.rmtree(trial_output_dir, ignore_errors=True)
+
         pass_count = sum(1 for trial in trials_out if trial.passed)
         fail_count = len(trials_out) - pass_count
+        structural_pass_count = sum(
+            1 for trial in trials_out if trial.structural_passed
+        )
+        structural_fail_count = len(trials_out) - structural_pass_count
+        inference_pass_count = sum(1 for trial in trials_out if trial.inference_passed)
+        inference_fail_count = len(trials_out) - inference_pass_count
         counterexamples = tuple(trial for trial in trials_out if not trial.passed)
 
         return DerivedTrainingValidationResult(
@@ -194,10 +317,17 @@ class DerivedTrainingValidationService:
             dataset_path=str(resolved_dataset_path),
             eval_dataset_path=str(resolved_eval_path) if resolved_eval_path else None,
             trials_requested=trials,
+            phase5_inference_enabled=phase5_ctx.enabled,
+            phase5_probe_count=phase5_ctx.probe_count if phase5_ctx.enabled else None,
+            phase5_probe_seed=phase5_ctx.probe_seed if phase5_ctx.enabled else None,
             trial_results=tuple(trials_out),
             counterexamples=counterexamples,
             pass_count=pass_count,
             fail_count=fail_count,
+            structural_pass_count=structural_pass_count,
+            structural_fail_count=structural_fail_count,
+            inference_pass_count=inference_pass_count,
+            inference_fail_count=inference_fail_count,
             all_passed=fail_count == 0,
             seed_source=seed_source,
             seeds=seeds,
@@ -214,6 +344,7 @@ class DerivedTrainingValidationService:
         train_result: Any,
         loss_delta: float,
         perplexity_delta: float,
+        phase5_metrics: _Phase5Metrics | None,
     ) -> DerivedTrainingTrial:
         eps = machine_epsilon(
             self._backend,
@@ -229,23 +360,90 @@ class DerivedTrainingValidationService:
         loss_improved = loss_delta > eps
         perplexity_improved = perplexity_delta > eps
         bounds_ok = bool(train_result.spectral_bounds_ok)
-
         sqrt_eps = math.sqrt(eps)
 
-        failure_modes: list[str] = []
+        structural_failure_modes: list[str] = []
         if not loss_improved:
-            failure_modes.append("loss_not_improved")
+            structural_failure_modes.append("loss_not_improved")
         if not perplexity_improved:
-            failure_modes.append("perplexity_not_improved")
+            structural_failure_modes.append("perplexity_not_improved")
         if not bounds_ok:
-            failure_modes.append("spectral_bounds_violation")
+            structural_failure_modes.append("spectral_bounds_violation")
         if str(train_result.stop_reason).startswith("safety_cap"):
-            failure_modes.append("safety_cap_hit")
-        if train_result.min_cka is not None and float(train_result.min_cka) < 1.0 - sqrt_eps:
-            failure_modes.append("cka_degraded")
+            structural_failure_modes.append("safety_cap_hit")
+        min_cka = (
+            float(train_result.min_cka)
+            if getattr(train_result, "min_cka", None) is not None
+            else None
+        )
+        if min_cka is not None and min_cka < 1.0 - sqrt_eps:
+            structural_failure_modes.append("cka_degraded")
+
         sat = getattr(train_result, "adapter_saturation_median_ratio", None)
-        if sat is not None and float(sat) >= 1.0:
-            failure_modes.append("adapter_saturation_exceeded")
+        sat = float(sat) if sat is not None else None
+        if sat is not None and sat >= 1.0:
+            structural_failure_modes.append("adapter_saturation_exceeded")
+
+        inference_failure_modes: list[str] = []
+        online_eval_baseline_correct = None
+        online_eval_baseline_total = None
+        online_eval_adapted_correct = None
+        online_eval_adapted_total = None
+        online_eval_delta_correct = None
+        baseline_max_4gram_repeat = None
+        adapted_max_4gram_repeat = None
+        max_4gram_repeat_delta = None
+        if phase5_metrics is not None:
+            online_eval_baseline_correct = int(phase5_metrics.baseline_n_correct)
+            online_eval_baseline_total = int(phase5_metrics.baseline_n_total)
+            online_eval_adapted_correct = int(phase5_metrics.adapted_n_correct)
+            online_eval_adapted_total = int(phase5_metrics.adapted_n_total)
+            online_eval_delta_correct = (
+                online_eval_adapted_correct - online_eval_baseline_correct
+            )
+            baseline_max_4gram_repeat = float(phase5_metrics.baseline_max_4gram_repeat)
+            adapted_max_4gram_repeat = float(phase5_metrics.adapted_max_4gram_repeat)
+            max_4gram_repeat_delta = (
+                adapted_max_4gram_repeat - baseline_max_4gram_repeat
+            )
+            if online_eval_adapted_correct < online_eval_baseline_correct:
+                inference_failure_modes.append("online_eval_degraded")
+            if adapted_max_4gram_repeat > baseline_max_4gram_repeat + sqrt_eps:
+                inference_failure_modes.append("fourgram_degenerated")
+
+        structural_passed = len(structural_failure_modes) == 0
+        inference_passed = len(inference_failure_modes) == 0
+        failure_modes = tuple(structural_failure_modes + inference_failure_modes)
+        passed = len(failure_modes) == 0
+
+        cka_shift = "cka_degraded" in structural_failure_modes
+        inference_degraded = len(inference_failure_modes) > 0
+        if cka_shift and inference_degraded:
+            cooccurrence_class = "cka_shift_and_inference_degraded"
+        elif cka_shift and not inference_degraded:
+            cooccurrence_class = "cka_shift_without_inference_degradation"
+        elif (not cka_shift) and inference_degraded:
+            cooccurrence_class = "inference_degraded_without_cka_shift"
+        else:
+            cooccurrence_class = "no_shift_no_inference_degradation"
+
+        per_layer_cka = getattr(train_result, "per_layer_cka", None)
+        if per_layer_cka is not None:
+            per_layer_cka = {
+                int(layer): float(score)
+                for layer, score in dict(per_layer_cka).items()
+            }
+        min_cka_layer = getattr(train_result, "min_cka_layer", None)
+        if min_cka_layer is None and per_layer_cka:
+            min_cka_layer = int(min(per_layer_cka, key=per_layer_cka.get))
+        elif min_cka_layer is not None:
+            min_cka_layer = int(min_cka_layer)
+
+        mean_cka = (
+            float(train_result.mean_cka)
+            if getattr(train_result, "mean_cka", None) is not None
+            else None
+        )
 
         return DerivedTrainingTrial(
             trial_index=index,
@@ -261,22 +459,264 @@ class DerivedTrainingValidationService:
             stop_reason=str(train_result.stop_reason),
             train_iters=int(train_result.train_iters),
             training_time_seconds=float(train_result.training_time_seconds),
-            min_cka=(
-                float(train_result.min_cka)
-                if train_result.min_cka is not None
-                else None
-            ),
-            mean_cka=(
-                float(train_result.mean_cka)
-                if train_result.mean_cka is not None
-                else None
-            ),
-            adapter_saturation_median_ratio=(
-                float(sat) if sat is not None else None
-            ),
-            passed=(len(failure_modes) == 0),
-            failure_modes=tuple(failure_modes),
+            min_cka=min_cka,
+            mean_cka=mean_cka,
+            min_cka_layer=min_cka_layer,
+            per_layer_cka=per_layer_cka,
+            adapter_saturation_median_ratio=sat,
+            online_eval_baseline_correct=online_eval_baseline_correct,
+            online_eval_baseline_total=online_eval_baseline_total,
+            online_eval_adapted_correct=online_eval_adapted_correct,
+            online_eval_adapted_total=online_eval_adapted_total,
+            online_eval_delta_correct=online_eval_delta_correct,
+            baseline_max_4gram_repeat=baseline_max_4gram_repeat,
+            adapted_max_4gram_repeat=adapted_max_4gram_repeat,
+            max_4gram_repeat_delta=max_4gram_repeat_delta,
+            structural_passed=structural_passed,
+            inference_passed=inference_passed,
+            cooccurrence_class=cooccurrence_class,
+            passed=passed,
+            failure_modes=failure_modes,
         )
+
+    def _build_phase5_context(
+        self,
+        *,
+        enabled: bool,
+        probe_count: int | None,
+        probe_seed: int | None,
+        artifact_root: str | Path | None,
+        model_path: Path,
+        dataset_path: Path,
+        eval_dataset_path: Path | None,
+        seed_root: int,
+    ) -> _Phase5Context:
+        if not enabled:
+            return _Phase5Context(
+                enabled=False,
+                probe_count=0,
+                probe_seed=0,
+                artifact_root=Path("."),
+                keep_all_artifacts=False,
+                probe_problems=[],
+            )
+
+        effective_probe_count = (
+            int(probe_count)
+            if probe_count is not None
+            else self._derive_phase5_probe_count()
+        )
+        if effective_probe_count <= 0:
+            raise ValueError("phase5 probe count must be positive")
+
+        effective_probe_seed = (
+            int(probe_seed)
+            if probe_seed is not None
+            else self._derive_phase5_probe_seed(
+                model_path=model_path,
+                dataset_path=dataset_path,
+                eval_dataset_path=eval_dataset_path,
+            )
+        )
+
+        if artifact_root is not None:
+            resolved_artifact_root = Path(artifact_root).expanduser().resolve()
+            keep_all_artifacts = True
+        else:
+            resolved_artifact_root = self._derive_phase5_artifact_root(
+                model_path=model_path,
+                dataset_path=dataset_path,
+                eval_dataset_path=eval_dataset_path,
+                seed_root=seed_root,
+            )
+            keep_all_artifacts = False
+        resolved_artifact_root.mkdir(parents=True, exist_ok=True)
+
+        return _Phase5Context(
+            enabled=True,
+            probe_count=effective_probe_count,
+            probe_seed=effective_probe_seed,
+            artifact_root=resolved_artifact_root,
+            keep_all_artifacts=keep_all_artifacts,
+            probe_problems=create_eval_problem_set(
+                n_problems=effective_probe_count,
+                seed=effective_probe_seed,
+            ),
+        )
+
+    def _run_phase5_for_trial(
+        self,
+        *,
+        context: _Phase5Context,
+        model_path: Path,
+        train_result: Any,
+        epoch_index: int,
+    ) -> _Phase5Metrics:
+        seq_length_used = getattr(train_result, "seq_length_used", None)
+        if seq_length_used is None:
+            raise ValueError(
+                "Phase 5 inference requires seq_length_used in training result.",
+            )
+        max_tokens = int(seq_length_used)
+        if context.max_tokens is None:
+            context.max_tokens = max_tokens
+        elif context.max_tokens != max_tokens:
+            raise ValueError(
+                "Phase 5 requires a fixed max token budget across trials; "
+                f"observed {max_tokens} vs baseline {context.max_tokens}.",
+            )
+
+        if context.baseline_eval is None or context.baseline_max_4gram_repeat is None:
+            baseline_eval, baseline_max_4gram = self._run_probe_eval(
+                model_path=model_path,
+                adapter_path=None,
+                problems=context.probe_problems,
+                max_tokens=context.max_tokens,
+                baseline_correct_ids=None,
+                epoch=epoch_index,
+            )
+            context.baseline_eval = baseline_eval
+            context.baseline_max_4gram_repeat = baseline_max_4gram
+
+        adapter_path = getattr(train_result, "adapter_path", None)
+        if not adapter_path:
+            raise ValueError(
+                "Phase 5 inference requires a saved adapter_path; "
+                "train run returned no adapter artifact.",
+            )
+
+        adapted_eval, adapted_max_4gram = self._run_probe_eval(
+            model_path=model_path,
+            adapter_path=Path(adapter_path),
+            problems=context.probe_problems,
+            max_tokens=context.max_tokens,
+            baseline_correct_ids=context.baseline_eval.correct_ids,
+            epoch=epoch_index,
+        )
+
+        return _Phase5Metrics(
+            baseline_n_correct=context.baseline_eval.n_correct,
+            baseline_n_total=context.baseline_eval.n_total,
+            adapted_n_correct=adapted_eval.n_correct,
+            adapted_n_total=adapted_eval.n_total,
+            baseline_max_4gram_repeat=context.baseline_max_4gram_repeat,
+            adapted_max_4gram_repeat=adapted_max_4gram,
+        )
+
+    def _run_probe_eval(
+        self,
+        *,
+        model_path: Path,
+        adapter_path: Path | None,
+        problems: list[StarProblem],
+        max_tokens: int,
+        baseline_correct_ids: frozenset[str] | None,
+        epoch: int,
+    ) -> tuple[OnlineEvalResult, float]:
+        model, tokenizer = self._backend.load_model(
+            str(model_path),
+            str(adapter_path) if adapter_path is not None else None,
+        )
+
+        def _generate(prompt: str, max_toks: int) -> str:
+            return self._backend.generate(model, tokenizer, prompt, max_tokens=max_toks)
+
+        eval_result = evaluate_correctness(
+            problems=problems,
+            generate_fn=_generate,
+            epoch=epoch,
+            baseline_correct_ids=baseline_correct_ids,
+            max_tokens=max_tokens,
+        )
+
+        prompts = self._build_probe_prompts(problems)
+        responses = [_generate(prompt, max_tokens) for prompt in prompts]
+        max_repetition = max(
+            (self._compute_4gram_repetition_rate(text) for text in responses),
+            default=0.0,
+        )
+
+        del model
+        del tokenizer
+        gc.collect()
+        self._clear_backend_cache()
+
+        return eval_result, max_repetition
+
+    @staticmethod
+    def _build_probe_prompts(problems: list[StarProblem]) -> list[str]:
+        from modelcypher.core.domain.star.prompting import (
+            build_forward_prompt,
+            default_few_shot_examples,
+        )
+
+        n_demonstrations = len(default_few_shot_examples())
+        return [
+            build_forward_prompt(problem, demonstrations=n_demonstrations)
+            for problem in problems
+        ]
+
+    @staticmethod
+    def _compute_4gram_repetition_rate(text: str) -> float:
+        words = text.lower().split()
+        if len(words) < 4:
+            return 0.0
+        ngrams = [tuple(words[i : i + 4]) for i in range(len(words) - 3)]
+        if not ngrams:
+            return 0.0
+        return 1.0 - (len(set(ngrams)) / len(ngrams))
+
+    def _derive_phase5_probe_count(self) -> int:
+        derive_fn = getattr(self._dataset_training_service, "_derive_regime_n_from_ci", None)
+        if not callable(derive_fn):
+            raise ValueError(
+                "Phase 5 probe count derivation requires dataset training service "
+                "method _derive_regime_n_from_ci().",
+            )
+        ci_n = int(derive_fn())
+        n_types = len(StarProblemGenerator.PROBLEM_TYPES)
+        return ci_n * n_types
+
+    @staticmethod
+    def _derive_phase5_probe_seed(
+        *,
+        model_path: Path,
+        dataset_path: Path,
+        eval_dataset_path: Path | None,
+    ) -> int:
+        payload = (
+            "phase5_probe_seed:"
+            f"{model_path}:{dataset_path}:{eval_dataset_path}"
+        )
+        digest = hashlib.sha256(payload.encode("utf-8")).digest()
+        return int.from_bytes(digest[:4], "big")
+
+    @staticmethod
+    def _derive_phase5_artifact_root(
+        *,
+        model_path: Path,
+        dataset_path: Path,
+        eval_dataset_path: Path | None,
+        seed_root: int,
+    ) -> Path:
+        payload = (
+            "phase5_artifact_root:"
+            f"{model_path}:{dataset_path}:{eval_dataset_path}:{seed_root}"
+        )
+        digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+        return (
+            Path("results")
+            / "derived_training_validation_artifacts"
+            / digest
+        ).resolve()
+
+    def _clear_backend_cache(self) -> None:
+        clear_fn = getattr(self._backend, "clear_cache", None)
+        if callable(clear_fn):
+            try:
+                clear_fn()
+            except Exception:
+                pass
 
     @staticmethod
     def _derive_seed_root(model_path: Path, dataset_path: Path) -> int:

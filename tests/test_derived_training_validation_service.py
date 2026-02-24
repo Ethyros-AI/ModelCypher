@@ -27,6 +27,7 @@ import pytest
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.use_cases.derived_training_validation_service import (
     DerivedTrainingValidationService,
+    _Phase5Metrics,
 )
 
 
@@ -43,19 +44,28 @@ class _FakeTrainResult:
     training_time_seconds: float = 1.0
     min_cka: float | None = None
     mean_cka: float | None = None
+    per_layer_cka: dict[int, float] | None = None
+    min_cka_layer: int | None = None
     adapter_saturation_median_ratio: float | None = None
+    seq_length_used: int = 64
+    adapter_path: str | None = "adapter-path"
 
 
 class _FakeDatasetTrainingService:
     def __init__(self, results: list[_FakeTrainResult]):
         self._results = list(results)
         self.calls: list[dict] = []
+        self.derive_regime_calls = 0
 
     def train_from_dataset_research(self, **kwargs):
         self.calls.append(dict(kwargs))
         if not self._results:
             raise RuntimeError("No fake result available")
         return self._results.pop(0)
+
+    def _derive_regime_n_from_ci(self) -> int:
+        self.derive_regime_calls += 1
+        return 2
 
 
 def test_validate_all_trials_pass_when_metrics_improve(tmp_path):
@@ -268,3 +278,199 @@ def test_trial_to_dict_includes_adapter_saturation(tmp_path):
     d = result.trial_results[0].to_dict()
     assert "adapter_saturation_median_ratio" in d
     assert d["adapter_saturation_median_ratio"] == pytest.approx(0.75)
+
+
+def test_phase5_cka_shift_inference_healthy(tmp_path, monkeypatch):
+    service, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.0,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+            min_cka=0.5,
+            per_layer_cka={0: 0.99, 1: 0.5},
+            min_cka_layer=1,
+        ),
+    ])
+
+    monkeypatch.setattr(
+        service,
+        "_run_phase5_for_trial",
+        lambda **_kwargs: _Phase5Metrics(
+            baseline_n_correct=8,
+            baseline_n_total=10,
+            adapted_n_correct=8,
+            adapted_n_total=10,
+            baseline_max_4gram_repeat=0.10,
+            adapted_max_4gram_repeat=0.10,
+        ),
+    )
+
+    result = service.validate(
+        model_path=model_dir,
+        dataset_path=data_file,
+        eval_dataset_path=None,
+        trials=1,
+        base_seed=1,
+        enable_phase5_inference=True,
+        artifact_root=tmp_path / "artifacts",
+    )
+
+    trial = result.trial_results[0]
+    assert trial.structural_passed is False
+    assert trial.inference_passed is True
+    assert "cka_degraded" in trial.failure_modes
+    assert "online_eval_degraded" not in trial.failure_modes
+    assert "fourgram_degenerated" not in trial.failure_modes
+    assert trial.cooccurrence_class == "cka_shift_without_inference_degradation"
+
+
+def test_phase5_online_eval_drop_triggers_failure(tmp_path, monkeypatch):
+    service, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.0,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+            min_cka=0.99999,
+        ),
+    ])
+
+    monkeypatch.setattr(
+        service,
+        "_run_phase5_for_trial",
+        lambda **_kwargs: _Phase5Metrics(
+            baseline_n_correct=9,
+            baseline_n_total=10,
+            adapted_n_correct=8,
+            adapted_n_total=10,
+            baseline_max_4gram_repeat=0.10,
+            adapted_max_4gram_repeat=0.10,
+        ),
+    )
+
+    result = service.validate(
+        model_path=model_dir,
+        dataset_path=data_file,
+        eval_dataset_path=None,
+        trials=1,
+        base_seed=1,
+        enable_phase5_inference=True,
+        artifact_root=tmp_path / "artifacts",
+    )
+
+    trial = result.trial_results[0]
+    assert "online_eval_degraded" in trial.failure_modes
+    assert trial.inference_passed is False
+    assert trial.structural_passed is True
+    assert result.inference_fail_count == 1
+    assert result.structural_fail_count == 0
+
+
+def test_phase5_fourgram_crossing_triggers_failure(tmp_path, monkeypatch):
+    service, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.0,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+            min_cka=0.99999,
+        ),
+    ])
+
+    monkeypatch.setattr(
+        service,
+        "_run_phase5_for_trial",
+        lambda **_kwargs: _Phase5Metrics(
+            baseline_n_correct=8,
+            baseline_n_total=10,
+            adapted_n_correct=8,
+            adapted_n_total=10,
+            baseline_max_4gram_repeat=0.10,
+            adapted_max_4gram_repeat=0.25,
+        ),
+    )
+
+    result = service.validate(
+        model_path=model_dir,
+        dataset_path=data_file,
+        eval_dataset_path=None,
+        trials=1,
+        base_seed=1,
+        enable_phase5_inference=True,
+        artifact_root=tmp_path / "artifacts",
+    )
+
+    trial = result.trial_results[0]
+    assert "fourgram_degenerated" in trial.failure_modes
+    assert trial.inference_passed is False
+    assert trial.structural_passed is True
+
+
+def test_phase5_probe_derivation_is_deterministic(tmp_path, monkeypatch):
+    service_a, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.0,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+        ),
+    ])
+    service_b, _, _ = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.0,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+        ),
+    ])
+
+    monkeypatch.setattr(
+        service_a,
+        "_run_phase5_for_trial",
+        lambda **_kwargs: _Phase5Metrics(
+            baseline_n_correct=8,
+            baseline_n_total=10,
+            adapted_n_correct=8,
+            adapted_n_total=10,
+            baseline_max_4gram_repeat=0.10,
+            adapted_max_4gram_repeat=0.10,
+        ),
+    )
+    monkeypatch.setattr(
+        service_b,
+        "_run_phase5_for_trial",
+        lambda **_kwargs: _Phase5Metrics(
+            baseline_n_correct=8,
+            baseline_n_total=10,
+            adapted_n_correct=8,
+            adapted_n_total=10,
+            baseline_max_4gram_repeat=0.10,
+            adapted_max_4gram_repeat=0.10,
+        ),
+    )
+
+    result_a = service_a.validate(
+        model_path=model_dir,
+        dataset_path=data_file,
+        eval_dataset_path=None,
+        trials=1,
+        base_seed=1,
+        enable_phase5_inference=True,
+        artifact_root=tmp_path / "artifacts_a",
+    )
+    result_b = service_b.validate(
+        model_path=model_dir,
+        dataset_path=data_file,
+        eval_dataset_path=None,
+        trials=1,
+        base_seed=1,
+        enable_phase5_inference=True,
+        artifact_root=tmp_path / "artifacts_b",
+    )
+
+    assert result_a.phase5_probe_count == 10
+    assert result_b.phase5_probe_count == 10
+    assert result_a.phase5_probe_seed == result_b.phase5_probe_seed
+    assert service_a._dataset_training_service.derive_regime_calls == 1
+    assert service_b._dataset_training_service.derive_regime_calls == 1

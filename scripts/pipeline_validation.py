@@ -205,6 +205,8 @@ def _run_validation(
         dataset_path=config.train_data,
         eval_dataset_path=config.eval_data,
         trials=trials,
+        enable_phase5_inference=True,
+        artifact_root=output_dir / "phase5_artifacts",
     )
 
     result_dict = result.to_dict()
@@ -217,10 +219,15 @@ def _run_validation(
 
     # Log summary
     log.info(
-        "%s: pass=%d fail=%d mean_loss_delta=%.4f mean_ppl_delta=%.4f",
+        "%s: pass=%d fail=%d structural_pass=%d structural_fail=%d "
+        "inference_pass=%d inference_fail=%d mean_loss_delta=%.4f mean_ppl_delta=%.4f",
         config.scale,
         result.pass_count,
         result.fail_count,
+        result.structural_pass_count,
+        result.structural_fail_count,
+        result.inference_pass_count,
+        result.inference_fail_count,
         result.mean_loss_delta,
         result.mean_perplexity_delta,
     )
@@ -262,12 +269,16 @@ def _build_report(
 
     # Summary table
     lines.append(
-        "| Model | Pass/Fail | Pass | Fail | Loss delta (mean) "
-        "| PPL delta (mean) | Stop Reasons | Counterexamples |"
+        "| Model | Structural | Inference | Composite | Structural pass/fail "
+        "| Inference pass/fail | Composite pass/fail | "
+        "online_eval_delta_correct (mean) | max_4gram_repeat_delta (max) | "
+        "CKA worst layer |"
     )
     lines.append(
-        "|-------|-----------|------|------|------------------"
-        "|-----------------|--------------|-----------------|"
+        "|-------|------------|-----------|-----------|----------------------|"
+        "---------------------|---------------------|"
+        "----------------------------------|----------------------------|"
+        "----------------|"
     )
 
     for scale in SCALE_ORDER:
@@ -278,23 +289,60 @@ def _build_report(
             lines.append(f"| {scale} | ERROR | - | - | - | - | - | {r['error']} |")
             continue
 
-        pass_count = r.get("pass_count", 0)
-        fail_count = r.get("fail_count", 0)
-        status = "PASS" if r.get("all_passed", False) else "FAIL"
-        mean_loss = r.get("mean_loss_delta", 0.0)
-        mean_ppl = r.get("mean_perplexity_delta", 0.0)
-
-        # Collect stop reasons from trials
-        stop_reasons: set[str] = set()
-        for trial in r.get("trial_results", []):
-            stop_reasons.add(trial.get("stop_reason", "unknown"))
-        stop_str = ", ".join(sorted(stop_reasons))
-
-        n_cx = len(r.get("counterexamples", []))
+        pass_count = int(r.get("pass_count", 0))
+        fail_count = int(r.get("fail_count", 0))
+        status = "PASS" if bool(r.get("all_passed", False)) else "FAIL"
+        structural_pass = int(r.get("structural_pass_count", pass_count))
+        structural_fail = int(r.get("structural_fail_count", fail_count))
+        inference_pass = int(r.get("inference_pass_count", pass_count))
+        inference_fail = int(r.get("inference_fail_count", fail_count))
+        structural_status = "PASS" if structural_fail == 0 else "FAIL"
+        inference_status = "PASS" if inference_fail == 0 else "FAIL"
+        trial_results = r.get("trial_results", [])
+        delta_correct_values = [
+            int(trial["online_eval_delta_correct"])
+            for trial in trial_results
+            if trial.get("online_eval_delta_correct") is not None
+        ]
+        delta_correct_str = (
+            f"{(sum(delta_correct_values) / len(delta_correct_values)):+.3f}"
+            if delta_correct_values
+            else "n/a"
+        )
+        rep_delta_values = [
+            float(trial["max_4gram_repeat_delta"])
+            for trial in trial_results
+            if trial.get("max_4gram_repeat_delta") is not None
+        ]
+        rep_delta_str = (
+            f"{max(rep_delta_values):+.6f}"
+            if rep_delta_values
+            else "n/a"
+        )
+        cka_trials = [
+            trial for trial in trial_results
+            if trial.get("min_cka") is not None
+        ]
+        if cka_trials:
+            cka_worst = min(cka_trials, key=lambda trial: float(trial["min_cka"]))
+            cka_worst_layer = cka_worst.get("min_cka_layer")
+            if cka_worst_layer is None:
+                cka_worst_str = f"{float(cka_worst['min_cka']):.6f} @ layer ?"
+            else:
+                cka_worst_str = (
+                    f"{float(cka_worst['min_cka']):.6f} @ layer {int(cka_worst_layer)}"
+                )
+        else:
+            cka_worst_str = "n/a"
 
         lines.append(
-            f"| {scale} | {status} | {pass_count} | {fail_count} "
-            f"| {mean_loss:.4f} | {mean_ppl:.4f} | {stop_str} | {n_cx} |"
+            f"| {scale} | {structural_status} | {inference_status} | {status} "
+            f"| {structural_pass}/{structural_fail} "
+            f"| {inference_pass}/{inference_fail} "
+            f"| {pass_count}/{fail_count} "
+            f"| {delta_correct_str} "
+            f"| {rep_delta_str} "
+            f"| {cka_worst_str} |"
         )
 
     lines.append("")
@@ -322,14 +370,29 @@ def _build_report(
                 ppl_d = cx.get("perplexity_delta", 0.0)
                 stop = cx.get("stop_reason", "?")
                 min_cka = cx.get("min_cka")
+                min_cka_layer = cx.get("min_cka_layer")
                 sat = cx.get("adapter_saturation_median_ratio")
+                cooccurrence = cx.get("cooccurrence_class")
+                delta_correct = cx.get("online_eval_delta_correct")
+                rep_delta = cx.get("max_4gram_repeat_delta")
                 lines.append(f"- **Seed {seed}**: {', '.join(modes)}")
                 lines.append(f"  - loss_delta={loss_d:.4f}, ppl_delta={ppl_d:.4f}")
                 lines.append(f"  - stop_reason={stop}")
+                if cooccurrence is not None:
+                    lines.append(f"  - cooccurrence_class={cooccurrence}")
                 if min_cka is not None:
-                    lines.append(f"  - min_cka={min_cka:.6f}")
+                    if min_cka_layer is None:
+                        lines.append(f"  - min_cka={min_cka:.6f}")
+                    else:
+                        lines.append(
+                            f"  - min_cka={min_cka:.6f} (layer={int(min_cka_layer)})",
+                        )
                 if sat is not None:
                     lines.append(f"  - adapter_saturation_median_ratio={sat:.4f}")
+                if delta_correct is not None:
+                    lines.append(f"  - online_eval_delta_correct={int(delta_correct):+d}")
+                if rep_delta is not None:
+                    lines.append(f"  - max_4gram_repeat_delta={float(rep_delta):+.6f}")
             lines.append("")
 
     return "\n".join(lines) + "\n"
@@ -379,17 +442,30 @@ def main() -> None:
 
     # Write verdict
     all_pass = all(r.get("all_passed", False) for r in all_results.values())
+    all_structural_pass = all(
+        int(r.get("structural_fail_count", 0)) == 0 for r in all_results.values()
+    )
+    all_inference_pass = all(
+        int(r.get("inference_fail_count", 0)) == 0 for r in all_results.values()
+    )
     verdict = {
         "timestamp": timestamp,
         "git_hash": git_hash,
         "trials_per_model": args.trials,
         "scales": scales,
         "all_pass": all_pass,
+        "all_structural_pass": all_structural_pass,
+        "all_inference_pass": all_inference_pass,
         "per_scale": {
             scale: {
                 "all_passed": r.get("all_passed", False),
                 "pass_count": r.get("pass_count", 0),
                 "fail_count": r.get("fail_count", 0),
+                "structural_pass_count": r.get("structural_pass_count", 0),
+                "structural_fail_count": r.get("structural_fail_count", 0),
+                "inference_pass_count": r.get("inference_pass_count", 0),
+                "inference_fail_count": r.get("inference_fail_count", 0),
+                "phase5_inference_enabled": r.get("phase5_inference_enabled", False),
                 "error": r.get("error"),
             }
             for scale, r in all_results.items()
