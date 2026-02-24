@@ -27,6 +27,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.backends.mlx_training_adapter_core import *  # noqa: F403
+from modelcypher.core.domain.training.geometric_early_stopping import (  # noqa: F401
+    check_val_loss_converged,
+)
+from modelcypher.core.domain.training.spectral_budget import (  # noqa: F401
+    compute_budget_ratios,
+)
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.training.geometric_optimizer import OptimizerGeometryConfig
