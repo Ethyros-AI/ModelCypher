@@ -73,16 +73,16 @@ class TransferConfig:
 
     # Target rank for output adapter (None = preserve source rank)
     target_rank: int | None = None
-    
+
     # Maximum layers to process (None = all layers)
     max_layers: int | None = None
-    
+
     # Cache SVD computations to disk
     cache_svd: bool = True
-    
+
     # Preserve adapter metadata (alpha, dropout, etc.)
     preserve_metadata: bool = True
-    
+
     # Layer name mapping (source pattern -> target pattern)
     layer_mapping: dict[str, str] = field(default_factory=dict)
 
@@ -116,7 +116,7 @@ class LoRATransferService:
             target_base_model_id="mistralai/Mistral-7B-v0.3",
             output_path=Path("./my-mistral-adapter"),
         )
-        
+
         if result.success:
             print(f"Transferred {result.layers_transferred} layers")
         else:
@@ -177,7 +177,7 @@ class LoRATransferService:
             LoRATransferResult with transfer metrics and warnings
         """
         config = config or TransferConfig()
-        
+
         def _report(phase: str, current: int, total: int, msg: str) -> None:
             if progress_callback:
                 progress_callback(TransferProgress(phase, current, total, msg))
@@ -186,7 +186,7 @@ class LoRATransferService:
         # Phase 1: Load source adapter
         _report("loading", 0, 4, "Loading source adapter weights...")
         adapter_weights_raw, adapter_config = self._load_adapter(source_adapter_path)
-        
+
         # Convert A/B matrices to deltas
         adapter_weights = self._convert_to_deltas(adapter_weights_raw)
         logger.info("Loaded %d layer deltas from adapter", len(adapter_weights))
@@ -338,14 +338,14 @@ class LoRATransferService:
         for key in layer_keys:
             # Map adapter key to base model weight key
             weight_key = self._adapter_key_to_weight_key(key)
-            
+
             if weight_key not in weights:
                 logger.warning("Weight key %s not found in model", weight_key)
                 continue
 
             weight = weights[weight_key]
             weight_arr = self._backend.array(weight)
-            
+
             try:
                 svd = self._projector.compute_layer_svd(weight_arr)
                 svd_components[key] = svd
@@ -431,7 +431,7 @@ class LoRATransferService:
             "task_type": source_config.get("task_type", "CAUSAL_LM"),
             "transferred_from": source_config.get("base_model_name_or_path", "unknown"),
         }
-        
+
         config_path = output_path / "adapter_config.json"
         with open(config_path, "w") as f:
             json.dump(config, f, indent=2)
@@ -466,7 +466,7 @@ async def transfer_lora_adapter(
     """
     service = LoRATransferService(model_loader=model_loader)
     config = TransferConfig(target_rank=rank)
-    
+
     return await service.transfer_adapter(
         source_adapter_path=Path(source_adapter),
         source_base_model_id=source_base,

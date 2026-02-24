@@ -41,7 +41,6 @@ from modelcypher.core.domain.geometry.intrinsic_dimension import (
     TwoNNEstimate,
 )
 
-
 # =============================================================================
 # Dataclass Tests
 # =============================================================================
@@ -89,7 +88,7 @@ class TestLocalDimensionMap:
         """LocalDimensionMap stores all fields."""
         backend = get_default_backend()
         dims = backend.array([2.0, 2.1, 1.9, 2.0])
-        
+
         ldm = LocalDimensionMap(
             dimensions=dims,
             modal_dimension=2.0,
@@ -112,7 +111,7 @@ class TestComputeTwoNN:
 
     def test_compute_two_nn_2d_points(self):
         """compute_two_nn estimates for 2D point cloud."""
-        backend = get_default_backend()
+        get_default_backend()
         # Generate 2D points with random noise for proper variance
         n = 100
         points = []
@@ -120,9 +119,9 @@ class TestComputeTwoNN:
             x = (i % 10) / 10.0 + (hash(str(i)) % 1000) / 50000.0
             y = (i // 10) / 10.0 + (hash(str(i + 1000)) % 1000) / 50000.0
             points.append([x, y])
-        
+
         result = IntrinsicDimension.compute_two_nn(points)
-        
+
         assert isinstance(result, TwoNNEstimate)
         assert result.sample_count == n
         assert result.intrinsic_dimension > 0
@@ -138,9 +137,9 @@ class TestComputeTwoNN:
             y = (hash(str(i + 500)) % 1000) / 1000.0
             points_list.append([x, y])
         points = backend.array(points_list)
-        
+
         result = IntrinsicDimension.compute_two_nn(points, backend=backend)
-        
+
         assert isinstance(result, TwoNNEstimate)
         assert result.intrinsic_dimension > 0
 
@@ -157,9 +156,9 @@ class TestComputeTwoNN:
             x = (hash(str(i)) % 1000) / 1000.0
             y = (hash(str(i + 500)) % 1000) / 1000.0
             points.append([x, y])
-        
+
         result = IntrinsicDimension.compute_two_nn(points, with_ci=True)
-        
+
         assert isinstance(result, TwoNNEstimate)
         # CI computation is optional based on sample size
         assert result.intrinsic_dimension > 0
@@ -178,10 +177,10 @@ class TestCompute:
         backend = get_default_backend()
         n = 30
         points = backend.array([[i / n, (i * 3 % n) / n, (i * 7 % n) / n] for i in range(n)])
-        
+
         estimator = IntrinsicDimension(backend)
         result = estimator.compute(points)
-        
+
         assert isinstance(result, TwoNNEstimate)
         assert result.sample_count == n
         assert result.usable_count > 0
@@ -190,7 +189,7 @@ class TestCompute:
         """compute raises for fewer than 3 samples."""
         backend = get_default_backend()
         points = backend.array([[0.0, 0.0], [1.0, 1.0]])
-        
+
         estimator = IntrinsicDimension(backend)
         with pytest.raises(EstimatorError):
             estimator.compute(points)
@@ -201,7 +200,7 @@ class TestCompute:
 # =============================================================================
 
 
-class TestLocalDimensionMap:
+class TestLocalDimensionMapMethod:
     """Tests for local_dimension_map method."""
 
     def test_local_dimension_map_returns_correct_type(self):
@@ -209,10 +208,10 @@ class TestLocalDimensionMap:
         backend = get_default_backend()
         n = 30
         points = backend.array([[i / n, (i * 3 % n) / n] for i in range(n)])
-        
+
         estimator = IntrinsicDimension(backend)
         result = estimator.local_dimension_map(points)
-        
+
         assert isinstance(result, LocalDimensionMap)
         assert result.k_neighbors > 0
 
@@ -221,10 +220,10 @@ class TestLocalDimensionMap:
         backend = get_default_backend()
         n = 20
         points = backend.array([[i / n, (i * 3 % n) / n] for i in range(n)])
-        
+
         estimator = IntrinsicDimension(backend)
         result = estimator.local_dimension_map(points)
-        
+
         assert result.dimensions.shape[0] == n
 
 
@@ -241,9 +240,9 @@ class TestDetectDimensionDeficiency:
         backend = get_default_backend()
         n = 30
         points = backend.array([[i / n, (i * 3 % n) / n] for i in range(n)])
-        
+
         result = IntrinsicDimension.detect_dimension_deficiency(points, backend)
-        
+
         assert isinstance(result, list)
 
     def test_detect_dimension_deficiency_returns_indices(self):
@@ -256,9 +255,9 @@ class TestDetectDimensionDeficiency:
             y = (hash(str(i + 500)) % 1000) / 1000.0
             points.append([x, y])
         points_arr = backend.array(points)
-        
+
         result = IntrinsicDimension.detect_dimension_deficiency(points_arr, backend)
-        
+
         assert isinstance(result, list)
         # All indices should be valid
         for idx in result:

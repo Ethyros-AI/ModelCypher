@@ -42,13 +42,13 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    _promote_precision_float32 as _promote_precision,
+)
+from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     precision_dtype,
 )
 from modelcypher.core.domain.geometry.optimal_transport import SinkhornSolver
-from modelcypher.core.domain.geometry.numerical_stability import (
-    _promote_precision_float32 as _promote_precision,
-)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend

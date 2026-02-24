@@ -32,7 +32,6 @@ from modelcypher.core.domain.geometry.manifold_profile import (
     RegionThresholds,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

@@ -27,33 +27,33 @@ import pytest
 
 class TestGramAlignerConvergence:
     """Tests for GramAligner optimization convergence."""
-    
+
     def test_identical_achieves_cka_1(self) -> None:
         """Identical activations should achieve CKA = 1.0 exactly."""
         from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-        
+
         backend = get_default_backend()
         backend.random_seed(42)
-        
+
         n_samples, dim = 20, 32
         activations = backend.random_normal((n_samples, dim))
         backend.eval(activations)
-        
+
         aligner = GramAligner(backend=backend)
         result = aligner.find_perfect_alignment(activations, activations)
-        
+
         # Identity check returns perfect result (fast path)
         assert result.is_perfect, f"Identical inputs should be perfect, got CKA={result.achieved_cka}"
-    
+
     def test_scaled_activations_achieve_cka_1(self) -> None:
         """Scaled activations should achieve CKA = 1.0 (CKA is scale-invariant)."""
         from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-        
+
         backend = get_default_backend()
         backend.random_seed(42)
-        
+
         n_samples, dim = 20, 32
         source = backend.random_normal((n_samples, dim))
         target = backend.multiply(source, 2.5)  # Scaled version
@@ -100,23 +100,23 @@ class TestGramAlignerConvergence:
         expected = compute_linear_cka_from_activations(aligned, target, backend)
         eps = division_epsilon(backend, aligned)
         assert abs(result.achieved_cka - expected) <= eps
-    
+
     def test_no_early_exit_below_threshold(self) -> None:
         """GramAligner should produce valid alignment for independent data."""
         from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-        
+
         backend = get_default_backend()
         backend.random_seed(42)
-        
+
         n_samples, dim = 20, 32
         source = backend.random_normal((n_samples, dim))
         target = backend.random_normal((n_samples, dim))
         backend.eval(source, target)
-        
+
         aligner = GramAligner(backend=backend)
         result = aligner.find_perfect_alignment(source, target)
-        
+
         # For random independent data, CKA won't reach 1.0, but:
         # - Should NOT have exited early at a terrible value like 0.13
         # - Should have run to max_steps and returned best found
@@ -126,23 +126,23 @@ class TestGramAlignerConvergence:
         # The transform should exist
         assert result.feature_transform is not None
         assert len(result.feature_transform) == dim
-    
+
     def test_optimizer_runs_to_completion(self) -> None:
         """Optimizer should run and produce valid transform, even for hard cases."""
         from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-        
+
         backend = get_default_backend()
         backend.random_seed(42)
-        
+
         n_samples, dim = 25, 16
         source = backend.random_normal((n_samples, dim))
         target = backend.random_normal((n_samples, dim))  # Independent data
         backend.eval(source, target)
-        
+
         aligner = GramAligner(backend=backend)
         result = aligner.find_perfect_alignment(source, target)
-        
+
         # For independent random data, CKA won't be 1.0,
         # but optimizer should complete and return valid result
         assert result is not None

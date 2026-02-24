@@ -35,7 +35,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
@@ -45,16 +45,15 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     power_iteration_eigh,
     precision_dtype,
-    regularization_epsilon,
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_distance_matrix,
     geodesic_norms,
-    geodesic_pairwise_metrics,
 )
 
 if TYPE_CHECKING:
+    from modelcypher.core.domain.geometry.geometry_domain import GeometryDomain
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)

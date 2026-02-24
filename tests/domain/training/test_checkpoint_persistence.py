@@ -52,7 +52,7 @@ class TestAtomicWrite:
         dest = tmp_path / "test.bin"
 
         # Make rename fail by patching Path.rename
-        original_rename = type(dest).rename
+        type(dest).rename
 
         def failing_rename(self, target):
             raise OSError("forced rename failure")

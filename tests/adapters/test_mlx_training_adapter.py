@@ -9,8 +9,8 @@
 
 from __future__ import annotations
 
-import pytest
 import mlx.nn as nn
+import pytest
 
 from modelcypher.backends.mlx_training_adapter import MLXTrainingAdapter
 from modelcypher.core.domain.training.geometric_lora import (

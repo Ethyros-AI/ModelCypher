@@ -32,7 +32,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from modelcypher.core.domain.safety.adapter_safety_models import (
-    AdapterSafetyStatus,
     AdapterSafetyTier,
     AdapterSafetyTrigger,
 )

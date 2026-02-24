@@ -26,6 +26,8 @@ from typing import TYPE_CHECKING, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    _mask_sum,
+    _promote_precision,
     division_epsilon,
     e_value,
     exp_scalar,
@@ -41,7 +43,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     sqrt_scalar,
     tiny_value,
 )
-from modelcypher.core.domain.geometry.numerical_stability import _mask_sum, _promote_precision
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
 if TYPE_CHECKING:
@@ -986,7 +987,7 @@ class RiemannianDensityEstimator:
         """Compute max geodesic radius from centroid."""
         backend = get_default_backend()
         shape = activations.shape
-        n = int(shape[0])
+        int(shape[0])
         rg = RiemannianGeometry(backend)
 
         if geo_from_centroid is None:

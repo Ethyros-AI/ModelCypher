@@ -10,6 +10,7 @@ Notes:
 
 Training-related commands available now:
 - `mc train run`
+- `mc train run-research`
 - `mc train star`
 - `mc train status`
 - `mc train merge`
@@ -51,32 +52,47 @@ Examples:
 
 ## `mc train run`
 
-Primary command for NB-LoRA training from text data.
+Strict training command. All hyperparameters are derived from geometry.
 
 ```bash
 poetry run mc train run \
   -m /path/to/model \
   -d /path/to/data.jsonl \
   -o /path/to/adapter \
-  --eval-data /path/to/eval.jsonl \
-  --adaptive-lr \
-  --auto-regime
+  --eval-data /path/to/eval.jsonl
 ```
 
-Useful options:
+Options:
 - `--model`, `-m` (required)
 - `--data`, `-d` (required)
 - `--output`, `-o`
 - `--eval-data`
-- `--max-iters`
-- `--seq-length`
+
+## `mc train run-research`
+
+Research command with instrumentation controls.
+
+```bash
+poetry run mc train run-research \
+  -m /path/to/model \
+  -d /path/to/data.jsonl \
+  --seed 42 \
+  --lr 1e-4 \
+  --topo-monitor
+```
+
+Options:
+- `--model`, `-m` (required)
+- `--data`, `-d` (required)
+- `--output`, `-o`
+- `--eval-data`
+- `--seed`
 - `--lr` (explicit override)
-- `--deep`
-- `--adaptive-lr/--no-adaptive-lr`
-- `--lr-monotonic/--no-lr-monotonic`
+- `--seq-length`
 - `--topo-monitor/--no-topo-monitor`
 - `--dim-monitor/--no-dim-monitor`
 - `--auto-regime/--no-auto-regime`
+- `--no-save`
 
 ## `mc train star`
 

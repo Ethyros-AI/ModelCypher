@@ -8,8 +8,8 @@ This module provides tools for:
 """
 
 from modelcypher.core.use_cases.curriculum.benchmark_loader import (
-    BenchmarkLoader,
     Benchmark,
+    BenchmarkLoader,
     BenchmarkSample,
     BenchmarkTier,
     save_for_training,

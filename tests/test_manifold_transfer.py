@@ -34,7 +34,6 @@ from modelcypher.core.domain.geometry.manifold_transfer import (
     TransferConfidenceComponents,
 )
 
-
 # =============================================================================
 # TransferConfidenceComponents Tests
 # =============================================================================
@@ -121,7 +120,7 @@ class TestCrossManifoldProjector:
         """compute_distance_profile returns AnchorDistanceProfile."""
         backend = get_default_backend()
         projector = CrossManifoldProjector()
-        
+
         # Need at least 3 anchors for triangulation
         concept = backend.array([[1.0, 0.0], [0.5, 0.5], [0.0, 1.0]])
         anchors = {
@@ -129,12 +128,12 @@ class TestCrossManifoldProjector:
             "anchor_b": backend.array([[1.0, 1.0], [0.9, 0.9]]),
             "anchor_c": backend.array([[0.5, 0.0], [0.5, 0.1]]),
         }
-        
+
         profile = projector.compute_distance_profile(
             concept_activations=concept,
             concept_id="test",
             anchor_activations=anchors,
         )
-        
+
         assert isinstance(profile, AnchorDistanceProfile)
         assert profile.concept_id == "test"

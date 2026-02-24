@@ -70,7 +70,7 @@ class TestSystemProbeValidation:
 
 class TestSystemStatusExecution:
     """Test system status command execution.
-    
+
     Note: These tests may be slow as they initialize the backend.
     Mark with @pytest.mark.slow if needed.
     """

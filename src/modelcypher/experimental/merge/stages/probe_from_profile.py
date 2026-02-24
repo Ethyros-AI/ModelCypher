@@ -44,9 +44,9 @@ from typing import TYPE_CHECKING, Any
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.profile import (
     GeometricProfile,
-    ProfileActivations,
     load_activations,
 )
+
 from .probe_alignment import (
     align_layers,
 )
@@ -182,8 +182,8 @@ def compute_alignment_from_profiles(
 
     if target_acts.intermediate:
         from modelcypher.core.domain.geometry.variance_concentration import (
-            compute_variance_concentration,
             VarianceConcentrationResult,
+            compute_variance_concentration,
         )
 
         logger.info("PROFILE ALIGNMENT: Computing variance concentration to identify bottleneck...")
@@ -306,7 +306,7 @@ def compute_alignment_from_profiles(
         mean_cka = sum(alignment_result.layer_cka_scores.values()) / len(
             alignment_result.layer_cka_scores
         )
-        
+
     eps = float(machine_epsilon(backend, backend.array([1.0])))
 
     probe_metrics = {
@@ -392,7 +392,6 @@ def check_profiles_available(
         If both_available is False, the profile dirs will be None.
     """
     from modelcypher.core.domain.profile import (
-        PROFILE_DIR_NAME,
         PROFILE_METADATA_FILE,
         GeometricProfileStore,
     )

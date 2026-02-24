@@ -19,12 +19,15 @@
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock, Mock
+
+import pytest
+
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
 from modelcypher.core.domain.geometry.shared_subspace_projector import SharedSubspaceProjector
-from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
+
 
 class TestSharedSubspaceProjector:
     """Tests for CCA alignment discovery."""
@@ -37,13 +40,13 @@ class TestSharedSubspaceProjector:
         crm = MagicMock(spec=ConceptResponseMatrix)
         crm.anchor_metadata = Mock()
         crm.anchor_metadata.anchor_ids = list(data.keys())
-        
+
         layer_acts = {}
         for anchor_id, vec in data.items():
             act = Mock()
             act.activation = vec
             layer_acts[anchor_id] = act
-            
+
         crm.activations = {layer: layer_acts}
         return crm
 
@@ -60,12 +63,12 @@ class TestSharedSubspaceProjector:
             "a4": [0.0, 0.0], # Need enough points for covariance
             "a5": [0.5, 0.5],
         }
-        
+
         crm1 = self._create_mock_crm(1, data, 2)
         crm2 = self._create_mock_crm(1, data, 2) # Identical
-        
+
         result = SharedSubspaceProjector.discover(crm1, crm2, layer=1)
-        
+
         assert result is not None
         assert result.shared_dimension > 0
         # For identical data, top correlation should be close to 1.0.
@@ -92,10 +95,10 @@ class TestSharedSubspaceProjector:
             "a3": [0.0, 0.0],
             "a4": [0.1, 0.1],
         }
-        
+
         crm1 = self._create_mock_crm(1, data1, 2)
         crm2 = self._create_mock_crm(1, data2, 2)
-        
+
         result = SharedSubspaceProjector.discover(crm1, crm2, layer=1)
         # Should run without error
         if result is not None:
@@ -107,6 +110,6 @@ class TestSharedSubspaceProjector:
         data = {"a1": [1.0, 0.0]} # Only 1 sample
         crm1 = self._create_mock_crm(1, data, 2)
         crm2 = self._create_mock_crm(1, data, 2)
-        
+
         result = SharedSubspaceProjector.discover(crm1, crm2, layer=1)
         assert result is None

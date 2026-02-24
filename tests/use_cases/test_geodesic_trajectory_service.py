@@ -250,7 +250,7 @@ def test_measure_batch_aggregates_categories(any_backend):
     """measure_batch() aggregates results per category."""
     b = any_backend
     positions_a = _make_straight_trajectory(b, n_tokens=5, dim=4)
-    positions_b = _make_curved_trajectory(b, n_tokens=8, dim=4)
+    _make_curved_trajectory(b, n_tokens=8, dim=4)
 
     # Build two services with different trajectories is awkward, so build one
     # and use straight trajectory (both prompts get same positions)

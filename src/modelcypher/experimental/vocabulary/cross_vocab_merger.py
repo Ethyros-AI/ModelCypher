@@ -24,6 +24,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+
 from .alignment_map import (
     AlignmentQuality,
     TokenAlignment,

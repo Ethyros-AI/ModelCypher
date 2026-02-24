@@ -30,12 +30,12 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Callable
 
+from modelcypher.backends._mlx_backend_activation_mixin import _MLXBackendActivationMixin
 from modelcypher.backends.conversion_utils import (
     raise_numpy_disabled,
     to_list_with_eval,
     to_scalar_with_eval,
 )
-from modelcypher.backends._mlx_backend_activation_mixin import _MLXBackendActivationMixin
 from modelcypher.ports.backend import Array, Backend, FloatInfo
 
 if TYPE_CHECKING:
@@ -699,19 +699,12 @@ class MLXBackend(_MLXBackendActivationMixin, Backend):
         """Alias for det() for compatibility."""
         return self.det(array)
 
-    def inv(self, array: Array) -> Array:
-        """Compute the inverse of a square matrix.
-
-        Uses backend native implementation (GPU acceleration where available).
-        """
-        return self.mx.linalg.inv(array)
-
     def matrix_sqrt_newton_schulz(self, A: Array, num_iters: int = 15) -> Array:
         """Compute matrix square root AND inverse square root via Newton-Schulz.
-        
+
         Converges to (A^{1/2}, A^{-1/2}) for positive semi-definite A.
         Runs entirely on GPU.
-        
+
         Algorithm:
             Y₀ = A / norm(A)
             Z₀ = I
@@ -719,13 +712,13 @@ class MLXBackend(_MLXBackendActivationMixin, Backend):
                 T = (3I - ZₖYₖ)
                 Yₖ₊₁ = ½ Yₖ T
                 Zₖ₊₁ = ½ T Zₖ
-            
+
             A^{1/2}   ≈ Y_final * sqrt(norm(A))
             A^{-1/2}  ≈ Z_final / sqrt(norm(A))
         """
         # Ensure float32 for stability
         A_f32 = self.astype(A, "float32")
-        
+
         # Scaling to ensure convergence (spectral norm <= 1).
         # Floor: sqrt(m*n) * tiny(float32) — the Frobenius norm of a matrix
         # whose every entry is at the smallest normal float32 (Higham 2008,
@@ -737,32 +730,32 @@ class MLXBackend(_MLXBackendActivationMixin, Backend):
         padding = self.mx.array(_math.sqrt(_m * _n) * _tiny_f32, dtype=self.mx.float32)
         normA_val = self.mx.sqrt(self.mx.sum(A_f32 * A_f32)) + padding
         Y = A_f32 / normA_val
-        
+
         shape = A.shape
-        I = self.eye(shape[0], dtype="float32")
-        Z = I
-        
+        identity = self.eye(shape[0], dtype="float32")
+        Z = identity
+
         three = self.mx.array(3.0, dtype=self.mx.float32)
         half = self.mx.array(0.5, dtype=self.mx.float32)
-        
+
         # Iteration
         for _ in range(num_iters):
             ZY = self.mx.matmul(Z, Y)
-            T = three * I - ZY
-            
+            T = three * identity - ZY
+
             Y_new = half * self.mx.matmul(Y, T)
             Z_new = half * self.mx.matmul(T, Z)
-            
+
             Y = Y_new
             Z = Z_new
-            
+
         # Rescale
         sqrtA = Y * self.mx.sqrt(normA_val)
-        
+
         # Cast back if necessary
         if A.dtype != self.mx.float32:
             sqrtA = self.astype(sqrtA, A.dtype)
-            
+
         self.mx.eval(sqrtA)
         return sqrtA
 
@@ -953,7 +946,6 @@ class MLXBackend(_MLXBackendActivationMixin, Backend):
         """
         # Flatten array to work with 1D indices
         flat = self.mx.reshape(array, (-1,))
-        n_total = flat.size
 
         # Create mask for non-zero elements
         mask = flat != 0

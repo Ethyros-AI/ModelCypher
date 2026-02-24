@@ -32,7 +32,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     regularization_epsilon,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.riemannian_utils import safe_arithmetic_mean
 from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_norms,
     geodesic_pairwise_metrics,

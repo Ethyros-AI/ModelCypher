@@ -66,9 +66,9 @@ def __getattr__(name: str):
         return locals()[name]
     if name in ("GeometricSelfAlignment", "AlignmentResult", "AlignmentRoundResult"):
         from .geometric_self_alignment import (
-            GeometricSelfAlignment,
             AlignmentResult,
             AlignmentRoundResult,
+            GeometricSelfAlignment,
         )
         return locals()[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

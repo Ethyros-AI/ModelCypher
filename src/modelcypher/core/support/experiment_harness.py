@@ -35,14 +35,10 @@ Pure Python — zero framework dependencies beyond stdlib.
 from __future__ import annotations
 
 import json
-import os
-import time
-from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Generator
-
+from typing import Any
 
 # Decision statuses per experiment matrix §6
 PROMOTE = "PROMOTE"

@@ -30,7 +30,6 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.intrinsic_dimension import (
     IntrinsicDimension,
-    TwoNNEstimate,
 )
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.experimental.lora_geometry.statistics import compute_kendall_tau

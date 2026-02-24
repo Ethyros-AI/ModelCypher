@@ -179,7 +179,7 @@ class ConfidenceEmbedding:
         if hidden_state.ndim == 3:
             # [batch, seq, hidden] - add to last position
             # Create zeros for all but last position
-            batch_size = int(hidden_state.shape[0])
+            int(hidden_state.shape[0])
             seq_len = int(hidden_state.shape[1])
 
             # Add embedding only to last token position

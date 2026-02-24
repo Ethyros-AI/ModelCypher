@@ -24,15 +24,15 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.knowledge_density import (
+    ConceptDensity,
+    KnowledgeDensityAnalyzer,
+    LayerDensityProfile,
+    ModelDensityProfile,
+)
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     regularization_epsilon,
-)
-from modelcypher.core.domain.geometry.knowledge_density import (
-    ConceptDensity,
-    LayerDensityProfile,
-    ModelDensityProfile,
-    KnowledgeDensityAnalyzer,
 )
 
 

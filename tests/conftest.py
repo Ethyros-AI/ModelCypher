@@ -26,9 +26,9 @@ import platform
 import pytest
 from hypothesis import settings
 
-from modelcypher.ports.backend import Backend
-from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_inventories
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_inventories
+from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
 # =============================================================================
@@ -200,13 +200,13 @@ def _initialize_default_backend():
 @pytest.fixture(autouse=True)
 def _clear_cli_composition_cache():
     """Clear CLI composition cache before each test.
-    
+
     The CLI composition module uses @lru_cache on _get_registry() and _get_factory().
     This causes test isolation issues: the first test to use CLI commands caches
     the PortRegistry with whatever MODELCYPHER_HOME was set at that time.
     Later tests that set a different MODELCYPHER_HOME env will still use the
     cached registry, causing "Job not found" errors.
-    
+
     This fixture clears the cache before each test to ensure test isolation.
     """
     yield  # Run the test first
@@ -500,7 +500,7 @@ def smol_model_path():
     Downloads the model on first use and caches it in tests/fixtures/.models/
     This fixture is session-scoped so the model is only downloaded once.
     """
-    from tests.fixtures.models import ensure_model, SMOL_LM_135M
+    from tests.fixtures.models import SMOL_LM_135M, ensure_model
 
     return ensure_model(SMOL_LM_135M)
 

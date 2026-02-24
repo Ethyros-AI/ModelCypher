@@ -52,7 +52,7 @@ class ModelProbeResult:
 
 
 @dataclass(frozen=True)
-class ProbeMergeValidationResult:
+class MergeValidationResult:
     """Merge effort validation between two models."""
     low_effort: bool
     warnings: list[str]

@@ -28,18 +28,20 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from modelcypher.ports.backend import Backend
+from modelcypher.core.domain.geometry.manifold_clusterer import (
+    ClusteringResult,
+    ManifoldClusterer,
+)
 from modelcypher.core.domain.geometry.manifold_dimensionality import (
     IDEstimateSummary,
     get_manifold_dimensionality,
 )
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
-from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 from modelcypher.core.domain.geometry.manifold_profile import (
     ManifoldPoint,
     ManifoldRegion,
     RegionQueryResult,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.persona_vector_monitor import (
     STANDARD_TRAITS,
     PersonaBaseline,
@@ -49,6 +51,8 @@ from modelcypher.core.domain.geometry.persona_vector_monitor import (
     PersonaVectorMonitor,
     TrainingDriftMetrics,
 )
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
+from modelcypher.ports.backend import Backend
 
 
 @dataclass(frozen=True)

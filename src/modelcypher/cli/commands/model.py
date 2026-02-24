@@ -43,7 +43,6 @@ from modelcypher.cli.output import write_error, write_output
 from modelcypher.cli.presenters import model_payload
 from modelcypher.utils.errors import ErrorDetail
 
-
 app = typer.Typer(no_args_is_help=True)
 
 
@@ -352,6 +351,16 @@ def model_info(
     service = get_model_probe_service()
     try:
         result = service.probe(model_path)
+    except FileNotFoundError as exc:
+        error = ErrorDetail(
+            code="MC-1001",
+            title="Model probe failed",
+            detail=str(exc),
+            hint="Ensure the path points to a valid model directory with config.json",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
     except ValueError as exc:
         error = ErrorDetail(
             code="MC-1001",
@@ -533,7 +542,7 @@ def model_search(
 
     context = _context(ctx)
 
-    filters = ModelSearchFilters(
+    ModelSearchFilters(
         query=query,
         limit=limit,
         architecture=architecture,

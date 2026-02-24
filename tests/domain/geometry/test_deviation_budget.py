@@ -25,8 +25,8 @@ thresholds.
 import pytest
 
 from modelcypher.core.domain.geometry.deviation_budget import (
-    DeviationTracker,
     DeviationMeasurement,
+    DeviationTracker,
 )
 
 
@@ -239,6 +239,7 @@ class TestDeriveDeltaScale:
     def test_zero_capacity_gives_eps(self):
         """Test that zero null-space capacity gives scale = sqrt(eps_f32)."""
         import math
+
         from modelcypher.core.domain.geometry.deviation_budget import derive_delta_scale
 
         scale = derive_delta_scale(null_rank=0, in_dim=100)

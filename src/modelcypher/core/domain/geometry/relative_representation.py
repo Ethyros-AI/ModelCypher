@@ -33,6 +33,8 @@ from typing import TYPE_CHECKING, Sequence
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
+from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol
+from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     geodesic_svd,
@@ -42,8 +44,6 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_norms,
     geodesic_pairwise_metrics,
 )
-from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol
-from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
 
 _cache = ComputationCache.shared()
 

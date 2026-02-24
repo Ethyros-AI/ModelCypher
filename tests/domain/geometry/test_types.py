@@ -18,7 +18,6 @@ import pytest
 
 import modelcypher.core.domain.geometry.types as mod
 
-
 # =============================================================================
 # PermutationAlignmentResult (mutable dataclass)
 # =============================================================================

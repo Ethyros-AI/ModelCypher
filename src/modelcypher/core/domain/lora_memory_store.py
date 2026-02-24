@@ -79,9 +79,9 @@ from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cayley_lora import (
-    cayley_transform_full,
     NBLoRAConfig,
     NBLoRALayer,
+    cayley_transform_full,
     create_nb_lora_from_base_weight,
 )
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
@@ -92,7 +92,6 @@ from modelcypher.core.domain.training.geometric_optimizer import (
 from modelcypher.core.domain.training.gradient_smoothness_estimator import (
     GradientSmoothnessEstimator,
 )
-from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 from modelcypher.core.domain.training.scaled_gd import precondition_lora_gradients
 from modelcypher.core.domain.training.spectral_budget import compute_budget_ratios
 from modelcypher.ports.training import LoRALayerConfig
@@ -1047,7 +1046,7 @@ class LoRAMemoryStore:
     def _load_events(self, path: Path) -> None:
         """Load accumulated events from safetensors."""
         try:
-            tensors = self._backend.load_safetensors(str(path))
+            self._backend.load_safetensors(str(path))
 
             # Parse tensors back into buffer
             # Format: {layer_id}_{weight_name}_hidden_{idx}, {layer_id}_{weight_name}_delta_{idx}

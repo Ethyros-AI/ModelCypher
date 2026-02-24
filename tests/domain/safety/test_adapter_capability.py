@@ -22,7 +22,6 @@ from modelcypher.core.domain.safety.adapter_capability import (
     ResourceCapability,
 )
 
-
 # ---------------------------------------------------------------------------
 # Imports
 # ---------------------------------------------------------------------------

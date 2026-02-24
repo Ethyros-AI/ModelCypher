@@ -269,9 +269,6 @@ class TopologicalFingerprint:
         Uses geodesic distances to capture true topological structure
         of the curved manifold.
         """
-        from modelcypher.core.domain.geometry.riemannian_utils import (
-            geodesic_distance_matrix,
-        )
 
         n = len(points)
         if n == 0:
@@ -801,9 +798,6 @@ class BackendTopologicalFingerprint:
 
     def _compute_pairwise_distances(self, points: list[list[float]]) -> "Array":
         """Compute pairwise geodesic distances using Backend."""
-        from modelcypher.core.domain.geometry.riemannian_utils import (
-            geodesic_distance_matrix,
-        )
 
         n = len(points)
         if n == 0:

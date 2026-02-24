@@ -51,7 +51,6 @@ from modelcypher.core.domain.geometry.knowledge_density import (
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     find_magnitude_gap_threshold,
-    sqrt_scalar,
     ulp_scalar,
 )
 from modelcypher.core.domain.geometry.relative_representation import (
@@ -285,7 +284,7 @@ def compute_anchor_grafting_with_ghost_anchors(
 
     n_samples = int(b.shape(source_activations)[0])
     n_anchors = int(b.shape(source_anchors)[0])
-    d_target = int(b.shape(target_activations)[1])
+    int(b.shape(target_activations)[1])
 
     # Generate anchor names if not provided
     if anchor_names is None:

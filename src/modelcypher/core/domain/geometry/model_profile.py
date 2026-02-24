@@ -42,8 +42,8 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.domain.cache import content_hash
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.cache import content_hash
 from modelcypher.core.domain.geometry.numerical_stability import is_inf, is_nan
 from modelcypher.utils.paths import ensure_dir, get_modelcypher_home
 

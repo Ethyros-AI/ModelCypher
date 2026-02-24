@@ -171,11 +171,11 @@ class CrossCulturalGeometry:
         """
         if len(gram_a) != n * n or len(gram_b) != n * n or n <= 1:
             return 0.0
-        
+
         backend = get_default_backend()
         arr_a = backend.reshape(backend.array(gram_a), (n, n))
         arr_b = backend.reshape(backend.array(gram_b), (n, n))
-        
+
         return compute_cka_from_grams(arr_a, arr_b, backend)
 
     @staticmethod

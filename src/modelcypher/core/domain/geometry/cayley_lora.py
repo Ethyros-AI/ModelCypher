@@ -219,7 +219,7 @@ def cayley_transform_full(
 
     r = A_tilde.shape[0]
     n_in = A_tilde.shape[1]
-    n_out = B_tilde.shape[1]
+    B_tilde.shape[1]
 
     # Stack [A_tilde^T; B_tilde^T] to form [(n_in + n_out), r]
     At = b.transpose(A_tilde)  # [n_in, r]
@@ -300,7 +300,7 @@ def nb_lora_forward(
         S_diag = S
     else:
         # S is already a matrix - extract diagonal
-        r = S.shape[0]
+        S.shape[0]
         # For now, assume S is diagonal and use it directly
         S_diag = b.diagonal(S) if hasattr(b, "diagonal") else S
 
@@ -620,7 +620,7 @@ class NBLoRALayer:
         # Compute per-direction ratios: |projected[i,i]| / σ_i(W)
         ratios = []
         violations = []
-        
+
         # Numerical significance threshold (LAPACK convention):
         # σ_i is precision-significant if σ_i > max(m,n) × ε × σ_max.
         # Reference: Golub & Van Loan, "Matrix Computations" (2013), §2.5.3.
@@ -628,11 +628,11 @@ class NBLoRALayer:
         eps = float(b.finfo(S_W.dtype).eps)
         max_dim = max(int(W.shape[0]), int(W.shape[1]))
         threshold = max_dim * eps * max_sigma
-        
+
         for i in range(r):
             proj_ii = float(b.to_scalar(b.abs(projected[i, i])))
             sigma_i = float(b.to_scalar(S_W[i]))
-            
+
             if sigma_i > threshold:
                 # Standard relative check for meaningful directions
                 ratio = proj_ii / sigma_i
@@ -641,7 +641,7 @@ class NBLoRALayer:
                     violations.append((i, ratio))
             else:
                 # Ignore noise directions completely.
-                # If W has no information in this direction (sigma ~ 0), 
+                # If W has no information in this direction (sigma ~ 0),
                 # then LoRA can do whatever it wants there without "violating" structure.
                 # In fact, that's where we WANT LoRA to act (orthogonal to existing features).
                 # So we simply don't track a ratio or violation for this index.

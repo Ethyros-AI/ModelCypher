@@ -29,10 +29,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
+from modelcypher.core.domain.geometry.effective_rank import EffectiveRank
 from modelcypher.core.domain.geometry.geometry_metrics_cache import (
     CachedEntanglementResult,
     CachedGWResult,
-    CachedIDResult,
     CachedSpectralResult,
     CachedTopoResult,
     GeometryMetricsCache,
@@ -40,15 +41,14 @@ from modelcypher.core.domain.geometry.geometry_metrics_cache import (
 from modelcypher.core.domain.geometry.gromov_wasserstein import (
     GromovWassersteinDistance,
 )
+from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
-from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
-from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
-from modelcypher.core.domain.geometry.effective_rank import EffectiveRank
 from modelcypher.core.domain.geometry.spectral_signature import SpectralSignature
 from modelcypher.core.domain.geometry.topological_fingerprint import (
     TopologicalFingerprint,
 )
+from modelcypher.ports.backend import Backend
 
 
 @dataclass(frozen=True)

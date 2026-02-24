@@ -116,7 +116,7 @@ def find_stable_minimum(
 
     counts = Counter(bootstrap_mins)
     modal_idx, modal_count = counts.most_common(1)[0]
-    frequency = modal_count / len(bootstrap_mins)
+    modal_count / len(bootstrap_mins)
 
     all_indices = sorted(set(bootstrap_mins))
     ci_range = (all_indices[0], all_indices[-1])
@@ -175,14 +175,14 @@ def find_stable_inflection(
     bootstrap_inflections: list[int] = []
 
     for _ in range(n_bootstrap):
-        resampled = [values[rng.randint(0, n - 1)] for _ in range(n)]
+        [values[rng.randint(0, n - 1)] for _ in range(n)]
         # Sort to preserve the trajectory structure (monotone segments)
         # No — don't sort. The inflection depends on the ordering.
         # Instead, resample the measurement noise: for each position,
         # draw from nearby positions.
         # Use block bootstrap: resample contiguous blocks to preserve local structure.
         block_size = max(1, n // 4)
-        block_start = rng.randint(0, n - 1)
+        rng.randint(0, n - 1)
         resampled_trajectory = []
         for i in range(n):
             # Draw from a window around position i

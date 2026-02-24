@@ -228,7 +228,6 @@ class GeodesicDeviationAnalyzer:
         # For each perturbation, compute deviation trajectory
         separations_list = []
         deviation_rates_list = []
-        local_curvatures_list = []
         local_deviation_list = []
 
         for p in range(n_perturbations):
@@ -711,8 +710,8 @@ class GeodesicDeviationAnalyzer:
 
         # Normalized product gives correlation-like measure
         # Range: approximately [-1, 1]
-        std_curv = var_curv**0.5
-        std_rate = var_rate**0.5
+        var_curv**0.5
+        var_rate**0.5
 
         # Correlation proxy
         corr = (mean_curv * mean_rate) / (abs(mean_curv) * abs(mean_rate) + eps)

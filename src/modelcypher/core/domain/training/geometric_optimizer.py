@@ -34,7 +34,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
     sqrt_scalar,
 )
 from modelcypher.core.domain.training.geometric_lora import (

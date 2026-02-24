@@ -48,13 +48,13 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     is_nan,
     machine_epsilon,
     pi_value,
-    precision_dtype,
     power_iteration_eigh,
+    precision_dtype,
     sqrt_scalar,
     ulp_scalar,
 )
-from modelcypher.core.domain.geometry.riemannian_utils import geodesic_distance_matrix
 from modelcypher.core.domain.geometry.riemannian_utils import (
+    geodesic_distance_matrix,
     geodesic_norms,
     geodesic_pairwise_metrics,
 )

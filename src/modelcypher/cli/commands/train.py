@@ -21,8 +21,8 @@ NB-LoRA: Cayley-parameterized, geometry-derived, bounds by construction.
 All hyperparameters derived from model geometry, not heuristics.
 
 Commands:
-    mc train --agent <id> --model <path>              # Event-buffer training
-    mc train run --model <path> --data <path.jsonl>   # Dataset-driven NB-LoRA training
+    mc train run --model <path> --data <path.jsonl>   # Strict dataset-driven NB-LoRA training
+    mc train run-research --model <path> --data <path.jsonl>   # Research controls
     mc train status --agent <id> --model <path>       # Check training status
     mc train merge --agent <id> --model <path>        # Merge LoRA to base
     mc train export --agent <id> --model <path>       # Export LoRA weights
@@ -78,94 +78,13 @@ def _write_training_derivation_error(
     raise typer.Exit(code=1)
 
 
-@train_app.callback(invoke_without_command=True)
-def train(
-    ctx: typer.Context,
-    agent: str = typer.Option(
-        None, "--agent", "-a", help="Agent ID for training state"
-    ),
-    model: str = typer.Option(
-        None, "--model", "-m", help="Path to model directory"
-    ),
-    max_steps: int = typer.Option(
-        None, "--max-steps", help="Maximum training steps (default: derived from buffer size)"
-    ),
-    batch_size: int = typer.Option(
-        None, "--batch-size", help="Batch size per step (default: full buffer)"
-    ),
-    learning_rate: float = typer.Option(
-        None, "--lr", help="Learning rate (default: derived from geometry)"
-    ),
-    convergence: float = typer.Option(
-        None, "--convergence", help="Loss threshold for early stopping (default: sqrt(eps))"
-    ),
-) -> None:
-    """Train LoRA adapters from accumulated events.
+@train_app.callback()
+def train() -> None:
+    """Training command group.
 
-    Runs training steps on (hidden_state, delta) pairs accumulated
-    during inference. Hyperparameters derived from model geometry.
-
-    Example:
-        mc train --agent agent-001 --model /path/to/model
+    Strict production path: `mc train run`.
+    Research-only controls: `mc train run-research`.
     """
-    # If no subcommand and no args, show help
-    if ctx.invoked_subcommand is not None:
-        return
-
-    if agent is None or model is None:
-        raise typer.BadParameter("--agent and --model are required for training")
-
-    context = _context(ctx)
-    model_path = Path(model)
-    _validate_model_path(model_path, context)
-
-    from modelcypher.cli.composition import get_lora_memory_service
-
-    service = get_lora_memory_service()
-
-    # Get or create store
-    store = service.get_or_create_store(
-        agent_id=agent,
-        base_model_path=model_path,
-    )
-
-    if store.buffer_size == 0:
-        error = ErrorDetail(
-            code="MC-2011",
-            title="No events to train",
-            detail="Buffer is empty - no events have been accumulated",
-            hint="Run inference first to accumulate events",
-            trace_id=context.trace_id,
-        )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
-
-    # Train
-    try:
-        train_result = service.train(
-            agent_id=agent,
-            max_steps=max_steps,
-            batch_size=batch_size,
-            learning_rate=learning_rate,
-            convergence_threshold=convergence,
-        )
-    except TrainingDerivationError as exc:
-        _write_training_derivation_error(exc, context)
-
-    result = {
-        "agent_id": agent,
-        "training": train_result.to_dict(),
-        "parameters": {
-            "max_steps": train_result.resolved_max_steps,
-            "batch_size": train_result.resolved_batch_size,
-            "critical_batch_size": train_result.resolved_critical_batch_size,
-            "learning_rate": train_result.resolved_learning_rate,
-            "convergence": train_result.resolved_convergence_threshold,
-            "budget_threshold": train_result.resolved_budget_threshold,
-        },
-    }
-
-    write_output(result, context.output_format, context.pretty)
 
 
 @train_app.command("run")
@@ -179,34 +98,51 @@ def train_run(
         "--eval-data",
         help="Held-out eval JSONL (default: pilot-variance-derived split)",
     ),
-    max_iters: int = typer.Option(
-        10000,
-        "--max-iters",
-        help="Safety cap (geometry decides when to stop)",
+) -> None:
+    """Strict model+dataset-only training path.
+
+    User selects model + dataset. Hyperparameters are derived automatically.
+    """
+    context = _context(ctx)
+    model_path = Path(model)
+    _validate_model_path(model_path, context)
+
+    from modelcypher.cli.composition import get_dataset_training_service
+
+    service = get_dataset_training_service()
+    try:
+        result = service.train_from_dataset_strict(
+            model_path=model_path,
+            dataset_path=data,
+            output_path=output,
+            eval_dataset_path=eval_data,
+        )
+    except TrainingDerivationError as exc:
+        _write_training_derivation_error(exc, context)
+
+    write_output(result.to_dict(), context.output_format, context.pretty)
+
+
+@train_app.command("run-research")
+def train_run_research(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", "-m", help="Path to model directory"),
+    data: str = typer.Option(..., "--data", "-d", help="Path to JSONL training dataset"),
+    output: str = typer.Option(
+        None, "--output", "-o", help="Output path for adapter",
+    ),
+    no_save: bool = typer.Option(
+        False, "--no-save",
+        help="Run training without saving an adapter (useful for experiments)",
+    ),
+    eval_data: str = typer.Option(
+        None,
+        "--eval-data",
+        help="Held-out eval JSONL (default: pilot-variance-derived split)",
     ),
     seq_length: int = typer.Option(None, "--seq-length", help="Sequence length (auto-derived from data when omitted)"),
     lr: float = typer.Option(None, "--lr", help="Override geometry-derived learning rate"),
-    deep: bool = typer.Option(
-        False,
-        "--deep",
-        help="Target all layers (not just tail_dims > 0)",
-    ),
     seed: int = typer.Option(42, "--seed", help="Random seed"),
-    eval_batches: int = typer.Option(
-        None,
-        "--eval-batches",
-        help="Number of eval batches (uses all eval data when omitted)",
-    ),
-    adaptive_lr: bool = typer.Option(
-        True,
-        "--adaptive-lr/--no-adaptive-lr",
-        help="Re-measure curvature per epoch and adapt LR (default: on)",
-    ),
-    lr_monotonic: bool = typer.Option(
-        False,
-        "--lr-monotonic/--no-lr-monotonic",
-        help="Force LR to only decrease (legacy). Default: allow recovery within spectral bound",
-    ),
     topo_monitor: bool = typer.Option(
         False,
         "--topo-monitor/--no-topo-monitor",
@@ -223,12 +159,7 @@ def train_run(
         help="Derive training objective (CE/REINFORCE/hybrid) from baseline eval (default: on)",
     ),
 ) -> None:
-    """Train NB-LoRA adapter from a text dataset.
-
-    Cayley-parameterized LoRA with spectral bounds by construction.
-    All hyperparameters derived from model geometry. Training stops
-    when the data says to stop.
-    """
+    """Research path with explicit training controls."""
     context = _context(ctx)
     model_path = Path(model)
     _validate_model_path(model_path, context)
@@ -237,22 +168,18 @@ def train_run(
 
     service = get_dataset_training_service()
     try:
-        result = service.train_from_dataset(
+        result = service.train_from_dataset_research(
             model_path=model_path,
             dataset_path=data,
             output_path=output,
             eval_dataset_path=eval_data,
-            max_iters=max_iters,
             seq_length=seq_length,
             lr_override=lr,
-            deep=deep,
             seed=seed,
-            eval_batches=eval_batches,
-            adaptive_lr=adaptive_lr,
-            lr_monotonic=lr_monotonic,
             topo_monitor=topo_monitor,
             dim_monitor=dim_monitor,
             auto_regime=auto_regime,
+            no_save=no_save,
         )
     except TrainingDerivationError as exc:
         _write_training_derivation_error(exc, context)

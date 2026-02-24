@@ -23,13 +23,13 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.cka import (
     _center_gram_matrix,
     compute_cka,
-    rbf_gram_matrix,
     geodesic_squared_distances,
+    rbf_gram_matrix,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 
 def _random_matrix(backend, rows: int, cols: int, seed: int):
@@ -240,7 +240,7 @@ class TestCKAEdgeCases:
 # =============================================================================
 
 try:
-    from hypothesis import given, settings, assume
+    from hypothesis import assume, given, settings
     from hypothesis import strategies as st
 
     HYPOTHESIS_AVAILABLE = True

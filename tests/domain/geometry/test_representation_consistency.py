@@ -25,11 +25,11 @@ from __future__ import annotations
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.representation_consistency import (
     ConsistencyResult,
     RepresentationConsistencyAnalyzer,
 )
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 
 @pytest.fixture

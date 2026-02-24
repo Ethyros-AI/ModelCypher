@@ -57,12 +57,11 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
     machine_epsilon,
 )
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Array, Backend
+    from modelcypher.ports.backend import Backend
 
 
 class CuriosityAction(str, Enum):

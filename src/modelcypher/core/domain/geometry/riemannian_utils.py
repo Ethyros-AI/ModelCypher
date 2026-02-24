@@ -33,10 +33,10 @@ from typing import TYPE_CHECKING
 # Re-export from core module (main class)
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.riemannian_core import (
+    _RG_CACHE,
     RiemannianGeometry,
     _cache,
     _get_riemannian_geometry,
-    _RG_CACHE,
 )
 
 # Re-export result types
@@ -61,8 +61,6 @@ from modelcypher.core.domain.geometry.riemannian_validation import (
     safe_arithmetic_mean,
     set_matrix_element,
 )
-
-
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend

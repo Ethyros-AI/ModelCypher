@@ -180,7 +180,7 @@ def alignment_signal_from_matrices(
     # Rank diagnostics
     rank_source = _matrix_rank(source_matrix, b)
     rank_target = _matrix_rank(target_matrix, b)
-    min_rank = min(b.shape(source_matrix)[0], b.shape(source_matrix)[1])
+    min(b.shape(source_matrix)[0], b.shape(source_matrix)[1])
 
     # Scale diagnostics
     div_eps = division_epsilon(b, source_matrix)

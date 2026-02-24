@@ -249,7 +249,7 @@ class TestUsableCountInvariants:
 # =============================================================================
 
 try:
-    from hypothesis import given, settings, assume, HealthCheck
+    from hypothesis import HealthCheck, assume, given, settings
     from hypothesis import strategies as st
 
     HYPOTHESIS_AVAILABLE = True

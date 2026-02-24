@@ -49,7 +49,6 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--max-iters", type=int, default=1000)
     parser.add_argument("--online-eval-n", type=int, default=25)
     parser.add_argument("--eval-interval", type=int, default=10)
     parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT_DEFAULT)
@@ -274,7 +273,6 @@ def _run_seed(args: argparse.Namespace) -> None:
         eval_dataset_path=str(eval_data),
         retention_dataset_path=(str(retention_data) if retention_data else None),
         output_path=str(adapter_path),
-        max_iters=args.max_iters,
         seed=args.seed,
         auto_regime=True,
         regime_n_problems=args.online_eval_n,

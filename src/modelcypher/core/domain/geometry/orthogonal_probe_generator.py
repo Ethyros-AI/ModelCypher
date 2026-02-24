@@ -33,34 +33,31 @@ from __future__ import annotations
 # Re-export everything from submodules for backward compatibility
 from modelcypher.core.domain.geometry.null_space import (
     OrthogonalProbeResult,
-    SequenceProbeResult,
     RankAugmentationResult,
+    SequenceProbeResult,
     VarianceNullSpaceResult,
-    compute_numerical_rank,
     compute_null_space_basis,
+    compute_numerical_rank,
     compute_variance_null_space,
 )
-
 from modelcypher.core.domain.geometry.probe_generator import (
     OrthogonalProbeGenerator,
-    validate_full_rank_coverage,
-    score_tokens_for_null_space,
-    find_null_space_tokens_closed_form,
     augment_rank_closed_form,
     find_null_space_sequences,
     find_null_space_texts,
+    find_null_space_tokens_closed_form,
+    score_tokens_for_null_space,
+    validate_full_rank_coverage,
 )
-
 from modelcypher.core.domain.geometry.trajectory_analysis import (
     TrajectoryResult,
     TrajectorySubspaceResult,
-    collect_trajectory,
-    compute_trajectory_subspace,
-    compute_trajectory_null_space,
     collect_trajectories_batch,
+    collect_trajectory,
+    compute_trajectory_null_space,
+    compute_trajectory_subspace,
     find_trajectory_null_space,
 )
-
 from modelcypher.core.domain.geometry.trajectory_projection import (
     TrajectoryTangentResult,
     compute_trajectory_tangent_null_space,

@@ -24,6 +24,7 @@ the data structures, helper methods, and callback patterns.
 """
 
 from __future__ import annotations
+
 import time
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
@@ -356,7 +357,7 @@ class TestLayerCaptureContext:
     def test_enter_wraps_layers(self) -> None:
         """Test that entering context wraps layers."""
         layers = [MagicMock() for _ in range(3)]
-        original_layers = list(layers)
+        list(layers)
         capture = MagicMock()
 
         ctx = _LayerCaptureContext(layers, capture, target_layers=None)

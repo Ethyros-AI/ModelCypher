@@ -37,9 +37,8 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Backend
-
     from modelcypher.core.domain.geometry.manifold_entropy import ManifoldEntropyResult
+    from modelcypher.ports.backend import Backend
 
 
 @dataclass
@@ -71,7 +70,7 @@ class ConvergenceResult:
 
     is_converged: bool
     reason: str
-    metrics: ConvergenceMetrics
+    metrics: SelfAlignmentConvergenceMetrics
 
     # Detailed breakdown
     entropy_stable: bool = False
@@ -108,7 +107,7 @@ class ConvergenceDetector:
             backend: Computational backend
         """
         self._backend = backend or get_default_backend()
-        self._metrics = ConvergenceMetrics()
+        self._metrics = SelfAlignmentConvergenceMetrics()
 
         # Compute convergence threshold from machine epsilon
         ref = self._backend.array([1.0], dtype="float32")
@@ -218,10 +217,10 @@ class ConvergenceDetector:
 
     def reset(self) -> None:
         """Reset convergence detector for a new run."""
-        self._metrics = ConvergenceMetrics()
+        self._metrics = SelfAlignmentConvergenceMetrics()
 
     @property
-    def metrics(self) -> ConvergenceMetrics:
+    def metrics(self) -> SelfAlignmentConvergenceMetrics:
         """Get current convergence metrics."""
         return self._metrics
 
@@ -245,6 +244,6 @@ class ConvergenceDetector:
 
 __all__ = [
     "ConvergenceDetector",
-    "ConvergenceMetrics",
+    "SelfAlignmentConvergenceMetrics",
     "ConvergenceResult",
 ]

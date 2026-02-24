@@ -30,7 +30,6 @@ from tests.cli.contracts.command_contract import (
     validate_markdown_file,
 )
 
-
 runner = CliRunner()
 validator = CLIContractValidator(runner)
 README_PATH = Path(__file__).resolve().parents[3] / "README.md"

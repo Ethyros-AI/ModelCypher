@@ -28,6 +28,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain.cache import ComputationCache
+from modelcypher.core.domain.geometry.atlas_protocols import (
+    MoralConceptProtocol,
+    axis_key,
+    enum_key,
+)
+from modelcypher.core.domain.geometry.atlas_registry import get_moral_concepts
 from modelcypher.core.domain.geometry.numerical_stability import (
     compute_spearman_correlation,
     division_epsilon,
@@ -39,13 +45,6 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_norms,
     geodesic_pairwise_metrics,
 )
-
-from modelcypher.core.domain.geometry.atlas_protocols import (
-    MoralConceptProtocol,
-    axis_key,
-    enum_key,
-)
-from modelcypher.core.domain.geometry.atlas_registry import get_moral_concepts
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend

@@ -388,8 +388,8 @@ class LowRankGromovWasserstein:
         For efficiency with large matrices, we compute this using the low-rank structure.
         """
         b = backend
-        n = int(C1.shape[0])
-        m = int(C2.shape[0])
+        int(C1.shape[0])
+        int(C2.shape[0])
         eps = division_epsilon(b, g)
 
         # Reconstruct P for cost computation (only for moderate sizes)

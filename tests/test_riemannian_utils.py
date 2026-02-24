@@ -29,6 +29,7 @@ Tests cover:
 """
 
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 import pytest
@@ -37,7 +38,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
 )
-from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 from modelcypher.core.domain.geometry.riemannian_utils import (
     CurvatureEstimate,
     DirectionalCoverage,
@@ -49,6 +49,7 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
     find_sparse_direction,
     frechet_mean,
     geodesic_distance_matrix,
+    geodesic_norms,
 )
 from modelcypher.core.support.array_utils import array_to_list
 
@@ -195,7 +196,7 @@ class TestCurvatureEstimate:
         assert result.is_negative is False
 
 
-class TestDirectionalCoverage:
+class TestDirectionalCoverageDataclass:
     """Tests for DirectionalCoverage dataclass."""
 
     def test_basic_construction(self, any_backend: "Backend") -> None:
@@ -1076,7 +1077,7 @@ class TestEdgeCasesAndNumericalStability:
 # =============================================================================
 
 try:
-    from hypothesis import given, settings, assume, HealthCheck
+    from hypothesis import HealthCheck, assume, given, settings
     from hypothesis import strategies as st
 
     HYPOTHESIS_AVAILABLE = True

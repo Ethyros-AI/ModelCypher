@@ -37,9 +37,9 @@ from hypothesis import strategies as st
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
-    svd_auto_rank,
     machine_epsilon,
     sqrt_scalar,
+    svd_auto_rank,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 from modelcypher.core.domain.geometry.transplant import (

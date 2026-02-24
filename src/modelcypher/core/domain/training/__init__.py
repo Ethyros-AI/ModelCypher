@@ -35,12 +35,22 @@ from .checkpoint_validation import CheckpointValidation
 
 # Additional training modules (previously not exported)
 from .exceptions import CheckpointError
+from .geometric_early_stopping import check_loss_stable
 from .geometric_metrics_collector import *  # noqa: F401,F403
 from .geometric_training_metrics import *  # noqa: F401,F403
 from .gradient_smoothness_estimator import *  # noqa: F401,F403
 from .hessian_estimator import *  # noqa: F401,F403
+from .hyperparameter_validation import TrainingHyperparameterValidator
+from .mass_step_size import (
+    apply_sqrt_n_epoch_correction,
+    apply_validation_backoff,
+    compute_per_step_rates,
+    compute_reinforce_budget,
+    derive_spectral_ceiling,
+)
 from .resources import ResourceIntensiveOperation, TrainingResourceGuard
-from .scheduling import *  # noqa: F401,F403
+from .scaled_gd import precondition_lora_gradients
+from .spectral_budget import compute_budget_ratios, is_budget_exhausted
 from .training_benchmark import (
     BenchmarkComparison,
     BenchmarkResults,
@@ -52,9 +62,11 @@ from .training_notifications import (
     TrainingEventBus,
     TrainingEventHandler,
     TrainingEventKind,
-    TrainingNotificationProgress as TrainingProgress,
     get_training_event_bus,
     reset_training_event_bus,
+)
+from .training_notifications import (
+    TrainingNotificationProgress as TrainingProgress,
 )
 from .types import (
     CheckpointMetadata,
@@ -66,14 +78,3 @@ from .types import (
     TrainingSpec,
     TrainingStatus,
 )
-from .geometric_early_stopping import check_loss_stable
-from .hyperparameter_validation import TrainingHyperparameterValidator
-from .mass_step_size import (
-    apply_sqrt_n_epoch_correction,
-    apply_validation_backoff,
-    compute_per_step_rates,
-    compute_reinforce_budget,
-    derive_spectral_ceiling,
-)
-from .scaled_gd import precondition_lora_gradients
-from .spectral_budget import compute_budget_ratios, is_budget_exhausted

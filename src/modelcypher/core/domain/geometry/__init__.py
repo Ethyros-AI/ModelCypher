@@ -183,7 +183,7 @@ _ATTR_TO_MODULE = {
     "GeneralizedProcrustes": ("generalized_procrustes", "GeneralizedProcrustes"),
     "GramAligner": ("gram_aligner", "GramAligner"),
     "GeodesicNullSpaceFilter": ("geodesic_null_space", "GeodesicNullSpaceFilter"),
-    # Dimensional alignment (Priority 2) 
+    # Dimensional alignment (Priority 2)
     "DimensionalAlignment": ("dimensional_alignment", "DimensionalAlignment"),
     "measure_dimensional_alignment": ("dimensional_alignment", "measure_dimensional_alignment"),
     # Sparse region analysis

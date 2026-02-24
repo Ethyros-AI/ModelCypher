@@ -48,7 +48,6 @@ def main():
         dataset_path=DATASET_PATH,
         eval_dataset_path=EVAL_DATASET_PATH,
         output_path="/tmp/mass-validation",
-        max_iters=200,
         seed=42,
         auto_regime=False,
     )

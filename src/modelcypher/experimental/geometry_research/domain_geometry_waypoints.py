@@ -37,10 +37,6 @@ from typing import TYPE_CHECKING
 
 # Import from canonical location - AtlasDomain is the single source of truth
 from modelcypher.core.domain.domains import AtlasDomain
-from modelcypher.core.domain.geometry.domain_signal_profile import (
-    DomainSignalProfile,
-    LayerSignal,
-)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -65,7 +61,7 @@ class DomainGeometryScore:
 @dataclass(frozen=True)
 class DomainWaypoint:
     """A waypoint extracted from a domain for merge alignment.
-    
+
     Represents a concept activation that can be used for geometric alignment.
     """
     concept_id: str

@@ -7,7 +7,6 @@
 #
 # Usage:
 #   poetry run python scripts/validate_geometric_dropout.py
-#   poetry run python scripts/validate_geometric_dropout.py --deep   # 8 layers + 8B models
 
 from __future__ import annotations
 
@@ -269,12 +268,11 @@ def analyze_model(model_name: str, label: str, backend, max_layers: int = 4) -> 
 
 
 def main():
-    deep = "--deep" in sys.argv
     backend = get_default_backend()
     print("Backend:", type(backend).__name__)
 
-    models = MODELS_CORE + (MODELS_DEEP if deep else [])
-    max_layers = 8 if deep else 4
+    models = MODELS_CORE
+    max_layers = 4
     print(f"Testing {len(models)} models, {max_layers} layers each")
     print(f"Models dir: {MODELS_DIR}")
 

@@ -286,7 +286,7 @@ class TestCrossArchitectureAlignment:
 
 
 try:
-    from hypothesis import given, settings, assume
+    from hypothesis import assume, given, settings
     from hypothesis import strategies as st
 
     HYPOTHESIS_AVAILABLE = True

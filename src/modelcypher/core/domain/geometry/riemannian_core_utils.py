@@ -21,10 +21,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from modelcypher.core.domain.geometry.numerical_stability import (
+from modelcypher.core.domain.geometry.precision import (
     _float_dtype_for,
     _mask_sum,
-    _promote_precision,
 )
 
 if TYPE_CHECKING:

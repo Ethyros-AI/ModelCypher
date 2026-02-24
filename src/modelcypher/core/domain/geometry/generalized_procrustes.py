@@ -39,13 +39,13 @@ from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
+from modelcypher.core.domain.geometry.lie_rotation import so_geodesic_distance
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     geodesic_svd,
     machine_epsilon,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.lie_rotation import so_geodesic_distance
 from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_norms,
     geodesic_pairwise_metrics,
@@ -145,9 +145,8 @@ class GeneralizedProcrustes:
 
         backend = self._backend
         model_count = int(aligned_X.shape[0])
-        _M, N, K = aligned_X.shape[0], aligned_X.shape[1], aligned_X.shape[2]
+        _M, _N, K = aligned_X.shape[0], aligned_X.shape[1], aligned_X.shape[2]
 
-        from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
         tol = sqrt_scalar(machine_epsilon(backend, aligned_X), backend)
         frechet_max_iter = max(50, 10 * K)
@@ -189,7 +188,6 @@ class GeneralizedProcrustes:
         X = self._backend.array(activations)
 
         # Derive convergence threshold from machine epsilon
-        from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
         eps = machine_epsilon(self._backend, X)
         convergence_threshold = sqrt_scalar(eps, self._backend)  # sqrt(eps) for relative error
 
@@ -753,7 +751,7 @@ class RotationContinuityAnalyzer:
                 target_model=target_model,
                 layers=layer_results,
                 global_rotation_error=float("inf"),
-                anchor_count=anchor_count,
+                anchor_count=len(common_anchors),
                 smoothness_ratio=float("inf"),
                 rotation_roughness=rotation_roughness,
                 mean_angular_velocity=mean_angular_velocity,
@@ -1154,7 +1152,7 @@ class RotationFlowAnalyzer:
         for R in R_list:
             b.eval(R)
 
-        d = int(b.shape(R_list[0])[0])
+        int(b.shape(R_list[0])[0])
 
         # Import Lie algebra functions
         from modelcypher.core.domain.geometry.lie_rotation import so_log

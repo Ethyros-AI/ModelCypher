@@ -24,21 +24,20 @@ from pathlib import Path
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.atlas.unified_atlas import (
-    AtlasSource,
     UnifiedAtlasInventory,
 )
 from modelcypher.core.domain.geometry.concept_response_matrix import (
     AnchorMetadata,
     ConceptResponseMatrix,
 )
+from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
+    CrossArchitectureLayerMatcher,
+)
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     find_magnitude_gap_threshold,
     sqrt_scalar,
     ulp_scalar,
-)
-from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
-    CrossArchitectureLayerMatcher,
 )
 from modelcypher.core.domain.geometry.shared_subspace_projector import (
     SharedSubspaceProjector,

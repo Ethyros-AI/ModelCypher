@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.concept_dimensionality import (
     ConceptDimensionalityAnalyzer,
     ConceptDimensionalityReport,
@@ -30,7 +31,6 @@ from modelcypher.core.domain.geometry.concept_dimensionality import (
     LayerDimensionalitySummary,
     SkippedProbe,
 )
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 

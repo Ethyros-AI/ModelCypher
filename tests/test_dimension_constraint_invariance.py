@@ -25,6 +25,7 @@ from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
     derive_k_neighbors,
@@ -33,7 +34,6 @@ from modelcypher.core.domain.geometry.spectral_signature import SpectralSignatur
 from modelcypher.core.domain.geometry.topological_fingerprint import (
     TopologicalFingerprint,
 )
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 
 def _eps(backend, *values: float) -> float:

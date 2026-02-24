@@ -40,18 +40,18 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.manifold_entropy import ManifoldEntropy
+from modelcypher.core.domain.geometry.geodesic_null_space import GeodesicNullSpaceFilter
 from modelcypher.core.domain.geometry.gram_spectrum import (
     compute_geometry_derived_scale,
     compute_gram_spectrum,
 )
+from modelcypher.core.domain.geometry.manifold_entropy import ManifoldEntropy
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
 )
 
 from .direction_generator import DirectionGenerator, DirectionStrategy
-from modelcypher.core.domain.geometry.geodesic_null_space import GeodesicNullSpaceFilter
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend

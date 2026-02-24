@@ -22,8 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry import ChangeType, DoRADecomposition
+from modelcypher.core.domain.geometry import DoRADecomposition
 from modelcypher.core.domain.geometry.dare_sparsity import DARESparsityAnalyzer
 from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 

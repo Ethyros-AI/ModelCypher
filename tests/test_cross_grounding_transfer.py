@@ -62,7 +62,7 @@ def sample_anchors(backend):
     def make_anchor(offset_3d):
         base = backend.random_normal((dim,))
         # Add offset to first 3 dimensions
-        offset = backend.zeros((dim,))
+        backend.zeros((dim,))
         offset_arr = backend.array(offset_3d + [0.0] * (dim - 3))
         base = base + offset_arr
         backend.eval(base)

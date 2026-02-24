@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import pytest
+
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.riemannian_validation import (
@@ -44,7 +45,7 @@ class TestRiemannianValidation:
         backend = get_default_backend()
         arr = backend.array([1.0, float("nan"), 3.0])
         backend.eval(arr)
-        
+
         assert count_nan(arr, backend) == 1
         assert has_nan(arr, backend) is True
         assert all_finite(arr, backend) is False
@@ -54,7 +55,7 @@ class TestRiemannianValidation:
         backend = get_default_backend()
         arr = backend.array([1.0, float("inf"), float("-inf")])
         backend.eval(arr)
-        
+
         assert count_inf(arr, backend) == 2
         assert has_inf(arr, backend) is True
         assert all_finite(arr, backend) is False
@@ -64,7 +65,7 @@ class TestRiemannianValidation:
         backend = get_default_backend()
         arr = backend.array([1.0, float("nan"), float("inf"), 4.0])
         backend.eval(arr)
-        
+
         assert count_finite(arr, backend) == 2
         assert count_nonfinite(arr, backend) == 2
 
@@ -92,7 +93,7 @@ class TestRiemannianValidation:
         mat = backend.zeros((2, 2))
         mat = set_matrix_element(backend, mat, 0, 1, 5.0)
         backend.eval(mat)
-        
+
         val = float(backend.to_scalar(mat[0, 1]))
         eps = division_epsilon(backend, mat)
         assert abs(val - 5.0) < eps

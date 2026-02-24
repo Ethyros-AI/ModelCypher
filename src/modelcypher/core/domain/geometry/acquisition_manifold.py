@@ -42,10 +42,8 @@ from modelcypher.core.domain.geometry.acquisition_protocols import (
 )
 from modelcypher.core.domain.geometry.intrinsic_dimension import (
     IntrinsicDimension,
-    LocalDimensionMap,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
     infinity_threshold,
     machine_epsilon,
     pi_value,

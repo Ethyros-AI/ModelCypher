@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any, AsyncGenerator
+
 import pytest
 
 from modelcypher.core.use_cases.inference.comparison import (
@@ -24,7 +25,6 @@ from modelcypher.core.use_cases.inference.comparison import (
     ComparisonResult,
     EventType,
 )
-
 
 # =============================================================================
 # Test Data Structures

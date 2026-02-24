@@ -31,9 +31,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from .probe_activation_storage import (
+    PagedActivations,
     _flush_batch_activations,
     _page_activation_space,
-    PagedActivations,
 )
 
 if TYPE_CHECKING:

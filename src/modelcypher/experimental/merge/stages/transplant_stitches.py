@@ -22,14 +22,15 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
 from .transplant_helpers import (
     _geodesic_pinv,
     _promote_precision,
 )
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Array, Backend
+    from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
 

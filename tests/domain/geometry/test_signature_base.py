@@ -27,7 +27,6 @@ from modelcypher.core.domain.geometry.signature_base import (
     SignatureMixin,
 )
 
-
 # ---------------------------------------------------------------------------
 # Concrete test implementations
 # ---------------------------------------------------------------------------

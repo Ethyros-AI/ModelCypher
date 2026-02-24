@@ -292,9 +292,9 @@ class RMTAwareCompressor:
         rmt_result = self.compress_layer(X, Y)
 
         # Naive compression (full rank pinv)
-        n_samples = int(X.shape[0])
-        d_in = int(X.shape[1])
-        d_out = int(Y.shape[1])
+        int(X.shape[0])
+        int(X.shape[1])
+        int(Y.shape[1])
 
         U, S, Vt = b.svd(X)
         b.eval(U, S, Vt)

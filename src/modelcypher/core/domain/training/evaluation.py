@@ -25,8 +25,6 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator
 from modelcypher.core.domain.geometry.numerical_stability import (
     exp_scalar,
     log_scalar,
-    safe_log_epsilon,
-    precision_dtype,
 )
 
 if TYPE_CHECKING:
@@ -364,7 +362,7 @@ class EvaluationEngine:
         """Pad and convert batch to arrays."""
         b = self._backend
 
-        batch_size = len(token_lists)
+        len(token_lists)
         max_len = max(len(t) for t in token_lists)
         padded_len = min(max_len, seq_len)
 

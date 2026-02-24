@@ -16,7 +16,6 @@ import pytest
 
 import modelcypher.core.domain.geometry.path_geometry as mod
 
-
 # ---------------------------------------------------------------------------
 # Data model tests (pure Python, no backend needed)
 # ---------------------------------------------------------------------------

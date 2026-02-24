@@ -25,11 +25,11 @@ import pytest
 
 from modelcypher.core.domain.geometry.attention_topology import (
     AttentionTopologySignal,
+    _compute_head_diagram,
+    _mean_pairwise_wasserstein,
     attention_to_distance,
     barcode_statistics,
     compute_attention_topology,
-    _compute_head_diagram,
-    _mean_pairwise_wasserstein,
 )
 from modelcypher.core.domain.geometry.topological_fingerprint import (
     PersistenceDiagram,

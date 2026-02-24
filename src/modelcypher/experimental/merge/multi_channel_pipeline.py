@@ -33,7 +33,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-
 from modelcypher.core.domain.geometry.birkhoff_router import (
     BirkhoffRouter,
     BirkhoffRoutingResult,

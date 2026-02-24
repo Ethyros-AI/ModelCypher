@@ -218,14 +218,14 @@ class StackedLoRAState:
             convergence_detected=data.get("convergence_detected", False),
             base_exit_convergence=data.get("base_exit_convergence", 0.0),
         )
-    
+
     def save(self, path: Path) -> None:
         """Save state to JSON file."""
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as f:
             json.dump(self.to_dict(), f, indent=2)
         logger.info("Saved stacker state to %s", path)
-    
+
     @classmethod
     def load(cls, path: Path) -> "StackedLoRAState":
         """Load state from JSON file."""
@@ -237,7 +237,7 @@ class StackedLoRAState:
 @dataclass
 class StackResult:
     """Result of adding an adapter to the stack."""
-    
+
     success: bool
     adapter_info: Optional[AdapterInfo]
     cumulative_barrier: float
@@ -245,7 +245,7 @@ class StackResult:
     should_merge: bool
     merge_reason: str
     message: str
-    
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize to JSON-compatible dict."""
         return {
@@ -262,13 +262,13 @@ class StackResult:
 @dataclass
 class LoraStackMergeResult:
     """Result of merging the adapter stack."""
-    
+
     success: bool
     merged_model_path: Optional[Path]
     adapters_merged: int
     previous_barrier: float
     message: str
-    
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize to JSON-compatible dict."""
         return {
@@ -278,6 +278,9 @@ class LoraStackMergeResult:
             "previous_barrier": self.previous_barrier,
             "message": self.message,
         }
+
+
+MergeResult = LoraStackMergeResult
 
 
 class LoRAStacker:
@@ -354,7 +357,7 @@ class LoRAStacker:
                 )
             else:
                 logger.info("Created new stacker for %s", base_model_path)
-    
+
     @property
     def backend(self) -> "Backend":
         """Get compute backend, loading default if needed."""
@@ -362,7 +365,7 @@ class LoRAStacker:
             from modelcypher.core.domain._backend import get_default_backend
             self._backend = get_default_backend()
         return self._backend
-    
+
     def add_adapter(
         self,
         adapter_path: Path,
@@ -462,16 +465,16 @@ class LoRAStacker:
             merge_reason=self.state.merge_reason,
             message=f"Added adapter {adapter_path.name} (stack depth: {self.state.n_adapters})",
         )
-    
+
     def merge_stack(self, output_path: Path) -> MergeResult:
         """Merge all stacked adapters into a single model.
-        
+
         This consolidates the stack, resetting cumulative metrics.
         The merged model becomes the new base for future adapters.
-        
+
         Args:
             output_path: Where to save the merged model
-            
+
         Returns:
             MergeResult with merge details
         """
@@ -483,7 +486,7 @@ class LoRAStacker:
                 previous_barrier=0.0,
                 message="No adapters to merge",
             )
-        
+
         # Import merge infrastructure
         try:
             from modelcypher.adapters.merging.lora_adapter_merger import LoraAdapterMerger
@@ -495,19 +498,19 @@ class LoRAStacker:
                 previous_barrier=self.state.cumulative_barrier,
                 message="LoraAdapterMerger not available",
             )
-        
+
         output_path = Path(output_path)
         adapter_paths = [a.path for a in self.state.adapters]
         previous_barrier = self.state.cumulative_barrier
         n_adapters = self.state.n_adapters
-        
+
         logger.info(
             "Merging %d adapters into %s (barrier=%.4f)",
             n_adapters,
             output_path,
             previous_barrier,
         )
-        
+
         try:
             # Use existing merger with Fisher weighting
             merger = LoraAdapterMerger(backend=self.backend)
@@ -517,7 +520,7 @@ class LoRAStacker:
                 output_path=output_path,
                 weight_method="fisher",  # Use Fisher-weighted merge
             )
-            
+
             # Reset state with merged model as new base
             self.state = StackedLoRAState(
                 base_model_path=output_path,
@@ -525,7 +528,7 @@ class LoRAStacker:
                 merges_performed=self.state.merges_performed + 1,
                 current_difficulty=self.state.current_difficulty,
             )
-            
+
             return MergeResult(
                 success=True,
                 merged_model_path=output_path,
@@ -533,7 +536,7 @@ class LoRAStacker:
                 previous_barrier=previous_barrier,
                 message=f"Merged {n_adapters} adapters (barrier was {previous_barrier:.4f})",
             )
-            
+
         except Exception as e:
             logger.error("Merge failed: %s", e)
             return MergeResult(
@@ -543,15 +546,15 @@ class LoRAStacker:
                 previous_barrier=previous_barrier,
                 message=f"Merge failed: {e}",
             )
-    
+
     def get_adapter_paths(self) -> List[Path]:
         """Get ordered list of adapter paths for sequential application."""
         return [a.path for a in self.state.adapters]
-    
+
     def save_state(self, path: Path) -> None:
         """Save stacker state to JSON file."""
         self.state.save(path)
-    
+
     def get_status(self) -> dict[str, Any]:
         """Get current stacker status."""
         return {

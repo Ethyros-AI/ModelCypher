@@ -19,9 +19,9 @@
 
 import pytest
 
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.domain.geometry.manifold_clusterer import ManifoldClusterer, ManifoldPoint
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 
 def _eps(backend) -> float:

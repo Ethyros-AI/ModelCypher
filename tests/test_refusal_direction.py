@@ -21,7 +21,6 @@ from pathlib import Path
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
-
 from modelcypher.core.domain.geometry.refusal_direction_cache import RefusalDirectionCache
 from modelcypher.core.domain.geometry.refusal_direction_detector import RefusalDirectionDetector
 

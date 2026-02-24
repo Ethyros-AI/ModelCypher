@@ -34,9 +34,7 @@ We use sqrt(eps) as the reference scale for most operations.
 import math
 from dataclasses import dataclass
 
-
 from .types import Hyperparameters
-
 
 # =============================================================================
 # Dtype-derived constants (float32 is the training precision ceiling)
@@ -93,11 +91,15 @@ class TrainingHyperparameterValidator:
     LR_INFO_LOW = LR_MIN * (LR_MAX / LR_MIN) ** (1 / 3)  # ~6.9e-5
     LR_WARN_HIGH = LR_MIN * (LR_MAX / LR_MIN) ** (2 / 3)  # ~40
 
-    # Epochs: algebraic constraint
+    # Epochs: advisory warning for the event-buffer training path.
+    # The NB-LoRA Cayley-Stiefel pipeline has its own geometric stopping
+    # certificate and does not use this threshold.
     EPOCHS_MIN = 1
     EPOCHS_MAX_REC = BATCH_SIZE_RANGE.stop + 1
 
-    # Gradient accumulation: memory/compute tradeoff
+    # Gradient accumulation: advisory cap for the event-buffer training path.
+    # The NB-LoRA pipeline does not use gradient accumulation (batch_size
+    # is geometry-derived via critical batch size).
     GRAD_ACCUM_MAX = 16
 
     @classmethod

@@ -36,16 +36,15 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from modelcypher.core.domain.geometry.numerical_stability import (
-    machine_epsilon,
-    sqrt_scalar,
+from modelcypher.core.domain.geometry.null_space import (
+    VarianceNullSpaceResult,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
     _promote_precision_float32 as _promote_precision,
 )
-
-from modelcypher.core.domain.geometry.null_space import (
-    VarianceNullSpaceResult,
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.trajectory_analysis import (
     TrajectoryResult,
@@ -151,7 +150,7 @@ def compute_trajectory_tangent_null_space(
         velocities = _promote_precision(velocities, b)
         b.eval(velocities)
 
-        n_vel = int(b.shape(velocities)[0])
+        int(b.shape(velocities)[0])
 
         # Step 4: Project velocities into null space
         # velocity_in_null[i] = U_null @ U_null.T @ velocity[i]
@@ -288,7 +287,7 @@ def project_delta_to_trajectory_tangent(
         # Weight matrix [out_dim, in_dim]
         # Project along input dimension: delta @ U @ U.T
         # This projects each row (output neuron's input weights) into tangent space
-        out_dim = int(original_shape[0])
+        int(original_shape[0])
         in_dim = int(original_shape[1])
 
         if in_dim != tangent_result.hidden_dim:
@@ -390,7 +389,7 @@ def project_delta_to_variance_null_space(
 
     if is_2d:
         # Weight matrix [out_dim, in_dim]
-        out_dim = int(original_shape[0])
+        int(original_shape[0])
         in_dim = int(original_shape[1])
         hidden_dim = variance_result.utilized_rank + variance_result.available_rank
 

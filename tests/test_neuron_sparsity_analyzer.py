@@ -24,16 +24,16 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
-    machine_epsilon,
-)
 from modelcypher.core.domain.geometry.neuron_sparsity_analyzer import (
     NeuronActivationCollector,
     NeuronSparsityMap,
     NeuronStats,
     compare_neuron_sparsity,
     compute_neuron_sparsity_map,
+)
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
 )
 
 

@@ -24,7 +24,6 @@ from modelcypher.core.domain.geometry.domain_signal_profile import (
     LayerSignal,
 )
 
-
 # ---------------------------------------------------------------------------
 # LayerSignal
 # ---------------------------------------------------------------------------

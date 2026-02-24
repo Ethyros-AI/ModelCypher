@@ -19,9 +19,10 @@
 
 from __future__ import annotations
 
-import pytest
 from datetime import datetime
 from pathlib import Path
+
+import pytest
 
 from modelcypher.core.domain.training.checkpoint_models import (
     CheckpointErrorKind,

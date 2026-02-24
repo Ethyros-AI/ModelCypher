@@ -28,7 +28,8 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 from modelcypher.core.domain.geometry.riemannian_types import CurvatureEstimate
 
-from .riemannian_core_utils import _count_mask, _promote_precision
+from .precision import _promote_precision
+from .riemannian_core_utils import _count_mask
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array

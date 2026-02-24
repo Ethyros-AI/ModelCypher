@@ -33,6 +33,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     inf_value,
 )
 
+
 @dataclass(frozen=True)
 class ConversationEntropyBaseline:
     """Baseline entropy statistics for comparison."""

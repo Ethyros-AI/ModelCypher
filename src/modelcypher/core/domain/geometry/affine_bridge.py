@@ -35,8 +35,8 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
-    machine_epsilon,
     geodesic_svd,
+    machine_epsilon,
     precision_dtype,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (

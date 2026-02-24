@@ -253,7 +253,6 @@ def train_arm_seed(
     train_path: str,
     val_path: str,
     output_root: str,
-    lr_monotonic: bool = False,
 ) -> dict:
     """Train one (arm, seed) run. Returns the train result as dict."""
     import mlx.core as mx
@@ -294,8 +293,6 @@ def train_arm_seed(
         seed=seed,
         paired=True,
         constraint_state_override=constraint_state,
-        adaptive_lr=True,
-        lr_monotonic=lr_monotonic,
     )
 
     result_dict = asdict(result)
@@ -889,8 +886,6 @@ def main():
                         help="Skip training+eval, compute decision from results")
     parser.add_argument("--skip-benchmarks", action="store_true",
                         help="Skip lm-eval benchmarks (faster)")
-    parser.add_argument("--lr-monotonic", action="store_true",
-                        help="Use non-increasing adaptive LR (stability-focused)")
     args = parser.parse_args()
 
     arms = [a.strip().upper() for a in args.arms.split(",")]
@@ -919,7 +914,6 @@ def main():
             for a in arms
         },
         "timestamp": time.strftime("%Y%m%d-%H%M%S"),
-        "lr_monotonic": args.lr_monotonic,
     }
     with open(Path(output_root) / "config.json", "w") as f:
         json.dump(config, f, indent=2)
@@ -937,7 +931,6 @@ def main():
                     ARM_CONFIGS[arm], seed,
                     args.model, args.train_data, args.val_data,
                     output_root,
-                    lr_monotonic=args.lr_monotonic,
                 )
 
     # Phase 2: Evaluation

@@ -29,7 +29,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
-from hypothesis import HealthCheck, given, settings as hypothesis_settings, strategies as st
+from hypothesis import HealthCheck, given
+from hypothesis import settings as hypothesis_settings
+from hypothesis import strategies as st
 
 from modelcypher.core.domain.geometry.numerical_stability import (
     condition_threshold,

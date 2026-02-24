@@ -40,7 +40,8 @@ from modelcypher.core.domain.geometry.riemannian_validation import (
     count_nonfinite,
 )
 
-from .riemannian_core_utils import _count_mask, _count_not_mask, _promote_precision
+from .precision import _promote_precision
+from .riemannian_core_utils import _count_mask, _count_not_mask
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array

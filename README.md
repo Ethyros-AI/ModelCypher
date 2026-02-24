@@ -14,6 +14,8 @@ poetry run mc train run --model /path/to/model --data /path/to/dataset --output 
 
 No learning rate. No rank selection. No warmup schedule. No gradient clipping. The optimizer (Cayley-Stiefel retraction on the Stiefel manifold) and step size (MASS: `eta = min(eta_ceiling, eta_sps, eta_weyl)`) are derived from the weight matrices at initialization.
 
+Need explicit control for research instrumentation? Use `mc train run-research`.
+
 **Validated result** (LFM2-350M): val_loss 1.27 (Cayley-Stiefel) vs 1.38 (plain SGD), with geometric stopping certificate.
 
 ## What Gets Derived
@@ -26,7 +28,7 @@ No learning rate. No rank selection. No warmup schedule. No gradient clipping. T
 | 4 | Weight decay (`0.01`) | Condition ratio `sigma_k / sigma_max` | SVD |
 | 5 | Gradient clipping (`1.0`) | **Removed** — MASS bounds by construction | Weyl 1912 |
 | 6 | Warmup (5-10% steps) | **Removed** — geometric LR stable from step 0 | Ma & Yarats 2021 |
-| 7 | LR schedule (cosine) | **Optional** — ceiling binds throughout | Defazio 2024 |
+| 7 | LR schedule (cosine) | **Removed** — MASS is per-step, no schedule needed | Defazio 2024 |
 | 8 | Batch size | Gradient noise scale `B_crit` | McCandlish 2018 |
 | 9 | Early stopping (patience) | 4 geometric criteria | SVD + IEEE 754 |
 | 10 | LoRA scale (`alpha/rank`) | Spectral bound `sigma_k(W) / \|\|BA\|\|` | Weyl perturbation theory |

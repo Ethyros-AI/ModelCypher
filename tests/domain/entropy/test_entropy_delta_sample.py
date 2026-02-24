@@ -11,7 +11,6 @@ from modelcypher.core.domain.entropy.entropy_delta_sample import (
     EntropyDeltaSessionResult,
 )
 
-
 # =============================================================================
 # Helpers
 # =============================================================================

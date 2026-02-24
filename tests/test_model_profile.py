@@ -26,12 +26,12 @@ from pathlib import Path
 import pytest
 
 from modelcypher.core.domain.geometry.model_profile import (
+    SCHEMA_VERSION,
     DensitySummary,
     LayerProfile,
     ManifoldRegion,
     ModelProfile,
     ProfileSection,
-    SCHEMA_VERSION,
     SemanticSignature,
     TopologySummary,
 )

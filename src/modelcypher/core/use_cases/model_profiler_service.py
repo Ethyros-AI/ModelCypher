@@ -33,7 +33,6 @@ Example:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -45,6 +44,7 @@ from modelcypher.core.domain.geometry.model_profile import (
 if TYPE_CHECKING:
     from modelcypher.adapters.model_probe import ModelProbe, ModelProbeResult
     from modelcypher.core.domain.geometry.curvature_profile import CurvatureProfile
+    from modelcypher.core.domain.geometry.model_profile import ModelIdentity
 
 logger = logging.getLogger(__name__)
 

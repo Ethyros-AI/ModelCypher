@@ -46,12 +46,12 @@ from modelcypher.experimental.lora_geometry.four_condition import (
     create_four_condition_synthetic,
 )
 from modelcypher.experimental.lora_geometry.statistics import (
-    compute_permutation_test,
     compute_bootstrap_ci,
+    compute_permutation_test,
 )
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Backend
+    from modelcypher.ports.backend import Array, Backend
 
 
 # Results directory
@@ -136,7 +136,7 @@ class TestFourConditionSynthetic:
         # Random should have non-zero norms
         for m in pure_random:
             total_norm = m.total_frobenius_norm()
-            assert total_norm > 0, f"Random adapter has zero norm"
+            assert total_norm > 0, "Random adapter has zero norm"
 
     def test_metric_extraction(self):
         """Metrics can be extracted by condition."""
@@ -155,8 +155,8 @@ class TestFourConditionSynthetic:
 
         # Extract metrics
         cv_by_condition = experiment.get_metric_by_condition("amplification_cv")
-        weyl_by_condition = experiment.get_metric_by_condition("weyl_utilization")
-        norm_by_condition = experiment.get_metric_by_condition("delta_frobenius_norm")
+        experiment.get_metric_by_condition("weyl_utilization")
+        experiment.get_metric_by_condition("delta_frobenius_norm")
 
         # UNTRAINED should be present
         assert ConditionType.UNTRAINED in cv_by_condition

@@ -26,22 +26,23 @@ Focus areas:
 """
 
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.relative_representation import (
-    RelativeRepresentation,
-    align_relative_representations,
-    compute_relative_representation,
-    transfer_via_relative_space,
-)
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     is_finite,
     is_inf,
     is_nan,
+)
+from modelcypher.core.domain.geometry.relative_representation import (
+    RelativeRepresentation,
+    align_relative_representations,
+    compute_relative_representation,
+    transfer_via_relative_space,
 )
 
 if TYPE_CHECKING:

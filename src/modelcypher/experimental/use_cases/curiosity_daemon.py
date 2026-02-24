@@ -40,22 +40,19 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable
 
-
+from modelcypher.core.domain.geometry.acquisition_composite import CompositeAcquisition
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.experimental.continual.curiosity_policy import (
     CuriosityAction,
     CuriosityState,
     EFECuriosityPolicy,
     ProbeCandidate,
 )
-from modelcypher.core.domain.geometry.acquisition_composite import CompositeAcquisition
-from modelcypher.core.domain.geometry.acquisition_protocols import AcquisitionResult
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.core.use_cases.consolidation_service import (

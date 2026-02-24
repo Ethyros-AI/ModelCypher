@@ -31,54 +31,82 @@ For new code, import directly from the submodules:
 
 from __future__ import annotations
 
+# Re-export from alignment
+from .alignment import (
+    geodesic_invariant_alignment,
+    invariant_alignment,
+)
+
+# Re-export from decomposition
+from .decomposition import (
+    geodesic_pinv,
+    geodesic_svd,
+    gpu_lstsq,
+    null_space_projector,
+    numerical_rank_truncated_lstsq,
+    orthogonalize_alignment,
+    orthogonalize_alignment_full,
+    power_iteration_eigh,
+    safe_inverse,
+    svd_auto_rank,
+)
+
+# Re-export precision internals used across geometry submodules
+from .precision import _float_dtype_for as _float_dtype_for  # noqa: F401
+from .precision import _mask_sum as _mask_sum  # noqa: F401
+from .precision import _promote_precision as _promote_precision  # noqa: F401
+from .precision import (  # noqa: F401
+    _promote_precision_float32 as _promote_precision_float32,
+)
+
+# Re-export from precision (public API)
+from .precision import (
+    compute_precision_for_merge,
+    condition_threshold,
+    detect_model_dtype,
+    division_epsilon,
+    dtype_precision_bits,
+    find_magnitude_gap_threshold,
+    get_model_compute_dtype,
+    infinity_threshold,
+    machine_epsilon,
+    model_eps,
+    precision_dtype,
+    regularization_epsilon,
+    safe_log_epsilon,
+    set_model_compute_dtype,
+    svd_rank_threshold,
+    tiny_value,
+)
+
 # Re-export from scalars
 from .scalars import (
-    sqrt_scalar,
+    acos_scalar,
+    all_finite,
+    atan2_scalar,
+    ceil_scalar,
+    cos_scalar,
+    e_value,
+    exp_scalar,
+    floor_scalar,
+    inf_value,
     is_finite,
     is_inf,
     is_nan,
-    all_finite,
-    log_scalar,
-    exp_scalar,
-    power_scalar,
-    ceil_scalar,
-    floor_scalar,
-    ulp_scalar,
     lgamma_scalar,
-    acos_scalar,
-    cos_scalar,
-    sin_scalar,
-    atan2_scalar,
     log2_scalar,
+    log_scalar,
     pi_value,
-    e_value,
-    inf_value,
+    power_scalar,
+    sin_scalar,
+    sqrt_scalar,
+    ulp_scalar,
 )
 
-# Re-export from precision
-from .precision import (
-    dtype_precision_bits,
-    detect_model_dtype,
-    compute_precision_for_merge,
-    set_model_compute_dtype,
-    get_model_compute_dtype,
-    precision_dtype,
-    _dtype_name,
-    _default_float_dtype,
-    _float_dtype_for,
-    _promote_precision,
-    _promote_precision_float32,
-    _mask_sum,
-    machine_epsilon,
-    model_eps,
-    division_epsilon,
-    regularization_epsilon,
-    condition_threshold,
-    svd_rank_threshold,
-    tiny_value,
-    safe_log_epsilon,
-    infinity_threshold,
-    find_magnitude_gap_threshold,
+# Re-export from spectral_init
+from .spectral_init import (
+    spectral_normalized_init,
+    spectral_normalized_lora_init,
 )
 
 # Re-export from statistics
@@ -89,43 +117,16 @@ from .statistics import (
     compute_spearman_correlation,
 )
 
-# Re-export from decomposition
-from .decomposition import (
-    power_iteration_eigh,
-    geodesic_svd,
-    orthogonalize_alignment,
-    orthogonalize_alignment_full,
-    svd_auto_rank,
-    geodesic_pinv,
-    null_space_projector,
-    numerical_rank_truncated_lstsq,
-    safe_inverse,
-    gpu_lstsq,
-)
-
-# Re-export from alignment
-from .alignment import (
-    invariant_alignment,
-    geodesic_invariant_alignment,
-)
-
-# Re-export from spectral_init
-from .spectral_init import (
-    spectral_normalized_init,
-    spectral_normalized_lora_init,
-)
-
 # Re-export from validation
 from .validation import (
     ArrayNumerics,
-    validate_array_numerics,
-    count_nan,
-    count_inf,
-    count_nonfinite,
-    ConvergenceState,
     ConvergenceMonitor,
+    ConvergenceState,
+    count_inf,
+    count_nan,
+    count_nonfinite,
+    validate_array_numerics,
 )
-
 
 __all__ = [
     # Model-driven precision detection

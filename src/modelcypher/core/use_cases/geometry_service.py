@@ -46,7 +46,6 @@ from modelcypher.core.domain.geometry.path_geometry import (
     PathGeometry,
     PathSignature,
 )
-from modelcypher.ports.embedding import EmbeddingProvider
 from modelcypher.ports.backend import Backend
 
 

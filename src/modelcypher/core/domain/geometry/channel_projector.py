@@ -33,13 +33,10 @@ from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.geodesic_null_space import (
-    GeodesicNullSpaceFilter,
     GeodesicNullSpaceBasis,
+    GeodesicNullSpaceFilter,
 )
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-from modelcypher.core.domain.geometry.numerical_stability import (
-    regularization_epsilon,
-)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend

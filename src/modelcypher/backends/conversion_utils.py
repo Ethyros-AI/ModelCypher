@@ -21,7 +21,6 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-
 _NUMPY_DISABLED_MESSAGE = (
     "to_numpy() is disabled. ModelCypher does not permit CPU arrays. "
     "Use backend.tolist() for lists, backend.to_scalar() for scalars, "

@@ -28,11 +28,11 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    acos_scalar,
     division_epsilon,
     machine_epsilon,
-    sqrt_scalar,
     pi_value,
-    acos_scalar,
+    sqrt_scalar,
 )
 
 

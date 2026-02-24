@@ -29,8 +29,8 @@ from typing import Any
 
 import typer
 
-from modelcypher.utils.errors import ErrorDetail
 from modelcypher.cli.output import write_error
+from modelcypher.utils.errors import ErrorDetail
 
 
 def normalize_path(path: str) -> Path:

@@ -30,7 +30,6 @@ from datetime import datetime, timezone
 from enum import Enum
 from uuid import UUID
 
-
 logger = logging.getLogger(__name__)
 
 

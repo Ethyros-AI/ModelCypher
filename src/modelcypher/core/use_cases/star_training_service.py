@@ -54,8 +54,8 @@ from modelcypher.core.domain.star.prompting import (
     build_forward_prompt,
     build_rationalization_prompt,
 )
-from modelcypher.core.domain.training.geometric_lora import analyze_weight_geometries
 from modelcypher.core.domain.training.exceptions import TrainingDerivationError
+from modelcypher.core.domain.training.geometric_lora import analyze_weight_geometries
 from modelcypher.core.domain.training.spectral_budget import compute_budget_ratios
 
 if TYPE_CHECKING:

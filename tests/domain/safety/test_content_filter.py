@@ -20,8 +20,8 @@ import unittest
 
 from modelcypher.core.domain.safety.regex_content_filter import (
     RegexContentFilter,
-    SafetyCategory,
     RuleAction,
+    SafetyCategory,
 )
 
 

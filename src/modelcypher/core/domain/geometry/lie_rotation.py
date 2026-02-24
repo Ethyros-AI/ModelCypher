@@ -80,7 +80,7 @@ def so_log(
     if project:
         R = _project_to_so(R, b)
 
-    n = int(b.shape(R)[0])
+    int(b.shape(R)[0])
     C = _sym_part(R, b)
     S = _skew_part(R, b)
     eigvals, eigvecs = b.eigh(C)

@@ -123,6 +123,13 @@ class _FlowAdapter:
     def train_loop(self, **_kwargs):
         return [(1, 1.0, 1.0)], "max_iters", []
 
+    def save_adapter(self, model, output_path, metadata=None):
+        from pathlib import Path
+
+        p = Path(output_path)
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
     def verify_bounds(self, _model):
         return True, 0.5, {}
 
@@ -137,10 +144,15 @@ class _CliResult:
 
 class _CliCaptureDatasetService:
     def __init__(self) -> None:
-        self.calls: list[dict[str, object]] = []
+        self.strict_calls: list[dict[str, object]] = []
+        self.research_calls: list[dict[str, object]] = []
 
-    def train_from_dataset(self, **kwargs):
-        self.calls.append(dict(kwargs))
+    def train_from_dataset_strict(self, **kwargs):
+        self.strict_calls.append(dict(kwargs))
+        return _CliResult()
+
+    def train_from_dataset_research(self, **kwargs):
+        self.research_calls.append(dict(kwargs))
         return _CliResult()
 
 
@@ -300,7 +312,7 @@ def test_auto_regime_outcome_filter_drops_ce_types():
     assert dropped["unknown_type"] == 1
 
 
-def test_train_run_no_auto_regime_flag_suppresses_regime_selection(monkeypatch, tmp_path: Path):
+def test_train_run_strict_hides_research_flags(monkeypatch, tmp_path: Path):
     model_dir = tmp_path / "model"
     model_dir.mkdir()
     data_path = tmp_path / "train.jsonl"
@@ -314,16 +326,57 @@ def test_train_run_no_auto_regime_flag_suppresses_regime_selection(monkeypatch, 
 
     help_result = runner.invoke(app, ["train", "run", "--help"])
     assert help_result.exit_code == 0
+    assert "--auto-regime" not in help_result.stdout
+    assert "--no-auto-regime" not in help_result.stdout
+
+    result = runner.invoke(
+        app,
+        ["train", "run", "--model", str(model_dir), "--data", str(data_path)],
+    )
+    assert result.exit_code == 0
+    assert capture.strict_calls
+    assert not capture.research_calls
+    strict_call = capture.strict_calls[0]
+    assert set(strict_call) == {
+        "model_path",
+        "dataset_path",
+        "output_path",
+        "eval_dataset_path",
+    }
+
+
+def test_train_run_research_exposes_auto_regime_flag(monkeypatch, tmp_path: Path):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    data_path = tmp_path / "train.jsonl"
+    data_path.write_text('{"text":"hello"}\n', encoding="utf-8")
+
+    capture = _CliCaptureDatasetService()
+    monkeypatch.setattr(
+        "modelcypher.cli.composition.get_dataset_training_service",
+        lambda: capture,
+    )
+
+    help_result = runner.invoke(app, ["train", "run-research", "--help"])
+    assert help_result.exit_code == 0
     assert "--auto-regime" in help_result.stdout
     assert "--no-auto-regime" in help_result.stdout
 
     result = runner.invoke(
         app,
-        ["train", "run", "--model", str(model_dir), "--data", str(data_path), "--no-auto-regime"],
+        [
+            "train",
+            "run-research",
+            "--model",
+            str(model_dir),
+            "--data",
+            str(data_path),
+            "--no-auto-regime",
+        ],
     )
     assert result.exit_code == 0
-    assert capture.calls
-    assert capture.calls[0]["auto_regime"] is False
+    assert capture.research_calls
+    assert capture.research_calls[0]["auto_regime"] is False
 
 
 def test_pilot_variance_split_requires_two_samples():
@@ -500,6 +553,8 @@ def test_train_from_dataset_auto_regime_adds_regime_metadata(monkeypatch, tmp_pa
     from modelcypher.core.domain.training.online_eval import OnlineEvalResult
     from modelcypher.core.domain.training.regime_selection import (
         PerTypeRegime as RegimePerType,
+    )
+    from modelcypher.core.domain.training.regime_selection import (
         TrainingRegime,
     )
 
@@ -569,7 +624,7 @@ def test_train_from_dataset_auto_regime_adds_regime_metadata(monkeypatch, tmp_pa
         model_path=model_dir,
         dataset_path=train_path,
         eval_dataset_path=eval_path,
-        max_iters=1,
+        no_save=True,
     )
 
     assert result.regime_global == "ce"
@@ -646,8 +701,8 @@ def test_auto_regime_preserves_explicit_entropy_regularization(monkeypatch, tmp_
         model_path=model_dir,
         dataset_path=train_path,
         eval_dataset_path=eval_path,
-        max_iters=1,
         entropy_regularization=True,
+        no_save=True,
     )
 
     assert captured_train_loop_kwargs["entropy_regularization"] is True
@@ -704,7 +759,6 @@ def test_auto_regime_selection_failure_raises_training_derivation_error(
             model_path=model_dir,
             dataset_path=train_path,
             eval_dataset_path=eval_path,
-            max_iters=1,
         )
 
     err = excinfo.value
@@ -751,8 +805,8 @@ def test_train_from_dataset_auto_retention_mix_fraction(monkeypatch, tmp_path: P
         model_path=model_dir,
         dataset_path=train_path,
         eval_dataset_path=eval_path,
-        max_iters=1,
         auto_regime=False,
+        no_save=True,
     )
 
     assert merge_call["primary_len"] == 3
@@ -805,14 +859,14 @@ def test_train_from_dataset_manual_retention_skips_auto(monkeypatch, tmp_path: P
         dataset_path=train_path,
         eval_dataset_path=eval_path,
         retention_dataset_path=retention_path,
-        retention_fraction=0.2,
-        max_iters=1,
         auto_regime=False,
+        no_save=True,
     )
 
     assert merge_call["primary_len"] == 3
     assert merge_call["retention_len"] == 1
-    assert merge_call["fraction"] == pytest.approx(0.2)
+    # retention_fraction now always derived from data ratio: 1 / (3 + 1) = 0.25
+    assert merge_call["fraction"] == pytest.approx(0.25)
     assert result.auto_retention_samples_collected == 0
     assert result.to_dict()["auto_retention_samples_collected"] == 0
 
@@ -844,10 +898,10 @@ def test_train_from_dataset_passes_research_controls_to_train_loop(
         model_path=model_dir,
         dataset_path=train_path,
         eval_dataset_path=eval_path,
-        max_iters=1,
         auto_regime=False,
         research_online_eval_stop_stage="post_outcome",
         research_outcome_selector="lost_only",
+        no_save=True,
     )
 
     assert captured_train_loop_kwargs["research_online_eval_stop_stage"] == "post_outcome"
@@ -866,7 +920,6 @@ def test_train_from_dataset_research_controls_validate_values(tmp_path: Path):
         service.train_from_dataset(
             model_path=model_dir,
             dataset_path=train_path,
-            max_iters=1,
             auto_regime=False,
             research_online_eval_stop_stage="invalid_stage",
         )
@@ -875,7 +928,6 @@ def test_train_from_dataset_research_controls_validate_values(tmp_path: Path):
         service.train_from_dataset(
             model_path=model_dir,
             dataset_path=train_path,
-            max_iters=1,
             auto_regime=False,
             research_outcome_selector="invalid_selector",
         )

@@ -32,7 +32,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     precision_dtype,
 )
-
 from modelcypher.core.domain.geometry.thermo_path_integration import (
     CombinedMeasurement,
     ThermoPathIntegration,
@@ -89,7 +88,7 @@ class ThermoEntropyResult:
 
 
 @dataclass(frozen=True)
-class ServiceLinguisticModifier:
+class LinguisticModifier:
     """A linguistic modifier that transforms prompts.
 
     Modifiers are text transformations whose effects are MEASURED, not assumed.

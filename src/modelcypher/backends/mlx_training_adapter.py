@@ -29,8 +29,8 @@ from modelcypher.backends._mlx_training_adapter_diagnostics_mixin import (
 )
 from modelcypher.backends._mlx_training_adapter_train_mixin import _MLXTrainingAdapterTrainMixin
 from modelcypher.backends.mlx_training_adapter_core import (
-    NBLoRALinear,
     EpochMetrics,
+    NBLoRALinear,
     calibrate_geometric_weights,
     iterate_structured_batches,
     make_constrained_loss,

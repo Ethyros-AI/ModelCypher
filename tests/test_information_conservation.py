@@ -30,18 +30,18 @@ from __future__ import annotations
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.intrinsic_dimension import (
+    IntrinsicDimension,
+    TwoNNEstimate,
+)
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.intrinsic_dimension import (
-    IntrinsicDimension,
-    TwoNNEstimate,
-)
 from modelcypher.core.domain.geometry.rmt_signal_separation import (
-    separate_signal_noise,
     MPSignalNoiseResult,
+    separate_signal_noise,
 )
 
 
@@ -110,7 +110,7 @@ class TestOrthogonalTransformConservation:
         # Compute ID after rotation
         id_after = id_computer.compute(data_rotated)
 
-        print(f"\nOrthogonal transform ID conservation:")
+        print("\nOrthogonal transform ID conservation:")
         print(f"  ID before: {id_before.intrinsic_dimension:.2f}")
         print(f"  ID after:  {id_after.intrinsic_dimension:.2f}")
         print(f"  True ID:   {intrinsic_dim}")
@@ -146,7 +146,7 @@ class TestOrthogonalTransformConservation:
         # Compute signal rank after rotation
         rmt_after = separate_signal_noise(data_rotated, b)
 
-        print(f"\nOrthogonal transform RMT conservation:")
+        print("\nOrthogonal transform RMT conservation:")
         print(f"  Signal rank before: {rmt_before.signal_rank}")
         print(f"  Signal rank after:  {rmt_after.signal_rank}")
         print(f"  True rank:          {intrinsic_dim}")
@@ -184,7 +184,7 @@ class TestOrthogonalTransformConservation:
         var_before_val = float(b.to_scalar(var_before))
         var_after_val = float(b.to_scalar(var_after))
 
-        print(f"\nOrthogonal transform variance conservation:")
+        print("\nOrthogonal transform variance conservation:")
         print(f"  Variance before: {var_before_val:.4f}")
         print(f"  Variance after:  {var_after_val:.4f}")
 
@@ -221,7 +221,7 @@ class TestBottleneckConservation:
         rmt_before = separate_signal_noise(data, b)
         rmt_after = separate_signal_noise(data_bottleneck, b)
 
-        print(f"\nBottleneck effect on signal rank:")
+        print("\nBottleneck effect on signal rank:")
         print(f"  Input dim:       {dim_in}")
         print(f"  Bottleneck dim:  {dim_bottleneck}")
         print(f"  Signal rank in:  {rmt_before.signal_rank}")
@@ -261,7 +261,7 @@ class TestBottleneckConservation:
         var_before_val = float(b.to_scalar(var_before))
         var_after_val = float(b.to_scalar(var_after))
 
-        print(f"\nBottleneck variance:")
+        print("\nBottleneck variance:")
         print(f"  Variance in:  {var_before_val:.4f}")
         print(f"  Variance out: {var_after_val:.4f}")
         print(f"  Ratio: {var_after_val / var_before_val:.4f}")
@@ -305,7 +305,7 @@ class TestExpansionConservation:
         # Compute ID after expansion
         id_after = id_computer.compute(data_large)
 
-        print(f"\nExpansion ID behavior:")
+        print("\nExpansion ID behavior:")
         print(f"  Dim before:   {dim_small}")
         print(f"  Dim after:    {dim_large}")
         print(f"  True ID:      {intrinsic_dim}")
@@ -345,7 +345,7 @@ class TestExpansionConservation:
         # Compute signal rank after
         rmt_after = separate_signal_noise(data_large, b)
 
-        print(f"\nExpansion signal rank behavior:")
+        print("\nExpansion signal rank behavior:")
         print(f"  Signal rank before: {rmt_before.signal_rank}")
         print(f"  Signal rank after:  {rmt_after.signal_rank}")
         print(f"  True rank:          {intrinsic_dim}")
@@ -386,7 +386,7 @@ class TestNoisyTransformDegradation:
         # Compute ID after noise
         id_noisy = id_computer.compute(data_noisy)
 
-        print(f"\nNoise effect on ID:")
+        print("\nNoise effect on ID:")
         print(f"  True ID:     {intrinsic_dim}")
         print(f"  ID clean:    {id_clean.intrinsic_dimension:.2f}")
         print(f"  ID noisy:    {id_noisy.intrinsic_dimension:.2f}")
@@ -423,7 +423,7 @@ class TestNoisyTransformDegradation:
         # Compute RMT after noise
         rmt_noisy = separate_signal_noise(data_noisy, b)
 
-        print(f"\nNoise effect on RMT:")
+        print("\nNoise effect on RMT:")
         print(f"  True rank:        {intrinsic_dim}")
         print(f"  Signal rank clean: {rmt_clean.signal_rank}")
         print(f"  Signal rank noisy: {rmt_noisy.signal_rank}")
@@ -483,7 +483,7 @@ class TestLayerChainConservation:
         b.eval(data)
         ids.append(id_computer.compute(data).intrinsic_dimension)
 
-        print(f"\nThree-layer chain ID evolution:")
+        print("\nThree-layer chain ID evolution:")
         print(f"  True ID:  {intrinsic_dim}")
         for i, (dim, id_val) in enumerate(zip(dims, ids)):
             print(f"  Layer {i} (dim={dim}): ID = {id_val:.2f}")
@@ -529,7 +529,7 @@ class TestLayerChainConservation:
         b.eval(data)
         variances.append(float(b.to_scalar(b.sum(b.var(data, axis=0)))))
 
-        print(f"\nThree-layer chain variance evolution:")
+        print("\nThree-layer chain variance evolution:")
         for i, (dim, var_val) in enumerate(zip(dims, variances)):
             print(f"  Layer {i} (dim={dim}): Variance = {var_val:.4f}")
 

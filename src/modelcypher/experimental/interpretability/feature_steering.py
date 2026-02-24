@@ -52,10 +52,10 @@ from typing import TYPE_CHECKING, Any, Callable
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.geodesic_null_space import GeodesicNullSpaceFilter
 from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
-from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms, frechet_mean
+from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean, geodesic_norms
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Array, Backend
+    from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
 

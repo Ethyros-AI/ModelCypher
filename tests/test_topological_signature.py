@@ -19,12 +19,12 @@
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.topological_fingerprint import (
-    TopologicalFingerprint,
-)
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     exp_scalar,
+)
+from modelcypher.core.domain.geometry.topological_fingerprint import (
+    TopologicalFingerprint,
 )
 
 

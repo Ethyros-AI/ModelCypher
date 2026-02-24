@@ -13,7 +13,6 @@ from modelcypher.core.domain.safety.behavioral_signature import (
     RefusalBoundaryResult,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

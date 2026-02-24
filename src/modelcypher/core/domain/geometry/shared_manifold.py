@@ -32,13 +32,13 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     invariant_alignment,
 )
-from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
-from modelcypher.core.domain.geometry.shared_subspace_projector import (
-    SharedSubspaceProjector,
-)
 from modelcypher.core.domain.geometry.rank_selection import (
     select_full_rank_indices,
     select_shared_full_rank_indices,
+)
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
+from modelcypher.core.domain.geometry.shared_subspace_projector import (
+    SharedSubspaceProjector,
 )
 from modelcypher.core.domain.geometry.transplant import compute_transplant_delta
 

@@ -50,23 +50,24 @@ import logging
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
-from typing import Iterable
+from typing import TYPE_CHECKING, Iterable
 
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import TwoLevelCache, content_hash
+from modelcypher.core.domain.geometry.atlas_protocols import ComputationalGateProtocol
+from modelcypher.core.domain.geometry.atlas_registry import get_gate_inventory
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.path_geometry import PathNode, PathSignature
 from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
     frechet_mean,
+    geodesic_norms,
 )
-from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
-from modelcypher.core.domain.geometry.atlas_protocols import ComputationalGateProtocol
-from modelcypher.core.domain.geometry.atlas_registry import get_gate_inventory
-from modelcypher.core.domain.geometry.path_geometry import PathNode, PathSignature
 from modelcypher.ports.embedding import EmbeddingProvider
 from modelcypher.utils.paths import get_modelcypher_home
 from modelcypher.utils.text import truncate
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
 

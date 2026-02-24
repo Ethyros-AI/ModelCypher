@@ -24,37 +24,37 @@ This is research code - NOT validated for production use.
 See: docs/research/lora_geometry_validation_plan.md
 """
 
+from modelcypher.experimental.lora_geometry.four_condition import (
+    ConditionType,
+    FourConditionExperiment,
+    create_synthetic_adapter,
+)
+from modelcypher.experimental.lora_geometry.id_trajectory import (
+    IDTrajectory,
+    IDTrajectoryPoint,
+    IDTrajectoryTracker,
+    measure_id_at_checkpoint,
+)
 from modelcypher.experimental.lora_geometry.measurements import (
     AdapterMeasurement,
     LayerMeasurement,
-    collect_layer_measurements,
     collect_adapter_measurement,
+    collect_layer_measurements,
 )
 from modelcypher.experimental.lora_geometry.statistics import (
+    BootstrapCI,
     CorrelationResult,
     PermutationTestResult,
-    BootstrapCI,
-    compute_pearson_correlation,
-    compute_spearman_correlation,
     compute_bootstrap_ci,
+    compute_pearson_correlation,
     compute_permutation_test,
-)
-from modelcypher.experimental.lora_geometry.four_condition import (
-    ConditionType,
-    create_synthetic_adapter,
-    FourConditionExperiment,
+    compute_spearman_correlation,
 )
 from modelcypher.experimental.lora_geometry.subspace_analysis import (
     SubspaceOverlapResult,
+    compute_behavioral_overlap,
     compute_principal_angles,
     compute_spectral_overlap,
-    compute_behavioral_overlap,
-)
-from modelcypher.experimental.lora_geometry.id_trajectory import (
-    IDTrajectoryPoint,
-    IDTrajectory,
-    IDTrajectoryTracker,
-    measure_id_at_checkpoint,
 )
 
 __all__ = [

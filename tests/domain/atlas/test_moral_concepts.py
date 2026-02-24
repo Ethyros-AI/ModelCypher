@@ -15,7 +15,6 @@ import pytest
 
 import modelcypher.core.domain.atlas.moral_concepts as moral_concepts
 
-
 # ---------------------------------------------------------------------------
 # MoralAxis enum
 # ---------------------------------------------------------------------------

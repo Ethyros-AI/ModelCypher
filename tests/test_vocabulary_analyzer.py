@@ -25,8 +25,8 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.experimental.vocabulary.vocabulary_analyzer import (
     TokenizerType,
-    VocabularyAnalyzer,
     VocabularyAlignment,
+    VocabularyAnalyzer,
     VocabularyStats,
 )
 

@@ -16,7 +16,6 @@ import pytest
 
 import modelcypher.core.domain.atlas.semantic_prime_frames as spf
 
-
 # ---------------------------------------------------------------------------
 # EnrichedPrime frozen dataclass
 # ---------------------------------------------------------------------------

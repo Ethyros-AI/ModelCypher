@@ -31,6 +31,9 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     precision_dtype,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
+    TrajectoryTangentResult,
+)
 from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_norms,
     geodesic_paired_distances,
@@ -42,12 +45,16 @@ from modelcypher.core.domain.geometry.transplant import (
     compute_null_space_projector,
     compute_weight_space_transplant,
 )
-from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
-    TrajectoryTangentResult,
-)
+from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 from modelcypher.experimental.merge.exceptions import (
     DimensionMismatchError,
     StitchUnavailableError,
+)
+
+from .manifest import (
+    TransplantManifest,
+    WeightStatus,
+    WeightTransformRecord,
 )
 from .transplant_helpers import (
     _compute_dimension_projection,
@@ -60,12 +67,6 @@ from .transplant_mapping import (
 from .transplant_metrics import (
     _compute_alignment_metrics,
 )
-from .manifest import (
-    TransplantManifest,
-    WeightStatus,
-    WeightTransformRecord,
-)
-from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -321,15 +322,11 @@ def process_layer_weights(
     hidden_stitch_output = stitches.hidden_output
     hidden_stitch_input = stitches.hidden_input
     intermediate_stitch_output = stitches.intermediate_output
-    intermediate_stitch_input = stitches.intermediate_input
     gate_stitch_output = stitches.gate_output
-    gate_stitch_input = stitches.gate_input
     attention_stitch_output = stitches.attention_output
     attention_stitch_input = stitches.attention_input
     k_stitch_output = stitches.k_output
-    k_stitch_input = stitches.k_input
     v_stitch_output = stitches.v_output
-    v_stitch_input = stitches.v_input
     kv_stitch_input = stitches.kv_input
     stitch_dims = stitches.dims
     source_activations = activations.source_hidden
@@ -1277,7 +1274,7 @@ def process_layer_weights(
                     dim0, dim1 = int(original_source_shape[0]), int(original_source_shape[1])
 
                     src_kv_dim = stitch_dims.get("src_kv", src_attn_dim)
-                    tgt_kv_dim = stitch_dims.get("tgt_kv", tgt_attn_dim)
+                    stitch_dims.get("tgt_kv", tgt_attn_dim)
 
                     is_q = any(n in key for n in ["q_proj", "query"])
                     is_kv = any(n in key for n in ["k_proj", "v_proj", "key", "value"])
@@ -1608,7 +1605,6 @@ def process_layer_weights(
         src_density_acts = None
         tgt_density_acts = None
         activation_space = "hidden"
-        merged_intermediate_used = False
 
         # For cross-architecture, use layer_mapping to find the mapped source layer.
         mapped_src_layer = layer_mapping.get(layer_idx, layer_idx) if layer_mapping else layer_idx
@@ -1621,7 +1617,6 @@ def process_layer_weights(
                 if merged_input is not None:
                     input_activations = merged_input
                     tgt_density_acts = merged_input
-                    merged_intermediate_used = True
 
             # First, get target intermediate activations (needed for null-space projection)
             if target_intermediate_activations is None:
@@ -1760,16 +1755,11 @@ def process_layer_weights(
         )
 
         density_weights_override = None
-        cache_key = None
-        use_cache = False
         if activation_space == "hidden":
-            use_cache = True
-            cache_key = "hidden"
             if density_weights_by_layer is not None:
                 density_weights_override = density_weights_by_layer.get(layer_idx)
         elif activation_space == "intermediate":
-            use_cache = not merged_intermediate_used
-            cache_key = "intermediate" if use_cache else None
+            pass
 
         # OPTIMIZATION: For full transfer (delta_scale≈1.0), skip expensive k-NN
         # density computation by providing pre-computed weights of 1.0 (full transfer).

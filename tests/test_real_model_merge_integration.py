@@ -25,17 +25,16 @@ These models have different architectures, hidden dimensions, and layer counts,
 providing realistic cross-architecture merge testing.
 """
 
-from pathlib import Path
 import json
+from pathlib import Path
 
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.gram_aligner import find_alignment
 from modelcypher.core.domain.geometry.cka import compute_geodesic_cka
 from modelcypher.core.domain.geometry.geodesic_null_space import filter_delta_svd
+from modelcypher.core.domain.geometry.gram_aligner import find_alignment
 from modelcypher.core.domain.geometry.numerical_stability import all_finite, division_epsilon
-
 
 # Model fixture paths
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / ".models"
@@ -579,8 +578,6 @@ class TestCrossArchitectureMLPWeightTransplant:
         )
 
         n_samples = 64
-        src_hidden = 1024
-        src_inter = 4608
         tgt_hidden = 576
         tgt_inter = 1536
 

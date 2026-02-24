@@ -20,8 +20,6 @@
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
-
 from modelcypher.core.domain.geometry.geometry_metrics_cache import (
     CachedGWResult,
     CachedIDResult,
@@ -29,6 +27,7 @@ from modelcypher.core.domain.geometry.geometry_metrics_cache import (
     CachedTopoResult,
     GeometryMetricsCache,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 
 def _eps(*values: float) -> float:

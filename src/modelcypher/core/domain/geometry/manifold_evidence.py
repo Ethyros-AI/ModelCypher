@@ -30,8 +30,8 @@ from modelcypher.core.domain.geometry.riemannian_core import RiemannianGeometry
 from modelcypher.core.domain.geometry.riemannian_validation import derive_k_neighbors
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Array, Backend
     from modelcypher.core.domain.geometry.manifold_curvature import ManifoldCurvatureProfile
+    from modelcypher.ports.backend import Array, Backend
 
 
 @dataclass(frozen=True)

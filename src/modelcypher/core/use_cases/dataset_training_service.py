@@ -20,7 +20,7 @@
 One training method. Geometry derives everything:
 - Which layers to target (tail_dims > 0)
 - Rank per layer (min(tail_dims, n_train_samples))
-- Scale bound (sigma_k / 2 * safety_margin)
+- Scale bound (sigma_k / 2 * (1 - sqrt(eps)), IEEE 754 derived)
 - Learning rate (MASS: min(eta_ceiling, eta_sps, eta_weyl) — spectral bounds)
 - Optimizer (Cayley-Stiefel retraction on rank-r Stiefel manifold)
 - Batch size (B_crit = 1/SNR from gradient noise)
@@ -64,6 +64,11 @@ logger = logging.getLogger(__name__)
 
 # Apple Metal SIMD group width (hardware constant, not a hyperparameter).
 _MLX_SIMD_WIDTH = 32
+
+# PRNG stream offsets: distinct integers → non-overlapping streams.
+# Values are arbitrary-but-fixed for reproducibility (Knuth TAOCP §3.2.1).
+_EVAL_SEED_OFFSET = 1
+_OUTCOME_SEED_OFFSET = 2
 
 
 @dataclass
@@ -168,6 +173,46 @@ class DatasetTrainingService:
         self._adapter = adapter
         self._backend = backend
 
+    def train_from_dataset_strict(
+        self,
+        model_path: str | Path,
+        dataset_path: str | Path,
+        output_path: str | Path | None = None,
+        eval_dataset_path: str | Path | None = None,
+    ) -> DatasetTrainResult:
+        """Strict training entrypoint: model+dataset only."""
+        resolved_model_path = Path(model_path).expanduser().resolve()
+        resolved_dataset_path = Path(dataset_path).expanduser().resolve()
+        derived_seed = self._derive_strict_seed(
+            model_path=resolved_model_path,
+            dataset_path=resolved_dataset_path,
+        )
+        logger.info(
+            "Strict training seed derived from model+dataset hashes: seed=%d",
+            derived_seed,
+        )
+        return self.train_from_dataset(
+            model_path=resolved_model_path,
+            dataset_path=resolved_dataset_path,
+            output_path=output_path,
+            eval_dataset_path=eval_dataset_path,
+            seed=derived_seed,
+            auto_regime=True,
+        )
+
+    def train_from_dataset_research(
+        self,
+        model_path: str | Path,
+        dataset_path: str | Path,
+        **kwargs: Any,
+    ) -> DatasetTrainResult:
+        """Research entrypoint exposing non-strict controls."""
+        return self.train_from_dataset(
+            model_path=model_path,
+            dataset_path=dataset_path,
+            **kwargs,
+        )
+
     def train_from_dataset(
         self,
         model_path: str | Path,
@@ -175,15 +220,9 @@ class DatasetTrainingService:
         output_path: str | Path | None = None,
         init_adapter_path: str | Path | None = None,
         eval_dataset_path: str | Path | None = None,
-        max_iters: int = 10000,
         seq_length: int | None = None,
         lr_override: float | None = None,
-        deep: bool = False,
-        safety_margin: float | None = None,
         seed: int = 42,
-        eval_batches: int | None = None,
-        adaptive_lr: bool = True,
-        lr_monotonic: bool = False,
         topo_monitor: bool = False,
         dim_monitor: bool = False,
         paired: bool | None = None,
@@ -201,10 +240,6 @@ class DatasetTrainingService:
         # Answer-span masked CE training
         answer_mask: bool = False,
         retention_dataset_path: str | Path | None = None,
-        retention_fraction: float | None = None,
-        # Envelope caps
-        max_epochs: int | None = None,
-        budget_cap: float | None = None,
         # Sub-epoch evaluation interval
         eval_interval: int | None = None,
         # Global EOS exclusion from CE
@@ -219,12 +254,13 @@ class DatasetTrainingService:
         outcome_rollback_on_degradation: bool = True,
         research_online_eval_stop_stage: str = "pre_outcome",
         research_outcome_selector: str = "all",
+        no_save: bool = False,
+        max_iters_cap: int | None = None,
     ) -> DatasetTrainResult:
         """Train an NB-LoRA adapter from a JSONL dataset.
 
-        All parameters are geometry-derived except the safety cap (max_iters).
-        If paired=True (or auto-detected from data), uses constrained training
-        with answer-only CE, invariance, separation, and geodesic constraints.
+        All hyperparameters are geometry-derived.  The user selects a model
+        and dataset; everything else is math.
         """
         model_path = Path(model_path).expanduser().resolve()
         dataset_path = Path(dataset_path).expanduser().resolve()
@@ -232,7 +268,15 @@ class DatasetTrainingService:
         init_adapter = (
             Path(init_adapter_path).expanduser().resolve() if init_adapter_path else None
         )
-        output_dir = Path(output_path).expanduser().resolve() if output_path else None
+        if no_save:
+            output_dir = None
+        elif output_path is not None:
+            output_dir = Path(output_path).expanduser().resolve()
+        else:
+            # Auto-derive: <model_parent>/adapters/<model_name>-nblora-<seed>
+            # Encodes provenance (model), method (nblora), uniqueness (seed).
+            output_dir = model_path.parent / "adapters" / f"{model_path.name}-nblora-{seed}"
+            logger.info("Auto-derived output path: %s", output_dir)
 
         if research_online_eval_stop_stage not in {"pre_outcome", "post_outcome"}:
             raise ValueError(
@@ -332,14 +376,13 @@ class DatasetTrainingService:
             retention_path = Path(retention_dataset_path).expanduser().resolve()
             retention_samples = load_jsonl_dataset(retention_path)
             # Derive mix fraction from data ratio: n_ret / (n_ret + n_train).
-            if retention_fraction is None:
-                n_ret = len(retention_samples)
-                n_trn = len(train_samples)
-                retention_fraction = n_ret / (n_ret + n_trn) if (n_ret + n_trn) > 0 else 0.0
-                logger.info(
-                    "Derived retention_fraction=%.6f from data ratio (%d ret / %d total)",
-                    retention_fraction, n_ret, n_ret + n_trn,
-                )
+            n_ret = len(retention_samples)
+            n_trn = len(train_samples)
+            retention_fraction = n_ret / (n_ret + n_trn) if (n_ret + n_trn) > 0 else 0.0
+            logger.info(
+                "Derived retention_fraction=%.6f from data ratio (%d ret / %d total)",
+                retention_fraction, n_ret, n_ret + n_trn,
+            )
             train_samples = merge_datasets_with_fraction(
                 train_samples, retention_samples, retention_fraction,
             )
@@ -422,8 +465,7 @@ class DatasetTrainingService:
 
         # Eval uses all available data. batch_size=1 eliminates padding waste
         # and computes exact per-sample loss (no approximation from batching).
-        if eval_batches is None:
-            eval_batches = len(eval_dataset)
+        eval_batches = len(eval_dataset)
         eval_batch_size = 1
 
         # 3. Baseline eval
@@ -489,9 +531,6 @@ class DatasetTrainingService:
                 ConstraintState,
                 derive_constraint_thresholds,
             )
-            from modelcypher.core.domain.training.loop_preservation import (
-                select_layers_to_sample,
-            )
 
             logger.warning(
                 "EXPERIMENTAL: constrained geometric training enabled via --paired. "
@@ -539,11 +578,8 @@ class DatasetTrainingService:
                     sorted(constraint_state.frozen),
                 )
 
-        # 5. Select targets (geometry decides)
-        if deep:
-            target_modules = list(geometries.keys())
-        else:
-            target_modules = select_target_modules(geometries)
+        # 5. Select targets (geometry decides: layers with tail_dims > 0)
+        target_modules = select_target_modules(geometries)
         if not target_modules:
             raise ValueError("No targetable layers found from geometric analysis")
 
@@ -578,14 +614,11 @@ class DatasetTrainingService:
             len(target_modules),
         )
         # Keep logging numerically aligned with adapter injection when caller does
-        # not provide an explicit safety margin.
-        if safety_margin is None:
-            effective_safety_margin = max(0.0, 1.0 - math.sqrt(float(self._backend.finfo().eps)))
-        else:
-            effective_safety_margin = float(safety_margin)
+        # Safety margin derived from IEEE 754: 1 - sqrt(eps).
+        effective_safety_margin = max(0.0, 1.0 - math.sqrt(float(self._backend.finfo().eps)))
         n_lora_layers = self._adapter.inject_nb_lora(
             model, geometries, target_modules,
-            safety_margin=safety_margin,
+            safety_margin=None,
             rank_overrides=data_ceiling_ranks,
         )
         if n_lora_layers <= 0:
@@ -630,6 +663,23 @@ class DatasetTrainingService:
             min_constrained_batch = max(n_logic, n_template) + 1
             batch_size = max(batch_size, min_constrained_batch)
         logger.info("Geometry-derived batch size: %d", batch_size)
+
+        derived_max_iters_cap = self._derive_training_safety_cap(
+            n_samples=len(train_dataset),
+            batch_size=batch_size,
+        )
+        if max_iters_cap is not None:
+            if max_iters_cap <= 0:
+                raise ValueError("max_iters_cap must be positive")
+            resolved_max_iters_cap = max_iters_cap
+        else:
+            resolved_max_iters_cap = derived_max_iters_cap
+        logger.info(
+            "Training safety cap: max_iters=%d (derived=%d, override=%s)",
+            resolved_max_iters_cap,
+            derived_max_iters_cap,
+            max_iters_cap is not None,
+        )
 
         # 8. MASS: sigma_max and sigma_k_min for spectral ceiling (Weyl 1912)
         sigma_max = max(g.sigma_max for g in geometries.values() if g.sigma_max > 0)
@@ -705,8 +755,7 @@ class DatasetTrainingService:
                 evaluate_correctness,
             )
 
-            # Seed derived from training seed (deterministic, no separate parameter)
-            eval_seed = seed + 1
+            eval_seed = seed + _EVAL_SEED_OFFSET
             eval_problems = create_eval_problem_set(
                 n_problems=effective_online_eval_n_problems,
                 seed=eval_seed,
@@ -818,8 +867,7 @@ class DatasetTrainingService:
                 create_eval_problem_set,
             )
 
-            # Seed derived from training seed (deterministic, no separate parameter)
-            outcome_seed = seed + 2
+            outcome_seed = seed + _OUTCOME_SEED_OFFSET
             all_outcome_problems = create_eval_problem_set(
                 n_problems=effective_outcome_n_problems,
                 seed=outcome_seed,
@@ -860,14 +908,14 @@ class DatasetTrainingService:
             train_dataset=train_dataset,
             batch_size=batch_size,
             seq_length=seq_length,
-            max_iters=max_iters,
+            max_iters=resolved_max_iters_cap,
             seed=seed,
             sigma_max=sigma_max,
             lr_override=lr_override,
             eval_dataset=eval_dataset,
             eval_batches=eval_batches,
-            adaptive_lr=adaptive_lr,
-            lr_monotonic=lr_monotonic,
+            adaptive_lr=True,
+            lr_monotonic=False,
             sigma_k_min=sigma_k_min,
             tokenizer=tokenizer,
             opt_config=opt_config,
@@ -889,8 +937,6 @@ class DatasetTrainingService:
             outcome_problems=outcome_problems,
             answer_masked_dataset=answer_masked_train,
             answer_masked_eval=answer_masked_val,
-            max_epochs=max_epochs,
-            budget_cap=budget_cap,
             eval_interval=eval_interval,
             eos_exclude=eos_exclude,
             rss_monitor=rss_monitor,
@@ -986,7 +1032,7 @@ class DatasetTrainingService:
                 "n_lora_layers": str(n_lora_layers),
                 "train_iters": str(train_iters),
                 "method": "nb_lora_cayley",
-                "safety_margin": str(safety_margin),
+                "safety_margin": str(effective_safety_margin),
                 "optimizer": "cayley_stiefel",
             }
             if min_cka is not None:
@@ -1056,6 +1102,31 @@ class DatasetTrainingService:
             validation_split=validation_split_info,
             auto_retention_samples_collected=auto_retention_samples_collected,
         )
+
+    def _derive_strict_seed(self, model_path: Path, dataset_path: Path) -> int:
+        """Derive deterministic seed from model artifacts and dataset bytes."""
+        model_hash = self._hash_model_artifacts(model_path)
+        dataset_hash = self._hash_file(dataset_path)
+        digest = hashlib.sha256(
+            f"{model_hash}:{dataset_hash}".encode("utf-8"),
+        ).digest()
+        return int.from_bytes(digest[:4], "big", signed=False)
+
+    def _derive_training_safety_cap(self, *, n_samples: int, batch_size: int) -> int:
+        """Derive max-iteration cap from batch geometry and machine precision."""
+        if n_samples <= 0:
+            raise ValueError("n_samples must be positive")
+        if batch_size <= 0:
+            raise ValueError("batch_size must be positive")
+
+        eps = float(self._backend.finfo().eps)
+        sqrt_eps = math.sqrt(eps)
+        iters_per_epoch = math.ceil(n_samples / batch_size)
+
+        # Loss-change resolvability floor from IEEE-754: once changes are below
+        # sqrt(eps), additional epochs cannot be distinguished from roundoff.
+        epochs_until_precision_floor = math.ceil(1.0 / sqrt_eps)
+        return iters_per_epoch * epochs_until_precision_floor
 
     def _collect_auto_retention(
         self,
@@ -1711,6 +1782,17 @@ class DatasetTrainingService:
                     digest.update(chunk)
         return digest.hexdigest()
 
+    def _hash_file(self, file_path: Path) -> str:
+        """Compute SHA256 over a single file."""
+        digest = hashlib.sha256()
+        with file_path.open("rb") as handle:
+            while True:
+                chunk = handle.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+        return digest.hexdigest()
+
     def _derive_regime_n_from_ci(self) -> int:
         """Derive regime problem count from Clopper-Pearson CI resolution.
 
@@ -1730,19 +1812,14 @@ class DatasetTrainingService:
             DEFAULT_PROBLEM_TYPE_CHANCE_RATES,
         )
 
-        # Search bound: CI half-width ≈ O(1/√n), target ≈ max(chance, 1/n).
-        # Resolves when 1/√n ≲ target. For chance > 0: n ≲ 1/chance².
-        # For chance = 0: target = 1/n, always resolves (k = n → CI collapses).
-        # Derived cap: ceil(1 / min_nonzero_chance²) + margin, or 100 if all exact-match.
-        nonzero = [float(c) for c in DEFAULT_PROBLEM_TYPE_CHANCE_RATES.values() if float(c) > 0.0]
-        min_chance = min(nonzero) if nonzero else 1.0
-        search_cap = max(100, math.ceil(1.0 / (min_chance * min_chance)) + 10)
+        eps_f64 = math.ulp(1.0)
+        machine_limit_n = int(math.ceil(1.0 / eps_f64))
 
         per_type_n: dict[str, int] = {}
         for problem_type, chance_rate in DEFAULT_PROBLEM_TYPE_CHANCE_RATES.items():
             chance = float(chance_rate)
-            found: int | None = None
-            for n in range(2, search_cap + 1):
+
+            def ci_resolves(n: int) -> bool:
                 alpha = 1.0 / n
                 if chance <= 0.0:
                     # Exact-match: derive at k=n (perfect signal). Any single
@@ -1761,29 +1838,41 @@ class DatasetTrainingService:
                     else float(beta_dist.ppf(1.0 - alpha / 2.0, k + 1, n - k))
                 )
                 if not (math.isfinite(lower) and math.isfinite(upper)):
-                    continue
+                    return False
                 half_width = (upper - lower) / 2.0
                 # CI must resolve: half-width < max(chance, 1/n) to be useful.
                 target = chance if chance > 0.0 else 1.0 / n
-                if half_width <= target:
-                    found = n
-                    break
+                return half_width <= target
 
-            if found is None:
+            lower_n = 1
+            upper_n = 2
+            while upper_n < machine_limit_n and not ci_resolves(upper_n):
+                lower_n = upper_n
+                upper_n = min(machine_limit_n, upper_n * 2)
+
+            if not ci_resolves(upper_n):
                 raise TrainingDerivationError(
                     failure_class="unavailable_measurement",
                     detail=(
                         f"Regime-N CI derivation failed for type={problem_type} "
-                        f"(chance={chance:.3f}): could not resolve CI in {search_cap} iterations "
-                        f"(derived from min_chance={min_chance:.4f})."
+                        f"(chance={chance:.3f}): CI did not resolve before "
+                        f"machine precision limit (n={machine_limit_n})."
                     ),
                     diagnostics={
                         "problem_type": problem_type,
                         "chance_rate": chance,
-                        "search_cap": search_cap,
+                        "machine_limit_n": machine_limit_n,
                     },
                 )
-            per_type_n[problem_type] = found
+
+            while upper_n - lower_n > 1:
+                mid_n = lower_n + (upper_n - lower_n) // 2
+                if ci_resolves(mid_n):
+                    upper_n = mid_n
+                else:
+                    lower_n = mid_n
+
+            per_type_n[problem_type] = upper_n
 
         if not per_type_n:
             raise TrainingDerivationError(

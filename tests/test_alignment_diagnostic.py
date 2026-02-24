@@ -24,8 +24,8 @@ import pytest
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.alignment_diagnostic import (
     AlignmentSignal,
-    alignment_signal_from_matrices,
     _matrix_rank,
+    alignment_signal_from_matrices,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,

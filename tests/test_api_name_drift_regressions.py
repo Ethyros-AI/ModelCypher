@@ -23,7 +23,6 @@ import importlib
 
 import pytest
 
-
 SYMBOL_CONTRACTS: list[tuple[str, tuple[str, ...]]] = [
     (
         "modelcypher.core.domain.models",

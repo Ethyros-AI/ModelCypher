@@ -24,11 +24,12 @@ weighting based on k-NN statistics.
 from __future__ import annotations
 
 import logging
-from sys import float_info
 from dataclasses import dataclass
+from sys import float_info
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.behavioral_norm import behavioral_norm
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     geodesic_svd,
@@ -39,14 +40,13 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     precision_dtype,
     svd_rank_threshold,
 )
-from modelcypher.core.domain.geometry.behavioral_norm import behavioral_norm
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Array, Backend
     from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
         TrajectoryResult,
         TrajectoryTangentResult,
     )
+    from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
 

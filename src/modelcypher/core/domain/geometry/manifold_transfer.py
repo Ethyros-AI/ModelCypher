@@ -45,8 +45,8 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     regularization_epsilon,
     svd_auto_rank,
 )
-from modelcypher.core.domain.geometry.riemannian_validation import derive_k_neighbors
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
+from modelcypher.core.domain.geometry.riemannian_validation import derive_k_neighbors
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -470,7 +470,7 @@ class CrossManifoldProjector:
 
         backend.eval(target_centroids_arr)
         compute_dtype = precision_dtype(backend, reference=target_centroids_arr)
-        d = int(target_centroids_arr.shape[1])
+        int(target_centroids_arr.shape[1])
         eps = division_epsilon(backend, target_centroids_arr)
         # Convergence tolerance derived from data
         convergence_tolerance = regularization_epsilon(backend, target_centroids_arr)

@@ -46,16 +46,13 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
-
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain.atlas.unified_atlas import (
     AtlasDomain,
     AtlasProbe,
     UnifiedAtlasInventory,
 )
-from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_inventories
 from modelcypher.core.domain.geometry.fingerprint_cache import (
     ModelFingerprintCache,
     make_config_hash,
@@ -72,11 +69,12 @@ from modelcypher.core.domain.geometry.manifold_stitcher import (
     IntersectionMap,
     LayerConfidence,
 )
+from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_inventories
 
 if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
-    from modelcypher.ports.model_loader import ModelLoaderPort
     from modelcypher.ports.backend import Backend
+    from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
 

@@ -23,17 +23,17 @@ variance-based null space analysis for activation matrices.
 
 from __future__ import annotations
 
-import math
 import logging
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain.geometry.numerical_stability import (
-    machine_epsilon,
-    sqrt_scalar,
+    _promote_precision_float32 as _promote_precision,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
-    _promote_precision_float32 as _promote_precision,
+    machine_epsilon,
+    sqrt_scalar,
 )
 
 if TYPE_CHECKING:

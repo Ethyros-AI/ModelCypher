@@ -24,7 +24,6 @@ from modelcypher.backends.mlx_training_adapter_core import (
     prepare_outcome_batches,
 )
 
-
 # =============================================================================
 # prepare_outcome_batches tests
 # =============================================================================

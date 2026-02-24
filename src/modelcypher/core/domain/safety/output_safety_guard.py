@@ -38,6 +38,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.safety.output_safety_result import (
     DEFAULT_FILTERED_PLACEHOLDER,
     OutputSafetyResult,
@@ -49,7 +50,6 @@ from modelcypher.core.domain.safety.regex_content_filter import (
     SafetyCategory,
 )
 from modelcypher.core.domain.safety.safety_audit_log import SafetyAuditLog
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.safety.streaming_token_buffer import StreamingTokenBuffer
 
 logger = logging.getLogger(__name__)

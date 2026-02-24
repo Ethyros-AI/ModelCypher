@@ -352,13 +352,12 @@ class EntropyDeltaTracker:
             anomaly_count = int(b.to_scalar(anomaly_count_arr))
             max_anomaly_score = float(b.to_scalar(max_anomaly_arr))
             avg_delta = float(b.to_scalar(avg_delta_arr))
-            disagreement_count = int(b.to_scalar(disagreement_count_arr))
+            int(b.to_scalar(disagreement_count_arr))
             disagreement_rate = float(b.to_scalar(disagreement_rate_arr))
         else:
             anomaly_count = 0
             max_anomaly_score = 0.0
             avg_delta = 0.0
-            disagreement_count = 0
             disagreement_rate = 0.0
         # Logit margin statistics
         margin_values = [

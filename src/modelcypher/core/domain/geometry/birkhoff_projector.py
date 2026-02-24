@@ -32,10 +32,8 @@ from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
-    ceil_scalar,
     division_epsilon,
     geodesic_svd,
-    log2_scalar,
     regularization_epsilon,
     tiny_value,
 )

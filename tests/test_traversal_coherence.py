@@ -17,17 +17,17 @@
 
 from __future__ import annotations
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    is_finite,
+    is_nan,
+    machine_epsilon,
+)
 from modelcypher.core.domain.geometry.traversal_coherence import (
     Path,
     TraversalCoherence,
     standard_computational_paths,
-)
-from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import (
-    is_finite,
-    is_nan,
-    machine_epsilon,
-    division_epsilon,
 )
 
 

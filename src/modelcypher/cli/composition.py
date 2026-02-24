@@ -35,10 +35,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from modelcypher.core.use_cases.adapter_analysis_service import AdapterAnalysisService
     from modelcypher.core.use_cases.capacity_analysis_service import (
         CapacityAnalysisService,
     )
-    from modelcypher.core.use_cases.adapter_analysis_service import AdapterAnalysisService
     from modelcypher.core.use_cases.entropy_calibration_service import (
         EntropyCalibrationService,
     )

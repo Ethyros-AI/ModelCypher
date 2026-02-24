@@ -682,7 +682,7 @@ class BackendPathGeometry:
 
         # Level 1: Sum of increments = final - initial
         # Vectorized: diff along axis 0, then sum
-        n_nodes = len(coords_list)
+        len(coords_list)
         increments = coords[1:] - coords[:-1]  # [n-1, d]
         level1_arr = self.backend.sum(increments, axis=0)  # [d]
         self.backend.eval(level1_arr)

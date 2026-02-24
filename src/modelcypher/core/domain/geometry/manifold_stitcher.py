@@ -49,8 +49,6 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
 )
 
 __all__ = [
-    # Constants
-    "StitchingConstants",
     # Enums
     "ProbeSpace",
     # Core dataclasses
@@ -793,7 +791,7 @@ class ManifoldStitcher:
             b.random_seed(seed)
 
         pts = b.array(points)
-        d_dim = pts.shape[1]
+        pts.shape[1]
 
         # Precompute geodesic distances (k=None triggers connectivity-based selection)
         from modelcypher.core.domain.geometry.riemannian_utils import (
@@ -1045,7 +1043,7 @@ class ActivationFingerprint:
         activated_dimensions = {}
         for k, v in d.get("activated_dimensions", {}).items():
             activated_dimensions[int(k)] = [ActivatedDimension.from_dict(x) for x in v]
-        
+
         return cls(
             prime_id=d["prime_id"],
             prime_text=d.get("prime_text", ""),

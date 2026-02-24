@@ -33,7 +33,6 @@ from modelcypher.core.domain.geometry.bilm_probe import (
     BiLMProbeResult,
     BiLMProbeTrainer,
     BiLMProbeWeights,
-    BiLMRepresentations,
     PredictionResult,
 )
 

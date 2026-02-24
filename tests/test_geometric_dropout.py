@@ -36,11 +36,11 @@ import pytest
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.training.geometric_lora import (
     LayerGeometry,
+    analyze_weight_geometries,
     compute_geometric_dropout,
     compute_layer_geometry,
     derive_lora_configs,
     select_target_modules,
-    analyze_weight_geometries,
 )
 from modelcypher.ports.training import LoRALayerConfig
 

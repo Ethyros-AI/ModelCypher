@@ -31,9 +31,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
+from modelcypher.ports.backend import Backend
 from modelcypher.ports.inference import HiddenStateEngine
+
 logger = logging.getLogger(__name__)
 
 

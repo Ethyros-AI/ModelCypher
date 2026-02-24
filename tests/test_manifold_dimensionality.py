@@ -21,12 +21,13 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.entropy.entropy_delta_sample import EntropyDeltaSample
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.manifold_dimensionality import (
     BackendManifoldDimensionality,
     ManifoldDimensionality,
     get_manifold_dimensionality,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
 
 def _eps(*values: float) -> float:
     backend = get_default_backend()

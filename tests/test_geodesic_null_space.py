@@ -34,15 +34,15 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import (
-    machine_epsilon,
-    division_epsilon,
-)
 from modelcypher.core.domain.geometry.geodesic_null_space import (
     GeodesicNullSpaceFilter,
     GeodesicNullSpaceResult,
     NullSpaceProjectionResult,
     filter_merge_delta_null_space,
+)
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
 )
 from modelcypher.core.domain.geometry.rmt_signal_separation import (
     compute_rmt_null_space_weights,
@@ -367,7 +367,6 @@ class TestEdgeCases:
         The geodesic filter now raises on dimension mismatch rather than
         silently returning the original - this prevents silent failures.
         """
-        import pytest
 
         backend = get_default_backend()
         geo_filter = GeodesicNullSpaceFilter(backend)

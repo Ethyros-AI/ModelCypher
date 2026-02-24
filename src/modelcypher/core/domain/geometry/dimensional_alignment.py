@@ -70,7 +70,7 @@ class DimensionalAlignment:
             "DIMENSIONAL ALIGNMENT REPORT",
             "=" * 40,
             "",
-            f"1D (Tokenization):",
+            "1D (Tokenization):",
             f"  Vocabulary overlap: {self.vocab_overlap:.1%}",
             f"  Jaccard similarity: {self.vocab_jaccard:.3f}",
             f"  Sequence agreement: {self.sequence_agreement:.1%}",
@@ -81,21 +81,21 @@ class DimensionalAlignment:
         # Geodesic CKA is a diagnostic; 1.0 indicates strong overlap.
         if self.embedding_cka is not None:
             lines.extend([
-                f"2D (Embedding):",
+                "2D (Embedding):",
                 f"  CKA: {self.embedding_cka:.6f}",
                 "",
             ])
 
         if self.layernorm_cka is not None:
             lines.extend([
-                f"3D (LayerNorm):",
+                "3D (LayerNorm):",
                 f"  Pre/Post CKA: {self.layernorm_cka:.6f}",
                 "",
             ])
 
         if self.hidden_cka_mean is not None:
             lines.extend([
-                f"4D+ (Transformer):",
+                "4D+ (Transformer):",
                 f"  Hidden CKA (mean): {self.hidden_cka_mean:.6f}",
                 f"  Hidden CKA (min): {self.hidden_cka_min:.6f}" if self.hidden_cka_min else "",
             ])
@@ -191,8 +191,8 @@ def measure_3d_alignment(
         Dict with layernorm_cka
     """
     from modelcypher.core.domain.geometry.cka import (
-        compute_cka,
         HSICEstimator,
+        compute_cka,
     )
     from modelcypher.core.domain.geometry.numerical_stability import (
         machine_epsilon,

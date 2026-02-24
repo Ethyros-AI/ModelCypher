@@ -15,7 +15,6 @@ from modelcypher.core.domain.safety.output_safety_result import (
 )
 from modelcypher.core.domain.safety.safety_models import SafetyCategory
 
-
 # ---------------------------------------------------------------------------
 # Enum tests
 # ---------------------------------------------------------------------------

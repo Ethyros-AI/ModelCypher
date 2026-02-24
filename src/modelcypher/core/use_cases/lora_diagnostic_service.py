@@ -23,10 +23,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from modelcypher.adapters.adapter_weights_loader import AutoAdapterWeightsLoader
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import svd_rank_threshold
-from modelcypher.adapters.adapter_weights_loader import AutoAdapterWeightsLoader
-
 
 _LAYER_RE = re.compile(r"\.([0-9]+)\.")
 

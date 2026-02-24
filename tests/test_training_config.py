@@ -42,8 +42,8 @@ from modelcypher.core.domain.training.types import (
     Hyperparameters,
     LoRASettings,
     PreflightResult,
-    TrainingSpec,
     TrainingProgress,
+    TrainingSpec,
     TrainingStatus,
 )
 

@@ -15,16 +15,20 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
+# ruff: noqa: F403,F405
+
 """Training loop methods for :class:`MLXTrainingAdapter`."""
 
 from __future__ import annotations
 
+import json
+import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.backends.mlx_training_adapter_core import *  # noqa: F403
 
 if TYPE_CHECKING:
-    from modelcypher.core.domain.training.geometric_lora import LayerGeometry
     from modelcypher.core.domain.training.geometric_optimizer import OptimizerGeometryConfig
 
 
@@ -40,7 +44,7 @@ class _MLXTrainingAdapterTrainMixin:
         sigma_max: float,
         lr_override: float | None = None,
         eval_dataset: list | None = None,
-        eval_batches: int = 10,
+        eval_batches: int | None = None,
         adaptive_lr: bool = True,
         lr_monotonic: bool = False,
         sigma_k_min: float = 0.0,
@@ -76,6 +80,8 @@ class _MLXTrainingAdapterTrainMixin:
         budget_cap: float | None = None,
         # Sub-epoch evaluation: override epoch-based check interval
         eval_interval: int | None = None,
+        # Validation-loss convergence window. None derives minimum valid window.
+        loss_stability_window_epochs: int | None = None,
         # Global EOS exclusion: exclude EOS token from CE in all paths
         eos_exclude: bool = False,
         # Outer similarity monitoring (Kucukahmetler et al. 2026)
@@ -94,12 +100,12 @@ class _MLXTrainingAdapterTrainMixin:
         # Research controls: choose REINFORCE outcome problem selector.
         research_outcome_selector: str = "all",
     ) -> tuple[list[tuple[int, float, float]], str, list[EpochMetrics]]:
-        """Train with ScaledGD, Weyl adapter-saturation monitoring, and geometric stopping.
+        """Train with Cayley-Stiefel retraction, Weyl adapter-saturation monitoring,
+        and geometric stopping.
 
-        Optimizer: ScaledGD preconditioning (Tong et al. JMLR 2021) when opt_config
-        is provided. Falls back to plain SGD otherwise. ScaledGD preconditions each
-        LoRA factor's gradient through the pseudoinverse of the other factor, giving
-        condition-number-free convergence on the rank-r manifold.
+        Optimizer: Cayley-parameterized retraction on the Stiefel manifold.
+        NB-LoRA factors (A_tilde, B_tilde) are Cayley-transformed at each step,
+        guaranteeing orthonormality and spectral bounds by construction.
 
         MASS (Measured-Adaptive Step Size) — three-layer system:
         1. Spectral ceiling: eta_ceiling = sigma_k_min / sigma_max (Weyl 1912, static)
@@ -108,13 +114,9 @@ class _MLXTrainingAdapterTrainMixin:
         Combined: eta_step = min(eta_sps, eta_weyl, eta_ceiling)
         Override: lr_override bypasses everything.
 
-        Armijo backtracking (when eta_ceiling is the binding constraint):
-        Verifies sufficient decrease along the Cayley retraction curve.
-        f(R_X(α·d)) ≤ f(X) - c·α·⟨∇f, d⟩  (c=1e-4, Nocedal & Wright 2006)
-        Backtrack factor β=0.5, max 3 attempts. Only triggered when the
-        static ceiling is binding — SPS/Weyl already incorporate current
-        loss/geometry and rarely overshoot.
-        Ref: Absil et al. (2008) Optimization on Manifolds, Th. 4.3.1.
+        No Armijo backtracking — every constant in Armijo (c, β, max_backtracks)
+        was heuristic.  MASS derives the step bound per iteration from measurement:
+        eta_step = min(eta_sps, eta_weyl, eta_ceiling).  See mass_step_size.py.
 
         Stopping (any one triggers):
         1. Validation loss convergence or degradation (overfitting)
@@ -147,8 +149,17 @@ class _MLXTrainingAdapterTrainMixin:
                 "outcome_rollback_on_degradation=False.",
             )
 
+        if eval_batches is None:
+            if eval_dataset is not None and len(eval_dataset) > 0:
+                eval_batches = len(eval_dataset)
+            elif answer_masked_eval is not None and len(answer_masked_eval) > 0:
+                eval_batches = len(answer_masked_eval)
+            else:
+                eval_batches = max(1, len(train_dataset))
+
         import mlx.optimizers as opt
-        from mlx.utils import tree_flatten as mlx_flatten, tree_unflatten as mlx_unflatten
+        from mlx.utils import tree_flatten as mlx_flatten
+        from mlx.utils import tree_unflatten as mlx_unflatten
         from mlx_lm.tuner.trainer import default_loss, iterate_batches
 
         # Resolve base CE loss: exclude EOS globally if requested.
@@ -395,9 +406,12 @@ class _MLXTrainingAdapterTrainMixin:
             (eval_dataset is not None and len(eval_dataset) > 0)
             or (use_answer_mask and answer_masked_eval is not None and len(answer_masked_eval) > 0)
         )
-        # Windowed SE-based mean comparison needs >=2 windows.
-        # Minimum robust window is 3 epochs (2 points define trend, +1 for variance stability).
-        loss_stability_window_epochs = 3
+        # Sample variance requires n>=2 observations per window.
+        # Two windows are then compared: previous vs recent.
+        if loss_stability_window_epochs is None:
+            loss_stability_window_epochs = 2
+        if loss_stability_window_epochs < 2:
+            raise ValueError("loss_stability_window_epochs must be >= 2")
         min_val_windows_for_stop = 2 * loss_stability_window_epochs
         # Eval batch size: data-derived (dataset size / eval_batches)
         eval_batch_size = min(
@@ -1617,7 +1631,11 @@ class _MLXTrainingAdapterTrainMixin:
                         break
         else:
             stop_reason = f"safety_cap ({max_iters} iters)"
-            logger.warning("Hit safety cap at %d iters — loss did not stabilize", max_iters)
+            logger.error(
+                "Hit safety cap at %d iters — geometric stopping certificate "
+                "failed to fire. This indicates a convergence failure.",
+                max_iters,
+            )
 
         if val_losses:
             logger.info(
@@ -1919,7 +1937,8 @@ class _MLXTrainingAdapterTrainMixin:
         Returns:
             Flat dict {param_key: hvp_array}, or None on failure.
         """
-        from mlx.utils import tree_flatten as mlx_flatten, tree_unflatten
+        from mlx.utils import tree_flatten as mlx_flatten
+        from mlx.utils import tree_unflatten
 
         trainable = dict(mlx_flatten(model.trainable_parameters()))
         original = {k: mx.array(v) for k, v in trainable.items()}

@@ -25,7 +25,9 @@ from typing import Any
 
 import pytest
 
-from modelcypher.core.use_cases.adapter_routing_benchmark_service import AdapterRoutingBenchmarkService
+from modelcypher.core.use_cases.adapter_routing_benchmark_service import (
+    AdapterRoutingBenchmarkService,
+)
 
 
 class _StubRoutingService:

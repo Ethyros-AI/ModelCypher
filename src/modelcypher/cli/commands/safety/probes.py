@@ -29,17 +29,18 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Callable
 
-from ._common import (
-    Path,
-    typer,
-    write_error,
-    write_output,
-    warn_network,
-    get_context,
-    ErrorDetail,
-)
 from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
 from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
+
+from ._common import (
+    ErrorDetail,
+    Path,
+    get_context,
+    typer,
+    warn_network,
+    write_error,
+    write_output,
+)
 
 app = typer.Typer(no_args_is_help=True)
 

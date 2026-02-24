@@ -31,10 +31,9 @@ No disk I/O. All tests use synthetic nn.Linear modules.
 
 from __future__ import annotations
 
-import pytest
-
 import mlx.core as mx
 import mlx.nn as nn
+import pytest
 
 from modelcypher.backends.mlx_training_adapter_core import NBLoRALinear
 

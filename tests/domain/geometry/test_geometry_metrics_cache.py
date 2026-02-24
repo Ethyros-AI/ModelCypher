@@ -26,7 +26,6 @@ from modelcypher.core.domain.geometry.geometry_metrics_cache import (
     GeometryMetricsCache,
 )
 
-
 # ---------------------------------------------------------------------------
 # Cached result dataclasses
 # ---------------------------------------------------------------------------

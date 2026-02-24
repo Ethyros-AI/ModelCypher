@@ -18,10 +18,8 @@
 from __future__ import annotations
 
 import inspect
-from typing import Any, Callable
 
 import click
-import typer
 
 
 def apply_typer_compat() -> None:

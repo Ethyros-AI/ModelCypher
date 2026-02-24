@@ -29,6 +29,7 @@ mc adapter  - LoRA adapter analysis
 from __future__ import annotations
 
 import os
+
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 import logging
@@ -48,16 +49,14 @@ from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_in
 register_default_atlas_inventories()
 
 # The 5 commands
-from modelcypher.cli.commands import train as train_commands
-from modelcypher.cli.commands import infer as infer_commands
-from modelcypher.cli.commands import safety as analyze_commands  # safety.py IS the analyze command
-from modelcypher.cli.commands import model as model_commands
-from modelcypher.cli.commands import system as system_commands
 from modelcypher.cli.commands import adapter as adapter_commands
+from modelcypher.cli.commands import infer as infer_commands
 from modelcypher.cli.commands import merge as merge_commands
-
+from modelcypher.cli.commands import model as model_commands
+from modelcypher.cli.commands import safety as analyze_commands  # safety.py IS the analyze command
+from modelcypher.cli.commands import system as system_commands
+from modelcypher.cli.commands import train as train_commands
 from modelcypher.cli.context import CLIContext, resolve_ai_mode, resolve_output_format
-from modelcypher.cli.output import write_output
 from modelcypher.cli.warnings import warn_trust_remote_code
 from modelcypher.utils.logging import configure_logging
 

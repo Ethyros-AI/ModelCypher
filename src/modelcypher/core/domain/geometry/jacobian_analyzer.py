@@ -205,7 +205,6 @@ class JacobianAnalyzer:
 
         This is the fundamental operation for randomized SVD.
         """
-        b = self._backend
         eps = self._epsilon
 
         # Forward evaluation at x

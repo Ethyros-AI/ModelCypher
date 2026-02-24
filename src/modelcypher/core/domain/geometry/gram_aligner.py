@@ -30,8 +30,8 @@ References:
 from __future__ import annotations
 
 import logging
-import time
 import math
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -663,8 +663,8 @@ class GramAligner:
             Alignment result with rotation matrix R [k, k] in anchor space.
         """
         from modelcypher.core.domain.geometry.relative_representation import (
-            compute_relative_representation,
             align_relative_representations,
+            compute_relative_representation,
         )
 
         b = self._backend

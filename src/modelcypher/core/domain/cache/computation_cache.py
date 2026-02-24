@@ -305,7 +305,7 @@ class ComputationCache:
         else:
             # Large array - sample BEFORE tolist to avoid full array conversion
             # This is the critical optimization: we only extract ~40 values instead of all
-            
+
             # Build sample indices
             sample_indices = []
             # First 8 indices
@@ -325,13 +325,13 @@ class ComputationCache:
                     sample_indices.append(i)
                 if len(sample_indices) >= 40:
                     break
-            
+
             # Extract only the samples we need using backend.take
             indices_arr = backend.array(sample_indices)
             samples_arr = backend.take(flat, indices_arr, axis=0)
             backend.eval(samples_arr)
             samples = backend.tolist(samples_arr)
-            
+
             shape_bytes = f"{shape}|dtype={dtype}".encode()
             sample_bytes = b"".join(struct.pack(">d", float(val)) for val in samples)
             return xxhash.xxh64(shape_bytes + sample_bytes).hexdigest()[:16]

@@ -428,7 +428,6 @@ def main() -> None:
         ),
     )
     parser.add_argument("--skip-benchmarks", action="store_true", help="Skip lm-eval benchmarks")
-    parser.add_argument("--lr-monotonic", action="store_true", help="Use non-increasing adaptive LR")
     parser.add_argument(
         "--output",
         default=f"/Volumes/CodeCypher/experiments/star-350m-{time.strftime('%Y%m%d-%H%M%S')}",
@@ -476,7 +475,6 @@ def main() -> None:
         "rep_filter": args.rep_filter,
         "verify_mode": args.verify_mode if not use_novel else "structural",
         "skip_benchmarks": args.skip_benchmarks,
-        "lr_monotonic": args.lr_monotonic,
         "timestamp": time.strftime("%Y%m%d-%H%M%S"),
     }
     with open(output_root / "config.json", "w") as f:
@@ -504,7 +502,6 @@ def main() -> None:
             train_path=str(train_path),
             val_path=str(val_path),
             output_root=str(round_dir),
-            lr_monotonic=args.lr_monotonic,
         )
 
         # Evaluate baseline + adapter for this round

@@ -39,11 +39,11 @@ from __future__ import annotations
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.cka import compute_cka
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
 )
-from modelcypher.core.domain.geometry.cka import compute_cka
 from modelcypher.ports.backend import Backend
 
 

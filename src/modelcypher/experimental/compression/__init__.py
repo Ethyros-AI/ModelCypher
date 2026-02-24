@@ -30,25 +30,25 @@ Modules:
     ComposableLayerCompressor: Multi-layer compression with error tracking (TODO)
 """
 
+from .composable_compressor import (
+    ComposableLayerCompressor,
+    CompositionResult,
+    LayerCompressionState,
+    compress_model_layers,
+)
 from .geodesic_analyzer import (
     GeodesicLayerAnalyzer,
     GeodesicLayerProfile,
-)
-from .rmt_compressor import (
-    CompressionEvaluationResult,
-    CompressionResult,
-    RMTAwareCompressor,
 )
 from .ranking_optimizer import (
     RankingOptimizationResult,
     RankingPreservingOptimizer,
     optimize_for_ranking,
 )
-from .composable_compressor import (
-    ComposableLayerCompressor,
-    CompositionResult,
-    LayerCompressionState,
-    compress_model_layers,
+from .rmt_compressor import (
+    CompressionEvaluationResult,
+    CompressionResult,
+    RMTAwareCompressor,
 )
 
 __all__ = [

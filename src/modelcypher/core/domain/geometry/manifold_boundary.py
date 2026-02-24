@@ -33,13 +33,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain.geometry.numerical_stability import (
+    _promote_precision_float32 as _promote_precision,
+)
+from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
     safe_log_epsilon,
     sqrt_scalar,
-)
-from modelcypher.core.domain.geometry.numerical_stability import (
-    _promote_precision_float32 as _promote_precision,
 )
 
 if TYPE_CHECKING:
@@ -594,7 +594,7 @@ def create_layer_forward_fn(
             seq_len = int(b.shape(h)[1])
             # Create additive causal mask: 0 for allowed, -inf for masked
             mask = b.triu_indices(seq_len, k=1)
-            mask_array = b.zeros((seq_len, seq_len))
+            b.zeros((seq_len, seq_len))
             # For now, skip mask for simplicity - layers handle it internally
             mask = None
 
@@ -814,12 +814,12 @@ def compute_boundary_radii_from_weights(
                 b.eval(v_norm)
                 v = v / b.maximum(v_norm, b.array([div_eps]))
                 b.eval(v)
-                
+
                 Wv = b.matmul(W, b.reshape(v, (-1, 1)))
                 Wv = b.reshape(Wv, (-1,))
                 b.eval(Wv)
                 sigma_current = float(b.to_scalar(b.sqrt(b.sum(Wv * Wv))))
-                
+
                 if sigma_prev >= 0:
                     diff = abs(sigma_current - sigma_prev)
                     if diff < float(b.to_scalar(tol)) * max(1.0, sigma_current):
@@ -885,7 +885,7 @@ def compute_boundary_radii_from_weights(
         b.eval(stacked)
 
         shape = b.shape(stacked)
-        n_samples = int(shape[0])
+        int(shape[0])
         hidden_dim = int(shape[1])
         effective_directions = min(n_directions, hidden_dim)
 

@@ -27,8 +27,8 @@ deviation.
 
 from __future__ import annotations
 
-import math
 import logging
+import math
 import statistics
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -40,7 +40,7 @@ from modelcypher.core.domain.geometry.riemannian_core import RiemannianGeometry
 
 if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
-    from modelcypher.ports.backend import Array, Backend
+    from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
 

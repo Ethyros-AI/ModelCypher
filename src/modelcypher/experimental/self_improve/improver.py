@@ -23,8 +23,9 @@ from typing import Any, Dict, List, Optional
 
 from modelcypher.experimental.self_improve.oracle import VerificationOracle
 from modelcypher.experimental.self_improve.scanner import CapabilityScanner
-from .self_play_generator import SafeSelfPlayGenerator
+
 from .geometric_training_data import augment_training_data_with_geometry
+from .self_play_generator import SafeSelfPlayGenerator
 from .types import (
     Capability,
     CapabilityAnalysis,
@@ -32,7 +33,6 @@ from .types import (
     ImprovementAction,
     ImprovementLog,
     SelfImprovementConfig,
-    VerifiedSample,
 )
 
 logger = logging.getLogger(__name__)
@@ -170,10 +170,10 @@ class AutonomousSelfImprover:
         # Phase 2b: STEER — Compute contrastive steering vectors for DISCONNECTED
         if disconnected_analyses:
             logger.info("PHASE 2b: STEER - Computing contrastive steering vectors")
+            from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.experimental.interpretability.feature_steering import (
                 FeatureSteering,
             )
-            from modelcypher.core.domain._backend import get_default_backend
 
             b = get_default_backend()
             steering = FeatureSteering(self.model, b)
@@ -397,7 +397,6 @@ class AutonomousSelfImprover:
         Returns:
             Summary dict with rounds completed, adapters trained, etc.
         """
-        from .lora_stacker import LoRAStacker
 
         if config is None:
             raise ValueError(
@@ -431,14 +430,13 @@ class AutonomousSelfImprover:
 
         if config.loop_preservation or config.geometric_self_awareness:
             logger.info("Computing geometric configuration...")
-            from modelcypher.core.domain.training.loop_preservation import (
-                find_highway_layer_from_intrinsic_dims,
-                compute_entropy_delta,
-            )
-
             # Collect per-layer intrinsic dimensions from model
             # (requires activation collection at each layer)
             from modelcypher.core.domain._backend import get_default_backend
+            from modelcypher.core.domain.training.loop_preservation import (
+                compute_entropy_delta,
+                find_highway_layer_from_intrinsic_dims,
+            )
             b = get_default_backend()
 
             probe_prompts = [
@@ -485,11 +483,11 @@ class AutonomousSelfImprover:
             highway_layer = highway_result[0] if highway_result[0] is not None else 0
 
             if config.loop_preservation:
-                from modelcypher.core.domain.training.loop_preservation import (
-                    LoopPreservationConfig,
-                )
                 from modelcypher.core.domain.training.geometric_lora import (
                     analyze_weight_geometries,
+                )
+                from modelcypher.core.domain.training.loop_preservation import (
+                    LoopPreservationConfig,
                 )
 
                 # Get sigma_max from model geometry
@@ -596,10 +594,10 @@ class AutonomousSelfImprover:
 
             # ===== TRAIN LORA ADAPTER =====
             # All training parameters derived from geometry by DatasetTrainingService.
+            from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.use_cases.dataset_training_service import (
                 DatasetTrainingService,
             )
-            from modelcypher.core.domain._backend import get_default_backend
 
             b = get_default_backend()
             training_service = DatasetTrainingService(b)

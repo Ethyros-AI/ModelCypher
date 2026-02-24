@@ -151,6 +151,7 @@ class TestParallelTransport:
         """
         b = backend
         import math
+
         from modelcypher.core.domain.geometry.parallel_transport import ParallelTransporter
 
         # Create points on a hemisphere (curved 2D surface in 3D)

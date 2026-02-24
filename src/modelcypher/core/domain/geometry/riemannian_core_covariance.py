@@ -22,10 +22,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.precision import _promote_precision
 from modelcypher.core.domain.geometry.riemannian_types import GeodesicDistanceResult
 from modelcypher.core.domain.geometry.riemannian_validation import count_inf, count_nan
-
-from .riemannian_core_utils import _promote_precision
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array

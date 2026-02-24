@@ -17,6 +17,7 @@ merged model will produce degenerate output.
 """
 
 import pytest
+
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
@@ -103,8 +104,8 @@ class TestSubspaceNoveltyCompression:
         3. No variance compression artifact (not all novelty = 0 due to scaling)
         """
         from modelcypher.core.domain.geometry.direction_novelty import (
-            compute_subspace_novelty,
             compute_per_direction_novelty,
+            compute_subspace_novelty,
         )
 
         b = get_default_backend()

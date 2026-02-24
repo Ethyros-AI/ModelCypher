@@ -18,7 +18,6 @@ from modelcypher.core.domain.training.geometric_optimizer import (
 from modelcypher.core.domain.training.scaled_gd import precondition_lora_gradients
 from modelcypher.ports.training import LoRALayerConfig
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

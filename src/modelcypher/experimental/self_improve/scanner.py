@@ -21,10 +21,10 @@ from typing import Any, Iterable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.experimental.self_improve.types import (
+    DEFAULT_PRIMES,
     Capability,
     CapabilityAnalysis,
     CapabilityStatus,
-    DEFAULT_PRIMES,
 )
 
 

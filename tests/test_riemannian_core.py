@@ -26,8 +26,9 @@ Tests cover:
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import Mock, patch
+
+import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
@@ -36,7 +37,6 @@ from modelcypher.core.domain.geometry.riemannian_core import (
     _get_riemannian_geometry,
 )
 from modelcypher.core.domain.geometry.riemannian_types import GeodesicDistanceResult
-
 
 # =============================================================================
 # RiemannianGeometry Initialization Tests
@@ -72,10 +72,10 @@ class TestFrechetMean:
         """Fréchet mean of a single point is the point itself."""
         backend = get_default_backend()
         geom = RiemannianGeometry(backend)
-        
+
         point = backend.array([[1.0, 2.0, 3.0]])
         result = geom.frechet_mean(point)
-        
+
         # Should be identical
         diff = backend.to_scalar(backend.sum(backend.abs(point - result.mean)))
         eps = division_epsilon(backend, point)
@@ -85,10 +85,10 @@ class TestFrechetMean:
         """Fréchet mean of identical points is the point."""
         backend = get_default_backend()
         geom = RiemannianGeometry(backend)
-        
+
         points = backend.array([[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]])
         result = geom.frechet_mean(points)
-        
+
         result_list = backend.tolist(result.mean)
         eps = division_epsilon(backend, points)
         assert abs(result_list[0] - 1.0) < eps
@@ -97,11 +97,11 @@ class TestFrechetMean:
         """test that it runs (approximation checks are tricky without known curvature)."""
         backend = get_default_backend()
         geom = RiemannianGeometry(backend)
-        
+
         # Simple points in a line
         points = backend.array([[0.0, 0.0], [1.0, 1.0]])
         result = geom.frechet_mean(points)
-        
+
         # Expect [0.5, 0.5] within precision
         result_list = backend.tolist(result.mean)
         eps = division_epsilon(backend, points)
@@ -120,7 +120,7 @@ class TestGeodesicDistances:
         """geodesic_distances returns result with correct shape."""
         backend = get_default_backend()
         geom = RiemannianGeometry(backend)
-        
+
         # 4 points
         points = backend.array([
             [0.0, 0.0],
@@ -128,9 +128,9 @@ class TestGeodesicDistances:
             [0.0, 1.0],
             [1.0, 1.0],
         ])
-        
+
         result = geom.geodesic_distances(points, k_neighbors=3)
-        
+
         assert isinstance(result, GeodesicDistanceResult)
         # Should be 4x4
         shape = backend.shape(result.distances)
@@ -140,14 +140,14 @@ class TestGeodesicDistances:
         """_minimum_connected_k finds usable k."""
         backend = get_default_backend()
         geom = RiemannianGeometry(backend)
-        
+
         points = backend.array([
             [0.0, 0.0],
             [0.1, 0.0],  # Close to 1
             [5.0, 0.0],  # Far
             [5.1, 0.0],  # Close to 3
         ])
-        
+
         # With k=1, we might have 2 separate components {(0,1), (2,3)}
         # It should try to find a k that connects them or fallback
         k, _, _ = geom._minimum_connected_k(points)
@@ -166,14 +166,14 @@ class TestFrechetMeanBatch:
         """frechet_mean_batch returns [B, D] array."""
         backend = get_default_backend()
         geom = RiemannianGeometry(backend)
-        
+
         # Batch of 2 sets of points, each set has 3 points of dim 2
         batch_points = backend.array([
             [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]],  # Set 1
             [[1.0, 0.0], [0.0, 1.0], [-1.0, 0.0]], # Set 2
         ])
-        
+
         means = geom.frechet_mean_batch(batch_points)
-        
+
         shape = backend.shape(means)
         assert shape == (2, 2)

@@ -18,11 +18,11 @@
 """Entropy domain models for disagreement and safety metrics."""
 
 from .baseline_verification_probe import (
+    AdapterEntropyBaseline,
     BaselineComparison,
+    BaselinePromptResult,
     BaselineVerificationProbe,
     DeltaSample,
-    AdapterEntropyBaseline,
-    BaselinePromptResult,
     VerificationResult,
     adversarial_prompts,
     default_test_prompts,
@@ -67,6 +67,8 @@ from .hidden_state_extractor import (
 from .layer_entropy_projector import (
     LayerEntropyProjector,
     ModelLayerEntropyProfile,
+)
+from .layer_entropy_projector import (
     ProjectorLayerEntropyResult as LayerEntropyResult,
 )
 from .logit_divergence_calculator import (
@@ -77,8 +79,8 @@ from .logit_entropy_calculator import (
     LogitEntropySample,
 )
 from .metrics_ring_buffer import (
-    EventType,
     EventMarkerBuffer,
+    EventType,
     MetricEvent,
     MetricSample,
     MetricsRingBuffer,
@@ -96,6 +98,8 @@ from .sep_probe import (
     ProbeWeightsBundle,
     SEPProbe,
     SEPProbeError,
-    SepPredictionResult as PredictionResult,
     WeightsNotLoadedError,
+)
+from .sep_probe import (
+    SepPredictionResult as PredictionResult,
 )

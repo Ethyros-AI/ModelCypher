@@ -38,10 +38,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.cka import compute_linear_cka_from_activations
 from modelcypher.core.domain.geometry.fisher_information import (
     compute_empirical_fisher_diagonal,
 )
-from modelcypher.core.domain.geometry.cka import compute_linear_cka_from_activations
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend

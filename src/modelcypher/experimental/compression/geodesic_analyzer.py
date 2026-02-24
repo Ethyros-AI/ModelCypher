@@ -33,8 +33,6 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
-    machine_epsilon,
     svd_auto_rank,
 )
 
@@ -221,11 +219,11 @@ class GeodesicLayerAnalyzer:
         Uses k-NN graph with Floyd-Warshall for geodesic distances.
         Estimates intrinsic dimension from geodesic distance scaling.
         """
-        from modelcypher.core.domain.geometry.riemannian_utils import (
-            geodesic_distance_matrix,
-        )
         from modelcypher.core.domain.geometry.intrinsic_dimension import (
             IntrinsicDimension,
+        )
+        from modelcypher.core.domain.geometry.riemannian_utils import (
+            geodesic_distance_matrix,
         )
 
         b = self._backend

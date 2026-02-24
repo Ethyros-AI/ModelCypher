@@ -28,28 +28,28 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.gram_aligner import (
-    GramAligner,
     AlignmentResult,
+    GramAligner,
     find_alignment,
 )
 
 
 class TestGramAlignerPublicAPI:
     """Tests for GramAligner's public interface."""
-    
+
     def test_find_perfect_alignment_exists(self) -> None:
         """Verify the correct public API method exists.
-        
+
         Bug: Code called `optimize_alignment` but method is `find_perfect_alignment`.
         """
         backend = get_default_backend()
         aligner = GramAligner(backend)
-        
+
         # This is the ONLY public alignment method
         assert hasattr(aligner, "find_perfect_alignment"), (
             "GramAligner missing find_perfect_alignment method"
         )
-        
+
         # Verify old/wrong name doesn't exist
         assert not hasattr(aligner, "optimize_alignment"), (
             "GramAligner has deprecated optimize_alignment - use find_perfect_alignment"
@@ -57,24 +57,24 @@ class TestGramAlignerPublicAPI:
         assert not hasattr(aligner, "align"), (
             "GramAligner has deprecated align - use find_perfect_alignment"
         )
-    
+
     def test_find_alignment_function_exists(self) -> None:
         """Module-level find_alignment function should exist."""
         assert callable(find_alignment)
-    
+
     def test_alignment_result_structure(self) -> None:
         """AlignmentResult should have required fields."""
         backend = get_default_backend()
         backend.random_seed(42)
-        
+
         # Create simple test data
         n_samples, d_source, d_target = 10, 32, 32
         source = backend.random_normal((n_samples, d_source))
         target = backend.random_normal((n_samples, d_target))
         backend.eval(source, target)
-        
+
         result = find_alignment(source, target, backend)
-        
+
         # Check required fields exist
         assert hasattr(result, "feature_transform")
         assert hasattr(result, "achieved_cka")
@@ -94,7 +94,7 @@ class TestGramAlignerPublicAPI:
         assert result.numerical_deviation >= 0.0
         assert result.precision_threshold > 0.0
         assert isinstance(result.is_perfect, bool)
-    
+
     def test_compositional_stitch_exists(self) -> None:
         """compositional_stitch method should exist for attention transforms."""
         backend = get_default_backend()
@@ -110,56 +110,56 @@ class TestGramAlignerPublicAPI:
 
 class TestGramAlignerFunctionality:
     """Tests for GramAligner's alignment functionality."""
-    
+
     def test_identity_alignment_achieves_cka_1(self) -> None:
         """When source == target, CKA should be exactly 1.0."""
         backend = get_default_backend()
         backend.random_seed(42)
-        
+
         n_samples, dim = 20, 64
         data = backend.random_normal((n_samples, dim))
         backend.eval(data)
-        
+
         result = find_alignment(data, data, backend)
-        
+
         assert abs(result.achieved_cka - 1.0) <= result.precision_threshold
         assert result.is_perfect
-    
+
     def test_same_dim_alignment_completes(self) -> None:
         """Same-dimension alignment should complete without error.
-        
+
         Note: Randomly initialized activations are INDEPENDENT, so high CKA
         is NOT expected. This test verifies the algorithm runs to completion.
         """
         backend = get_default_backend()
         backend.random_seed(42)
-        
+
         n_samples, dim = 30, 64
         source = backend.random_normal((n_samples, dim))
         target = backend.random_normal((n_samples, dim))
         backend.eval(source, target)
-        
+
         result = find_alignment(source, target, backend)
-        
+
         # Should complete without error
         assert result is not None
         assert isinstance(result.achieved_cka, float)
         # Transform should have correct shape
         assert len(result.feature_transform) == dim
         assert len(result.feature_transform[0]) == dim
-    
+
     def test_cross_dim_alignment_produces_correct_shape_transform(self) -> None:
         """Cross-dimensional alignment should produce [d_source, d_target] transform."""
         backend = get_default_backend()
         backend.random_seed(42)
-        
+
         n_samples, d_source, d_target = 20, 64, 32
         source = backend.random_normal((n_samples, d_source))
         target = backend.random_normal((n_samples, d_target))
         backend.eval(source, target)
-        
+
         result = find_alignment(source, target, backend)
-        
+
         # Transform should be [d_source, d_target]
         transform = result.feature_transform
         assert len(transform) == d_source, f"Expected {d_source} rows, got {len(transform)}"
@@ -168,26 +168,26 @@ class TestGramAlignerFunctionality:
 
 class TestGramAlignerIntegrationWithTransplant:
     """Tests verifying GramAligner works correctly in transplant context."""
-    
+
     def test_transform_can_be_applied_to_weights(self) -> None:
         """Feature transform should be applicable to weight matrices."""
         backend = get_default_backend()
         backend.random_seed(42)
-        
+
         n_samples, d_source, d_target = 20, 64, 32
         source_acts = backend.random_normal((n_samples, d_source))
         target_acts = backend.random_normal((n_samples, d_target))
         backend.eval(source_acts, target_acts)
-        
+
         result = find_alignment(source_acts, target_acts, backend)
-        
+
         # Convert transform to array and apply
         F = backend.array(result.feature_transform)
         backend.eval(F)
-        
+
         # Apply to source activations
         aligned = backend.matmul(source_acts, F)
         backend.eval(aligned)
-        
+
         # Aligned should have target's dimension
         assert backend.shape(aligned) == (n_samples, d_target)

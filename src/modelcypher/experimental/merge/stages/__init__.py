@@ -36,18 +36,25 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
-from .probe import (
-    MergeProbeResult,
-    stage_probe as stage_probe_impl,
-)
 from .density import (
     DensityStageResult,
+)
+from .density import (
     stage_density as stage_density_impl,
 )
+from .probe import (
+    MergeProbeResult,
+)
+from .probe import (
+    stage_probe as stage_probe_impl,
+)
+
 # NOTE: ProbeConfig was REMOVED - Probe always uses the precise path with all probes.
 # PERMUTE STAGE REMOVED: GramAligner alignment subsumes permutation.
 from .transplant_stage import (
     TransplantStageResult,
+)
+from .transplant_stage import (
     stage_transplant as stage_transplant_impl,
 )
 from .transplant_weight_processor import BehaviorJacobianContext

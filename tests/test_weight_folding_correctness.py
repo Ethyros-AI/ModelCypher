@@ -56,8 +56,8 @@ import pytest
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 from modelcypher.core.domain.geometry.numerical_stability import (
-    geodesic_pinv,
     division_epsilon,
+    geodesic_pinv,
 )
 
 

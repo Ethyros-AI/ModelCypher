@@ -22,7 +22,6 @@ from modelcypher.core.domain.safety.sidecar.sidecar_safety_decision import (
     SidecarSafetyTelemetry,
 )
 
-
 # ---------------------------------------------------------------------------
 # Imports
 # ---------------------------------------------------------------------------

@@ -148,8 +148,8 @@ class ParallelTransporter:
         v = b.array(initial_vector) if not hasattr(initial_vector, "shape") else initial_vector
         b.eval(points, v)
 
-        n = int(b.shape(points)[0])
-        d = int(b.shape(points)[1])
+        int(b.shape(points)[0])
+        int(b.shape(points)[1])
 
         if len(path_indices) < 2:
             # Trivial path - no transport
@@ -255,7 +255,7 @@ class ParallelTransporter:
     def _compute_distance_matrix(self, points: "Array", backend: "Backend") -> "Array":
         """Compute pairwise distance matrix."""
         b = backend
-        n = int(b.shape(points)[0])
+        int(b.shape(points)[0])
 
         p1 = b.expand_dims(points, 1)  # [n, 1, d]
         p2 = b.expand_dims(points, 0)  # [1, n, d]

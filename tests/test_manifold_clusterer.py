@@ -19,12 +19,13 @@
 
 from __future__ import annotations
 
-import pytest
 from uuid import uuid4
 
+import pytest
+
 from modelcypher.core.domain.geometry.manifold_clusterer import (
-    ManifoldClusterer,
     ClusteringResult,
+    ManifoldClusterer,
 )
 from modelcypher.core.domain.geometry.manifold_profile import (
     ManifoldPoint,
@@ -117,7 +118,7 @@ class TestClusterFormation:
         # Two nearby points should form at least one cluster
         assert isinstance(result, ClusteringResult)
         # Result should have regions or noise points
-        total_points = len(result.noise_points) + sum(
+        len(result.noise_points) + sum(
             len(r.points) if hasattr(r, 'points') else 0 for r in result.regions
         )
         # All points should be accounted for in some form

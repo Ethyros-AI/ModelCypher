@@ -154,9 +154,8 @@ def compute_spectral_embedding(
     # Find minimum k for connectivity using MST if not specified
     if k_neighbors is None:
         k_neighbors, mst_result = minimum_k_from_mst(chord_dist, backend)
-        component_count_from_mst = mst_result.component_count
     else:
-        component_count_from_mst = None  # Will be determined from eigenvalues
+        pass  # Will be determined from eigenvalues
 
     # Clamp k to valid range
     k_neighbors = max(1, min(k_neighbors, n - 1))

@@ -30,8 +30,8 @@ References:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -45,9 +45,9 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     sqrt_scalar,
     svd_auto_rank,
 )
-from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
+    geodesic_norms,
 )
 from modelcypher.core.domain.geometry.rmt_signal_separation import (
     compute_rmt_null_space_weights,
@@ -381,7 +381,7 @@ class GeodesicNullSpaceFilter:
 
         # Apply variance-weighted projection
         # delta_safe = delta * keep_weights (per-dimension scaling)
-        n_rows = int(delta_proj.shape[0])
+        int(delta_proj.shape[0])
         keep_weights_row = backend.reshape(keep_weights, (1, d))
 
         # SOFT WEIGHTS: Continuous [0, 1] scaling derived from geometry
@@ -872,7 +872,7 @@ def project_to_null_space(
     if len(A_shape) != 2:
         raise ValueError(f"activations must be 2D [n, d], got shape {A_shape}")
 
-    out_dim, in_dim = int(delta_shape[0]), int(delta_shape[1])
+    _out_dim, in_dim = int(delta_shape[0]), int(delta_shape[1])
     n_samples, d = int(A_shape[0]), int(A_shape[1])
 
     if in_dim != d:
@@ -1138,7 +1138,7 @@ def filter_deltas_tsv(
             )
 
     m, n = int(ref_shape[0]), int(ref_shape[1])
-    min_dim = min(m, n)
+    min(m, n)
     max_dim = max(m, n)
     reg = regularization_epsilon(b, deltas[0])
 

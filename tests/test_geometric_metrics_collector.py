@@ -461,7 +461,7 @@ class TestIntegration:
         params = {"layer.weight": backend.array([[1.0, 0.0], [0.0, 1.0]])}
         backend.eval(params["layer.weight"])
         lr = 0.1
-        last_params: dict[str, "Array"] | None = None
+        last_params: dict[str, object] | None = None
 
         backend.random_seed(42)
         for step in range(20):

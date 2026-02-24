@@ -32,7 +32,6 @@ from modelcypher.core.domain.safety.stability_suite.stability_suite_models impor
     StabilitySuiteTier,
 )
 
-
 # ---------------------------------------------------------------------------
 # Imports
 # ---------------------------------------------------------------------------

@@ -337,7 +337,6 @@ def main() -> None:
         "derived_lr": eta,
         "sigma_k_min": sigma_k_min,
         "sigma_max": sigma_max,
-        "max_iters": MAX_ITERS,
         "elapsed_seconds": round(total_elapsed, 1),
         "baseline_n_correct": baseline_result.n_correct,
         "baseline_n_total": baseline_result.n_total,

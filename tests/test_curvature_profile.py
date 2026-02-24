@@ -36,6 +36,7 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.curvature_profile import (
+    SCHEMA_VERSION,
     CurvatureAlignment,
     CurvatureProfile,
     FamilyBaseline,
@@ -43,7 +44,6 @@ from modelcypher.core.domain.geometry.curvature_profile import (
     build_family_baseline,
     compute_curvature_alignment,
     parse_model_info,
-    SCHEMA_VERSION,
 )
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 

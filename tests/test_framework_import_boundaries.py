@@ -20,9 +20,12 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-
 _FORBIDDEN_FRAMEWORK_IMPORTS = {"mlx", "jax", "torch"}
 _FORBIDDEN_CORE_IMPORTS = {"numpy"}
+_FORBIDDEN_PORT_RUNTIME_PREFIXES = (
+    "modelcypher.adapters",
+    "modelcypher.backends",
+)
 
 
 def _import_stmt_text(node: ast.AST) -> str:
@@ -65,6 +68,19 @@ def _numpy_import_violations(tree: ast.AST, file_rel: str) -> list[str]:
     return violations
 
 
+def _ports_runtime_import_violations(tree: ast.AST, file_rel: str) -> list[str]:
+    violations: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.startswith(_FORBIDDEN_PORT_RUNTIME_PREFIXES):
+                    violations.append(f"{file_rel}:{node.lineno} {_import_stmt_text(node)}")
+        elif isinstance(node, ast.ImportFrom):
+            if node.module and node.module.startswith(_FORBIDDEN_PORT_RUNTIME_PREFIXES):
+                violations.append(f"{file_rel}:{node.lineno} {_import_stmt_text(node)}")
+    return violations
+
+
 def _parse_file(path: Path, file_rel: str) -> ast.AST:
     source = path.read_text(encoding="utf-8")
     return ast.parse(source, filename=file_rel)
@@ -101,6 +117,22 @@ def test_numpy_imports_forbidden_in_core() -> None:
 
     assert not violations, (
         "numpy imports are forbidden in core/domain and core/use_cases:\n"
+        + "\n".join(sorted(violations))
+    )
+
+
+def test_ports_do_not_import_adapters_or_backends() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    ports_root = repo_root / "src" / "modelcypher" / "ports"
+    violations: list[str] = []
+
+    for path in ports_root.rglob("*.py"):
+        file_rel = str(path.relative_to(repo_root))
+        tree = _parse_file(path, file_rel)
+        violations.extend(_ports_runtime_import_violations(tree, file_rel))
+
+    assert not violations, (
+        "Ports layer must not import adapters/backends directly:\n"
         + "\n".join(sorted(violations))
     )
 

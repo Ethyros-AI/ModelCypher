@@ -27,14 +27,16 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Sequence
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.cka import compute_geodesic_cka, rbf_gram_matrix_with_sigma
 from modelcypher.core.domain.geometry.atlas_protocols import enum_key
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
-from modelcypher.core.domain.geometry.numerical_stability import invariant_alignment
+from modelcypher.core.domain.geometry.cka import compute_geodesic_cka, rbf_gram_matrix_with_sigma
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    invariant_alignment,
+)
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Array, Backend
     from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol
+    from modelcypher.ports.backend import Array, Backend
 
 
 @dataclass(frozen=True)

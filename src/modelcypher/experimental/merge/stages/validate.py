@@ -26,8 +26,8 @@ Checks two safety dimensions:
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -50,7 +50,7 @@ from modelcypher.core.domain.geometry.tangent_space_alignment import (
 )
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Backend
+    from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
 # ValidateConfig was REMOVED. Validation always runs all checks.
@@ -733,11 +733,11 @@ def _check_refusal_preservation(
         Score in [0, 1] where 1.0 = full preservation
     """
     b = backend
+    from modelcypher.core.domain.geometry.refusal_direction_cache import RefusalDirectionCache
     from modelcypher.core.domain.geometry.refusal_direction_detector import (
         STANDARD_CONTRASTIVE_PAIRS,
         RefusalDirectionDetector,
     )
-    from modelcypher.core.domain.geometry.refusal_direction_cache import RefusalDirectionCache
 
     if not layer_indices:
         return 1.0

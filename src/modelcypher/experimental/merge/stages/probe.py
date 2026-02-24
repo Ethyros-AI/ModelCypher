@@ -30,45 +30,29 @@ Reference: Moschella et al. (2023) "Relative Representations Enable Zero-Shot Tr
 from __future__ import annotations
 
 import logging
-import tempfile
-from dataclasses import asdict, dataclass
-from pathlib import Path
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.cka import compute_cka_split
+from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 from modelcypher.core.domain.geometry.numerical_stability import (
     gpu_lstsq,
     machine_epsilon,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.cka import compute_cka_split
-from modelcypher.core.domain.geometry.gram_aligner import GramAligner
+from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
+    TrajectoryTangentResult,
+)
+from modelcypher.core.use_cases.manifold_mapper import ManifoldMapper
+
 from .probe_alignment import align_layers
 from .probe_helpers import (
     _infer_required_probe_count,
     _precision_reference,
     _promote_precision,
     _select_probe_text,
-    compute_numerical_rank,
-    validate_full_rank_coverage,
 )
-from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
-    OrthogonalProbeGenerator,
-    augment_rank_closed_form,
-    find_null_space_tokens_closed_form,
-    find_null_space_texts,
-    # Trajectory-based null-space discovery
-    collect_trajectories_batch,
-    compute_trajectory_subspace,
-    compute_trajectory_null_space,
-    compute_trajectory_tangent_null_space,
-    TrajectoryTangentResult,
-)
-from .probe_inference import (
-    run_sequential_probe_inference,
-    PagedActivations,
-)
-from modelcypher.core.use_cases.manifold_mapper import ManifoldMapper
 
 if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
@@ -648,7 +632,9 @@ def _probe_precise(
     if not feature_transforms:
         raise RuntimeError("PROBE FAILED: No feature transforms computed.")
     if feature_transforms and len(feature_transforms) < len(all_target_layers):
-        missing_layers = [l for l in all_target_layers if l not in feature_transforms]
+        missing_layers = [
+            layer_idx for layer_idx in all_target_layers if layer_idx not in feature_transforms
+        ]
         raise RuntimeError(
             f"PROBE FAILED: Missing feature transforms for {len(missing_layers)} layers: {missing_layers}. "
             f"This indicates missing activations or an alignment bug. "
@@ -661,28 +647,36 @@ def _probe_precise(
     if has_intermediate_activations and not intermediate_transforms:
         raise RuntimeError("PROBE FAILED: No intermediate transforms computed (intermediate activations were collected).")
     if intermediate_transforms and len(intermediate_transforms) < len(all_target_layers):
-        missing_layers = [l for l in all_target_layers if l not in intermediate_transforms]
+        missing_layers = [
+            layer_idx for layer_idx in all_target_layers if layer_idx not in intermediate_transforms
+        ]
         raise RuntimeError(
             f"PROBE FAILED: Missing intermediate transforms for {len(missing_layers)} layers: {missing_layers}. "
             f"Available transforms: {sorted(intermediate_transforms.keys())}"
         )
 
     if attention_transforms and len(attention_transforms) < len(all_target_layers):
-        missing_layers = [l for l in all_target_layers if l not in attention_transforms]
+        missing_layers = [
+            layer_idx for layer_idx in all_target_layers if layer_idx not in attention_transforms
+        ]
         raise RuntimeError(
             f"PROBE FAILED: Missing attention transforms for {len(missing_layers)} layers: {missing_layers}. "
             f"Available transforms: {sorted(attention_transforms.keys())}"
         )
 
     if k_transforms and len(k_transforms) < len(all_target_layers):
-        missing_layers = [l for l in all_target_layers if l not in k_transforms]
+        missing_layers = [
+            layer_idx for layer_idx in all_target_layers if layer_idx not in k_transforms
+        ]
         raise RuntimeError(
             f"PROBE FAILED: Missing K transforms for {len(missing_layers)} layers: {missing_layers}. "
             f"Available transforms: {sorted(k_transforms.keys())}"
         )
 
     if v_transforms and len(v_transforms) < len(all_target_layers):
-        missing_layers = [l for l in all_target_layers if l not in v_transforms]
+        missing_layers = [
+            layer_idx for layer_idx in all_target_layers if layer_idx not in v_transforms
+        ]
         raise RuntimeError(
             f"PROBE FAILED: Missing V transforms for {len(missing_layers)} layers: {missing_layers}. "
             f"Available transforms: {sorted(v_transforms.keys())}"

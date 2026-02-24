@@ -38,13 +38,13 @@ from modelcypher.core.domain.geometry.anchor_grafting import (
     AnchorGraftingResult,
     compute_anchor_grafting_delta,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.relative_representation import (
     compute_relative_representation,
 )
 from modelcypher.core.domain.geometry.transplant import (
     compute_transplant_delta,
 )
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 
 class TestAnchorDecoder:
@@ -498,7 +498,7 @@ class TestEndToEndAnchorGrafting:
         # Step 2: Apply delta via constrained transplant
         # Use first n_core samples as core, rest as boundary
         n_core = 30
-        n_boundary = n_samples - n_core
+        n_samples - n_core
         core_acts = b.take(target_activations, b.arange(n_core), axis=0)
         boundary_acts = b.take(
             target_activations, b.arange(n_core, n_samples), axis=0

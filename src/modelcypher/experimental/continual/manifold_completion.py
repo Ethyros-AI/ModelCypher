@@ -33,9 +33,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Iterator
 
-from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.experimental.continual.knowledge_encoder import KnowledgeEncoder
 from modelcypher.core.domain.geometry.null_space_tracker import NullSpaceTracker
+from modelcypher.experimental.continual.knowledge_encoder import KnowledgeEncoder
 from modelcypher.experimental.continual.surprise_detector import SurpriseEvent
 
 if TYPE_CHECKING:
@@ -237,7 +236,7 @@ class ManifoldCompletion:
             )
 
             # Compute loss before update
-            initial_loss = self._compute_constraint_loss(
+            self._compute_constraint_loss(
                 probe_embeddings, sparse_idx, neighbors, target_position
             )
 

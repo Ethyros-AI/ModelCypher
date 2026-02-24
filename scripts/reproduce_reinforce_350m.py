@@ -76,7 +76,6 @@ def main() -> None:
         auto_regime=True,
         regime_n_problems=None,
         eval_interval=10,
-        max_iters=1000,
         seed=SEED,
     )
     elapsed = time.monotonic() - t0
@@ -122,7 +121,6 @@ def main() -> None:
         "auto_regime": True,
         "regime_n_problems": 25,
         "eval_interval": 10,
-        "max_iters": 1000,
         "elapsed_seconds": round(elapsed, 1),
         "train_iters": result.train_iters,
         "stop_reason": result.stop_reason,

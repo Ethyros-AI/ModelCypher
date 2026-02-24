@@ -35,8 +35,8 @@ See also: docs/geometry/gromov_wasserstein.md
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend

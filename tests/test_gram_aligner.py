@@ -24,11 +24,11 @@ epsilon at runtime - we don't test for specific arbitrary values.
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.cka import compute_cka
 from modelcypher.core.domain.geometry.gram_aligner import (
     GramAligner,
     find_alignment,
 )
-from modelcypher.core.domain.geometry.cka import compute_cka
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     is_finite,

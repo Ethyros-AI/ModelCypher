@@ -35,15 +35,14 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cayley_lora import (
-    cayley_transform,
-    cayley_transform_full,
-    nb_lora_forward,
     NBLoRAConfig,
     NBLoRALayer,
     PerDirectionBoundResult,
+    cayley_transform,
+    cayley_transform_full,
     create_nb_lora_from_base_weight,
+    nb_lora_forward,
 )
-
 
 # =============================================================================
 # Fixtures
@@ -136,7 +135,7 @@ class TestCayleyTransformCore:
 
     def test_determinism(self, backend):
         """Same input gives same output."""
-        r, m = 4, 8
+        _r, m = 4, 8
         X = backend.array([[0.1, -0.2, 0.3, 0.0],
                            [0.05, 0.1, -0.1, 0.2],
                            [-0.15, 0.0, 0.05, 0.1],
@@ -831,7 +830,7 @@ class TestCreateFromBaseWeight:
 
     def test_scale_bound_derived_from_sigma_k(self, backend):
         """Default margin is dtype-derived (1 - sqrt(eps))."""
-        m, n = 32, 16
+        _m, _n = 32, 16
         # Create W with known spectrum via diagonal
         S_vals = backend.array([1.0, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01, 0.005])
         # Pad remaining for 16 columns

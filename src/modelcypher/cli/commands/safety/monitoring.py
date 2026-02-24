@@ -29,15 +29,15 @@ Provides commands for runtime monitoring and analysis:
 
 from __future__ import annotations
 
+from modelcypher.cli.composition import get_geometry_safety_service
+
 from ._common import (
-    Path,
+    ErrorDetail,
+    get_context,
     typer,
     write_error,
     write_output,
-    get_context,
-    ErrorDetail,
 )
-from modelcypher.cli.composition import get_geometry_safety_service
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -201,6 +201,7 @@ def entropy_pattern_analysis(
         mc analyze entropy-pattern --samples samples.json --detect-distress
     """
     import json
+
     from modelcypher.cli.composition import get_entropy_probe_service
 
     context = get_context(ctx)
@@ -258,6 +259,7 @@ def entropy_baseline_verify(
         mc analyze entropy-baseline-verify --baseline baseline.json --deltas observed.json
     """
     import json
+
     from modelcypher.cli.composition import get_entropy_probe_service
 
     context = get_context(ctx)

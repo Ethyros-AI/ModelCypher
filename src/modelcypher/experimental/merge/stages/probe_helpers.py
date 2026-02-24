@@ -19,21 +19,15 @@
 
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     ceil_scalar,
     log2_scalar,
     machine_epsilon,
+    precision_dtype,
     sqrt_scalar,
-)
-from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
-    compute_numerical_rank,
-    validate_full_rank_coverage,
-)
-from modelcypher.core.domain.geometry.numerical_stability import (
-    _promote_precision_float32 as _promote_precision,
 )
 
 if TYPE_CHECKING:
@@ -223,6 +217,49 @@ def _precision_reference(
             return arr
 
     return backend.array([1.0], dtype=default_dtype)
+
+
+def _promote_precision(
+    values: Any,
+    backend: "Backend",
+) -> "Array":
+    """Promote arrays to backend-selected compute precision."""
+    arr = backend.array(values)
+    promoted_dtype = precision_dtype(backend, reference=arr)
+    if getattr(arr, "dtype", None) != promoted_dtype:
+        arr = backend.astype(arr, promoted_dtype)
+    backend.eval(arr)
+    return arr
+
+
+def compute_numerical_rank(
+    matrix: "Array",
+    backend: "Backend",
+) -> tuple[int, int]:
+    """Compute numerical rank using dtype-derived sqrt(eps) threshold."""
+    arr = _promote_precision(matrix, backend)
+    shape = backend.shape(arr)
+    if len(shape) != 2:
+        raise ValueError(f"Expected 2D matrix, got shape {shape}")
+
+    hidden_dim = int(shape[1])
+    if int(shape[0]) == 0 or hidden_dim == 0:
+        return 0, hidden_dim
+
+    _, singular_values, _ = backend.svd(arr, compute_uv=True)
+    backend.eval(singular_values)
+    sigma_max_arr = backend.max(singular_values)
+    backend.eval(sigma_max_arr)
+    sigma_max = float(backend.to_scalar(sigma_max_arr))
+    if sigma_max <= 0.0:
+        return 0, hidden_dim
+
+    eps = machine_epsilon(backend, singular_values)
+    threshold = sqrt_scalar(eps, backend) * sigma_max
+    rank_arr = backend.sum(backend.astype(singular_values > threshold, "int32"))
+    backend.eval(rank_arr)
+    rank = int(backend.to_scalar(rank_arr))
+    return rank, hidden_dim
 
 
 def _extract_top_k_dims(

@@ -79,7 +79,7 @@ class ModelFingerprintsProjection:
         backend: "Backend",
         target_dim: int,
     ) -> "Array":
-        n = int(points.shape[0])
+        int(points.shape[0])
 
         rg = RiemannianGeometry(backend)
         geo_result = rg.geodesic_distances(points, k_neighbors=None)

@@ -46,8 +46,8 @@ from modelcypher.core.domain.geometry.manifold_accuracy import (
 )
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Array, Backend
     from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol
+    from modelcypher.ports.backend import Array, Backend
 
 
 @dataclass(frozen=True)

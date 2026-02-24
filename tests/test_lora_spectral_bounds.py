@@ -32,11 +32,10 @@ but real model validation is needed before CLI promotion.
 from __future__ import annotations
 
 import pytest
-from hypothesis import given, settings, assume
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
-
 
 # =============================================================================
 # Fixtures
@@ -352,7 +351,7 @@ class TestCayleyTransform:
 
     def test_nb_lora_layer_respects_bound(self, backend):
         """NBLoRALayer output respects spectral bound."""
-        from modelcypher.core.domain.geometry.cayley_lora import NBLoRALayer, NBLoRAConfig
+        from modelcypher.core.domain.geometry.cayley_lora import NBLoRAConfig, NBLoRALayer
 
         config = NBLoRAConfig(
             in_features=32,
@@ -373,8 +372,8 @@ class TestCayleyTransform:
     def test_per_direction_bounds(self, backend):
         """Verify per-direction spectral bounds via U^T @ Δ @ V projection."""
         from modelcypher.core.domain.geometry.cayley_lora import (
-            NBLoRALayer,
             NBLoRAConfig,
+            NBLoRALayer,
             create_nb_lora_from_base_weight,
         )
 
@@ -397,16 +396,16 @@ class TestCayleyTransform:
         )
 
 
-    def test_per_direction_bounds(self, backend):
+    def test_per_direction_bounds_structure(self, backend):
         """NBLoRALayer.verify_per_direction_bounds computes correct ratios."""
-        from modelcypher.core.domain.geometry.cayley_lora import NBLoRALayer, NBLoRAConfig
+        from modelcypher.core.domain.geometry.cayley_lora import NBLoRAConfig, NBLoRALayer
 
         m, n, rank = 64, 32, 4
-        
+
         # Create base weight
         W = backend.random_normal((m, n))
         backend.eval(W)
-        
+
         # Create layer with small bound to likely be safe
         # (Though random init might still violate locally, we just check structure)
         config = NBLoRAConfig(
@@ -416,9 +415,9 @@ class TestCayleyTransform:
             scale_bound=1.0,
         )
         layer = NBLoRALayer(config, backend)
-        
+
         result = layer.verify_per_direction_bounds(W)
-        
+
         # Check structure
         assert len(result.per_direction_ratios) > 0
         assert result.max_ratio >= 0
@@ -428,24 +427,24 @@ class TestCayleyTransform:
         # Check that ratio logic is correct manually for one direction
         # Get Delta
         delta = layer.get_effective_delta()
-        
+
         # Compute U^T @ delta @ V
         W_f32 = backend.astype(W, "float32")
         U, S, Vt = backend.svd(W_f32, compute_uv=True)
-        
+
         # Project
         delta_f32 = backend.astype(delta, "float32")
         proj = backend.matmul(backend.transpose(U), delta_f32)
         proj = backend.matmul(proj, backend.transpose(Vt))
         backend.eval(proj)
-        
+
         # Check first diagonal
         proj_00 = float(backend.to_scalar(backend.abs(proj[0, 0])))
         sigma_0 = float(backend.to_scalar(S[0]))
-        
+
         expected_ratio = proj_00 / sigma_0
         actual_ratio = result.per_direction_ratios[0]
-        
+
         assert abs(actual_ratio - expected_ratio) < 1e-5, (
             f"Ratio mismatch: expected {expected_ratio}, got {actual_ratio}"
         )
@@ -512,8 +511,8 @@ class TestSpectralRegularization:
     def test_gradient_reduces_spectral_norm(self, backend):
         """Gradient descent with spectral regularization reduces norm."""
         from modelcypher.core.domain.lora_memory_store import (
-            compute_spectral_regularization_loss,
             compute_spectral_regularization_gradient,
+            compute_spectral_regularization_loss,
         )
 
         # Create LoRA matrices with high spectral norm
@@ -577,7 +576,7 @@ class TestAlignmentQuality:
         """LoRA aligned with W's subspace has alignment ratio ~1."""
         from modelcypher.core.use_cases.lora_safety_service import LoRASafetyService
 
-        m, n, r = 64, 32, 4
+        m, _n, r = 64, 32, 4
 
         # Create W with known left singular vectors
         U = backend.random_normal((m, r))

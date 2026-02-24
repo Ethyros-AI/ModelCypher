@@ -1,6 +1,7 @@
 
 import math
 
+
 def compute_coefficient_of_variation(values: list[float]) -> float:
     """Compute the coefficient of variation (std / mean) for a list of values."""
     if not values:

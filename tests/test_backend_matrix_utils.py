@@ -112,7 +112,7 @@ class TestCenterMatrix:
         """Centered matrix should have zero row and column means."""
         K = any_backend.random_normal((10, 10))
         # Make symmetric
-        K_sym = (K + any_backend.transpose(K)) * 0.5
+        (K + any_backend.transpose(K)) * 0.5
 
         centered = _center_gram_matrix(K, any_backend)
         tol = regularization_epsilon(any_backend, centered)

@@ -13,7 +13,6 @@ import importlib
 
 import pytest
 
-
 MODULES = [
     "modelcypher.core.domain.atlas.semantic_prime_multilingual",
     "modelcypher.core.domain.chat_template",

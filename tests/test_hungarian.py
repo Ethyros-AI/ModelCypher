@@ -30,11 +30,10 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.hungarian import (
+    clear_hungarian_cache,
     hungarian_assignment,
     hungarian_assignment_list,
-    clear_hungarian_cache,
 )
-
 
 # =============================================================================
 # hungarian_assignment Tests
@@ -53,9 +52,9 @@ class TestHungarianAssignment:
             [1.0, 0.0, 1.0],
             [1.0, 1.0, 0.0],
         ])
-        
+
         result = hungarian_assignment(cost, backend, use_cache=False)
-        
+
         assert list(result) == [0, 1, 2]
 
     def test_2x2_matrix(self):
@@ -66,9 +65,9 @@ class TestHungarianAssignment:
             [1.0, 0.0],
             [0.0, 1.0],
         ])
-        
+
         result = hungarian_assignment(cost, backend, use_cache=False)
-        
+
         # Optimal: 0->1, 1->0
         assert list(result) == [1, 0]
 
@@ -76,9 +75,9 @@ class TestHungarianAssignment:
         """1x1 matrix trivial assignment."""
         backend = get_default_backend()
         cost = backend.array([[5.0]])
-        
+
         result = hungarian_assignment(cost, backend, use_cache=False)
-        
+
         assert list(result) == [0]
 
     def test_result_is_permutation(self):
@@ -87,9 +86,9 @@ class TestHungarianAssignment:
         n = 5
         cost_list = [[(i + j) % n for j in range(n)] for i in range(n)]
         cost = backend.array(cost_list)
-        
+
         result = hungarian_assignment(cost, backend, use_cache=False)
-        
+
         # Check permutation: all targets 0..n-1 appear exactly once
         assert sorted(result) == list(range(n))
 
@@ -109,9 +108,9 @@ class TestHungarianAssignmentList:
             [1.0, 0.0, 1.0],
             [1.0, 1.0, 0.0],
         ]
-        
+
         result = hungarian_assignment_list(cost)
-        
+
         assert result == [0, 1, 2]
 
     def test_2x2_swap(self):
@@ -120,18 +119,18 @@ class TestHungarianAssignmentList:
             [1.0, 0.0],
             [0.0, 1.0],
         ]
-        
+
         result = hungarian_assignment_list(cost)
-        
+
         assert result == [1, 0]
 
     def test_result_is_permutation(self):
         """Result is a valid permutation."""
         n = 4
         cost = [[(i * j) % n for j in range(n)] for i in range(n)]
-        
+
         result = hungarian_assignment_list(cost)
-        
+
         assert sorted(result) == list(range(n))
 
 
@@ -147,10 +146,10 @@ class TestHungarianCache:
         """clear_hungarian_cache clears the cache."""
         backend = get_default_backend()
         cost = backend.array([[0.0, 1.0], [1.0, 0.0]])
-        
+
         # Run once to populate cache
         hungarian_assignment(cost, backend, use_cache=True)
-        
+
         # Clear and verify no error
         clear_hungarian_cache()
 
@@ -158,9 +157,9 @@ class TestHungarianCache:
         """Cached results match uncached results."""
         backend = get_default_backend()
         cost = backend.array([[0.0, 1.0], [1.0, 0.0]])
-        
+
         clear_hungarian_cache()
         result1 = hungarian_assignment(cost, backend, use_cache=True)
         result2 = hungarian_assignment(cost, backend, use_cache=True)
-        
+
         assert list(result1) == list(result2)

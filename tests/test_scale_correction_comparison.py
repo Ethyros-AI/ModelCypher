@@ -188,7 +188,7 @@ class TestScalarVsPerDirection:
         error_spectral_val = float(b.to_scalar(error_spectral))
 
         # Log the comparison
-        print(f"\nHigh condition number test (cond ≈ 100):")
+        print("\nHigh condition number test (cond ≈ 100):")
         print(f"  Scalar error: {error_scalar_val:.6f}")
         print(f"  Spectral error: {error_spectral_val:.6f}")
         print(f"  Improvement: {(error_scalar_val - error_spectral_val) / error_scalar_val * 100:.1f}%")

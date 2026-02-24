@@ -36,8 +36,6 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.birkhoff_projector import BirkhoffProjector
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
-    regularization_epsilon,
-    geodesic_svd,
 )
 
 if TYPE_CHECKING:

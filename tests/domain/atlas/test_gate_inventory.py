@@ -15,7 +15,6 @@ import pytest
 
 import modelcypher.core.domain.atlas.gate_inventory as gate_inventory
 
-
 # ---------------------------------------------------------------------------
 # ComputationalGate frozen dataclass
 # ---------------------------------------------------------------------------

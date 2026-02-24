@@ -28,7 +28,6 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
-    find_magnitude_gap_threshold,
     gpu_lstsq,
     is_finite,
     machine_epsilon,
@@ -156,7 +155,7 @@ def rbf_gram_matrix(
 
     # Get geodesic squared distances (cached)
     sq_dist = geodesic_squared_distances(X, backend)
-    n = int(X.shape[0])
+    int(X.shape[0])
 
     # Compute sigma if not provided (data-derived gap scale)
     computed_sigma = sigma
@@ -180,23 +179,23 @@ def rbf_gram_matrix_with_sigma(
 ) -> tuple["Array", float]:
     """
     Compute RBF Gram and return sigma used.
-    
+
     Useful for reusing sigma across source/target comparisons.
     """
     cache = _cache()
-    arr_key = cache.make_array_key(X, backend)
-    
+    cache.make_array_key(X, backend)
+
     # Get geodesic squared distances (cached)
     sq_dist = geodesic_squared_distances(X, backend)
-    n = int(X.shape[0])
-    
+    int(X.shape[0])
+
     # Compute sigma if not provided (data-derived gap scale)
     if sigma is None:
         sigma = _derive_rbf_sigma_from_values(sq_dist, backend)
-    
+
     # RBF kernel
     gram = _rbf_gram_from_sq_distances(sq_dist, sigma, backend)
-    
+
     return gram, sigma
 
 
@@ -281,7 +280,7 @@ def _center_gram_matrix(
 ) -> "Array":
     """
     Center a Gram matrix: K_c = H @ K @ H where H = I - (1/n)11ᵀ.
-    
+
     Efficient implementation without explicit H construction.
     Caches result if cache_key provided.
     """
@@ -291,20 +290,20 @@ def _center_gram_matrix(
         cached = cache.get_centered_gram(centered_key)
         if cached is not None:
             return cached
-    
-    n = gram.shape[0]
-    
+
+    gram.shape[0]
+
     # K_c = K - row_mean - col_mean + grand_mean
     row_mean = backend.mean(gram, axis=1, keepdims=True)
     col_mean = backend.mean(gram, axis=0, keepdims=True)
     grand_mean = backend.mean(gram)
-    
+
     centered = gram - row_mean - col_mean + grand_mean
     backend.eval(centered)
-    
+
     if cache_key is not None:
         cache.set_centered_gram(centered_key, centered, 0.0)
-    
+
     return centered
 
 
@@ -319,19 +318,19 @@ def _hsic_from_centered(
 ) -> float:
     """
     Compute HSIC from pre-centered Gram matrices.
-    
+
     HSIC(K, L) = trace(K_c @ L_c) / (n-1)²
-    
+
     Uses element-wise multiply + sum for efficiency (equivalent to trace of product).
     """
     n = int(centered_a.shape[0])
     if n <= 1:
         return 0.0
-    
+
     # trace(A @ B) = sum(A * B) for symmetric matrices
     hsic_raw = backend.sum(centered_a * centered_b)
     backend.eval(hsic_raw)
-    
+
     return float(backend.to_scalar(hsic_raw)) / ((n - 1) ** 2)
 
 
@@ -342,7 +341,7 @@ def _hsic_unbiased(
 ) -> float:
     """
     Unbiased HSIC estimator (Song et al. 2012).
-    
+
     Required for high-dimensional (P >> N) settings.
     """
     n = int(gram_a.shape[0])
@@ -355,25 +354,25 @@ def _hsic_unbiased(
     k_tilde = gram_a - backend.diag(backend.diag(gram_a))
     l_tilde = gram_b - backend.diag(backend.diag(gram_b))
     backend.eval(k_tilde, l_tilde)
-    
+
     # Term 1: trace(K_tilde @ L_tilde)
     term1 = backend.sum(k_tilde * l_tilde)
-    
+
     # Term 2: (1ᵀ K_tilde 1)(1ᵀ L_tilde 1) / ((n-1)(n-2))
     sum_k = backend.sum(k_tilde)
     sum_l = backend.sum(l_tilde)
     term2 = (sum_k * sum_l) / ((n - 1) * (n - 2))
-    
+
     # Term 3: (2/(n-2)) * 1ᵀ K_tilde L_tilde 1
     kl = backend.matmul(k_tilde, l_tilde)
     term3 = (2.0 / (n - 2)) * backend.sum(kl)
-    
+
     backend.eval(term1, term2, term3)
-    
-    hsic = (float(backend.to_scalar(term1)) + 
-            float(backend.to_scalar(term2)) - 
+
+    hsic = (float(backend.to_scalar(term1)) +
+            float(backend.to_scalar(term2)) -
             float(backend.to_scalar(term3))) / (n * (n - 3))
-    
+
     return max(0.0, hsic)
 
 
@@ -390,25 +389,25 @@ def compute_cka(
 ) -> CKAResult:
     """
     Compute CKA between two activation matrices.
-    
+
     This is the main entry point. Uses the full computation chain:
     activations → geodesic distances → RBF Gram → centered → CKA
-    
+
     Geodesic distances are cached. Grams use a shared sigma for precision.
-    
+
     Args:
         activations_x: [n_samples, features_x]
         activations_y: [n_samples, features_y]
         backend: Backend protocol. If None, uses default.
         estimator: HSIC estimator type.
         feature_bias_correction: Apply Chun et al. 2025 correction.
-    
+
     Returns:
         CKAResult with CKA similarity and HSIC values.
     """
     if backend is None:
         backend = get_default_backend()
-    
+
     # Auto-convert lists to arrays
     if isinstance(activations_x, list):
         activations_x = backend.array(activations_x)
@@ -420,14 +419,14 @@ def compute_cka(
         activations_y = backend.astype(
             activations_y, precision_dtype(backend, reference=activations_y)
         )
-    
+
     n = int(activations_x.shape[0])
     if n <= 1:
         return CKAResult(0.0, 0.0, 0.0, 0.0, n)
-    
+
     if activations_x.shape[0] != activations_y.shape[0]:
         return CKAResult(0.0, 0.0, 0.0, 0.0, n)
-    
+
     # Get geodesic squared distances (cached) and use a shared sigma.
     # Shared bandwidth removes sigma skew between X/Y and improves precision.
     sq_dist_x = geodesic_squared_distances(activations_x, backend)
@@ -437,11 +436,11 @@ def compute_cka(
     # Build RBF Gram matrices from shared sigma.
     gram_x = _rbf_gram_from_sq_distances(sq_dist_x, sigma, backend)
     gram_y = _rbf_gram_from_sq_distances(sq_dist_y, sigma, backend)
-    
+
     # Get centered Gram matrices (do not cache: sigma differs from per-array default).
     centered_x = _center_gram_matrix(gram_x, backend, cache_key=None)
     centered_y = _center_gram_matrix(gram_y, backend, cache_key=None)
-    
+
     # Compute HSIC
     # Unbiased HSIC (Song et al. 2012, JMLR 13) requires n ≥ 4 because
     # denominator is n(n-3). AUTO selects unbiased when P > N (high-dimensional).
@@ -459,7 +458,7 @@ def compute_cka(
         hsic_xy = _hsic_from_centered(centered_x, centered_y, backend)
         hsic_xx = _hsic_from_centered(centered_x, centered_x, backend)
         hsic_yy = _hsic_from_centered(centered_y, centered_y, backend)
-    
+
     # CKA = HSIC(x,y) / sqrt(HSIC(x,x) * HSIC(y,y))
     denom = sqrt_scalar(hsic_xx * hsic_yy, backend)
 
@@ -471,10 +470,10 @@ def compute_cka(
 
     if denom <= 0.0 or denom < eps:
         return CKAResult(0.0, hsic_xy, hsic_xx, hsic_yy, n)
-    
+
     cka = hsic_xy / denom
     cka = max(0.0, min(1.0, cka))
-    
+
     # Feature bias correction (Chun et al. 2025)
     cka_corrected = None
     correction_factor = None
@@ -484,7 +483,7 @@ def compute_cka(
         correction_factor = corr_x[0] * corr_y[0]
         if correction_factor > 0 and is_finite(correction_factor, backend):
             cka_corrected = min(1.0, cka * correction_factor)
-    
+
     return CKAResult(
         cka=cka,
         hsic_xy=hsic_xy,
@@ -503,33 +502,33 @@ def compute_cka_from_grams(
 ) -> float:
     """
     Compute CKA from pre-computed RBF Gram matrices.
-    
+
     Fast path when Grams are already computed. Skips geodesic computation.
-    
+
     Args:
         gram_a: RBF Gram matrix [n, n]
         gram_b: RBF Gram matrix [n, n]
         backend: Backend protocol.
-    
+
     Returns:
         CKA similarity in [0, 1].
     """
     if backend is None:
         backend = get_default_backend()
-    
+
     n = int(gram_a.shape[0])
     if n <= 1 or gram_a.shape != gram_b.shape:
         return 0.0
-    
+
     # Center
     centered_a = _center_gram_matrix(gram_a, backend)
     centered_b = _center_gram_matrix(gram_b, backend)
-    
+
     # HSIC via trace
     hsic_ab = _hsic_from_centered(centered_a, centered_b, backend)
     hsic_aa = _hsic_from_centered(centered_a, centered_a, backend)
     hsic_bb = _hsic_from_centered(centered_b, centered_b, backend)
-    
+
     # CKA
     denom = sqrt_scalar(hsic_aa * hsic_bb, backend)
 
@@ -549,21 +548,21 @@ def compute_cka_from_centered_grams(
 ) -> float:
     """
     Compute CKA from pre-centered Gram matrices.
-    
+
     Fastest path - when centering is already done.
     """
     if backend is None:
         backend = get_default_backend()
-    
+
     n = int(centered_a.shape[0])
     if n <= 1 or centered_a.shape != centered_b.shape:
         return 0.0
-    
+
     # HSIC directly
     hsic_ab = _hsic_from_centered(centered_a, centered_b, backend)
     hsic_aa = _hsic_from_centered(centered_a, centered_a, backend)
     hsic_bb = _hsic_from_centered(centered_b, centered_b, backend)
-    
+
     denom = sqrt_scalar(hsic_aa * hsic_bb, backend)
 
     # Epsilon based on HSIC scale, not centered Gram scale
@@ -747,7 +746,7 @@ def compute_geodesic_cka(
     # For float32: sqrt(1.19e-7) ≈ 3.5e-4, so denom_sq threshold is ~1e-7.
     # But if HSIC values are consistently small, we should still compute CKA.
     # The true degenerate case is when ONE of hsic_xx or hsic_yy is zero.
-    eps = machine_epsilon(backend, gram_x)
+    machine_epsilon(backend, gram_x)
 
     # Check for truly degenerate cases (zero self-similarity)
     if hsic_xx <= 0 or hsic_yy <= 0:
@@ -774,7 +773,7 @@ def _participation_ratio(eigenvalues: "Array", backend: "Backend") -> float:
     eigvals = backend.maximum(eigenvalues, zero)
     sum_vals = float(backend.to_scalar(backend.sum(eigvals)))
     sum_sq = float(backend.to_scalar(backend.sum(eigvals * eigvals)))
-    
+
     if not is_finite(sum_vals, backend) or sum_sq <= 0:
         return 0.0
     return (sum_vals * sum_vals) / sum_sq
@@ -787,26 +786,26 @@ def _feature_sampling_correction(
 ) -> tuple[float, float]:
     """
     Feature-sampling correction (Chun et al. 2025).
-    
+
     Returns (correction_factor, gamma).
     """
     if feature_dim <= 0:
         return 1.0, 0.0
-    
+
     n = int(centered_gram.shape[0])
     eigvals, _ = power_iteration_eigh(backend, centered_gram, k=n)
     backend.eval(eigvals)
-    
+
     gamma = _participation_ratio(eigvals, backend)
     if gamma <= 0:
         return 1.0, gamma
-    
+
     gamma = max(gamma, 1.0)
     correction = sqrt_scalar(1.0 + (gamma - 1.0) / float(feature_dim), backend)
-    
+
     if not is_finite(correction, backend) or correction <= 0:
         return 1.0, gamma
-    
+
     return correction, gamma
 
 

@@ -46,7 +46,7 @@ from modelcypher.experimental.lora_geometry.id_trajectory import (
 from modelcypher.experimental.lora_geometry.statistics import compute_kendall_tau
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Backend
+    from modelcypher.ports.backend import Array, Backend
 
 
 # Results directory

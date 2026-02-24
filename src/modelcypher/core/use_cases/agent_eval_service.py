@@ -34,7 +34,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from modelcypher.ports.inference import HiddenStateEngine
 from modelcypher.core.domain.atlas.agent_eval_suite_engine import (
     AgentActionKind,
     AgentEvalCase,
@@ -47,6 +46,8 @@ from modelcypher.core.domain.atlas.agent_eval_suite_engine import (
     ExpectedOption,
     ExpectedToolSpec,
 )
+from modelcypher.ports.inference import HiddenStateEngine
+
 # Semantic drift detection removed - probes now loaded from JSON
 
 logger = logging.getLogger(__name__)

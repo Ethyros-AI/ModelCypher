@@ -448,7 +448,7 @@ class MergeGeometry:
 
     source_model: str
     target_model: str
-    layer_geometries: dict[int, LayerGeometry] = field(default_factory=dict)
+    layer_geometries: dict[int, MergeLayerGeometry] = field(default_factory=dict)
 
     # Global metrics
     overall_cka: float = 0.0

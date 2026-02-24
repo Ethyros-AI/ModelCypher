@@ -22,11 +22,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.dare_sparsity import SparsityAnalysis
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     precision_dtype,
 )
-from modelcypher.core.domain.geometry.dare_sparsity import SparsityAnalysis
 
 logger = logging.getLogger(__name__)
 

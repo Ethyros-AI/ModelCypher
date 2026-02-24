@@ -170,6 +170,9 @@ class BaselineSemanticPrimeSignature:
         )
 
 
+SemanticPrimeSignature = BaselineSemanticPrimeSignature
+
+
 @dataclass(frozen=True)
 class SemanticPrimeBaseline:
     """Persisted baseline signature for semantic prime drift monitoring.

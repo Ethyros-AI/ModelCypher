@@ -21,10 +21,10 @@ Available signals:
 
 Usage:
     profiler = CurriculumProfiler(model, tokenizer, backend)
-    
+
     # Profile a set of problems
     profiles = profiler.profile_problems(problems, reference_prompts)
-    
+
     # Get correlation-ready output
     df = profiles.to_dataframe()
 """
@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -51,38 +50,38 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ProblemProfile:
     """Geometric profile for a single problem.
-    
+
     All fields are raw measurements with no interpretation.
     """
-    
+
     problem_id: str
     prompt: str
-    
+
     # Goldilocks metrics (validated r=-0.955)
     cka_similarity: float
     barrier_height: float
     fisher_mean: float
     goldilocks_score: float
-    
+
     # Trajectory metrics
     trajectory_curvature_mean: float
     trajectory_curvature_max: float
     trajectory_path_length_ratio: float
     trajectory_spectral_entropy: float
-    
+
     # Density metrics
     local_density: float
     density_percentile: float  # Relative to corpus
-    
+
     # Dimension metrics
     intrinsic_dimension: float
-    
+
     # Layer used for profiling
     layer_idx: int
-    
+
     # Composite difficulty score (Fisher-dominant)
     difficulty_score: float = 0.0
-    
+
     def as_dict(self) -> dict:
         """Convert to dictionary for serialization."""
         return {
@@ -107,11 +106,11 @@ class ProblemProfile:
 @dataclass
 class CurriculumProfiles:
     """Collection of problem profiles with analysis methods."""
-    
+
     profiles: list[ProblemProfile] = field(default_factory=list)
     model_id: str = ""
     reference_count: int = 0
-    
+
     def to_dataframe(self):
         """Convert to pandas DataFrame for analysis."""
         try:
@@ -120,7 +119,7 @@ class CurriculumProfiles:
         except ImportError:
             logger.warning("pandas not available, returning list of dicts")
             return [p.as_dict() for p in self.profiles]
-    
+
     def filter_by_goldilocks(
         self,
         cka_min: float = 0.85,
@@ -131,7 +130,7 @@ class CurriculumProfiles:
             p for p in self.profiles
             if cka_min <= p.cka_similarity <= cka_max
         ]
-    
+
     def filter_by_density_percentile(
         self,
         min_percentile: float = 0.0,
@@ -142,14 +141,14 @@ class CurriculumProfiles:
             p for p in self.profiles
             if min_percentile <= p.density_percentile <= max_percentile
         ]
-    
+
     def sort_by_difficulty(
         self,
         metric: str = "cka_similarity",
         ascending: bool = True,
     ) -> list[ProblemProfile]:
         """Sort problems by difficulty metric.
-        
+
         Default: ascending CKA = hardest first (lowest similarity to known).
         """
         return sorted(
@@ -157,7 +156,7 @@ class CurriculumProfiles:
             key=lambda p: getattr(p, metric),
             reverse=not ascending,
         )
-    
+
     def as_dict(self) -> dict:
         """Convert to dictionary for serialization."""
         return {
@@ -166,7 +165,7 @@ class CurriculumProfiles:
             "problem_count": len(self.profiles),
             "profiles": [p.as_dict() for p in self.profiles],
         }
-    
+
     def compute_difficulty_scores(self, highway_weight: float = 0.0) -> None:
         """Compute composite difficulty scores for all profiles.
 
@@ -185,7 +184,7 @@ class CurriculumProfiles:
             profile.difficulty_score = self._compute_single_difficulty(
                 profile, highway_weight=highway_weight
             )
-    
+
     @staticmethod
     def _compute_single_difficulty(
         profile: ProblemProfile,
@@ -250,14 +249,14 @@ class CurriculumProfiles:
                 0.15 * syntax_score +
                 0.15 * curvature_score
             )
-    
+
     def filter_by_difficulty_score(
         self,
         min_score: float = 0.3,
         max_score: float = 0.7,
     ) -> list[ProblemProfile]:
         """Filter problems in the optimal difficulty range.
-        
+
         Default range (0.3-0.7) selects moderate difficulty problems
         where learning is most effective (Goldilocks zone).
         """
@@ -265,7 +264,7 @@ class CurriculumProfiles:
             p for p in self.profiles
             if min_score <= p.difficulty_score <= max_score
         ]
-    
+
     def select_curriculum(
         self,
         n_samples: int = 100,
@@ -333,10 +332,10 @@ class CurriculumProfiles:
 
 class CurriculumProfiler:
     """Profile problems geometrically for curriculum design.
-    
+
     Combines multiple geometric signals to measure problem difficulty
     without heuristics - all values are direct measurements.
-    
+
     Example:
         >>> profiler = CurriculumProfiler(model, tokenizer)
         >>> profiles = profiler.profile_problems(
@@ -346,7 +345,7 @@ class CurriculumProfiler:
         >>> for p in profiles.sort_by_difficulty():
         ...     print(f"{p.prompt}: CKA={p.cka_similarity:.3f}")
     """
-    
+
     def __init__(
         self,
         model,
@@ -355,7 +354,7 @@ class CurriculumProfiler:
         layer_idx: int | None = None,
     ):
         """Initialize the profiler.
-        
+
         Args:
             model: The model to profile (must support get_activations or forward hooks)
             tokenizer: Tokenizer for the model
@@ -366,7 +365,7 @@ class CurriculumProfiler:
         self.model = model
         self.tokenizer = tokenizer
         self.backend = backend or get_default_backend()
-        
+
         # Determine layer to profile
         if layer_idx is not None:
             self.layer_idx = layer_idx
@@ -374,14 +373,14 @@ class CurriculumProfiler:
             # Default to final layer (research shows 3.3x more discriminative)
             n_layers = self._get_n_layers()
             self.layer_idx = n_layers - 1
-        
+
         # Initialize geometry components
         self._density_estimator = DensityEstimator(backend=self.backend)
         self._trajectory_complexity = TrajectoryComplexity(backend=self.backend)
         self._intrinsic_dimension = IntrinsicDimension(backend=self.backend)
-        
+
         logger.info(f"CurriculumProfiler initialized, profiling layer {self.layer_idx}")
-    
+
     def _get_n_layers(self) -> int:
         """Get number of layers in model."""
         # Try different model architectures
@@ -391,27 +390,27 @@ class CurriculumProfiler:
                 return config.num_hidden_layers
             if hasattr(config, "n_layers"):
                 return config.n_layers
-        
+
         # Try to count model.layers
         if hasattr(self.model, "model") and hasattr(self.model.model, "layers"):
             return len(self.model.model.layers)
         if hasattr(self.model, "layers"):
             return len(self.model.layers)
-        
+
         # Default fallback
         logger.warning("Could not determine layer count, defaulting to 16")
         return 16
-    
+
     def _get_activations(self, prompts: list[str], layer_idx: int) -> "Array":
         """Extract activations for prompts at specified layer.
-        
+
         Returns:
             Array of shape [n_prompts, hidden_dim]
         """
         from modelcypher.adapters.activation_provider import ActivationProviderAdapter
-        
-        provider = ActivationProviderAdapter()
-        
+
+        provider = ActivationProviderAdapter(backend=self.backend)
+
         # Extract activations for all prompts
         all_activations = []
         for prompt in prompts:
@@ -429,31 +428,31 @@ class CurriculumProfiler:
             except Exception as e:
                 logger.warning(f"Failed to extract activations for prompt: {e}")
                 continue
-        
+
         if not all_activations:
             raise ValueError("No activations extracted")
-        
+
         return self.backend.stack(all_activations, axis=0)
-    
+
     def _get_layer_activations(self, prompt: str) -> dict[int, "Array"]:
         """Get activations from all layers for trajectory analysis."""
         from modelcypher.adapters.activation_provider import ActivationProviderAdapter
-        
-        provider = ActivationProviderAdapter()
-        
+
+        provider = ActivationProviderAdapter(backend=self.backend)
+
         # Get hidden activations for all layers
         layer_acts = provider.collect_hidden_activations(
             model=self.model,
             tokenizer=self.tokenizer,
             text=prompt,
         )
-        
+
         # Sample every other layer to reduce computation
         n_layers = self._get_n_layers()
         sampled_layers = list(range(0, n_layers, 2))
-        
+
         return {k: v for k, v in layer_acts.items() if k in sampled_layers}
-    
+
     def profile_problems(
         self,
         problems: list[str],
@@ -462,51 +461,51 @@ class CurriculumProfiler:
         progress_callback: Callable[[int, int], None] | None = None,
     ) -> CurriculumProfiles:
         """Profile a set of problems geometrically.
-        
+
         Args:
             problems: List of problem prompts to profile
             reference_prompts: Reference prompts for CKA comparison.
                               If None, uses first 10% of problems as reference.
             problem_ids: Optional IDs for each problem.
             progress_callback: Optional callback(current, total).
-        
+
         Returns:
             CurriculumProfiles with geometric measurements.
         """
         logger.info(f"Profiling {len(problems)} problems at layer {self.layer_idx}")
-        
+
         # Generate problem IDs if not provided
         if problem_ids is None:
             problem_ids = [f"p{i}" for i in range(len(problems))]
-        
+
         # Use first 3 as reference if not provided (research shows best separation)
         if reference_prompts is None:
             n_ref = min(3, len(problems))  # first_3 strategy validated
             reference_prompts = problems[:n_ref]
             logger.info(f"Using first {n_ref} problems as reference")
-        
+
         # Get reference activations
         reference_activations = self._get_activations(reference_prompts, self.layer_idx)
         logger.info(f"Reference activations shape: {reference_activations.shape}")
-        
+
         # Get all problem activations for density calculation
         all_problem_activations = self._get_activations(problems, self.layer_idx)
-        
+
         # Compute density for all problems at once
         density_result = self._density_estimator.compute(all_problem_activations)
         # Force evaluation and convert to list
         self.backend.eval(density_result.densities)
         densities = density_result.densities
-        
+
         # Compute density percentiles
         density_percentiles = self._compute_percentiles(densities)
-        
+
         # Profile each problem
         profiles = []
         for i, (prompt, pid) in enumerate(zip(problems, problem_ids)):
             if progress_callback:
                 progress_callback(i + 1, len(problems))
-            
+
             try:
                 profile = self._profile_single(
                     prompt=prompt,
@@ -520,15 +519,15 @@ class CurriculumProfiler:
             except Exception as e:
                 logger.warning(f"Failed to profile problem {pid}: {e}")
                 continue
-        
+
         logger.info(f"Successfully profiled {len(profiles)}/{len(problems)} problems")
-        
+
         return CurriculumProfiles(
             profiles=profiles,
             model_id=getattr(self.model, "name_or_path", "unknown"),
             reference_count=len(reference_prompts),
         )
-    
+
     def _profile_single(
         self,
         prompt: str,
@@ -541,14 +540,14 @@ class CurriculumProfiler:
         """Profile a single problem."""
         # Expand dimensions for goldilocks computation
         problem_act_2d = self.backend.expand_dims(problem_activation, axis=0)
-        
+
         # Goldilocks quality (validated metrics)
         goldilocks = compute_goldilocks_quality(
             activations=problem_act_2d,
             reference_activations=reference_activations,
             backend=self.backend,
         )
-        
+
         # Trajectory complexity (curvature through layers)
         try:
             layer_activations = self._get_layer_activations(prompt)
@@ -563,7 +562,7 @@ class CurriculumProfiler:
             traj_curvature_max = float("nan")
             traj_path_ratio = float("nan")
             traj_spectral_entropy = float("nan")
-        
+
         # Intrinsic dimension (local complexity)
         try:
             id_result = self._intrinsic_dimension.compute(problem_act_2d)
@@ -571,7 +570,7 @@ class CurriculumProfiler:
         except Exception as e:
             logger.debug(f"ID computation failed: {e}")
             intrinsic_dim = float("nan")
-        
+
         return ProblemProfile(
             problem_id=problem_id,
             prompt=prompt,
@@ -588,18 +587,18 @@ class CurriculumProfiler:
             intrinsic_dimension=intrinsic_dim,
             layer_idx=self.layer_idx,
         )
-    
+
     def _compute_percentiles(self, values: "Array") -> list[float]:
         """Compute percentile rank for each value."""
         values_list = [float(v) for v in values]
         n = len(values_list)
-        
+
         # Sort and get ranks
         sorted_indices = sorted(range(n), key=lambda i: values_list[i])
         ranks = [0] * n
         for rank, idx in enumerate(sorted_indices):
             ranks[idx] = rank / (n - 1) if n > 1 else 0.5
-        
+
         return ranks
 
 

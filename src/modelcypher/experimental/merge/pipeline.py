@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import logging
 import os
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -39,27 +38,29 @@ from .helpers import (
     extract_layer_index,
     extract_layer_indices,
     load_tokenizer,
-    load_weights,
     load_transplant_occupancy,
-    save_weights,
+    load_weights,
     save_transplant_occupancy,
+    save_weights,
 )
 from .models import UnifiedMergeResult
 from .stages import (
     stage_density,
     stage_transplant,
 )
-from .stages.transplant_weight_processor import BehaviorJacobianContext
 from .stages.compression_descent import (
-    stage_compression_descent,
     apply_compression_descent_to_weights,
+    stage_compression_descent,
 )
+from .stages.transplant_weight_processor import BehaviorJacobianContext
 
 if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
     from modelcypher.ports.backend import Array, Backend
     from modelcypher.ports.inference import InferenceEngine
     from modelcypher.ports.model_loader import ModelLoaderPort
+
+    from .stages.density import DensityStageResult
 
 logger = logging.getLogger(__name__)
 
@@ -219,6 +220,7 @@ def run_merge(
     # =================================================================
     from modelcypher.core.domain.profile import GeometricProfileStore
     from modelcypher.core.use_cases.profile_service import ProfileService
+
     from .stages.probe_from_profile import (
         check_profiles_available,
         compute_alignment_from_profiles,
@@ -353,8 +355,8 @@ def run_merge(
         " (target model retained for behavior Jacobian)" if behavior_jacobian else "",
     )
 
-    layer_confidences: dict[int, float] = probe_result.get("confidences", {})
-    intersection_map_obj = probe_result.get("intersection_map")
+    probe_result.get("confidences", {})
+    probe_result.get("intersection_map")
     probe_failed = bool(probe_metrics.get("probe_failed"))
     perfect_alignment = bool(probe_metrics.get("perfect_alignment"))
 
@@ -537,7 +539,9 @@ def run_merge(
         )
 
         # Store variance metrics for bottleneck detection
-        from modelcypher.core.domain.geometry.variance_concentration import VarianceConcentrationResult
+        from modelcypher.core.domain.geometry.variance_concentration import (
+            VarianceConcentrationResult,
+        )
         layer_variance_metrics: dict[int, VarianceConcentrationResult] = {}
 
         for layer_idx, acts in target_intermediate_activations.items():
@@ -669,9 +673,9 @@ def run_merge(
             "Using hidden state variance (less accurate - measures residual stream, not MLP output)."
         )
         from modelcypher.core.domain.geometry.variance_concentration import (
+            VarianceConcentrationResult,
             compute_variance_concentration,
             identify_bottleneck_layers,
-            VarianceConcentrationResult,
         )
         var_computed = 0
         layer_variance_metrics: dict[int, VarianceConcentrationResult] = {}
@@ -1189,7 +1193,10 @@ def run_merge(
         # Cross-vocab merging: we can't align embeddings by vocab row because
         # token ID N in source != token ID N in target. Use target's original
         # vocabulary weights and let the hidden layer alignment transfer knowledge.
-        from modelcypher.ports.model_architecture_factory import get_output_projection_key, load_config
+        from modelcypher.ports.model_architecture_factory import (
+            get_output_projection_key,
+            load_config,
+        )
 
         target_config = load_config(target_path)
         lm_head_key = get_output_projection_key(target_config, loaded_target_weights)
@@ -1252,7 +1259,7 @@ def run_merge(
         # - graft_mask (which concepts were grafted)
         # - preserved_fraction (how much delta was added)
         logger.info("STAGE 4: VALIDATE (density estimation from transplant metrics)")
-        source_density = density_metrics.get("overall_source_density", 0)
+        density_metrics.get("overall_source_density", 0)
         target_density = density_metrics.get("overall_target_density", 0)
         opportunity = density_metrics.get("overall_opportunity", 0)
         preserved_fraction = transplant_metrics.get("mean_preserved_fraction", 0)
@@ -1327,7 +1334,6 @@ def run_merge(
         # - RoPE scaling mismatch
         # =================================================================
         from modelcypher.core.domain.geometry.trajectory_coherence import (
-            MergeCoherenceError,
             validate_merge_coherence,
         )
 

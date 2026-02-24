@@ -39,20 +39,18 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain.geometry.numerical_stability import (
+    _promote_precision_float32 as _promote_precision,
+)
+from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
     compute_variance_null_space,
-    VarianceNullSpaceResult,
-)
-from modelcypher.core.domain.geometry.numerical_stability import (
-    _promote_precision_float32 as _promote_precision,
 )
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
-    from modelcypher.ports.model_architecture import ModelArchitecturePort
 
 logger = logging.getLogger(__name__)
 
@@ -442,7 +440,7 @@ class IntrinsicCompressor:
             b.eval(activations)
 
             # Get layer accessor
-            layer_accessor = arch.layer_accessor(layer_idx)
+            arch.layer_accessor(layer_idx)
 
             # Get MLP keys for this layer
             if weight_keys is None:

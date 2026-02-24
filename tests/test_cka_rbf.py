@@ -16,9 +16,9 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cka import (
+    compute_cka,
     geodesic_squared_distances,
     rbf_gram_matrix,
-    compute_cka,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,

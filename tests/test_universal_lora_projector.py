@@ -28,18 +28,19 @@ We use synthetic weight matrices with known properties to verify:
 from __future__ import annotations
 
 import pytest
+
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.universal_lora_projector import (
-    UniversalLoRAProjector,
-    SVDComponents,
     GQAConfig,
+    SVDComponents,
+    UniversalLoRAProjector,
     compute_lora_delta,
-    decompose_to_lora,
     create_gqa_configs_from_model_configs,
+    decompose_to_lora,
     detect_gqa_from_weights,
 )
 
@@ -59,59 +60,59 @@ class TestUniversalLoRAProjector:
         seed: int = 42,
     ):
         """Create a synthetic weight matrix with known rank structure.
-        
+
         Creates W = U @ S @ Vt where:
         - U, Vt are semi-orthogonal
         - S has `rank` significant singular values, rest near zero
         """
         b = self.backend
-        
+
         # Use deterministic construction for reproducibility
         # Create orthogonal bases via QR of random matrices
         key1 = b.array([[seed + i * j for j in range(min(out_dim, rank))] for i in range(out_dim)])
         key2 = b.array([[seed + i * j + 100 for j in range(min(in_dim, rank))] for i in range(in_dim)])
-        
+
         # Normalize columns to get semi-orthogonal
         U_raw = key1 / b.sqrt(b.sum(key1 * key1, axis=0, keepdims=True))
         V_raw = key2 / b.sqrt(b.sum(key2 * key2, axis=0, keepdims=True))
         b.eval(U_raw, V_raw)
-        
+
         # Singular values: geometric decay
         s_vals = [1.0 / (i + 1) for i in range(rank)]
         S = b.diag(b.array(s_vals))
         b.eval(S)
-        
+
         # W = U @ S @ Vt
         W = b.matmul(U_raw, b.matmul(S, b.transpose(V_raw)))
         b.eval(W)
-        
+
         return W
 
     def _create_lora_delta(self, out_dim: int, in_dim: int, rank: int, scale: float = 0.1):
         """Create a synthetic LoRA delta (low-rank perturbation)."""
         b = self.backend
-        
+
         # Random low-rank: B @ A where B is [out, rank] and A is [rank, in]
         B = b.array([[scale * (i + j) / (out_dim * rank) for j in range(rank)] for i in range(out_dim)])
         A = b.array([[scale * (i + j) / (rank * in_dim) for j in range(in_dim)] for i in range(rank)])
         b.eval(B, A)
-        
+
         delta = b.matmul(B, A)
         b.eval(delta)
-        
+
         return delta
 
     def test_identity_transfer_same_svd(self):
         """Transfer to identical model should return unchanged weights."""
         b = self.backend
-        
+
         # Create synthetic weight and compute SVD
         W = self._create_synthetic_weight(64, 32, rank=8)
         svd = self.projector.compute_layer_svd(W)
-        
+
         # Create a LoRA delta
         delta = self._create_lora_delta(64, 32, rank=4)
-        
+
         # Transfer to itself (source = target)
         transferred, result = self.projector.transfer_layer(
             lora_delta=delta,
@@ -119,14 +120,14 @@ class TestUniversalLoRAProjector:
             target_svd=svd,  # Same!
             layer_key="test_layer",
         )
-        
+
         # Should be nearly identical
         diff = transferred - delta
         diff_norm = float(b.to_scalar(b.sqrt(b.sum(diff * diff))))
         delta_norm = float(b.to_scalar(b.sqrt(b.sum(delta * delta))))
-        
+
         relative_error = diff_norm / delta_norm
-        
+
         # Identity transfer should have near-zero error
         eps = machine_epsilon(b, delta)
         assert relative_error < 100 * sqrt_scalar(eps, b), (
@@ -138,33 +139,32 @@ class TestUniversalLoRAProjector:
 
     def test_grassmann_distance_measures_subspace_difference(self):
         """Grassmann distance should reflect subspace divergence."""
-        b = self.backend
-        
+
         # Create a weight matrix and its SVD
         W1 = self._create_synthetic_weight(64, 32, rank=8, seed=42)
         svd1 = self.projector.compute_layer_svd(W1)
-        
+
         # Same-model transfer: use identical SVD for source and target
         delta = self._create_lora_delta(64, 32, rank=4)
-        
+
         _, result_same = self.projector.transfer_layer(
             delta, svd1, svd1, "same"  # Identical SVD
         )
-        
+
         # Different-model transfer: create a different weight matrix
         W2 = self._create_synthetic_weight(64, 32, rank=8, seed=999)
         svd2 = self.projector.compute_layer_svd(W2)
-        
+
         _, result_diff = self.projector.transfer_layer(
             delta, svd1, svd2, "different"  # Different SVD
         )
-        
+
         # Identity transfer should have 0 Grassmann distance
         # (comparing subspace to itself)
         assert result_same.grassmann_distance < 0.01, (
             f"Same subspace should have near-zero distance: {result_same.grassmann_distance:.6f}"
         )
-        
+
         # Different subspaces may or may not have larger distance depending on
         # how different the random matrices are. At minimum, the transfer should work.
         assert result_diff.projection_error >= 0, "Projection error should be non-negative"
@@ -172,23 +172,23 @@ class TestUniversalLoRAProjector:
     def test_lora_delta_decomposition_round_trip(self):
         """Delta -> A,B -> Delta should preserve the original."""
         b = self.backend
-        
+
         rank = 4
         delta = self._create_lora_delta(64, 32, rank=rank)
-        
+
         # Decompose to A, B
         A, B = decompose_to_lora(delta, rank, b)
-        
+
         # Recompose
         reconstructed = compute_lora_delta(A, B, b)
-        
+
         # Should be very close
         diff = delta - reconstructed
         diff_norm = float(b.to_scalar(b.sqrt(b.sum(diff * diff))))
         delta_norm = float(b.to_scalar(b.sqrt(b.sum(delta * delta))))
-        
+
         relative_error = diff_norm / delta_norm
-        
+
         eps = machine_epsilon(b, delta)
         assert relative_error < 100 * sqrt_scalar(eps, b), (
             f"Round-trip decomposition error: {relative_error:.6f}"
@@ -196,16 +196,15 @@ class TestUniversalLoRAProjector:
 
     def test_svd_rank_detection(self):
         """SVD should correctly detect effective rank."""
-        b = self.backend
-        
+
         # Create a matrix with known rank 4
         W = self._create_synthetic_weight(64, 32, rank=4)
-        
+
         svd = self.projector.compute_layer_svd(W)
-        
+
         # Effective rank should be <= 4 (may be less due to numerical precision)
         assert svd.effective_rank <= 8, f"Effective rank too high: {svd.effective_rank}"
-        assert svd.effective_rank >= 1, f"Effective rank should be at least 1"
+        assert svd.effective_rank >= 1, "Effective rank should be at least 1"
 
     def test_dimension_mismatch_handled(self):
         """Transfer between different dimension models should work."""
@@ -326,12 +325,12 @@ class TestUniversalLoRAProjector:
     def test_full_transfer_workflow(self):
         """Test complete transfer with multiple layers."""
         b = self.backend
-        
+
         # Create mock "model" SVDs (2 layers to keep SVD workload bounded).
         source_svd = {}
         target_svd = {}
         adapter_weights = {}
-        
+
         for i in range(2):
             layer_key = f"layers.{i}.attn.q_proj"
 
@@ -344,7 +343,7 @@ class TestUniversalLoRAProjector:
             source_svd[layer_key] = SVDComponents(U=U, S=S, Vt=Vt, effective_rank=rank)
             target_svd[layer_key] = SVDComponents(U=U, S=S, Vt=Vt, effective_rank=rank)
             adapter_weights[layer_key] = self._create_lora_delta(32, 32, rank=4)
-        
+
         # Transfer all
         transferred, result = self.projector.transfer(
             source_adapter_weights=adapter_weights,
@@ -353,12 +352,12 @@ class TestUniversalLoRAProjector:
             source_base_model="test-source",
             target_base_model="test-target",
         )
-        
+
         # All layers should transfer
         assert result.layers_transferred == 2, f"Expected 2 layers, got {result.layers_transferred}"
         assert result.layers_skipped == 0
         assert len(transferred) == 2
-        
+
         # Metrics should be reasonable
         assert result.mean_projection_error < 1.0, "Projection error unreasonable"
         assert result.mean_grassmann_distance < 10.0, "Grassmann distance unreasonable"
@@ -374,22 +373,22 @@ class TestSVDComponents:
     def test_svd_shapes_correct(self):
         """SVD components should have correct shapes."""
         b = self.backend
-        
+
         out_dim, in_dim = 64, 32
         W = b.array([[0.1 * i * j for j in range(in_dim)] for i in range(out_dim)])
         b.eval(W)
-        
+
         svd = self.projector.compute_layer_svd(W)
-        
+
         # U should be [out_dim, k]
         U_shape = b.shape(svd.U)
         assert int(U_shape[0]) == out_dim
         assert int(U_shape[1]) == svd.effective_rank
-        
+
         # S should be [k]
         S_shape = b.shape(svd.S)
         assert int(S_shape[0]) == svd.effective_rank
-        
+
         # Vt should be [k, in_dim]
         Vt_shape = b.shape(svd.Vt)
         assert int(Vt_shape[0]) == svd.effective_rank

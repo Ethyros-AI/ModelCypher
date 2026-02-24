@@ -24,11 +24,11 @@ pytestmark = pytest.mark.property
 from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.generalized_procrustes import GeneralizedProcrustes
 from modelcypher.core.domain.geometry.gromov_wasserstein import (
     GromovWassersteinDistance,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 
 # Strategy for generating valid 2D matrices

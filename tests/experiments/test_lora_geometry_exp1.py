@@ -46,13 +46,13 @@ from modelcypher.experimental.lora_geometry.measurements import (
 )
 from modelcypher.experimental.lora_geometry.statistics import (
     CorrelationResult,
+    compute_bootstrap_ci,
     compute_pearson_correlation,
     compute_spearman_correlation,
-    compute_bootstrap_ci,
 )
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Backend
+    from modelcypher.ports.backend import Array, Backend
 
 
 # Results directory
@@ -416,7 +416,7 @@ class TestFullExperiment:
         print("\n=== Selectivity-Conflict Correlation Results ===")
         print(f"Results saved to: {RESULTS_DIR}")
         print(f"Adapters analyzed: {len(adapters)}")
-        print(f"\nOverall correlation:")
+        print("\nOverall correlation:")
         print(f"  Pearson r: {pearson_result.r:.4f}")
         if pearson_result.ci:
             print(

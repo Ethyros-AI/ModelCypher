@@ -26,10 +26,10 @@ These tests verify the mathematical properties of behavioral reconstruction:
 
 from __future__ import annotations
 
-import pytest
-from hypothesis import given, settings, assume
-from hypothesis import strategies as st
 import numpy as np
+import pytest
+from hypothesis import assume, given, settings
+from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
@@ -39,10 +39,9 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 from modelcypher.core.domain.geometry.transplant import (
     BehavioralReconstructionResult,
     WeightSpaceTransplantResult,
-    reconstruct_weight_from_behavior,
     compute_cross_dimensional_transplant,
+    reconstruct_weight_from_behavior,
 )
-
 
 # ============================================================================
 # Test Fixtures

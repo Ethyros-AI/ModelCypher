@@ -16,7 +16,6 @@ import pytest
 import modelcypher.core.domain.atlas.semantic_primes as semantic_primes
 import modelcypher.core.domain.geometry.signature_base as signature_base
 
-
 # ---------------------------------------------------------------------------
 # SemanticPrimeCategory enum
 # ---------------------------------------------------------------------------

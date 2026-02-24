@@ -33,8 +33,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
-    from modelcypher.core.domain.geometry.riemannian_types import GeodesicDistanceResult
-
 
 class RiemannianInterpolationMixin:
     """Mixin providing geodesic interpolation methods.
@@ -300,7 +298,6 @@ class RiemannianInterpolationMixin:
         Returns:
             Interpolated point [d]
         """
-        backend = self._backend
 
         if not arc_lengths:
             return points[path_indices[0]]

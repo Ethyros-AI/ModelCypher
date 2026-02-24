@@ -33,14 +33,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     gpu_lstsq,
     precision_dtype,
-    sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
 if TYPE_CHECKING:
-    from modelcypher.core.domain.geometry.cross_grounding_transfer import (
-        RelationalStressProfile,
-    )
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
@@ -117,7 +113,7 @@ class ConsensusCorrector:
         # In that case, use pseudoinverse directly
 
         n_samples = int(b.shape(target_activations)[0])
-        in_dim = int(b.shape(target_activations)[1])
+        int(b.shape(target_activations)[1])
         out_dim = int(b.shape(delta_activation_2d)[1])
 
         # For a single concept correction, we have one delta but potentially

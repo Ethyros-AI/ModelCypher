@@ -16,9 +16,9 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import List, Tuple, Optional, Dict, Iterator
 from enum import Enum
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -375,7 +375,7 @@ class BenchmarkLoader:
                     f"{chr(65+i)}. {c}" for i, c in enumerate(choices)
                 )
 
-                samples.append(BenchmarkSample(
+                all_samples.append(BenchmarkSample(
                     prompt=f"{question}\n{formatted_choices}\nAnswer:",
                     answer=choices[answer_idx],
                     choices=choices,

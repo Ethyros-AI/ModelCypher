@@ -25,6 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.atlas_protocols import enum_key
 from modelcypher.core.domain.geometry.atlas_registry import get_metaphor_invariants
 from modelcypher.core.domain.geometry.manifold_stitcher import (
@@ -32,7 +33,6 @@ from modelcypher.core.domain.geometry.manifold_stitcher import (
     ProbeSpace,
     output_layer_marker,
 )
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_sparse
 
 # =============================================================================
@@ -216,10 +216,13 @@ class MetaphorConvergenceAnalyzer:
             intersection = sorted(list(set(source_layers).intersection(target_layers)))
             aligned_indices = intersection
             mapped = []
-            for l in intersection:
+            for layer_idx in intersection:
                 mapped.append(
                     MetaphorConvergenceAnalyzer.AlignmentPair(
-                        index=l, source_layer=l, target_layer=l, normalized_depth=float(l)
+                        index=layer_idx,
+                        source_layer=layer_idx,
+                        target_layer=layer_idx,
+                        normalized_depth=float(layer_idx),
                     )
                 )
             aligned_pairs = mapped
@@ -244,11 +247,11 @@ class MetaphorConvergenceAnalyzer:
 
             for anchor_id in anchor_ids:
                 if anchor_id in source_vectors:
-                    for l, v in source_vectors[anchor_id].items():
-                        source_layer_vecs.setdefault(l, []).append(v)
+                    for layer_idx, vector in source_vectors[anchor_id].items():
+                        source_layer_vecs.setdefault(layer_idx, []).append(vector)
                 if anchor_id in target_vectors:
-                    for l, v in target_vectors[anchor_id].items():
-                        target_layer_vecs.setdefault(l, []).append(v)
+                    for layer_idx, vector in target_vectors[anchor_id].items():
+                        target_layer_vecs.setdefault(layer_idx, []).append(vector)
 
             layer_cosines: dict[int, float] = {}
             current_layers: list[int] = []
@@ -308,9 +311,9 @@ class MetaphorConvergenceAnalyzer:
                 anchor_ids=anchor_ids, layers=labeled_layers, mean_cosine=mean_cosine
             )
 
-            for l in current_layers:
-                if l not in layers_union:
-                    layers_union.append(l)
+            for layer_idx in current_layers:
+                if layer_idx not in layers_union:
+                    layers_union.append(layer_idx)
 
         # 5. Build Heatmap and Summaries
         if align_mode == MetaphorConvergenceAnalyzer.AlignMode.NORMALIZED:

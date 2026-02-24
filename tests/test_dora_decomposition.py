@@ -30,7 +30,6 @@ from __future__ import annotations
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.dora_decomposition import (
     ChangeType,
     DecompositionResult,
@@ -39,7 +38,7 @@ from modelcypher.core.domain.geometry.dora_decomposition import (
     MagnitudeDirectionMetrics,
     to_metrics_dict,
 )
-
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 # =============================================================================
 # ChangeType Tests
@@ -94,7 +93,7 @@ class TestDoRADecompose:
         """decompose with identical weights shows minimal change."""
         backend = get_default_backend()
         weight = backend.array([[1.0, 0.0], [0.0, 1.0]])
-        
+
         dora = DoRADecomposition(backend)
         result = dora.decompose(weight, weight, "test_layer")
 
@@ -108,10 +107,10 @@ class TestDoRADecompose:
         backend = get_default_backend()
         base = backend.array([[1.0, 0.0], [0.0, 1.0]])
         scaled = backend.array([[2.0, 0.0], [0.0, 2.0]])
-        
+
         dora = DoRADecomposition(backend)
         result = dora.decompose(base, scaled, "scaled_layer")
-        
+
         assert result is not None
         from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
 
@@ -128,10 +127,10 @@ class TestDoRADecompose:
         """decompose preserves layer name."""
         backend = get_default_backend()
         weight = backend.array([[1.0, 2.0]])
-        
+
         dora = DoRADecomposition(backend)
         result = dora.decompose(weight, weight, "my_layer")
-        
+
         assert result.layer_name == "my_layer"
 
 
@@ -154,20 +153,20 @@ class TestDoRAAnalyzeAdapter:
             "layer_0": backend.array([[1.1, 0.0], [0.0, 1.1]]),
             "layer_1": backend.array([[0.6, 0.4]]),
         }
-        
+
         dora = DoRADecomposition(backend)
         result = dora.analyze_adapter(base_weights, current_weights)
-        
+
         assert isinstance(result, DecompositionResult)
         assert "layer_0" in result.per_layer_metrics
 
     def test_analyze_adapter_empty(self):
         """analyze_adapter handles empty weights."""
         backend = get_default_backend()
-        
+
         dora = DoRADecomposition(backend)
         result = dora.analyze_adapter({}, {})
-        
+
         assert isinstance(result, DecompositionResult)
         assert result.dominant_change_type == ChangeType.MINIMAL
 
@@ -185,10 +184,10 @@ class TestToMetricsDict:
         backend = get_default_backend()
         base = {"layer": backend.array([[1.0]])}
         current = {"layer": backend.array([[1.1]])}
-        
+
         dora = DoRADecomposition(backend)
         result = dora.analyze_adapter(base, current)
         metrics = to_metrics_dict(result)
-        
+
         assert DoRAMetricKey.MAGNITUDE_CHANGE in metrics
         assert DoRAMetricKey.DIRECTIONAL_DRIFT in metrics

@@ -39,9 +39,8 @@ Correlates with semantic entropy (R^2 ~0.6 per arXiv:2406.15927)
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import uuid
+from dataclasses import dataclass
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.ports.backend import Array, Backend

@@ -400,8 +400,6 @@ def train_nb_lora(
     initialize_default_backend()
     service = get_dataset_training_service()
 
-    max_iters = 200 if quick else 10000
-
     logger.info("  NB-LoRA: training (geometry derives all hyperparameters)...")
     t0 = time.time()
     result = service.train_from_dataset(
@@ -409,10 +407,6 @@ def train_nb_lora(
         dataset_path=str(TRAIN_DATA),
         output_path=str(output_dir),
         eval_dataset_path=str(VAL_DATA),
-        max_iters=max_iters,
-        seq_length=None,
-        deep=False,
-        safety_margin=None,
         seed=42,
     )
     training_time = time.time() - t0

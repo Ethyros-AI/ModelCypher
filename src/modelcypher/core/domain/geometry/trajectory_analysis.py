@@ -33,16 +33,15 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.domain.geometry.numerical_stability import (
-    machine_epsilon,
-    sqrt_scalar,
+from modelcypher.core.domain.geometry.null_space import (
+    _get_model_architecture,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
     _promote_precision_float32 as _promote_precision,
 )
-
-from modelcypher.core.domain.geometry.null_space import (
-    _get_model_architecture,
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    sqrt_scalar,
 )
 
 if TYPE_CHECKING:

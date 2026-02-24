@@ -18,7 +18,6 @@ import pytest
 
 import modelcypher.core.domain.geometry.dora_decomposition as mod
 
-
 # =============================================================================
 # ChangeType enum
 # =============================================================================

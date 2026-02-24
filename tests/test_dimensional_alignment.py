@@ -25,17 +25,16 @@ Tests cover:
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import Mock
 
-import modelcypher.core.domain.geometry.dimensional_alignment as dimensional_alignment
+import pytest
 
+import modelcypher.core.domain.geometry.dimensional_alignment as dimensional_alignment
 from modelcypher.core.domain.geometry.dimensional_alignment import (
     DimensionalAlignment,
     measure_1d_alignment,
     measure_dimensional_alignment,
 )
-
 
 # =============================================================================
 # DimensionalAlignment Tests
@@ -79,7 +78,7 @@ class TestDimensionalAlignment:
             intermediate_cka_mean=None,
         )
         summary = alignment.summary()
-        
+
         assert isinstance(summary, str)
         assert "overlap" in summary.lower() or "vocab" in summary.lower()
 
@@ -97,12 +96,12 @@ class TestMeasure1DAlignment:
         # Create mock tokenizers with vocab
         source_tok = Mock()
         source_tok.get_vocab.return_value = {"hello": 0, "world": 1, "test": 2}
-        
+
         target_tok = Mock()
         target_tok.get_vocab.return_value = {"hello": 0, "there": 1, "world": 2}
-        
+
         result = measure_1d_alignment(source_tok, target_tok)
-        
+
         assert "vocab_overlap" in result
         assert "vocab_jaccard" in result
         assert 0.0 <= result["vocab_overlap"] <= 1.0
@@ -111,9 +110,9 @@ class TestMeasure1DAlignment:
         """measure_1d_alignment with identical vocabs returns 1.0."""
         tok = Mock()
         tok.get_vocab.return_value = {"a": 0, "b": 1, "c": 2}
-        
+
         result = measure_1d_alignment(tok, tok)
-        
+
         assert result["vocab_overlap"] == 1.0
         assert result["vocab_jaccard"] == 1.0
 
@@ -130,16 +129,16 @@ class TestMeasureDimensionalAlignment:
         """measure_dimensional_alignment returns DimensionalAlignment."""
         source_tok = Mock()
         source_tok.get_vocab.return_value = {"a": 0, "b": 1}
-        
+
         target_tok = Mock()
         target_tok.get_vocab.return_value = {"a": 0, "c": 1}
-        
+
         probe_metrics = {
             "embedding_cka": 0.9,
             "hidden_cka_mean": 0.85,
             "hidden_cka_min": 0.80,
         }
-        
+
         result = measure_dimensional_alignment(
             source_tok, target_tok, probe_metrics
         )

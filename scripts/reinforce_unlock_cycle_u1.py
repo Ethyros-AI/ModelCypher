@@ -49,7 +49,6 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--retention-data", default=DEFAULT_RETENTION)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--seeds", default="41,42,43,44,45")
-    parser.add_argument("--max-iters", type=int, default=1000)
     parser.add_argument("--regime-n", type=int, default=100)
     parser.add_argument("--online-eval-n", type=int, default=100)
     parser.add_argument("--eval-interval", type=int, default=10)
@@ -117,8 +116,6 @@ def _run_arm_seed(
         str(phase_root),
         "--arm-name",
         arm_name,
-        "--max-iters",
-        str(args.max_iters),
         "--regime-n",
         str(args.regime_n),
         "--online-eval-n",

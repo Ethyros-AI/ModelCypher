@@ -24,13 +24,13 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.optimal_transport import (
-    SinkhornSolver,
-    SinkhornResult,
-)
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     regularization_epsilon,
+)
+from modelcypher.core.domain.geometry.optimal_transport import (
+    SinkhornResult,
+    SinkhornSolver,
 )
 
 

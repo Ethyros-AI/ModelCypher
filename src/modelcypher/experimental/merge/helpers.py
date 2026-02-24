@@ -25,8 +25,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from .models import CrossArchitectureInfo, LayerSemanticProfile
 from modelcypher.utils.security import trust_remote_code_enabled, warn_trust_remote_code
+
+from .models import CrossArchitectureInfo, LayerSemanticProfile
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend

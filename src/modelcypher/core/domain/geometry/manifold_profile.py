@@ -26,6 +26,7 @@ from uuid import UUID, uuid4
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import ulp_scalar
 
+
 @dataclass
 class ManifoldProfile:
     id: UUID

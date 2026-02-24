@@ -168,7 +168,7 @@ class DecisionGate:
         self,
         entropy_state: EntropyState,
         hidden_state: Array | None = None,
-    ) -> Decision:
+    ) -> GateDecision:
         """Make a routing decision based on geometry-derived statistics.
 
         The decision follows this priority:
@@ -267,7 +267,7 @@ class DecisionGate:
         entropy_zscore: float,
         derivative_zscore: float,
         reason: str = "",
-    ) -> Decision:
+    ) -> GateDecision:
         """Construct a Decision object with computed confidence.
 
         Confidence is derived from the inverse of entropy z-score:
@@ -286,7 +286,7 @@ class DecisionGate:
         if self._refusal_distance is not None and self._sqrt_eps is not None:
             clarify_logit = -(self._refusal_distance / self._sqrt_eps)
 
-        return Decision(
+        return GateDecision(
             action=action,
             confidence=confidence,
             action_logits=(emit_logit, think_logit, clarify_logit),

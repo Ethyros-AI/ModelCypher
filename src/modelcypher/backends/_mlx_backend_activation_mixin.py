@@ -310,6 +310,7 @@ class _MLXBackendActivationMixin:
     ) -> Any:
         """Collect hidden + intermediate + gate + embedding activations in batch."""
         from mlx import nn
+
         from modelcypher.ports.activation_provider import ProbeActivationBatch
 
         if not texts:
@@ -686,6 +687,7 @@ class _MLXBackendActivationMixin:
     ) -> Any:
         """Collect full trajectory activations for manifold mapping."""
         from mlx import nn
+
         from modelcypher.ports.activation_provider import TrajectoryActivations
 
         if not texts:

@@ -140,9 +140,11 @@ def _get_default_factory() -> ModelArchitectureFactoryPort:
     """Lazily initialize and return the default factory."""
     global _default_factory
     if _default_factory is None:
-        # Import adapter implementation only when needed
-        from modelcypher.adapters.model_architecture import AdapterFactory
-        _default_factory = AdapterFactory()
+        from modelcypher.infrastructure.model_architecture_factory_provider import (
+            get_default_model_architecture_factory,
+        )
+
+        _default_factory = get_default_model_architecture_factory()
     return _default_factory
 
 

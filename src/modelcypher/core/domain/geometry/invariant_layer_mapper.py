@@ -33,6 +33,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TypeAlias
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.atlas_protocols import (
     AtlasProbeProtocol,
     SequenceInvariantProtocol,
@@ -49,8 +50,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     precision_dtype,
     sqrt_scalar,
 )
-from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_cosine_batch,
     geodesic_cosine_between_sets,

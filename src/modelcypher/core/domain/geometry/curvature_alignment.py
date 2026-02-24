@@ -27,11 +27,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.lie_rotation import so_scale_rotation
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     geodesic_svd,
 )
-from modelcypher.core.domain.geometry.lie_rotation import so_scale_rotation
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.curvature_profile import (
@@ -233,7 +233,7 @@ def curvature_weighted_procrustes(
     if d_source != d_target:
         # Use truncated SVD for dimension reduction/expansion
         # This preserves the most important directions
-        min_dim = min(d_source, d_target)
+        min(d_source, d_target)
 
         # SVD of source (geodesic - GPU-only, iterates until convergence)
         U, S, Vt = geodesic_svd(backend, source_activations)

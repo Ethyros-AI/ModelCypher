@@ -45,13 +45,6 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
-    infinity_threshold,
-    precision_dtype,
-    sqrt_scalar,
-)
-
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.atlas_protocols import (
     SpatialConceptProtocol,
@@ -59,6 +52,12 @@ from modelcypher.core.domain.geometry.atlas_protocols import (
     enum_key,
 )
 from modelcypher.core.domain.geometry.atlas_registry import get_spatial_concepts
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    infinity_threshold,
+    precision_dtype,
+    sqrt_scalar,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend

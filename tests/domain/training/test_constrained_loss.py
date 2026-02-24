@@ -10,23 +10,22 @@ pair groups) without requiring MLX or model loading.
 
 from __future__ import annotations
 
-import pytest
 import mlx.core as mx
+import pytest
 
 from modelcypher.backends.mlx_training_adapter import (
     iterate_structured_batches,
-)
-from modelcypher.core.domain.training.constraint_config import (
-    ConstraintConfig,
-    ConstraintState,
-    derive_constraint_thresholds,
 )
 from modelcypher.core.domain.dataset_loading import (
     build_pair_groups,
     is_paired_dataset,
     load_jsonl_dataset,
 )
-
+from modelcypher.core.domain.training.constraint_config import (
+    ConstraintConfig,
+    ConstraintState,
+    derive_constraint_thresholds,
+)
 
 # =============================================================================
 # Constraint Config Tests

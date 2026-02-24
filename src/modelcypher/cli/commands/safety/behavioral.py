@@ -28,12 +28,12 @@ from __future__ import annotations
 import asyncio
 
 from ._common import (
+    ErrorDetail,
     Path,
+    get_context,
     typer,
     write_error,
     write_output,
-    get_context,
-    ErrorDetail,
 )
 
 app = typer.Typer(no_args_is_help=True)

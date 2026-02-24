@@ -32,16 +32,17 @@ import json
 from pathlib import Path
 
 import pytest
+
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cka import compute_cka
 from modelcypher.core.domain.geometry.geometry_validation_suite import (
     GeometryValidationSuite,
 )
-from modelcypher.core.domain.geometry.traversal_coherence import TraversalCoherence
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     regularization_epsilon,
 )
+from modelcypher.core.domain.geometry.traversal_coherence import TraversalCoherence
 
 
 @pytest.fixture

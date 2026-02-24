@@ -136,6 +136,9 @@ class PrimeConfidenceInterval:
     n_bootstrap: int
 
 
+ConfidenceInterval = PrimeConfidenceInterval
+
+
 @dataclass(frozen=True)
 class EffectSize:
     """Cohen's d effect size."""

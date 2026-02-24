@@ -11,7 +11,6 @@ import pytest
 from modelcypher.core.domain.safety.safety_audit_log import SafetyAuditLog
 from modelcypher.core.domain.safety.safety_models import SafetyCategory
 
-
 # ---------------------------------------------------------------------------
 # Initial state
 # ---------------------------------------------------------------------------

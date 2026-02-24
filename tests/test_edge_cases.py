@@ -32,30 +32,31 @@ Tests critical edge cases:
 from __future__ import annotations
 
 import math
+
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
-    machine_epsilon,
-    regularization_epsilon,
-    condition_threshold,
-    svd_rank_threshold,
-    tiny_value,
-    safe_log_epsilon,
-    sqrt_scalar,
-    is_finite,
-    is_nan,
-    is_inf,
-    geodesic_svd,
-    geodesic_pinv,
-    safe_inverse,
-    gpu_lstsq,
-    invariant_alignment,
-    find_magnitude_gap_threshold,
-    ulp_scalar,
     compute_median,
     compute_median_nonzero,
+    condition_threshold,
+    division_epsilon,
+    find_magnitude_gap_threshold,
+    geodesic_pinv,
+    geodesic_svd,
+    gpu_lstsq,
+    invariant_alignment,
+    is_finite,
+    is_inf,
+    is_nan,
+    machine_epsilon,
+    regularization_epsilon,
+    safe_inverse,
+    safe_log_epsilon,
+    sqrt_scalar,
+    svd_rank_threshold,
+    tiny_value,
+    ulp_scalar,
 )
 
 
@@ -604,7 +605,7 @@ class TestLstsqEdgeCases:
         res_norm = float(backend.tolist(backend.norm(residual)))
         b_norm = float(backend.tolist(backend.norm(b)))
 
-        assert res_norm < b_norm, f"Residual should be less than RHS norm"
+        assert res_norm < b_norm, "Residual should be less than RHS norm"
 
     def test_lstsq_multiple_rhs(self):
         """Least squares should work with multiple RHS columns."""
@@ -636,7 +637,7 @@ class TestLstsqEdgeCases:
 
 
 try:
-    from hypothesis import given, settings, assume
+    from hypothesis import assume, given, settings
     from hypothesis import strategies as st
 
     HYPOTHESIS_AVAILABLE = True

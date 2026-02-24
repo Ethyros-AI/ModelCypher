@@ -22,7 +22,6 @@ from pathlib import Path
 
 import pytest
 
-
 _FORBIDDEN_PREFIXES = (
     "modelcypher.adapters",
     "modelcypher.infrastructure",

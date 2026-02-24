@@ -30,6 +30,7 @@ References:
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
@@ -707,8 +708,8 @@ class SharedSubspaceProjector:
     def _compute_covariance(x: list[list[float]], y: list[list[float]], n: int) -> list[float]:
         if n <= 0:
             return []
-        d_x = len(x[0])
-        d_y = len(y[0])
+        len(x[0])
+        len(y[0])
         b = get_default_backend()
         x_arr = b.array(x)
         y_arr = b.array(y)

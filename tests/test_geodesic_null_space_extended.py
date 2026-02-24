@@ -196,8 +196,8 @@ class TestGeodesicNullSpaceFilter:
         result_fresh = gns.filter_delta(small_delta, small_activations)
 
         # Results should be very close (may differ due to caching)
-        r1 = float(backend.to_scalar(backend.mean(result_with_basis.filtered_delta)))
-        r2 = float(backend.to_scalar(backend.mean(result_fresh.filtered_delta)))
+        float(backend.to_scalar(backend.mean(result_with_basis.filtered_delta)))
+        float(backend.to_scalar(backend.mean(result_fresh.filtered_delta)))
         # Note: Results may differ due to cache vs fresh computation
         # The important thing is both complete without error
 

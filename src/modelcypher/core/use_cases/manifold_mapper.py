@@ -29,18 +29,15 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, Protocol
-
+from typing import TYPE_CHECKING, Any, Protocol
 
 from modelcypher.core.domain.geometry.numerical_stability import (
+    _promote_precision,
     machine_epsilon,
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
     compute_numerical_rank,
-)
-from modelcypher.core.domain.geometry.numerical_stability import (
-    _promote_precision,
 )
 
 if TYPE_CHECKING:

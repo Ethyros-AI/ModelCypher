@@ -31,6 +31,20 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterator
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.null_space_tracker import (
+    NullSpaceState,
+    NullSpaceTracker,
+)
+from modelcypher.core.domain.safety.circuit_breaker_integration import (
+    CircuitBreakerIntegration,
+    CircuitBreakerState,
+    InputSignals,
+)
+from modelcypher.experimental.continual.attractor_detector import (
+    AttractorDetector,
+    AttractorState,
+    AttractorType,
+)
 from modelcypher.experimental.continual.confidence_embedding import (
     ConfidenceEmbedding,
 )
@@ -47,23 +61,9 @@ from modelcypher.experimental.continual.knowledge_encoder import (
     EncodingResult,
     KnowledgeEncoder,
 )
-from modelcypher.core.domain.geometry.null_space_tracker import (
-    NullSpaceState,
-    NullSpaceTracker,
-)
 from modelcypher.experimental.continual.surprise_detector import (
     SurpriseDetector,
     SurpriseEvent,
-)
-from modelcypher.experimental.continual.attractor_detector import (
-    AttractorDetector,
-    AttractorState,
-    AttractorType,
-)
-from modelcypher.core.domain.safety.circuit_breaker_integration import (
-    CircuitBreakerIntegration,
-    CircuitBreakerState,
-    InputSignals,
 )
 
 if TYPE_CHECKING:
@@ -864,7 +864,7 @@ class GeometricInference:
                         # hs shape: [batch, seq, hidden]
                         if hs.ndim == 3:
                             # Create injection: zeros except last position
-                            batch_size = int(hs.shape[0])
+                            int(hs.shape[0])
                             seq_len = int(hs.shape[1])
                             # Broadcast confidence embedding to last position
                             injection = self._backend.zeros_like(hs)

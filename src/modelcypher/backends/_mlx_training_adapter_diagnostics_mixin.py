@@ -15,6 +15,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
+# ruff: noqa: F403,F405
+
 """Diagnostics and utility methods for :class:`MLXTrainingAdapter`."""
 
 from __future__ import annotations
@@ -47,6 +49,7 @@ class _MLXTrainingAdapterDiagnosticsMixin:
             ``StoppingCertificate`` from ``check_stopping_certificate()``.
         """
         from mlx.utils import tree_flatten as mlx_flatten
+
         from modelcypher.core.domain.training.geometric_early_stopping import (
             check_stopping_certificate,
         )
@@ -470,7 +473,7 @@ class _MLXTrainingAdapterDiagnosticsMixin:
         model,
         train_dataset,
         seq_length: int,
-        n_samples: int = 20,
+        n_samples: int | None = None,
     ) -> int:
         """Derive critical batch size from gradient noise scale.
 
@@ -482,7 +485,14 @@ class _MLXTrainingAdapterDiagnosticsMixin:
 
         This avoids storing all per-sample gradient trees in memory.
         Same math as event-buffer path in lora_memory_store.derive_critical_batch_size().
+
+        n_samples: number of samples for variance estimation.  When None
+        (default), derived from dataset size: min(len(dataset), max(20,
+        len(dataset) // 10)).  Floor of 20 provides a statistical minimum
+        for second-moment estimation; 10 % of dataset scales with data.
         """
+        if n_samples is None:
+            n_samples = min(len(train_dataset), max(20, len(train_dataset) // 10))
         from mlx.utils import tree_flatten as mlx_flatten
         from mlx_lm.tuner.trainer import default_loss, iterate_batches
 
@@ -536,7 +546,7 @@ class _MLXTrainingAdapterDiagnosticsMixin:
         if mean_grad:
             mx.eval(*mean_grad.values())
 
-        mean_norm = total_norm_sum / float(count)
+        total_norm_sum / float(count)
 
         # Pass 2: accumulate variance around mean gradient.
         variance_sum = 0.0

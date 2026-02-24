@@ -22,10 +22,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Array, Backend
+    from modelcypher.ports.backend import Backend
 
 
-from modelcypher.core.support.array_utils import array_to_flat_list as _array_to_list
 
 
 def _uniform_list(backend: "Backend", count: int) -> list[float]:

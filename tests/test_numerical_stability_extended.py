@@ -40,20 +40,20 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     compute_median_nonzero,
     compute_pearson_correlation,
     compute_spearman_correlation,
+    division_epsilon,
     geodesic_pinv,
     geodesic_svd,
     gpu_lstsq,
     invariant_alignment,
-    machine_epsilon,
-    division_epsilon,
-    regularization_epsilon,
-    tiny_value,
-    numerical_rank_truncated_lstsq,
-    power_iteration_eigh,
-    safe_inverse,
-    sqrt_scalar,
     is_finite,
     is_nan,
+    machine_epsilon,
+    numerical_rank_truncated_lstsq,
+    power_iteration_eigh,
+    regularization_epsilon,
+    safe_inverse,
+    sqrt_scalar,
+    tiny_value,
 )
 
 
@@ -357,7 +357,7 @@ class TestGpuLstsq:
         backend.eval(A, B)
 
         stats: dict[str, float] = {}
-        X = gpu_lstsq(backend, A, B, stats=stats)
+        gpu_lstsq(backend, A, B, stats=stats)
 
         assert "residual_norm" in stats
         assert "rhs_norm" in stats
@@ -443,7 +443,7 @@ class TestInvariantAlignment:
         backend.eval(source, target)
 
         stats: dict[str, float] = {}
-        F = invariant_alignment(backend, source, target, stats=stats)
+        invariant_alignment(backend, source, target, stats=stats)
 
         assert "residual_norm" in stats or "method" in stats
 

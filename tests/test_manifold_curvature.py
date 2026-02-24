@@ -42,15 +42,15 @@ from modelcypher.core.domain.geometry.manifold_curvature import (
     SectionalCurvatureEstimator,
     compute_curvature_divergence,
 )
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 from modelcypher.core.domain.geometry.ollivier_ricci import (
     EdgeCurvature,
     NodeRicciCurvature,
     OllivierRicciCurvature,
     OllivierRicciResult,
-)
-from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
-    machine_epsilon,
 )
 from modelcypher.core.support.array_utils import array_to_list
 

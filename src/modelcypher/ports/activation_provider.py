@@ -472,9 +472,11 @@ class ActivationProvider(Protocol):
 
 def get_activation_provider() -> ActivationProvider:
     """Get the unified activation provider."""
-    from modelcypher.adapters.activation_provider import ActivationProviderAdapter
-    from modelcypher.backends import initialize_default_backend
-    return ActivationProviderAdapter(backend=initialize_default_backend())
+    from modelcypher.infrastructure.activation_provider_factory import (
+        get_activation_provider as _get_activation_provider,
+    )
+
+    return _get_activation_provider()
 
 
 __all__ = [

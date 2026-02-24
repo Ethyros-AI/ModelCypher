@@ -69,7 +69,7 @@ class GeometricDiagnosis:
 
 
 @dataclass
-class PipelineMergeValidationResult:
+class MergeValidationResult:
     """Complete result of merge validation."""
 
     validation_id: str
@@ -342,6 +342,7 @@ class MergeValidationService:
 
         Identifies which layers diverged using refinement density scores.
         """
+        from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.dare_sparsity import (
             DARESparsityAnalyzer,
         )
@@ -351,7 +352,6 @@ class MergeValidationService:
         from modelcypher.core.domain.geometry.refinement_density import (
             RefinementDensityAnalyzer,
         )
-        from modelcypher.core.domain._backend import get_default_backend
 
         try:
             if self._model_loader is None:

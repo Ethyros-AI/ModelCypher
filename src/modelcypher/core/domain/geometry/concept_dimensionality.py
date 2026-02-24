@@ -24,12 +24,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol, enum_key
+from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.domain.geometry.numerical_stability import (
     compute_spearman_correlation,
     is_finite,
 )
-from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol, enum_key
-from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 
 if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider

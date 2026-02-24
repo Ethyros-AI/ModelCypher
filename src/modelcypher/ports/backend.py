@@ -247,7 +247,6 @@ class Backend(Protocol):
     def eigvalsh(self, array: Array) -> Array:
         """Compute eigenvalues of symmetric/Hermitian matrix (values only, ~50% faster than eigh)."""
         ...
-    def solve(self, a: Array, b: Array) -> Array: ...
     def inv(self, array: Array) -> Array:
         """Compute the inverse of a square matrix."""
         ...
@@ -293,22 +292,13 @@ class Backend(Protocol):
         ...
 
     # --- Transforms ---
-    def vmap(
-        self,
-        fun: Callable,
-        in_axes: int | tuple[int | None, ...] | None = 0,
-        out_axes: int | tuple[int | None, ...] | None = 0,
-    ) -> Callable:
-        """Vectorize a function over batch axes."""
-        ...
-
     def value_and_grad(self, fun: Callable, argnums: int | list[int] = 0) -> Callable:
         """Return a function that computes both value and gradient of fun.
-        
+
         Args:
             fun: Function to differentiate.
             argnums: Argument index(es) to differentiate with respect to.
-            
+
         Returns:
             Function taking same args as fun, returning (value, gradient).
         """
@@ -529,7 +519,7 @@ class Backend(Protocol):
 
     def matrix_sqrt_newton_schulz(self, A: Array, num_iters: int = 15) -> Array:
         """Compute matrix square root iteratively via Newton-Schulz.
-        
+
         Converges to A^{1/2} for positive semi-definite A.
         Runs entirely on GPU.
         """

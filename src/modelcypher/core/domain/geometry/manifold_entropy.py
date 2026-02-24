@@ -33,7 +33,7 @@ References:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Dict, List
+from typing import TYPE_CHECKING, Dict
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.effective_rank import EffectiveRank

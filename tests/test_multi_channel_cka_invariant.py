@@ -45,7 +45,6 @@ from safetensors import safe_open
 
 from modelcypher.core.domain._backend import get_default_backend
 
-
 # Path to test model (downloaded by fixture infrastructure)
 TEST_MODEL_PATH = Path(__file__).parent / "fixtures" / ".models" / "HuggingFaceTB--SmolLM-135M"
 

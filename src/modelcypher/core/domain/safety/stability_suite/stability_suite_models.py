@@ -502,7 +502,7 @@ class StabilitySuiteReport:
     base_model_id: str | None = None
     """Base model ID if available."""
 
-    prompt_results: tuple[PromptResult, ...] = ()
+    prompt_results: tuple[StabilityPromptResult, ...] = ()
     """Results for each prompt."""
 
     aggregates: AggregateMetrics | None = None

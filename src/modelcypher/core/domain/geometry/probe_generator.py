@@ -32,22 +32,21 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.domain.geometry.numerical_stability import (
-    machine_epsilon,
-    regularization_epsilon,
-    sqrt_scalar,
+from modelcypher.core.domain.geometry.null_space import (
+    OrthogonalProbeResult,
+    RankAugmentationResult,
+    SequenceProbeResult,
+    _get_model_architecture,
+    compute_null_space_basis,
+    compute_numerical_rank,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
     _promote_precision_float32 as _promote_precision,
 )
-
-from modelcypher.core.domain.geometry.null_space import (
-    _get_model_architecture,
-    OrthogonalProbeResult,
-    SequenceProbeResult,
-    RankAugmentationResult,
-    compute_numerical_rank,
-    compute_null_space_basis,
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    regularization_epsilon,
+    sqrt_scalar,
 )
 
 if TYPE_CHECKING:

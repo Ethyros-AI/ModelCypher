@@ -36,10 +36,9 @@ from modelcypher.core.domain.geometry.alignment_validation import (
     AlignmentGeneralizationReport,
     DomainAlignmentReport,
     _even_odd_split,
-    alignment_generalization_report,
     alignment_generalization_by_domain,
+    alignment_generalization_report,
 )
-
 
 # =============================================================================
 # Helpers

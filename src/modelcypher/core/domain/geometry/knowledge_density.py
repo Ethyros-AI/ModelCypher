@@ -33,7 +33,6 @@ from statistics import median
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_matrix
 from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol
 from modelcypher.core.domain.geometry.concept_dimensionality import (
     ConceptDimensionalityAnalyzer,
@@ -41,6 +40,7 @@ from modelcypher.core.domain.geometry.concept_dimensionality import (
 )
 from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_matrix
 
 if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
@@ -496,7 +496,11 @@ def compute_knn_point_cloud_density(
     Returns:
         PointCloudDensityResult with per-point densities and comparison.
     """
-    from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, machine_epsilon, sqrt_scalar
+    from modelcypher.core.domain.geometry.numerical_stability import (
+        division_epsilon,
+        machine_epsilon,
+        sqrt_scalar,
+    )
     from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
     from modelcypher.core.domain.geometry.riemannian_validation import derive_k_neighbors
 

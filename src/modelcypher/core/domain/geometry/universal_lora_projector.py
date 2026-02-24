@@ -38,7 +38,7 @@ Mathematical Foundation:
     The LoRA update ΔW_s lives in span(U_s) × span(V_s).
     We project it to span(U_t) × span(V_t) via:
         ΔW_t = U_t @ U_t^T @ ΔW_s @ V_s @ V_t^T
-    
+
     With Procrustes refinement to minimize ||ΔW_t - aligned||_F.
 
 Usage:
@@ -64,7 +64,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.backend_matrix_utils import BackendMatrixUtils
@@ -75,7 +75,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 from modelcypher.core.domain.geometry.subspace import (
     compute_grassmann_distance,
-    compute_subspace_projector,
 )
 
 if TYPE_CHECKING:
@@ -215,11 +214,11 @@ class UniversalLoRAProjector:
 
     Example:
         projector = UniversalLoRAProjector(backend=backend)
-        
+
         # Prepare SVD caches for both models
         source_svd = projector.compute_layer_svd(source_base_weights)
         target_svd = projector.compute_layer_svd(target_base_weights)
-        
+
         # Transfer the adapter
         transferred, result = projector.transfer(
             source_adapter_weights=adapter_weights,
@@ -472,7 +471,7 @@ class UniversalLoRAProjector:
         b.eval(delta)
 
         src_shape = b.shape(delta)
-        m_src, n_src = int(src_shape[0]), int(src_shape[1])
+        m_src, _n_src = int(src_shape[0]), int(src_shape[1])
 
         # Target dimensions
         m_tgt = int(b.shape(target_svd.U)[0])

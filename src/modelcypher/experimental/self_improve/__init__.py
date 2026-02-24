@@ -105,7 +105,9 @@ def __dir__():
 
 if TYPE_CHECKING:
     # For static type checkers and IDEs
-    from .self_play_generator import SafeSelfPlayGenerator
+    from modelcypher.experimental.self_improve.oracle import VerificationOracle
+    from modelcypher.experimental.self_improve.scanner import CapabilityScanner
+
     from .improver import AutonomousSelfImprover
     from .lora_stacker import (
         AdapterInfo,
@@ -115,6 +117,7 @@ if TYPE_CHECKING:
         StackerPolicy,
         StackResult,
     )
+    from .self_play_generator import SafeSelfPlayGenerator
     from .types import (
         DEFAULT_PRIMES,
         Capability,
@@ -124,8 +127,6 @@ if TYPE_CHECKING:
         ImprovementLog,
         VerifiedSample,
     )
-    from modelcypher.experimental.self_improve.oracle import VerificationOracle
-    from modelcypher.experimental.self_improve.scanner import CapabilityScanner
 
 
 __all__ = [

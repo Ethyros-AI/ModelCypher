@@ -20,7 +20,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Iterator
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.ports.inference import HiddenStateEngine
 from modelcypher.utils.locks import FileLock, FileLockError
@@ -28,7 +28,7 @@ from modelcypher.utils.model_context import resolve_context_limit
 from modelcypher.utils.paths import get_modelcypher_home
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Array, Backend
+    from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
 
@@ -216,7 +216,7 @@ class InferenceEngine(HiddenStateEngine):
         # Load adapter config
         config_path = adapter_path / "adapter_config.json"
         with open(config_path) as f:
-            adapter_config = json.load(f)
+            json.load(f)
 
         # Load adapter weights
         weights_path = adapter_path / "adapters.safetensors"

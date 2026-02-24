@@ -37,8 +37,8 @@ import hashlib
 import json
 import logging
 import time
-from dataclasses import dataclass, field
 from contextlib import nullcontext
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -48,8 +48,8 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 
 if TYPE_CHECKING:
-    from modelcypher.core.domain.inference.activation_stream import ActivationFrame
     from modelcypher.core.domain.geometry.refusal_direction_detector import RefusalDirection
+    from modelcypher.core.domain.inference.activation_stream import ActivationFrame
     from modelcypher.ports.backend import Backend
     from modelcypher.ports.model_loader import ModelLoaderPort
 

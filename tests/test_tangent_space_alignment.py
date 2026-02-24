@@ -24,11 +24,11 @@ import pytest
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.tangent_space_alignment import (
+    MIN_ANCHOR_COUNT,
     LayerResult,
     TangentAlignmentReport,
     TangentSpaceAlignment,
     compute_alignment_for_layers,
-    MIN_ANCHOR_COUNT,
 )
 
 
@@ -182,7 +182,7 @@ class TestComputeLayerMetrics:
 
         # Source varies in first half of dimensions
         for i in range(n):
-            vals = [float(i) / n] * (d // 2) + [0.0] * (d // 2)
+            [float(i) / n] * (d // 2) + [0.0] * (d // 2)
             source = backend.array([
                 [float(j) / n if k < d // 2 else 0.0 for k in range(d)]
                 for j in range(n)

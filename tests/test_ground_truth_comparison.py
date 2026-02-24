@@ -60,20 +60,20 @@ PI = 3.141592653589793
 
 class TestCKAGroundTruth:
     """Compare CKA implementation for consistency.
-    
+
     Note: We do NOT compare against linear CKA reference because:
     1. Linear CKA cannot capture nonlinear manifold structure
     2. Euclidean distance breaks down in high dimensions
     3. ModelCypher uses RBF kernel with geodesic distances (correct for manifolds)
-    
+
     Instead, we verify CKA properties and self-consistency.
     """
 
     def test_cka_self_similarity_is_one(self) -> None:
         """CKA(X, X) should equal 1.0."""
         from modelcypher.core.domain.geometry.cka import (
-            compute_cka,
             HSICEstimator,
+            compute_cka,
         )
 
         backend = get_default_backend()
@@ -90,8 +90,8 @@ class TestCKAGroundTruth:
     def test_cka_symmetry(self) -> None:
         """CKA(X, Y) should equal CKA(Y, X)."""
         from modelcypher.core.domain.geometry.cka import (
-            compute_cka,
             HSICEstimator,
+            compute_cka,
         )
 
         backend = get_default_backend()
@@ -110,8 +110,8 @@ class TestCKAGroundTruth:
     def test_cka_bounded_zero_to_one(self) -> None:
         """CKA should be in [0, 1]."""
         from modelcypher.core.domain.geometry.cka import (
-            compute_cka,
             HSICEstimator,
+            compute_cka,
         )
 
         backend = get_default_backend()
@@ -129,8 +129,8 @@ class TestCKAGroundTruth:
     def test_cka_correlated_data_high_similarity(self) -> None:
         """Correlated data should have higher CKA than independent data."""
         from modelcypher.core.domain.geometry.cka import (
-            compute_cka,
             HSICEstimator,
+            compute_cka,
         )
 
         backend = get_default_backend()
@@ -156,8 +156,8 @@ class TestCKAGroundTruth:
     def test_cka_independent_data_low_similarity(self) -> None:
         """Independent data should have lower CKA than correlated data."""
         from modelcypher.core.domain.geometry.cka import (
-            compute_cka,
             HSICEstimator,
+            compute_cka,
         )
 
         backend = get_default_backend()
@@ -166,7 +166,7 @@ class TestCKAGroundTruth:
         backend.random_seed(42)
         X_arr = backend.random_normal((50, 32))
         backend.eval(X_arr)
-        
+
         backend.random_seed(12345)  # Very different seed
         Y_arr = backend.random_normal((50, 32))
         backend.eval(Y_arr)

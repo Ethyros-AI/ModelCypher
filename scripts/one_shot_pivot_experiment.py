@@ -162,7 +162,7 @@ def run_inference(model_path: str, prompts: list[str], adapter_path: str | None 
 
 
 def train_one_shot(model_path: str, output_dir: Path) -> str:
-    """Train with ONE example using mc train run."""
+    """Train with ONE example using research training path."""
     import subprocess
 
     # Write the single example to a temp file
@@ -179,14 +179,12 @@ def train_one_shot(model_path: str, output_dir: Path) -> str:
     logger.info("Training with ONE example...")
     result = subprocess.run(
         [
-            "poetry", "run", "mc", "train", "run",
+            "poetry", "run", "mc", "train", "run-research",
             "--model", model_path,
             "--data", str(train_file),
             "--eval-data", str(val_file),
             "--output", adapter_dir,
-            "--max-iters", "5000",
             "--seq-length", "512",
-            "--adaptive-lr",
             "--seed", "42",
         ],
         capture_output=True, text=True, timeout=3600,

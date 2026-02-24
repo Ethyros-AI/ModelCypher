@@ -18,7 +18,6 @@ import pytest
 
 import modelcypher.core.domain.geometry.riemannian_types as mod
 
-
 # =============================================================================
 # Helper: lightweight array-like objects for testing frozen dataclasses
 # =============================================================================

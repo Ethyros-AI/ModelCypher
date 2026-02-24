@@ -22,7 +22,6 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
 
@@ -424,7 +423,6 @@ class GeometryValidationSuite:
         self,
         fixture: TraversalCoherenceFixture,
     ) -> TraversalCoherenceValidation:
-        backend = self._backend
         self_result = TraversalCoherence.compare(
             paths=fixture.paths,
             gram_a=fixture.anchor_gram,
@@ -456,7 +454,6 @@ class GeometryValidationSuite:
         self,
         fixture: PathSignatureFixture,
     ) -> PathSignatureValidation:
-        backend = self._backend
         signature = PathGeometry.compute_signature(
             fixture.path,
             gate_embeddings=fixture.gate_embeddings,
@@ -563,9 +560,9 @@ class GeometryValidationSuite:
             heat_diff_arr = backend.abs(heat_base_arr - heat_padded_arr)
             heat_max_arr = backend.max(heat_diff_arr)
             backend.eval(heat_max_arr)
-            heat_trace_max_abs_diff = float(backend.to_scalar(heat_max_arr))
+            float(backend.to_scalar(heat_max_arr))
         else:
-            heat_trace_max_abs_diff = 0.0
+            pass
 
         fp_base = TopologicalFingerprint.compute(points)
         fp_padded = TopologicalFingerprint.compute(padded_points)

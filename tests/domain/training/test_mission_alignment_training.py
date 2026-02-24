@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 _ROOT = Path(__file__).resolve().parents[3]
 
 _FILE_PATTERNS: dict[str, list[str]] = {
@@ -33,9 +32,20 @@ _FILE_PATTERNS: dict[str, list[str]] = {
         "max(batch_size, 8)",
         "target_count = min(len(train_samples), 200)",
         "[:128]",
+        # Removed in deep audit: these are geometry-derived, not user knobs
+        "deep: bool",
+        "eval_batches: int",
+        "adaptive_lr: bool",
+        "lr_monotonic: bool",
     ],
     "src/modelcypher/cli/commands/train.py": [
         "--safety-margin",
+        # Removed in deep audit: geometry derives these
+        "--deep",
+        "--eval-batches",
+        "--adaptive-lr",
+        "--lr-monotonic",
+        "--max-iters",
     ],
 }
 

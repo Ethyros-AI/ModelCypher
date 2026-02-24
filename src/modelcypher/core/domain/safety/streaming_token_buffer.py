@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+
 @dataclass
 class StreamingTokenBuffer:
     """Circular buffer that accumulates streaming tokens for cross-token pattern detection.

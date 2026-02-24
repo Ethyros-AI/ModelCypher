@@ -32,6 +32,8 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
@@ -39,8 +41,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     log_scalar,
     sqrt_scalar,
 )
-from datetime import datetime
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 

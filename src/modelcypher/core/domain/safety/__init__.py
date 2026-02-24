@@ -23,7 +23,6 @@ from __future__ import annotations
 
 # Subpackages
 from . import calibration, sidecar, stability_suite
-from .exceptions import *  # noqa: F401,F403
 from .adapter_capability import *  # noqa: F401,F403
 from .adapter_safety_models import *  # noqa: F401,F403
 from .adapter_safety_probe import *  # noqa: F401,F403
@@ -33,6 +32,7 @@ from .capability_guard import *  # noqa: F401,F403
 from .circuit_breaker_integration import *  # noqa: F401,F403
 from .delta_feature_extractor import *  # noqa: F401,F403
 from .delta_feature_set import *  # noqa: F401,F403
+from .exceptions import *  # noqa: F401,F403
 from .output_safety_guard import *  # noqa: F401,F403
 from .output_safety_result import *  # noqa: F401,F403
 from .red_team_probe import *  # noqa: F401,F403

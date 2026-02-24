@@ -32,9 +32,9 @@ from .alignment_map import (
     format_comparison_report,
 )
 from .cross_vocab_merger import (
-    CrossVocabMergeResult,
-    CrossVocabMerger,
     AlignmentMethod,
+    CrossVocabMerger,
+    CrossVocabMergeResult,
 )
 from .embedding_projector import (
     EmbeddingProjector,
@@ -46,6 +46,7 @@ from .vocabulary_analyzer import (
     VocabularyAnalyzer,
     VocabularyStats,
 )
+
 __all__ = [
     # Alignment
     "TokenAlignment",

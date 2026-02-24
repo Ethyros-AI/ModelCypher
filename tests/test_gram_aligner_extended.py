@@ -26,17 +26,16 @@ Tests use hypothesis for property-based testing of mathematical invariants.
 """
 
 import pytest
-from hypothesis import given, settings, assume
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner, find_alignment
 from modelcypher.core.domain.geometry.numerical_stability import (
+    all_finite,
     machine_epsilon,
     sqrt_scalar,
-    all_finite,
 )
-
 
 # =============================================================================
 # Test Fixtures

@@ -24,10 +24,9 @@ is handled by the composition root.
 from __future__ import annotations
 
 import logging
+
 from modelcypher.adapters.model_probe import (
     AlignmentAnalysisResult,
-    LayerDrift,
-    LayerInfo,
     MergeValidationResult,
     ModelProbe,
     ModelProbeResult,

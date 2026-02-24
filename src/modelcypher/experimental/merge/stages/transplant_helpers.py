@@ -26,7 +26,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     _promote_precision_float32 as _promote_precision,
 )
 
-
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 

@@ -16,7 +16,6 @@ import pytest
 import modelcypher.core.domain.atlas.unified_atlas as unified_atlas
 from modelcypher.core.domain.domains import AtlasDomain
 
-
 # ---------------------------------------------------------------------------
 # AtlasSource enum
 # ---------------------------------------------------------------------------

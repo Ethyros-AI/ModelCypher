@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -28,12 +28,9 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
     frechet_mean,
-)
-from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_cosine_batch,
     geodesic_norms,
 )
-
 
 
 @dataclass(frozen=True)

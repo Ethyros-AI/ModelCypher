@@ -19,7 +19,6 @@ from modelcypher.core.domain.safety.sidecar.session_control_state import (
     SessionControlState,
 )
 
-
 # ---------------------------------------------------------------------------
 # Imports
 # ---------------------------------------------------------------------------

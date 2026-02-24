@@ -72,9 +72,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--batch-size", type=int, default=2, help="Batch size")
     p.add_argument("--seq-length", type=int, default=256, help="Max sequence length")
     p.add_argument("--lr", type=float, default=None, help="Override geometry-derived LR")
-    p.add_argument("--deep", action="store_true", help="Target all layers (not just tail_dims > 0)")
     p.add_argument("--seed", type=int, default=42, help="Random seed")
-    p.add_argument("--eval-batches", type=int, default=10, help="Number of eval batches")
     return p.parse_args()
 
 
@@ -759,7 +757,7 @@ def main():
     # ------------------------------------------------------------------
     logger.info("\n--- Baseline Evaluation ---")
     baseline_loss, baseline_ppl = evaluate_loss(
-        model, eval_dataset, tokenizer, args.batch_size, args.seq_length, args.eval_batches
+        model, eval_dataset, tokenizer, args.batch_size, args.seq_length, len(eval_dataset)
     )
     logger.info("Baseline loss: %.4f  perplexity: %.2f", baseline_loss, baseline_ppl)
 
@@ -772,12 +770,8 @@ def main():
     geometries = analyze_weight_geometries(weights, backend)
     logger.info("Analyzed %d weight matrices", len(geometries))
 
-    if args.deep:
-        target_modules = list(geometries.keys())
-        logger.info("Deep mode: targeting all %d layers", len(target_modules))
-    else:
-        target_modules = select_target_modules(geometries)
-        logger.info("Geometry selected %d / %d targetable layers", len(target_modules), len(geometries))
+    target_modules = select_target_modules(geometries)
+    logger.info("Geometry selected %d / %d targetable layers", len(target_modules), len(geometries))
 
     if not target_modules:
         logger.error("No targetable layers found — model may have full-rank weights everywhere")
@@ -875,7 +869,7 @@ def main():
     # ------------------------------------------------------------------
     logger.info("\n--- Post-Training Evaluation ---")
     post_loss, post_ppl = evaluate_loss(
-        model, eval_dataset, tokenizer, args.batch_size, args.seq_length, args.eval_batches
+        model, eval_dataset, tokenizer, args.batch_size, args.seq_length, len(eval_dataset)
     )
     logger.info("Post-training loss: %.4f  perplexity: %.2f", post_loss, post_ppl)
 

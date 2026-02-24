@@ -36,7 +36,10 @@ from modelcypher.core.domain.geometry.gromov_wasserstein import (
     GromovWassersteinDistance,
     GromovWassersteinResult,
 )
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, regularization_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    regularization_epsilon,
+)
 from modelcypher.core.domain.geometry.optimal_transport import SinkhornSolver
 from modelcypher.core.support.array_utils import array_to_list
 
@@ -770,7 +773,7 @@ class TestEdgeCases:
 # =============================================================================
 
 try:
-    from hypothesis import given, settings, assume, HealthCheck
+    from hypothesis import HealthCheck, assume, given, settings
     from hypothesis import strategies as st
 
     HYPOTHESIS_AVAILABLE = True

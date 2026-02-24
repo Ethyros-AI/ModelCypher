@@ -89,7 +89,7 @@ class ServiceFactory:
 
     def thermo_service(self):
         """Create ThermoService with injected model loader."""
-        from modelcypher.core.use_cases.thermo_service import ThermoService
+        from modelcypher.experimental.use_cases.thermo_service import ThermoService
 
         return ThermoService(
             model_loader=self._registry.model_loader,

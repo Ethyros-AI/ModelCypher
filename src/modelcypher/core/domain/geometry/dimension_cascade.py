@@ -29,7 +29,6 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
-from modelcypher.core.domain.geometry.ollivier_ricci import OllivierRicciCurvature
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     infinity_threshold,
@@ -37,12 +36,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     power_iteration_eigh,
     precision_dtype,
 )
+from modelcypher.core.domain.geometry.ollivier_ricci import OllivierRicciCurvature
 from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
     geodesic_distance_matrix,
-)
-from modelcypher.core.domain.geometry.riemannian_utils import (
-    geodesic_norms,
     geodesic_pairwise_metrics,
 )
 

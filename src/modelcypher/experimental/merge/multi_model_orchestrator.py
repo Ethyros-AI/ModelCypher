@@ -31,7 +31,6 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-
 from modelcypher.core.domain.geometry.consensus_corrector import ConsensusCorrector
 from modelcypher.core.domain.geometry.outlier_detector import OutlierDetector
 
@@ -236,7 +235,6 @@ class MultiModelMergeOrchestrator:
         Returns:
             Corrected weights.
         """
-        b = self._backend
         result = target_weights
 
         for correction in corrections:

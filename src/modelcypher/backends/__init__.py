@@ -264,9 +264,12 @@ def get_inference_engine(backend: Backend | None = None):
 
 def get_model_probe(backend: Backend | None = None):
     """Get the unified model probe."""
-    from modelcypher.adapters.model_probe import BackendModelProbe
+    from modelcypher.adapters.model_probe import ModelProbe
 
-    return BackendModelProbe(backend=backend)
+    if backend is None:
+        backend = initialize_default_backend()
+
+    return ModelProbe(backend=backend)
 
 
 def get_embedding_provider(model_path: str | None = None, backend: Backend | None = None):

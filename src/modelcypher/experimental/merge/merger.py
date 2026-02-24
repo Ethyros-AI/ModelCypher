@@ -351,14 +351,15 @@ class UnifiedGeometricMerger:
         """
         import logging
         import math
-        from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
-        from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
-        from modelcypher.core.domain.geometry.outlier_detector import OutlierDetector
-        from modelcypher.core.domain.geometry.consensus_corrector import ConsensusCorrector
-        from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+
         from modelcypher.core.domain.atlas.probe_loader import ProbeLoader
+        from modelcypher.core.domain.geometry.consensus_corrector import ConsensusCorrector
+        from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
+        from modelcypher.core.domain.geometry.numerical_stability import gpu_lstsq, machine_epsilon
+        from modelcypher.core.domain.geometry.outlier_detector import OutlierDetector
+        from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+
         from .helpers import get_hidden_state
-        from modelcypher.core.domain.geometry.numerical_stability import gpu_lstsq
 
         logger = logging.getLogger(__name__)
         b = self._backend
@@ -805,7 +806,7 @@ class UnifiedGeometricMerger:
             source_acts = probe_tuple[2]
             target_acts = probe_tuple[3]
             feature_transforms = probe_tuple[10]
-            layer_mapping = probe_tuple[17]
+            probe_tuple[17]
 
             channel_activations[channel_id] = source_acts or {}
             channel_transforms[channel_id] = feature_transforms or {}
@@ -833,7 +834,7 @@ class UnifiedGeometricMerger:
         birkhoff_router = BirkhoffRouter(self._backend)
 
         # Load target config for architecture-aware key detection
-        from modelcypher.ports.model_architecture_factory import load_config, is_attention_key
+        from modelcypher.ports.model_architecture_factory import is_attention_key, load_config
 
         target_config = load_config(target_path)
 

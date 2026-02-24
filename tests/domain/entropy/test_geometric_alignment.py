@@ -11,7 +11,6 @@ from modelcypher.core.domain.entropy.geometric_alignment import (
     SessionTelemetry,
 )
 
-
 # =============================================================================
 # SentinelSample
 # =============================================================================

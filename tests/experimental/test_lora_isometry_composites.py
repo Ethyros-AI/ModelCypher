@@ -214,8 +214,8 @@ class TestIsometryComposites:
     def test_multiplicative_catches_single_bad_factor(self, any_backend):
         """IS is low when any ONE input metric is bad."""
         from modelcypher.experimental.lora_isometry import (
-            IsometryMetrics,
             IsometryCompositeScores,
+            IsometryMetrics,
             WeylMetrics,
             compute_isometry_composites,
         )

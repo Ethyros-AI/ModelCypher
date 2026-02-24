@@ -328,7 +328,7 @@ def null_space_projector(backend: "Backend", A: "Array") -> "Array":
     A = _promote_precision(b.array(A), b)
     b.eval(A)
 
-    n, d = int(A.shape[0]), int(A.shape[1])
+    _n, d = int(A.shape[0]), int(A.shape[1])
     eps = machine_epsilon(b, A)
     sqrt_eps = sqrt_scalar(eps, b)
 
@@ -402,7 +402,7 @@ def numerical_rank_truncated_lstsq(
     B = _promote_precision(b.array(target), b)
     b.eval(A, B)
 
-    n_samples, d_source = int(A.shape[0]), int(A.shape[1])
+    _n_samples, d_source = int(A.shape[0]), int(A.shape[1])
     _, d_target = int(B.shape[0]), int(B.shape[1])
 
     # Machine precision threshold: sqrt(eps_machine)

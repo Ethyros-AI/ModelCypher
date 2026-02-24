@@ -34,7 +34,6 @@ from __future__ import annotations
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.concept_response_matrix import (
     AnchorActivation,
     AnchorMetadata,
@@ -47,6 +46,7 @@ from modelcypher.core.domain.geometry.generalized_procrustes import (
     RotationContinuityAnalyzer,
     RotationContinuityResult,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.support.array_utils import array_to_list
 
 
@@ -690,7 +690,7 @@ class TestProcrustesEdgeCases:
             [6.0, 7.0, 8.0, 9.0, 10.0],
         ]
 
-        result = GeneralizedProcrustes().align([small_matrix, large_matrix])
+        GeneralizedProcrustes().align([small_matrix, large_matrix])
         # Should return None due to dimension mismatch (align expects same dims)
         # align_crms handles dimension truncation, not align
 

@@ -50,7 +50,6 @@ from modelcypher.core.domain.geometry.acquisition_protocols import (
     uniform_acquisition_result,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
     infinity_threshold,
     machine_epsilon,
 )

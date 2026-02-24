@@ -18,8 +18,7 @@
 from __future__ import annotations
 
 import sys
-from types import ModuleType
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.experimental.merge import pipeline

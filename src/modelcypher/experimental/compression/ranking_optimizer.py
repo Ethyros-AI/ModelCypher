@@ -331,7 +331,7 @@ class RankingPreservingOptimizer:
         d_out = int(Y.shape[1])
         d_in = int(X.shape[1])
 
-        eps = machine_epsilon(b, Y)
+        machine_epsilon(b, Y)
         temperature = 1.0  # Controls sharpness of sigmoid
 
         total_loss = b.array(0.0)
@@ -403,8 +403,8 @@ class RankingPreservingOptimizer:
 
                     # Create one-hot-like masks and accumulate
                     # This is inefficient but works for small sample sizes
-                    eye_i = b.zeros((d_out, 1))
-                    eye_j = b.zeros((d_out, 1))
+                    b.zeros((d_out, 1))
+                    b.zeros((d_out, 1))
                     # Note: direct indexing assignment not available, use workaround
                     # For now, skip gradient accumulation for simplicity
                     # and rely on numerical gradient or simpler approach

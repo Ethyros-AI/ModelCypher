@@ -22,7 +22,6 @@ from modelcypher.core.domain.geometry.sparse_region_domains import (
     create_probe_corpora,
 )
 
-
 # ---------------------------------------------------------------------------
 # DomainCategory enum
 # ---------------------------------------------------------------------------

@@ -32,7 +32,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.null_space_tracker import NullSpaceTracker
 from modelcypher.experimental.continual.surprise_detector import SurpriseEvent
 from modelcypher.experimental.continual.update_strategy import (
@@ -203,7 +202,6 @@ class KnowledgeEncoder:
 
         Targets the up_proj or gate_proj weights of the MLP.
         """
-        b = self._backend
 
         # Get the layer
         layer = self._get_layer(layer_id)

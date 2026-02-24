@@ -20,7 +20,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
@@ -28,6 +28,7 @@ from modelcypher.core.domain.geometry.hot_layer_matcher import (
     coupling_to_assignment,
     hot_layer_matching,
 )
+
 from .probe_helpers import (
     _promote_precision,
     compute_numerical_rank,
@@ -195,8 +196,8 @@ def align_layers(
                     f"  {model} layer {layer_idx}: rank={rank}/{hidden_dim} ({coverage:.1f}%)"
                 )
             raise RuntimeError(
-                f"ALIGNMENT FAILED: Rank-deficient activations detected.\n"
-                f"Full-rank coverage is required but the following layers have deficits:\n"
+                "ALIGNMENT FAILED: Rank-deficient activations detected.\n"
+                "Full-rank coverage is required but the following layers have deficits:\n"
                 + "\n".join(diagnostics)
                 + "\n\nTo fix this, either:\n"
                 "1. Add more diverse probes to the atlas\n"

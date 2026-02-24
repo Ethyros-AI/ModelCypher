@@ -78,7 +78,7 @@ def _configure_single_event_layer(
         heat=heat,
     )
     assert accepted
-    layer = store._get_or_init_lora(0, "mlp.up_proj", store._event_buffer[key][0])
+    store._get_or_init_lora(0, "mlp.up_proj", store._event_buffer[key][0])
     return key, hidden, delta
 
 

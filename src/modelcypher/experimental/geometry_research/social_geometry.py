@@ -35,9 +35,9 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     is_nan,
     power_iteration_eigh,
+    precision_dtype,
     regularization_epsilon,
     sqrt_scalar,
-    precision_dtype,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_cosine_batch,

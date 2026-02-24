@@ -35,10 +35,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     regularization_epsilon,
 )
 from modelcypher.core.domain.geometry.relative_representation import (
-    compute_relative_representation,
-    align_relative_representations,
-    transfer_via_relative_space,
     RelativeRepresentation,
+    align_relative_representations,
+    compute_relative_representation,
+    transfer_via_relative_space,
 )
 
 

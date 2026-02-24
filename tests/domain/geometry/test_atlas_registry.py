@@ -15,7 +15,6 @@ import pytest
 
 import modelcypher.core.domain.geometry.atlas_registry as mod
 
-
 # ---------------------------------------------------------------------------
 # Fake protocol implementations
 # ---------------------------------------------------------------------------

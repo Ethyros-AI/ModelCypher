@@ -42,7 +42,6 @@ EXPERIMENTS: dict[str, dict] = {
             "auto_regime": True,
             "regime_n_problems": 25,
             "eval_interval": 10,
-            "max_iters": 1000,
         },
     },
     "exp1": {
@@ -52,7 +51,6 @@ EXPERIMENTS: dict[str, dict] = {
             "online_eval": True,
             "online_eval_n_problems": 25,
             "eval_interval": 10,
-            "max_iters": 65,
             "outcome_training": False,
             "entropy_regularization": False,
         },
@@ -64,7 +62,6 @@ EXPERIMENTS: dict[str, dict] = {
             "auto_regime": True,
             "regime_n_problems": 25,
             "eval_interval": 10,
-            "max_iters": 200,
         },
     },
     "exp3": {
@@ -74,7 +71,6 @@ EXPERIMENTS: dict[str, dict] = {
             "auto_regime": True,
             "regime_n_problems": 25,
             "eval_interval": 10,
-            "max_iters": 200,
         },
     },
     "exp4": {
@@ -83,7 +79,6 @@ EXPERIMENTS: dict[str, dict] = {
             "auto_regime": True,
             "regime_n_problems": 25,
             "eval_interval": 10,
-            "max_iters": 200,
             "entropy_floor_fraction": 0.95,
         },
     },
@@ -94,7 +89,6 @@ EXPERIMENTS: dict[str, dict] = {
             "auto_regime": True,
             "regime_n_problems": 25,
             "eval_interval": 10,
-            "max_iters": 200,
             "kl_reference_penalty": True,
         },
     },
@@ -104,7 +98,6 @@ EXPERIMENTS: dict[str, dict] = {
             "auto_regime": True,
             "regime_n_problems": 25,
             "eval_interval": 10,
-            "max_iters": 200,
             "outcome_signal_density_gate": 0.5,
         },
     },
@@ -114,7 +107,6 @@ EXPERIMENTS: dict[str, dict] = {
             "auto_regime": True,
             "regime_n_problems": 25,
             "eval_interval": 10,
-            "max_iters": 200,
             # lipschitz_batches removed — MASS uses spectral ceiling now
         },
     },

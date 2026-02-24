@@ -30,34 +30,19 @@ The Cayley transform maps unconstrained (A_tilde, B_tilde) to semi-orthogonal
 
 from __future__ import annotations
 
-import json
 import logging
 import math
-import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import mlx.core as mx
 import mlx.nn as nn
 
-from modelcypher.core.domain.training.geometric_early_stopping import (
-    check_loss_stable,
-    check_val_loss_converged,
-)
-from modelcypher.core.domain.training.exceptions import TrainingDerivationError
-from modelcypher.core.domain.training.spectral_budget import (
-    DTYPE_THRESHOLD_F32,
-    compute_budget_ratios,
-    compute_initialization_vectors,
-    compute_projected_residuals,
-    is_budget_exhausted,
-)
-
 if TYPE_CHECKING:
-    from modelcypher.core.domain.training.geometric_lora import LayerGeometry
-    from modelcypher.core.domain.training.geometric_optimizer import OptimizerGeometryConfig
-    from modelcypher.ports.backend import Backend
+    from modelcypher.core.domain.training.constraint_config import (
+        ConstraintConfig,
+        ConstraintState,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -292,11 +277,11 @@ class NBLoRALinear(nn.Module):
         # Z = (X - X^T) + Y^T @ Y  (skew-symmetric + PSD → I+Z always invertible)
         Z = (X - X.T) + Y.T @ Y
 
-        I = mx.eye(r)
-        IpZ_inv = _inv_with_grad(I + Z)
+        identity = mx.eye(r)
+        IpZ_inv = _inv_with_grad(identity + Z)
 
         # Semi-orthogonal factors
-        A_core = (I - Z) @ IpZ_inv
+        A_core = (identity - Z) @ IpZ_inv
         B_core = -2.0 * (Y @ IpZ_inv)
 
         # Reconstruct and split
@@ -488,22 +473,22 @@ def iterate_paired_batches(
 
             for j, s in enumerate(batch_samples):
                 tlen = min(s["n_tokens"], max_seq_length)
-                
+
                 # Build padded token sequences
                 toks = s["tokens"].tolist()[:tlen] if hasattr(s["tokens"], "tolist") else list(s["tokens"])[:tlen]
                 toks = [int(t) for t in toks] + [0] * (max_len - tlen)
                 batch_list.append(toks)
-                
+
                 # Build padded mask sequences
                 amask = s["answer_mask"].tolist()[:tlen] if hasattr(s["answer_mask"], "tolist") else list(s["answer_mask"])[:tlen]
                 amask = [float(a) for a in amask] + [0.0] * (max_len - tlen)
                 mask_list.append(amask)
-                
+
                 lengths_list[j] = tlen
 
             batch_tensor = mx.array(batch_list, dtype=mx.int32)
             lengths_tensor = mx.array(
-                [[0, l] for l in lengths_list], dtype=mx.int32,
+                [[0, length] for length in lengths_list], dtype=mx.int32,
             )
             answer_masks_tensor = mx.array(mask_list, dtype=mx.float32)
 
@@ -740,7 +725,7 @@ def iterate_structured_batches(
 
             batch_tensor = mx.array(batch_arr)
             lengths_tensor = mx.array(
-                [[0, l] for l in lengths_list], dtype=mx.int32,
+                [[0, length] for length in lengths_list], dtype=mx.int32,
             )
             answer_masks_tensor = mx.array(mask_arr)
 

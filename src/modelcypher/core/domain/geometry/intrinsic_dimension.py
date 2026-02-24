@@ -477,7 +477,7 @@ class IntrinsicDimension:
 
         # Safe mean computation
         sum_log_mu = backend.sum(log_mu_masked)
-        mean_log_mu = sum_log_mu / backend.maximum(valid_count, backend.array(1.0))
+        sum_log_mu / backend.maximum(valid_count, backend.array(1.0))
 
         # Regression estimate: d = 1 / mean(log(mu))
         # For proper regression, use sorted values
@@ -521,7 +521,6 @@ class IntrinsicDimension:
         """
         import math
 
-        backend = self._backend
         n = int(points.shape[0])
 
         # Full geodesic computation for all samples

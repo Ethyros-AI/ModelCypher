@@ -380,7 +380,6 @@ class CrossArchitectureLayerMatcher:
         Returns:
             Dict mapping layer index to activation matrix [n_anchors, hidden_dim].
         """
-        from modelcypher.ports.backend import Array
 
         layer_activations: dict[int, Array] = {}
 
@@ -504,7 +503,7 @@ class CrossArchitectureLayerMatcher:
             return []
 
         backend = get_default_backend()
-        n_source = len(cka_matrix)
+        len(cka_matrix)
         n_target = len(cka_matrix[0]) if cka_matrix else 0
 
         # Build mapping from alignment path

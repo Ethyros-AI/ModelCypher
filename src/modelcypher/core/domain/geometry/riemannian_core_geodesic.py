@@ -21,10 +21,12 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
+    count_inf,
+    count_nan,
     count_nonfinite,
     infinity_threshold,
     machine_epsilon,
@@ -33,7 +35,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 from modelcypher.core.domain.geometry.riemannian_types import GeodesicDistanceResult
 
-from .riemannian_core_utils import _promote_precision
+from .precision import _promote_precision
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array
@@ -366,7 +368,6 @@ class RiemannianGeodesicMixin:
         """
         import math
 
-        backend = self._backend
         n = int(chord_dist.shape[0])
 
         k_low = 1

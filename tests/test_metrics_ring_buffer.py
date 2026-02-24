@@ -23,20 +23,20 @@ This tests the high-performance ring buffer for entropy visualization.
 
 from __future__ import annotations
 
-from datetime import datetime
 import math
+from datetime import datetime
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
-    sqrt_scalar,
-)
 from modelcypher.core.domain.entropy.metrics_ring_buffer import (
     EventMarkerBuffer,
     EventType,
     MetricEvent,
     MetricSample,
     MetricsRingBuffer,
+)
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    sqrt_scalar,
 )
 
 # =============================================================================

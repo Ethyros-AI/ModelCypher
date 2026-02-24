@@ -21,19 +21,19 @@ from __future__ import annotations
 
 import pytest
 
-from modelcypher.core.domain.geometry.knowledge_diff import (
-    GraftOpportunity,
-    LayerDiff,
-    DomainDiff,
-    KnowledgeDiff,
-    KnowledgeDiffer,
-    compute_graft_mask,
-    _aggregate_opportunities,
-)
 from modelcypher.core.domain.geometry.knowledge_density import (
     ConceptDensity,
     LayerDensityProfile,
     ModelDensityProfile,
+)
+from modelcypher.core.domain.geometry.knowledge_diff import (
+    DomainDiff,
+    GraftOpportunity,
+    KnowledgeDiff,
+    KnowledgeDiffer,
+    LayerDiff,
+    _aggregate_opportunities,
+    compute_graft_mask,
 )
 
 

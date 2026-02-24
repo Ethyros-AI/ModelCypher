@@ -47,17 +47,16 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-
+from modelcypher.core.use_cases.entropy_monitor import (
+    EntropySignal,
+    UncertaintyAction,
+)
 from modelcypher.experimental.continual.confidence_embedding import ConfidenceEmbedding
 from modelcypher.experimental.continual.entropy_analyzer import EntropyState
 from modelcypher.experimental.continual.lora_memory_store import HeatSignal
 from modelcypher.experimental.continual.surprise_detector import (
     SurpriseDetector,
     SurpriseEvent,
-)
-from modelcypher.core.use_cases.entropy_monitor import (
-    EntropySignal,
-    UncertaintyAction,
 )
 
 if TYPE_CHECKING:

@@ -32,7 +32,6 @@ from modelcypher.core.use_cases.geometry_metrics_service import (
     TopologicalFingerprintResult,
 )
 
-
 _finite_float = st.floats(min_value=-1e3, max_value=1e3, allow_nan=False, allow_infinity=False, width=32)
 _pos_int = st.integers(min_value=0, max_value=128)
 _bool = st.booleans()

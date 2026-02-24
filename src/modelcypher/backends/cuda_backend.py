@@ -544,8 +544,8 @@ class CUDABackend(Backend):
         Y = A_f32 / normA_val
 
         shape = A.shape
-        I = self.torch.eye(shape[0], dtype=self.torch.float32, device="cuda")
-        Z = I
+        identity = self.torch.eye(shape[0], dtype=self.torch.float32, device="cuda")
+        Z = identity
 
         three = self.torch.tensor(3.0, dtype=self.torch.float32, device="cuda")
         half = self.torch.tensor(0.5, dtype=self.torch.float32, device="cuda")
@@ -553,7 +553,7 @@ class CUDABackend(Backend):
         # Iteration
         for _ in range(num_iters):
             ZY = self.torch.matmul(Z, Y)
-            T = three * I - ZY
+            T = three * identity - ZY
 
             Y_new = half * self.torch.matmul(Y, T)
             Z_new = half * self.torch.matmul(T, Z)

@@ -10,7 +10,6 @@ from modelcypher.core.domain.safety.stability_suite.stability_suite_prompt_batte
     StabilitySuitePromptBattery,
 )
 
-
 # ---------------------------------------------------------------------------
 # Tier prompt counts
 # ---------------------------------------------------------------------------
@@ -180,4 +179,4 @@ class TestPromptContent:
     @pytest.mark.parametrize("tier", list(StabilitySuiteTier))
     def test_all_have_nonempty_id(self, tier):
         for p in StabilitySuitePromptBattery.prompts(tier):
-            assert p.id.strip(), f"prompt has empty id"
+            assert p.id.strip(), "prompt has empty id"

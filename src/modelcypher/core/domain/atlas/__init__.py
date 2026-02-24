@@ -31,30 +31,30 @@ from .atlas_base import (
     BaseAtlasSignature,
 )
 
-# Unified atlas system (JSON-based probes)
-from .unified_atlas import (
-    ALL_ATLAS_SOURCES,
-    AFFECTIVE_DOMAINS,
-    AtlasDomain,
-    AtlasProbe,
-    AtlasSource,
-    COMPUTATIONAL_DOMAINS,
-    DEFAULT_ATLAS_SOURCES,
-    LINGUISTIC_DOMAINS,
-    MATHEMATICAL_DOMAINS,
-    MORAL_DOMAINS,
-    MultiAtlasTriangulationScore,
-    MultiAtlasTriangulationScorer,
-    PHILOSOPHICAL_DOMAINS,
-    SAFETY_DOMAINS,
-    SPATIOTEMPORAL_DOMAINS,
-    UnifiedAtlasInventory,
-    get_probe_ids,
-)
-
 # Probe loader for JSON-based probes
 from .probe_loader import (
     get_probe_count_by_domain,
     load_all_probes,
     load_probes_from_file,
+)
+
+# Unified atlas system (JSON-based probes)
+from .unified_atlas import (
+    AFFECTIVE_DOMAINS,
+    ALL_ATLAS_SOURCES,
+    COMPUTATIONAL_DOMAINS,
+    DEFAULT_ATLAS_SOURCES,
+    LINGUISTIC_DOMAINS,
+    MATHEMATICAL_DOMAINS,
+    MORAL_DOMAINS,
+    PHILOSOPHICAL_DOMAINS,
+    SAFETY_DOMAINS,
+    SPATIOTEMPORAL_DOMAINS,
+    AtlasDomain,
+    AtlasProbe,
+    AtlasSource,
+    MultiAtlasTriangulationScore,
+    MultiAtlasTriangulationScorer,
+    UnifiedAtlasInventory,
+    get_probe_ids,
 )

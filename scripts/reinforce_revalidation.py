@@ -122,12 +122,6 @@ def _parse_args() -> argparse.Namespace:
         help="Training seed.",
     )
     parser.add_argument(
-        "--max-iters",
-        type=int,
-        default=1000,
-        help="Maximum training iterations.",
-    )
-    parser.add_argument(
         "--regime-n",
         type=int,
         default=25,
@@ -311,7 +305,6 @@ def _mode_train_kwargs(
     args: argparse.Namespace,
 ) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
-        "max_iters": args.max_iters,
         "seed": args.seed,
         "auto_regime": mode_config.auto_regime,
         "eval_interval": args.eval_interval,

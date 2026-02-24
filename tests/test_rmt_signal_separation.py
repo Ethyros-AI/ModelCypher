@@ -30,8 +30,8 @@ from modelcypher.core.domain.geometry.numerical_stability import regularization_
 from modelcypher.core.domain.geometry.rmt_signal_separation import (
     MPSignalNoiseResult,
     compute_rmt_null_space_weights,
-    estimate_noise_variance_from_bulk,
     estimate_noise_variance_closed_form,
+    estimate_noise_variance_from_bulk,
     marchenko_pastur_edges,
     separate_signal_noise,
 )
@@ -540,7 +540,7 @@ class TestRMTIntegrationWithGeodesicNullSpace:
         signal_loadings = backend.zeros((5, n_features))
         # Strong signal in first 5 dimensions
         for i in range(5):
-            col = [10.0 if j == i else 0.0 for j in range(n_features)]
+            [10.0 if j == i else 0.0 for j in range(n_features)]
             signal_loadings = backend.array(
                 [[10.0 if j == i else 0.0 for j in range(n_features)]
                  for i in range(5)]

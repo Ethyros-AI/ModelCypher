@@ -60,18 +60,17 @@ References:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Iterator
 
-from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.null_space_tracker import NullSpaceTracker
 from modelcypher.experimental.continual.knowledge_encoder import KnowledgeEncoder
 from modelcypher.experimental.continual.manifold_completion import (
     CompletionStep,
     ManifoldCompletion,
     RetrievalFunction,
 )
-from modelcypher.core.domain.geometry.null_space_tracker import NullSpaceTracker
 
 if TYPE_CHECKING:
     from modelcypher.core.use_cases.entropy_learning_bridge import (
@@ -442,7 +441,7 @@ class ConsolidationService:
             # This helps the completion algorithm understand the region type
             if event.refusal_projection > 0.5:
                 # High refusal - add signal in early dimensions
-                adjustment = b.zeros((hidden_dim,))
+                b.zeros((hidden_dim,))
                 # Set first 10% of dimensions
                 n_refusal_dims = max(1, hidden_dim // 10)
                 refusal_signal = b.ones((n_refusal_dims,)) * event.refusal_projection

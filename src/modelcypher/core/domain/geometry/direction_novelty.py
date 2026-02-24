@@ -29,8 +29,6 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
-    find_magnitude_gap_threshold,
-    machine_epsilon,
     precision_dtype,
 )
 
@@ -238,7 +236,7 @@ def compute_direction_projector(
     b = backend or get_default_backend()
 
     mask = novelty_result.novel_mask if novel_only else novelty_result.shared_mask
-    d = int(b.shape(mask)[0])
+    int(b.shape(mask)[0])
 
     # Convert bool mask to float (0.0 or 1.0)
     count_dtype = precision_dtype(b, reference=novelty_result.novelty_ratio)
@@ -427,7 +425,7 @@ def compute_subspace_novelty(
     shared_basis = subspace_result.shared_basis  # [k_shared, d_tgt]
 
     n_novel = int(b.shape(novel_basis)[0])
-    n_shared = int(b.shape(shared_basis)[0])
+    int(b.shape(shared_basis)[0])
 
     # Create per-direction novelty by projecting onto novel subspace
     # For each direction i, novelty[i] = how much of direction i is in novel subspace

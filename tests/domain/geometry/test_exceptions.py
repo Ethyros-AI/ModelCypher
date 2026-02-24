@@ -15,7 +15,6 @@ import pytest
 
 import modelcypher.core.domain.geometry.exceptions as mod
 
-
 # =============================================================================
 # EstimatorError
 # =============================================================================

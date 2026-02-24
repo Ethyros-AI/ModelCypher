@@ -36,16 +36,16 @@ from __future__ import annotations
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.intrinsic_compression import (
+    IntrinsicCompressor,
+    compress_layer_with_validation,
+    compress_weight_to_intrinsic_dim,
+    estimate_compression_potential,
+    validate_compression_lossless,
+)
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
-)
-from modelcypher.core.domain.geometry.intrinsic_compression import (
-    compress_weight_to_intrinsic_dim,
-    validate_compression_lossless,
-    compress_layer_with_validation,
-    IntrinsicCompressor,
-    estimate_compression_potential,
 )
 
 

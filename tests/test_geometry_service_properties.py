@@ -24,9 +24,8 @@ from datetime import datetime, timezone
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from modelcypher.core.domain.geometry.gate_detector import DetectionResult, DetectedGate
+from modelcypher.core.domain.geometry.gate_detector import DetectedGate, DetectionResult
 from modelcypher.core.use_cases.geometry_service import GeometryService
-
 
 _finite_float = st.floats(min_value=-1e3, max_value=1e3, allow_nan=False, allow_infinity=False, width=32)
 

@@ -24,7 +24,7 @@ metrics (eigenvalues, heat trace, entropy) without interpretation.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
@@ -92,7 +92,6 @@ class SpectralSignature:
         k_neighbors = embedding_result.k_neighbors
         kernel_bandwidth = embedding_result.kernel_bandwidth
         component_count = embedding_result.component_count
-        inf_value = embedding_result.inf_value
 
         backend.eval(eigenvalues, adjacency)
 

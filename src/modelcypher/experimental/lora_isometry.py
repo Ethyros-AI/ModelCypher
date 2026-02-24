@@ -26,17 +26,17 @@ See: docs/research/lora_isometry_derivation.md
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import svd_rank_threshold
 from modelcypher.util.math_utils import compute_coefficient_of_variation
-import math
 
 if TYPE_CHECKING:
-    from modelcypher.backends.backend import Backend
     from modelcypher.backends.array import Array
+    from modelcypher.backends.backend import Backend
 
 
 @dataclass(frozen=True)
@@ -249,7 +249,7 @@ def compute_spectral_selectivity(
     # W = U S V^T -> Right singular vectors are rows of Vt (or cols of V)
     # MLX svd returns U, S, Vt
     _, _, Vt = backend.svd(weight_original)
-    
+
     # We want rows of Vt (which are the columns of V, i.e., input directions)
     # Take top k rows
     Vt_k = Vt[:k, :] # Shape (k, n)
@@ -258,20 +258,20 @@ def compute_spectral_selectivity(
     # v_k are rows of Vt_k
     # We can batch this: out = ΔW @ Vt_k.T -> Shape (m, k)
     # Then independent norms of columns of out
-    
+
     # delta_w shape (m, n), Vt_k.T shape (n, k) -> (m, k)
     out = backend.matmul(delta_w, backend.transpose(Vt_k))
-    
+
     # Compute column norms (axis 0)
     # MLX norm reduces, so careful with axes
     # Actually simpler: out^2 then sum cols then sqrt
     out_sq = backend.multiply(out, out)
     norms_sq = backend.sum(out_sq, axis=0) # Shape (k,)
     norms = backend.sqrt(norms_sq)
-    
+
     backend.eval(norms)
     norm_values = [float(x) for x in backend.tolist(norms)]
-    
+
     cv = compute_coefficient_of_variation(norm_values)
     mean_val = sum(norm_values) / len(norm_values) if norm_values else 1.0
     max_val = max(norm_values) if norm_values else 0.0
@@ -284,7 +284,7 @@ def compute_spectral_selectivity(
         min_amplification=min_val / mean_val if mean_val > 0 else 0.0,
         max_amplification_index=max_idx,
     )
-    
+
 
 def compute_weyl_utilization(
     weight_original: "Array",

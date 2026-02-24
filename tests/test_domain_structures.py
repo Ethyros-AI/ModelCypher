@@ -20,26 +20,28 @@
 from __future__ import annotations
 
 import math
-import pytest
-from unittest.mock import Mock, patch
-from datetime import datetime
-from uuid import uuid4
 from dataclasses import dataclass
+from datetime import datetime
+from unittest.mock import Mock, patch
+from uuid import uuid4
 
+import pytest
+
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.domain_signal_profile import DomainSignalProfile, LayerSignal
 from modelcypher.core.domain.geometry.manifold_profile import (
     ManifoldPoint,
+    ManifoldProfile,
     ManifoldRegion,
     RegionThresholds,
-    ManifoldProfile,
 )
-from modelcypher.core.domain.geometry.spectral_analysis import (
-    compute_spectral_metrics,
-    SpectralMetrics,
-)
-from modelcypher.core.domain.geometry.signature_base import SignatureMixin
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
-from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.signature_base import SignatureMixin
+from modelcypher.core.domain.geometry.spectral_analysis import (
+    SpectralMetrics,
+    compute_spectral_metrics,
+)
+
 
 @dataclass
 class SimpleSignature(SignatureMixin):
@@ -47,7 +49,7 @@ class SimpleSignature(SignatureMixin):
 
 class TestSignatureMixin:
     """Tests for signature base class."""
-    
+
     def test_l2_norm(self):
         s = SimpleSignature([3.0, 4.0])
         assert s.l2_norm() == 5.0
@@ -57,7 +59,7 @@ class TestSignatureMixin:
         s2 = SimpleSignature([0.0, 1.0])
         # Orthogonal
         assert abs(s1.cosine_similarity(s2)) < math.ulp(1.0)
-        
+
         s3 = SimpleSignature([2.0, 0.0])
         # Aligned
         assert abs(s1.cosine_similarity(s3) - 1.0) < math.ulp(1.0)
@@ -90,14 +92,14 @@ class TestDomainSignalProfile:
             max_tokens_per_prompt=100,
             notes="test notes"
         )
-        
+
         assert profile.model_id == "test_model"
         assert profile.generated_at is not None
-        
+
         data = profile.to_dict()
         assert data["modelId"] == "test_model"
         assert data["layerSignals"]["1"]["sparsity"] == 0.5
-        
+
         # Deserialize
         profile2 = DomainSignalProfile.from_dict(data)
         assert profile2.model_id == profile.model_id
@@ -118,43 +120,43 @@ class TestManifoldStructures:
         thresholds.high_variance = 1.0 - eps
         thresholds.low_coherence = eps
         thresholds.high_coherence = 1.0 - eps
-        
+
         # Dense point: low entropy, low variance, high coherence
         p_dense = Mock(spec=ManifoldPoint)
         p_dense.mean_entropy = 0.0
         p_dense.entropy_variance = 0.0
         p_dense.mean_gate_similarity = 1.0
-        
+
         # classify is a static method usually taking centroid and thresholds?
         # ManifoldRegion.classify(centroid, thresholds)
-        
+
         # ManifoldRegion.classify implementation logic:
         # if entropy < low and variance < low and coherence > high -> DENSE
         # elif entropy > high and variance > high and coherence < low -> SPARSE
         # else -> TRANSITIONAL
-        
+
         # Mocking values on the point
         # But ManifoldRegion.classify accesses attributes directly.
-        
+
         # I cannot mock `ManifoldPoint` easily if I pass it to real `classify` unless I set attrs.
         # But `classify` is likely checking: centroid.mean_entropy, etc.
-        
+
         # Let's instantiate real ManifoldPoint with dummy values?
         # ManifoldPoint is a dataclass without init arg complications usually.
         # Wait, ManifoldPoint field list is long.
-        
+
         # Easier to use Mock with attrs set.
         p = Mock()
         p.mean_entropy = 0.0
         p.entropy_variance = 0.0
         p.mean_gate_similarity = 1.0 # Coherence
-        
+
         # Need to know attributes accessed logic precisely.
         # Outline says "classify(centroid: ManifoldPoint, thresholds: RegionThresholds)"
-        
+
         region_type = ManifoldRegion.classify(p, thresholds)
         assert region_type == ManifoldRegion.RegionCharacter.DENSE
-        
+
         # Sparse point
         p.mean_entropy = 1.0
         p.entropy_variance = 0.0
@@ -166,7 +168,7 @@ class TestManifoldStructures:
     def test_manifold_point_distance(self, MockRG):
         """Test geodesic distance calculation between points."""
         backend = get_default_backend()
-        
+
         # Mock backend behavior for distance
         rg_instance = MockRG.return_value
         # geodesic_distance_result returns a result object with .distance
@@ -175,7 +177,7 @@ class TestManifoldStructures:
         # 2x2 matrix: [[0, 1.5], [1.5, 0]]
         mock_res.distances = backend.array([[0.0, 1.5], [1.5, 0.0]])
         rg_instance.geodesic_distances.return_value = mock_res
-        
+
         p1 = ManifoldPoint(
             mean_entropy=0.5, entropy_variance=0.1, first_token_entropy=0.5,
             gate_count=5, mean_gate_similarity=0.5, dominant_gate_category=1.0,
@@ -188,21 +190,21 @@ class TestManifoldStructures:
             entropy_path_correlation=0.6, assessment_strength=0.6,
             prompt_hash="h2"
         )
-        
+
         dist = p1.distance(p2)
         assert dist == 1.5
         # Verify call args? Not critical if result matches.
 
 class TestSpectralAnalysis:
     """Tests for spectral metrics computation."""
-    
+
     def test_compute_spectral_metrics(self):
         backend = get_default_backend()
-        
+
         # Simple diagonal arrays
         # Source singular values: [10, 5]
         # Target singular values: [5, 2.5] (Ratio 2.0)
-        
+
         # Create weights. U @ S @ Vt.
         # Identity U, Vt. W = diag(S)
         w_s = backend.eye(2) * 10.0
@@ -210,17 +212,17 @@ class TestSpectralAnalysis:
         # Need [10, 0; 0, 5].
         # Can use backend.diag([10., 5.]) if supported, or manual construction logic?
         # Or standard lists: [[10., 0.], [0., 5.]] converted to array.
-        
+
         w_s = backend.array([[10.0, 0.0], [0.0, 5.0]])
         w_t = backend.array([[5.0, 0.0], [0.0, 2.5]])
-        
+
         # Call compute
         # Note: compute_spectral_metrics calculates ratio on LARGEST singular value.
         # S_max(src) = 10. S_max(tgt) = 5. Ratio = 2.0.
         # Condition number = max/min. Src: 10/5=2. Tgt: 5/2.5=2.
-        
+
         metrics = compute_spectral_metrics(w_s, w_t, backend=backend)
-        
+
         assert metrics.spectral_ratio == 2.0
         assert metrics.spectral_ratio_symmetry == 0.5 # 1/2.0
         assert abs(metrics.condition_number - 2.0) < math.ulp(2.0)

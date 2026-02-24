@@ -43,7 +43,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     is_finite,
     log_scalar,
     machine_epsilon,
-    sqrt_scalar,
+    precision_dtype,
 )
 
 logger = logging.getLogger(__name__)

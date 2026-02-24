@@ -25,10 +25,10 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.curvature_alignment import (
     AlignmentGuidance,
     AlignmentPlan,
+    _compute_layer_guidance,
     compute_alignment_guidance,
     compute_layer_correspondence_by_curvature,
     curvature_weighted_procrustes,
-    _compute_layer_guidance,
 )
 from modelcypher.core.domain.geometry.curvature_profile import (
     CurvatureProfile,
@@ -39,7 +39,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import geodesic_norms
-
 
 # =============================================================================
 # Fixtures

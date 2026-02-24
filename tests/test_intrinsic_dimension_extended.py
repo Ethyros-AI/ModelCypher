@@ -32,8 +32,8 @@ from hypothesis import strategies as st
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.intrinsic_dimension import (
     IntrinsicDimension,
-    TwoNNEstimate,
     LocalDimensionMap,
+    TwoNNEstimate,
 )
 from modelcypher.core.domain.geometry.numerical_stability import all_finite, division_epsilon
 

@@ -220,7 +220,7 @@ class NullSpaceTracker:
 
         # Null variance is sum of small singular values
         if null_rank > 0:
-            null_indices = b.arange(used_rank, self._hidden_dim)
+            b.arange(used_rank, self._hidden_dim)
             # Handle case where SVD might have fewer values than hidden_dim
             n_svd = int(singular_values.shape[0])
             if used_rank < n_svd:

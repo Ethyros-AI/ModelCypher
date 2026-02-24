@@ -15,12 +15,17 @@ Key questions:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cka import compute_linear_cka_from_activations
 from modelcypher.core.domain.geometry.entanglement_spectrum import compute_entanglement_spectrum
 from modelcypher.core.domain.geometry.hungarian import hungarian_assignment
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array
 
 
 @pytest.fixture

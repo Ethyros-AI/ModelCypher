@@ -33,12 +33,11 @@ from modelcypher.core.domain.entropy.conversation_entropy_tracker import (
     ConversationEntropyTracker,
 )
 from modelcypher.core.domain.entropy.entropy_tracker import EntropyWindow
-from modelcypher.core.domain.entropy.model_state_classifier import CalibratedBaseline
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
     LogitEntropyCalculator,
 )
+from modelcypher.core.domain.entropy.model_state_classifier import CalibratedBaseline
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
-
 
 # =============================================================================
 # Entropy Calculation Integration

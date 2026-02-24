@@ -51,16 +51,16 @@ Usage:
 
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Array, Backend
     from modelcypher.core.domain.geometry.cayley_lora import PerDirectionBoundResult
+    from modelcypher.ports.backend import Array, Backend
 
 
 logger = logging.getLogger(__name__)
@@ -385,39 +385,39 @@ class LoRASafetyService:
         rtol: float = 1.01,
     ) -> "PerDirectionBoundResult":
         """Verify that LoRA delta respects per-direction spectral bounds.
-        
+
         Computes U^T @ (B@A) @ V and checks diagonal entries against singular values of W.
         Directly uses NBLoRALayer.verify_per_direction_bounds logic but for explicit B, A.
-        
+
         Args:
             B: LoRA output matrix [out, rank]
             A: LoRA input matrix [rank, in]
             W: Base weight matrix [out, in]
             backend: Compute backend
             rtol: Relative tolerance (default 1.01)
-            
+
         Returns:
             PerDirectionBoundResult with verification details
         """
-        from modelcypher.core.domain.geometry.cayley_lora import NBLoRAConfig, NBLoRALayer
-        
+        from modelcypher.core.domain.geometry.cayley_lora import NBLoRALayer
+
         # Create a temporary NBLoRALayer wrapper to reuse verification logic
         # We don't need Cayley transform here since we have explicit B, A
         # But we can override get_effective_delta
-        
+
         class ExplicitLoRAWrapper(NBLoRALayer):
             def __init__(self, B, A, backend):
                 self._B = B
                 self._A = A
                 self._backend = backend
-                
+
             def get_effective_delta(self):
                 # Simple product B @ A
                 return self._backend.matmul(self._B, self._A)
-                
+
         # Mock config (not used for verification logic)
         wrapper = ExplicitLoRAWrapper(B, A, backend)
-        
+
         return wrapper.verify_per_direction_bounds(W, rtol=rtol)
 
 
@@ -1199,7 +1199,6 @@ class LoRASafetyService:
         Returns:
             The modified model and a dict of applied scales per layer
         """
-        import json
 
         from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar

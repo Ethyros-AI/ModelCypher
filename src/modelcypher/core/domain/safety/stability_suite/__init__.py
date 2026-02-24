@@ -29,7 +29,6 @@ from modelcypher.core.domain.safety.stability_suite.stability_suite_models impor
     DistributionSummary,
     EntropyManifoldSummary,
     HistogramBin,
-    StabilityPromptResult as PromptResult,
     StabilitySuiteProgress,
     StabilitySuitePrompt,
     StabilitySuitePromptCategory,
@@ -39,6 +38,9 @@ from modelcypher.core.domain.safety.stability_suite.stability_suite_models impor
     StabilitySuiteTarget,
     StabilitySuiteTargetKind,
     StabilitySuiteTier,
+)
+from modelcypher.core.domain.safety.stability_suite.stability_suite_models import (
+    StabilityPromptResult as PromptResult,
 )
 from modelcypher.core.domain.safety.stability_suite.stability_suite_prompt_battery import (
     StabilitySuitePromptBattery,

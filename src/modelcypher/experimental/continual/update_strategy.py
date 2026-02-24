@@ -289,7 +289,6 @@ class LoRAAccumulateStrategy:
         The hidden_state becomes the "input" and delta provides the
         "target direction" for LoRA training.
         """
-        b = self._backend
 
         # Compute target from delta
         # For MLP weights [out_dim, in_dim], target = (W + delta) @ hidden_state
@@ -299,7 +298,7 @@ class LoRAAccumulateStrategy:
         # Call accumulator's accumulate method
         # Expected signature: accumulate(hidden_state, delta, layer_id, weight_name)
         try:
-            result = self._accumulator.accumulate(
+            self._accumulator.accumulate(
                 hidden_state=hidden_state,
                 delta=delta,
                 layer_id=layer_id,

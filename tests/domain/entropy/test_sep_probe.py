@@ -10,12 +10,11 @@ from modelcypher.core.domain.entropy.sep_probe import (
     LayerNotFoundError,
     LayerProbeWeights,
     ProbeWeightsBundle,
+    SepPredictionResult,
     SEPProbe,
     SEPProbeError,
-    SepPredictionResult,
     WeightsNotLoadedError,
 )
-
 
 # =============================================================================
 # Helpers

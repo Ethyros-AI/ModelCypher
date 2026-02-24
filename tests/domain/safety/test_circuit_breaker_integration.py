@@ -11,7 +11,6 @@ from modelcypher.core.domain.safety.circuit_breaker_integration import (
     TriggerSource,
 )
 
-
 # ---------------------------------------------------------------------------
 # evaluate -- all-None baseline
 # ---------------------------------------------------------------------------

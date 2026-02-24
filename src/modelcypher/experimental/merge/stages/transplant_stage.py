@@ -31,19 +31,30 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.cache import ComputationCache
+
 # NOTE: ProjectionMethod import removed - use GRAM_TRANSPORT.
-from modelcypher.core.domain.geometry.numerical_stability import get_model_compute_dtype
 from modelcypher.core.domain.geometry.transplant import (
     partition_core_boundary,
 )
-from modelcypher.core.domain.geometry.riemannian_utils import (
-    geodesic_norms,
-    geodesic_paired_distances,
+from modelcypher.experimental.merge.exceptions import (
+    AlignmentFailureError,
 )
-from modelcypher.core.domain.cache import ComputationCache
+
+from .density import (
+    filter_core_probes_by_graft_mask,
+)
+from .manifest import (
+    TransplantManifest,
+    WeightStatus,
+    WeightTransformRecord,
+)
 from .transplant_checkpoint import (
     _load_checkpoint,
     _save_checkpoint,
+)
+from .transplant_embeddings import (
+    apply_embedding_alignment,
 )
 from .transplant_helpers import (
     _geodesic_pinv,
@@ -52,29 +63,11 @@ from .transplant_helpers import (
 from .transplant_stitches import (
     compute_composite_stitches,
 )
-from .transplant_embeddings import (
-    apply_embedding_alignment,
-)
 from .transplant_weight_processor import (
     ActivationContext,
     BehaviorJacobianContext,
     StitchContext,
     process_layer_weights,
-)
-
-
-from modelcypher.experimental.merge.exceptions import (
-    AlignmentFailureError,
-    DimensionMismatchError,
-    StitchUnavailableError,
-)
-from .manifest import (
-    TransplantManifest,
-    WeightStatus,
-    WeightTransformRecord,
-)
-from .density import (
-    filter_core_probes_by_graft_mask,
 )
 
 if TYPE_CHECKING:
@@ -185,11 +178,10 @@ def stage_transplant(
     }
     manifest = TransplantManifest()
 
-    max_variance_concentration: float | None = None
     if layer_profile is not None and getattr(layer_profile, "variance_concentrations", None):
         var_vals = list(layer_profile.variance_concentrations.values())
         if var_vals:
-            max_variance_concentration = max(var_vals)
+            max(var_vals)
 
     # =======================================================================
     # TRANSMISSION LAYER INJECTION (Null-Space + Compression Descent)
@@ -416,11 +408,11 @@ def stage_transplant(
     # Log scale_ratios status for debugging
     if scale_ratios:
         logger.info("SCALE RATIOS: %d layers with scale factors", len(scale_ratios))
-        for l in sorted(scale_ratios.keys()):
-            logger.info("  Layer %d scale_ratio=%.4f", l, scale_ratios[l])
+        for layer_idx in sorted(scale_ratios.keys()):
+            logger.info("  Layer %d scale_ratio=%.4f", layer_idx, scale_ratios[layer_idx])
     else:
         logger.warning("SCALE RATIOS: Empty or None!")
-    
+
     layer_hidden_stitches = compute_composite_stitches(
         transforms_map=feature_transforms,
         desc="HIDDEN",
@@ -461,7 +453,7 @@ def stage_transplant(
         backend=b,
         layer_mapping=layer_mapping,
     )
-    
+
     metrics["per_layer_k_alignment"] = bool(layer_k_stitches)
     metrics["per_layer_v_alignment"] = bool(layer_v_stitches)
 
@@ -697,9 +689,13 @@ def stage_transplant(
             else "FULL INJECTION (unexpected)"
         )
 
+        min_intrinsic_dimension = None
+        if layer_profile is not None and hasattr(layer_profile, "get_min_intrinsic_dimension"):
+            min_intrinsic_dimension = layer_profile.get_min_intrinsic_dimension()
+
         layer_geometry = {
             "layer_intrinsic_dimension": layer_id,
-            "min_intrinsic_dimension": min_intrinsic_id,
+            "min_intrinsic_dimension": min_intrinsic_dimension,
             "layer_delta_scale": layer_delta_scale,
             "is_highway": is_highway,
             "is_ramp": is_ramp,
@@ -1002,7 +998,6 @@ def stage_transplant(
 
         layer_transplanted = False
         best_alignment: dict[str, float] | None = None
-        best_delta_norm = -1.0
         can_measure_alignment = core_acts is not None and int(core_acts.shape[0]) >= 2
 
         density_output_stitch = None
@@ -1078,7 +1073,6 @@ def stage_transplant(
         weights_processed = weight_result.weights_processed
         layer_transplanted = weight_result.layer_transplanted
         best_alignment = weight_result.best_alignment
-        best_delta_norm = weight_result.best_delta_norm
 
         if layer_transplanted:
             metrics["layers_transplanted"] += 1

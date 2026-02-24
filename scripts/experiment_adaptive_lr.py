@@ -331,10 +331,7 @@ def measure_standard_lora_spectral_norms(model) -> dict:
 def train_nb_lora(
     model_path: str,
     output_dir: Path,
-    adaptive_lr: bool = True,
-    lr_monotonic: bool = False,
     seed: int = 42,
-    quick: bool = False,
 ) -> dict:
     import mlx.core as mx
     from modelcypher.backends import initialize_default_backend
@@ -343,35 +340,19 @@ def train_nb_lora(
     initialize_default_backend()
     service = get_dataset_training_service()
 
-    max_iters = 200 if quick else 10000
-    parts = []
-    if not adaptive_lr:
-        parts.append("constant")
-    else:
-        parts.append("monotonic" if lr_monotonic else "non-monotonic")
-    label = "-".join(parts)
-
-    logger.info(f"  NB-LoRA ({label} LR, seed={seed}): training...")
+    logger.info(f"  NB-LoRA (geometry-derived LR, seed={seed}): training...")
     t0 = time.time()
     result = service.train_from_dataset(
         model_path=str(model_path),
         dataset_path=str(TRAIN_DATA),
         output_path=str(output_dir),
         eval_dataset_path=str(VAL_DATA),
-        max_iters=max_iters,
-        seq_length=None,
-        deep=False,
-        safety_margin=None,
         seed=seed,
-        adaptive_lr=adaptive_lr,
-        lr_monotonic=lr_monotonic,
     )
     training_time = time.time() - t0
 
     result_dict = result.to_dict()
     result_dict["method"] = "nb_lora"
-    result_dict["adaptive_lr"] = adaptive_lr
-    result_dict["lr_monotonic"] = lr_monotonic
     result_dict["seed"] = seed
     result_dict["training_time_seconds"] = training_time
     result_dict["adapter_path"] = str(output_dir)
@@ -398,25 +379,15 @@ def run_condition(
 
     logger.info(f"\n--- Condition {condition}, seed {seed} ---")
 
-    # NB-LoRA conditions: map condition name to (adaptive_lr, lr_monotonic)
-    # NOTE: lipschitz_batches removed — MASS uses spectral ceiling now
-    nb_condition_map = {
-        "A":      (False, False),   # Constant LR
-        "B_old":  (True,  True),    # Old adaptive: monotonic
-        "B_h1":   (True,  False),   # H1 only: non-monotonic
-        "B_h2":   (True,  True),    # H2 only: monotonic
-        "B_h1h2": (True,  False),   # Both H1+H2 (new default)
-    }
+    # NB-LoRA: all LR parameters are now geometry-derived (adaptive, non-monotonic).
+    # Legacy conditions A/B_old/B_h1/B_h2 collapsed to single geometry-derived path.
+    nb_conditions = {"A", "B_old", "B_h1", "B_h2", "B_h1h2"}
 
-    if condition in nb_condition_map:
-        adaptive, monotonic = nb_condition_map[condition]
+    if condition in nb_conditions:
         train_result = train_nb_lora(
             model_path=str(MODEL_PATH),
             output_dir=adapter_dir,
-            adaptive_lr=adaptive,
-            lr_monotonic=monotonic,
             seed=seed,
-            quick=quick,
         )
 
     elif condition == "C":

@@ -24,8 +24,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Backend
+    from modelcypher.adapters.model_probe import ModelProbe
     from modelcypher.ports.activation_provider import ActivationProvider
+    from modelcypher.ports.backend import Backend
+    from modelcypher.ports.exporter import Exporter
+    from modelcypher.ports.inference import HiddenStateEngine, InferenceEngine
+    from modelcypher.ports.model_loader import ModelLoaderPort
     from modelcypher.ports.storage import (
         CompareStore,
         EvaluationStore,
@@ -33,10 +37,6 @@ if TYPE_CHECKING:
         ManifoldProfileStore,
         ModelStore,
     )
-    from modelcypher.ports.inference import HiddenStateEngine, InferenceEngine
-    from modelcypher.ports.exporter import Exporter
-    from modelcypher.ports.model_loader import ModelLoaderPort
-    from modelcypher.adapters.model_probe import ModelProbe
 
 
 @dataclass

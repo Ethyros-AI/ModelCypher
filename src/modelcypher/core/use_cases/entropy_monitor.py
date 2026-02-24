@@ -56,12 +56,10 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Iterator
-
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain.entropy.eigenscore import (
     EigenScoreCalculator,
-    EigenScoreResult,
     StreamingEigenScore,
 )
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (

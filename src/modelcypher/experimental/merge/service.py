@@ -31,10 +31,11 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .merger import UnifiedGeometricMerger
-    from .models import UnifiedMergeResult
     from modelcypher.ports.inference import InferenceEngine
     from modelcypher.ports.model_loader import ModelLoaderPort
+
+    from .merger import UnifiedGeometricMerger
+    from .models import UnifiedMergeResult
 
 logger = logging.getLogger(__name__)
 

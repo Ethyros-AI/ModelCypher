@@ -61,9 +61,9 @@ class TestCKAPipeline:
         result = compute_cka(X, Y, backend)
 
         from modelcypher.core.domain.geometry.cka import (
-            geodesic_squared_distances,
             _rbf_gram_from_sq_distances,
             _shared_rbf_sigma,
+            geodesic_squared_distances,
         )
 
         sq_x = geodesic_squared_distances(X, backend)
@@ -91,7 +91,7 @@ class TestCKAPipeline:
 
     def test_cka_from_grams_self_consistent(self, backend):
         """CKA from Gram matrices should be self-consistent.
-        
+
         Note: compute_cka uses RBF kernel with geodesic distances, while
         compute_cka_from_grams works with pre-computed (linear) Grams.
         These are intentionally different kernels for different use cases:

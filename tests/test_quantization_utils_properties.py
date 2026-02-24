@@ -29,7 +29,6 @@ from modelcypher.core.use_cases.quantization_utils import (
     resolve_quantization,
 )
 
-
 _bits = st.sampled_from([2, 4, 8, 16])
 _group_size = st.sampled_from([16, 32, 64])
 

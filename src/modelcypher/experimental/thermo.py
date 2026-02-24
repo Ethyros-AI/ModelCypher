@@ -36,13 +36,14 @@ Multi-line prompts:
 from __future__ import annotations
 
 import json
+
 import typer
 
 from modelcypher.cli.context import CLIContext
+from modelcypher.cli.input_validation import validate_model_path
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.cli.prompt_input import resolve_prompt_input
 from modelcypher.cli.warnings import warn_network
-from modelcypher.cli.input_validation import validate_model_path
 from modelcypher.utils.errors import ErrorDetail
 
 app = typer.Typer(no_args_is_help=True)
@@ -855,15 +856,14 @@ def thermo_parity(
         context=context,
     )
 
+    # Create calorimeter and calibrator
+    from modelcypher.cli.composition import get_model_loader
     from modelcypher.experimental.thermo.linguistic_calorimeter import LinguisticCalorimeter
     from modelcypher.experimental.thermo.linguistic_thermodynamics import (
         LinguisticModifier,
         PromptLanguage,
     )
     from modelcypher.experimental.thermo.multilingual_calibrator import MultilingualCalibrator
-
-    # Create calorimeter and calibrator
-    from modelcypher.cli.composition import get_model_loader
 
     calorimeter = LinguisticCalorimeter(
         model_path=model,

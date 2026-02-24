@@ -35,11 +35,9 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
-    find_magnitude_gap_threshold,
     machine_epsilon,
     precision_dtype,
     sqrt_scalar,
-    svd_rank_threshold,
 )
 
 if TYPE_CHECKING:
@@ -558,8 +556,7 @@ def compute_grassmann_distance(
             f"Subspaces must live in same ambient space: n1={n1} vs n2={n2}"
         )
 
-    n = n1
-    k_min = min(k1, k2)
+    min(k1, k2)
 
     if k1 == 0 or k2 == 0:
         # Degenerate case

@@ -18,6 +18,7 @@
 """Tests for training_benchmark module."""
 
 import math
+
 import pytest
 
 from modelcypher.core.domain.training.training_benchmark import (

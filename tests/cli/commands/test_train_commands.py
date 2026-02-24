@@ -45,10 +45,11 @@ class TestTrainCommandHelp:
         assert result.exit_code == 0
 
     def test_train_command_help(self):
-        """Test 'mc train [default command] --help' shows options."""
+        """Test 'mc train --help' exposes subcommands, not legacy options."""
         result = runner.invoke(app, ["train", "--help"])
         assert result.exit_code == 0
-        assert "--agent" in result.stdout or "--model" in result.stdout or "status" in result.stdout.lower()
+        assert "--agent" not in result.stdout
+        assert "run-research" in result.stdout
 
     def test_train_status_help(self):
         """Test 'mc train status --help' works."""
@@ -63,13 +64,27 @@ class TestTrainCommandHelp:
         assert result.exit_code == 0
         assert "--model" in result.stdout
         assert "--data" in result.stdout
+        assert "--eval-data" in result.stdout
+        assert "--auto-regime" not in result.stdout
+
+    def test_train_run_research_help(self):
+        """Test 'mc train run-research --help' exposes research controls."""
+        result = runner.invoke(app, ["train", "run-research", "--help"])
+        assert result.exit_code == 0
         assert "--auto-regime" in result.stdout
         assert "--no-auto-regime" in result.stdout
 
     def test_train_run_no_experimental_flags(self):
-        """Experimental flags must not appear in train run CLI."""
+        """Research controls must not appear in strict train run CLI."""
         result = runner.invoke(app, ["train", "run", "--help"])
         assert result.exit_code == 0
+        assert "--seq-length" not in result.stdout
+        assert "--lr" not in result.stdout
+        assert "--seed" not in result.stdout
+        assert "--topo-monitor" not in result.stdout
+        assert "--dim-monitor" not in result.stdout
+        assert "--auto-regime" not in result.stdout
+        assert "--no-save" not in result.stdout
         assert "--paired" not in result.stdout
         assert "--answer-mask" not in result.stdout
         assert "--outcome" not in result.stdout
@@ -195,24 +210,8 @@ class TestOutputFlagHoisting:
         assert result[0] != "--output=/tmp/file"
 
 
-class _DummyStore:
-    buffer_size = 1
-
-
-class _DummyLoRAService:
-    def get_or_create_store(self, **_kwargs):
-        return _DummyStore()
-
-    def train(self, **_kwargs):
-        raise TrainingDerivationError(
-            failure_class="insufficient_curvature_estimate",
-            detail="Lipschitz estimation failed",
-            diagnostics={"hvp_failed": True},
-        )
-
-
 class _DummyDatasetService:
-    def train_from_dataset(self, **_kwargs):
+    def train_from_dataset_strict(self, **_kwargs):
         raise TrainingDerivationError(
             failure_class="insufficient_entropy_baseline",
             detail="Baseline entropy unavailable",
@@ -233,7 +232,16 @@ class _CaptureDatasetService:
     def __init__(self):
         self.calls: list[dict] = []
 
-    def train_from_dataset(self, **kwargs):
+    def train_from_dataset_strict(self, **kwargs):
+        self.calls.append(dict(kwargs))
+
+        class _Result:
+            def to_dict(self):
+                return {"ok": True}
+
+        return _Result()
+
+    def train_from_dataset_research(self, **kwargs):
         self.calls.append(dict(kwargs))
 
         class _Result:
@@ -244,22 +252,6 @@ class _CaptureDatasetService:
 
 
 class TestFailFastCoverage:
-    def test_train_default_surfaces_failure_class(self, monkeypatch, tmp_path):
-        model_dir = tmp_path / "model"
-        model_dir.mkdir()
-        monkeypatch.setattr(
-            "modelcypher.cli.composition.get_lora_memory_service",
-            lambda: _DummyLoRAService(),
-        )
-
-        result = runner.invoke(
-            app,
-            ["train", "--agent", "agent-1", "--model", str(model_dir)],
-        )
-        assert result.exit_code == 1
-        payload = json.loads(result.stdout)
-        assert payload["error"]["failure_class"] == "insufficient_curvature_estimate"
-
     def test_train_run_surfaces_failure_class(self, monkeypatch, tmp_path):
         model_dir = tmp_path / "model"
         model_dir.mkdir()
@@ -321,7 +313,7 @@ def test_train_run_auto_regime_enabled_by_default(monkeypatch, tmp_path):
 
     result = runner.invoke(
         app,
-        ["train", "run", "--model", str(model_dir), "--data", str(data_path)],
+        ["train", "run-research", "--model", str(model_dir), "--data", str(data_path)],
     )
     assert result.exit_code == 0
     assert capture.calls

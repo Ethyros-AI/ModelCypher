@@ -20,7 +20,6 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable
 
-
 _EQ_RE = re.compile(r"(-?\d+)\s*([+\-*/])\s*(-?\d+)")
 
 

@@ -33,7 +33,7 @@ from modelcypher.core.domain.geometry.knowledge_density import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Sequence
 
 
 def _aggregate_opportunities(

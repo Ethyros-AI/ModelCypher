@@ -24,11 +24,11 @@ from typing import Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
-from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
-from modelcypher.core.domain.geometry.riemannian_utils import geodesic_cosine_batch
-from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
-
-
+from modelcypher.core.domain.geometry.riemannian_utils import (
+    RiemannianGeometry,
+    frechet_mean,
+    geodesic_cosine_batch,
+)
 
 
 @dataclass(frozen=True)
@@ -233,9 +233,9 @@ class RefusalDirectionDetector:
     @staticmethod
     def to_metrics_dictionary(metrics: DistanceMetrics) -> dict[str, float]:
         return {
-            MetricKey.distance: float(metrics.distance_to_refusal),
-            MetricKey.projection: float(metrics.projection_magnitude),
-            MetricKey.approaching: 1.0 if metrics.is_approaching_refusal else 0.0,
+            RefusalMetricKey.distance: float(metrics.distance_to_refusal),
+            RefusalMetricKey.projection: float(metrics.projection_magnitude),
+            RefusalMetricKey.approaching: 1.0 if metrics.is_approaching_refusal else 0.0,
         }
 
     @staticmethod

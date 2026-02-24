@@ -14,7 +14,6 @@ from enum import Enum
 
 import modelcypher.core.domain.geometry.atlas_protocols as mod
 
-
 # ---------------------------------------------------------------------------
 # Helper enums and dataclasses for protocol conformance testing
 # ---------------------------------------------------------------------------

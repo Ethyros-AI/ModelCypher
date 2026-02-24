@@ -18,11 +18,11 @@ Tests cover:
 """
 
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 import pytest
 
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.cka import (
     CKAResult,
     HSICEstimator,
@@ -33,6 +33,7 @@ from modelcypher.core.domain.geometry.cka import (
     compute_cka_from_grams,
     rbf_gram_matrix,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.support.array_utils import array_to_list
 
 if TYPE_CHECKING:

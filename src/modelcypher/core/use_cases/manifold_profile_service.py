@@ -18,11 +18,11 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import uuid4
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.domain.geometry.manifold_clusterer import ManifoldClusterer
 from modelcypher.core.domain.geometry.manifold_profile import (
     InterventionSuggestion,
@@ -31,7 +31,6 @@ from modelcypher.core.domain.geometry.manifold_profile import (
     ManifoldRegion,
     RegionQueryResult,
 )
-from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 from modelcypher.core.domain.geometry.numerical_stability import find_magnitude_gap_threshold
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 from modelcypher.core.domain.geometry.thermo_path_integration import CombinedMeasurement

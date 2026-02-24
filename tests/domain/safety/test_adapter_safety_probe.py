@@ -23,7 +23,6 @@ from modelcypher.core.domain.safety.adapter_safety_probe import (
     SafetyProbeResult,
 )
 
-
 # ---------------------------------------------------------------------------
 # ALL_TIERS constant
 # ---------------------------------------------------------------------------

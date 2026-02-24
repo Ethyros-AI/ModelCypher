@@ -30,16 +30,16 @@ from typing import TYPE_CHECKING, Any, Iterable
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.atlas.embedding_cache import get_or_compute_embeddings_sync
 from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol
-from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
+from modelcypher.core.domain.geometry.riemannian_utils import (
+    frechet_mean,
+    geodesic_cosine_batch,
+    geodesic_cosine_between_sets,
+    geodesic_cosine_matrix,
+)
 from modelcypher.core.domain.geometry.types import (
     ConceptComparisonResult,
     DetectedConcept,
     DetectionResult,
-)
-from modelcypher.core.domain.geometry.riemannian_utils import (
-    geodesic_cosine_batch,
-    geodesic_cosine_between_sets,
-    geodesic_cosine_matrix,
 )
 from modelcypher.utils.text import truncate
 

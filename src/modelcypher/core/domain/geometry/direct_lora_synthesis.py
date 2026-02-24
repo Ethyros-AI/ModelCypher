@@ -49,7 +49,7 @@ References:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
@@ -65,7 +65,6 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
 )
 
 from .manifold_transfer import TransferPoint
-
 
 logger = logging.getLogger(__name__)
 

@@ -16,6 +16,7 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Iterable
 

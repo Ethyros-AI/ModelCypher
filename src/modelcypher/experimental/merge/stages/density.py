@@ -37,8 +37,8 @@ from modelcypher.core.domain.geometry.knowledge_density import (
     LayerDensityProfile,
     ModelDensityProfile,
     PointCloudDensityResult,
-    compute_knn_point_cloud_density,
     compute_density_weights,
+    compute_knn_point_cloud_density,
 )
 from modelcypher.core.domain.geometry.knowledge_diff import (
     KnowledgeDiff,

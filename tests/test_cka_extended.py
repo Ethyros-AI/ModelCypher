@@ -33,22 +33,21 @@ from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cka import (
+    _center_gram_matrix,
     compute_cka,
-    compute_geodesic_cka,
-    compute_cka_split,
-    compute_cka_from_grams,
     compute_cka_from_centered_grams,
+    compute_cka_from_grams,
+    compute_cka_split,
+    compute_geodesic_cka,
     rbf_gram_matrix,
     rbf_gram_matrix_with_sigma,
-    _center_gram_matrix,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
-    machine_epsilon,
-    sqrt_scalar,
     all_finite,
+    machine_epsilon,
     regularization_epsilon,
+    sqrt_scalar,
 )
-
 
 # =============================================================================
 # Test Fixtures

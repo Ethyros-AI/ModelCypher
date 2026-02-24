@@ -153,7 +153,6 @@ class OutlierDetector:
         Returns:
             OutlierResult with consensus and outlier indices.
         """
-        b = self._backend
         n_models = len(profiles)
 
         if n_models < 2:

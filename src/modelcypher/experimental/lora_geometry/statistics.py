@@ -36,7 +36,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Array, Backend
+    from modelcypher.ports.backend import Backend
 
 
 @dataclass(frozen=True)
@@ -452,7 +452,7 @@ def compute_permutation_test(
 
     # Combined data
     combined = group1_values + group2_values
-    combined_arr = backend.array(combined)
+    backend.array(combined)
 
     # Number of permutations
     if n_permutations is None:

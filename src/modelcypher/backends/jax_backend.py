@@ -368,8 +368,8 @@ class JAXBackend(Backend):
         Y = A_f32 / normA_val
 
         shape = A.shape
-        I = self.jnp.eye(shape[0], dtype=self.jnp.float32)
-        Z = I
+        identity = self.jnp.eye(shape[0], dtype=self.jnp.float32)
+        Z = identity
 
         three = self.jnp.array(3.0, dtype=self.jnp.float32)
         half = self.jnp.array(0.5, dtype=self.jnp.float32)
@@ -377,7 +377,7 @@ class JAXBackend(Backend):
         # Iteration
         for _ in range(num_iters):
             ZY = self.jnp.matmul(Z, Y)
-            T = three * I - ZY
+            T = three * identity - ZY
 
             Y_new = half * self.jnp.matmul(Y, T)
             Z_new = half * self.jnp.matmul(T, Z)
@@ -1192,7 +1192,7 @@ class JAXBackend(Backend):
             Generated text string.
         """
         inputs = tokenizer(prompt, return_tensors="np")
-        input_ids = self.jnp.array(inputs["input_ids"])
+        self.jnp.array(inputs["input_ids"])
         # JAX models typically need custom generate - use transformers fallback
         outputs = model.generate(
             input_ids=inputs["input_ids"],

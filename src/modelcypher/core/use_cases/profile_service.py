@@ -44,7 +44,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-
 from modelcypher.core.domain.profile import (
     ConvergenceMetrics,
     GeometricProfile,
@@ -312,10 +311,10 @@ class ProfileService:
 
         This bridges the new trajectory-based mapping to the existing profile format.
         """
+        from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
         from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
             compute_numerical_rank,
         )
-        from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
         from modelcypher.core.use_cases.manifold_mapper import ManifoldMapResult
 
         assert isinstance(map_result, ManifoldMapResult)
@@ -592,10 +591,10 @@ class ProfileService:
         model: Any,
     ) -> GeometricProfile:
         """Compute geometric profile from collected activations."""
+        from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
         from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
             compute_numerical_rank,
         )
-        from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
         b = self._backend
 

@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 from modelcypher.core.domain.models import EvaluationResult
 
 if TYPE_CHECKING:
-    from modelcypher.ports.storage import EvaluationStore
     from modelcypher.ports.model_loader import ModelLoaderPort
+    from modelcypher.ports.storage import EvaluationStore
 
 
 @dataclass

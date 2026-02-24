@@ -35,11 +35,11 @@ from modelcypher.core.domain.geometry.intrinsic_compression import (
     validate_compression_lossless,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
-    machine_epsilon,
-    sqrt_scalar,
+    _promote_precision_float32 as _promote_precision,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
-    _promote_precision_float32 as _promote_precision,
+    machine_epsilon,
+    sqrt_scalar,
 )
 
 if TYPE_CHECKING:
@@ -188,7 +188,7 @@ def stage_compression_descent(
                 result.weights_skipped += 1
                 continue
 
-            out_dim = int(W_shape[0])
+            int(W_shape[0])
             in_dim = int(W_shape[1])
 
             # Check dimension compatibility

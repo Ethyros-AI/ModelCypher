@@ -35,20 +35,18 @@ References:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable, Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
-from .rmt_compressor import (
-    RMTAwareCompressor,
-    CompressionResult,
-)
+
 from .geodesic_analyzer import (
     GeodesicLayerAnalyzer,
     GeodesicLayerProfile,
 )
-from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
+from .rmt_compressor import (
+    CompressionResult,
+    RMTAwareCompressor,
 )
 
 if TYPE_CHECKING:

@@ -42,7 +42,6 @@ from modelcypher.core.domain.geometry.bilm_probe import (
     PredictionResult,
 )
 
-
 # =============================================================================
 # Dataclass Tests
 # =============================================================================

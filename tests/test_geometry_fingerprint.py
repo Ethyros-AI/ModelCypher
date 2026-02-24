@@ -20,14 +20,14 @@
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
-    regularization_epsilon,
-)
 from modelcypher.core.domain.geometry.geometry_fingerprint import (
     AnchorSet,
     GeometricFingerprint,
     _mean_abs_diff,
+)
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    regularization_epsilon,
 )
 
 

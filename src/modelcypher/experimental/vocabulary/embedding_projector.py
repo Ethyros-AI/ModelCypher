@@ -186,7 +186,6 @@ class EmbeddingProjector:
         target: "Array",
         shared_indices: tuple[list[int], list[int]] | None,
     ) -> tuple["Array", "Array"]:
-        backend = self._backend
         if shared_indices is None:
             count = min(int(source.shape[0]), int(target.shape[0]))
             source_sel = source[:count]

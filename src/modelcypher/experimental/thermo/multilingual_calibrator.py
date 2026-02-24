@@ -22,14 +22,14 @@ different resource levels using measured entropy effects.
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from modelcypher.core.domain.geometry.numerical_stability import model_eps
-
 from modelcypher.core.domain.entropy.entropy_math import EntropyMath
+from modelcypher.core.domain.geometry.numerical_stability import model_eps
 from modelcypher.experimental.thermo.linguistic_thermodynamics import (
     LinguisticModifier,
     MultilingualPerturbedPrompt,

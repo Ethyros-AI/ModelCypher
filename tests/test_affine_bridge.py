@@ -30,19 +30,20 @@ Tests cover:
 from __future__ import annotations
 
 import math
+
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import (
-    machine_epsilon,
-    regularization_epsilon,
-)
 from modelcypher.core.domain.geometry.affine_bridge import (
     AffineBridge,
     AffineBridgeResult,
     HybridBridge,
     VocabConstrainedProjection,
     VocabConstrainedResult,
+)
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    regularization_epsilon,
 )
 
 

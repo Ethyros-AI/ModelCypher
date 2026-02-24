@@ -23,7 +23,6 @@ from modelcypher.core.domain.geometry.fingerprint_cache import (
     make_config_hash,
 )
 
-
 # ---------------------------------------------------------------------------
 # CachedFingerprints dataclass
 # ---------------------------------------------------------------------------

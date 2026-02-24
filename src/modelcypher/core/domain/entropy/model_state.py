@@ -30,6 +30,7 @@ Use z-scores relative to model baseline, not absolute thresholds.
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import datetime
 

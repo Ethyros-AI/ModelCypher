@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.domains import AtlasDomain
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     find_magnitude_gap_threshold,
@@ -61,11 +62,6 @@ class AtlasSource(str, Enum):
     ABSTRACT_RELATION = "abstract_relation"
     PRONOUN_PERSPECTIVE = "pronoun_perspective"
     PRIME_NUMBER = "prime_number"
-
-
-# Import AtlasDomain from the canonical location
-from modelcypher.core.domain.domains import AtlasDomain
-
 
 @dataclass(frozen=True)
 class AtlasProbe:

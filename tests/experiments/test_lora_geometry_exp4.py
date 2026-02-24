@@ -40,6 +40,10 @@ from typing import TYPE_CHECKING
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.experimental.lora_geometry.statistics import (
+    compute_pearson_correlation,
+    compute_spearman_correlation,
+)
 from modelcypher.experimental.lora_geometry.subspace_analysis import (
     PrincipalAngles,
     SubspaceOverlapResult,
@@ -49,13 +53,9 @@ from modelcypher.experimental.lora_geometry.subspace_analysis import (
     compute_spectral_overlap,
     compute_subspace_overlap,
 )
-from modelcypher.experimental.lora_geometry.statistics import (
-    compute_pearson_correlation,
-    compute_spearman_correlation,
-)
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Backend
+    from modelcypher.ports.backend import Array, Backend
 
 
 # Results directory
@@ -413,7 +413,7 @@ class TestFullExperiment:
             json.dump(overlap_analysis, f, indent=2)
 
         print(f"\nResults saved to: {RESULTS_DIR}")
-        print(f"\nSpectral overlap vs degradation:")
+        print("\nSpectral overlap vs degradation:")
         print(f"  Pearson r: {pearson.r:.4f}")
         print(f"  Spearman ρ: {spearman.r:.4f}")
 

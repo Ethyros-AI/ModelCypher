@@ -240,7 +240,6 @@ def stitch_weight(
     # Apply input stitch (right multiply)
     if in_stitch is not None:
         # Validate dimension
-        expected_dim = dim1 if out_stitch is None else in_stitch.src_dim
         if dim1 != in_stitch.src_dim:
             logger.warning(
                 "Input dim mismatch: weight[_, %d] vs stitch src_dim=%d",

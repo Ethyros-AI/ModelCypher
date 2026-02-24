@@ -4,16 +4,15 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from modelcypher.core.domain.safety.sidecar.sidecar_safety_policy import (
-    SidecarSafetyPolicy,
-    SidecarSafetyThresholds,
-)
 from modelcypher.core.domain.safety.sidecar.session_control_state import (
     ConsentGrant,
     ScenarioMode,
     SessionControlState,
 )
-
+from modelcypher.core.domain.safety.sidecar.sidecar_safety_policy import (
+    SidecarSafetyPolicy,
+    SidecarSafetyThresholds,
+)
 
 # ---------------------------------------------------------------------------
 # SidecarSafetyThresholds

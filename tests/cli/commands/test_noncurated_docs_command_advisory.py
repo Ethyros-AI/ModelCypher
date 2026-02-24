@@ -30,7 +30,6 @@ from typer.testing import CliRunner
 
 from tests.cli.contracts.command_contract import CLIContractValidator, validate_markdown_file
 
-
 runner = CliRunner()
 validator = CLIContractValidator(runner)
 

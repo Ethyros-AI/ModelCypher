@@ -401,10 +401,10 @@ def genesis_run(
     # Get model config
     base_model = getattr(model_obj, "model", model_obj)
     config = getattr(base_model, "config", None)
-    n_layers = getattr(
+    getattr(
         config, "num_hidden_layers", getattr(base_model, "n_layers", 12)
     )
-    hidden_dim = getattr(
+    getattr(
         config, "hidden_size", getattr(base_model, "hidden_size", 576)
     )
 
@@ -607,7 +607,7 @@ def genesis_run(
     freeze_context = loop_space == "embeddings"
     emit_text = not (self_loop and loop_space == "embeddings")
     prompt_queue: list[tuple[str, Any]] = [("text", prompt) for prompt in prompt_list]
-    seen_prompts: set[str] = set(prompt_list)
+    set(prompt_list)
     seen_prompt_tokens: set[tuple[int, ...]] = set()
     seen_embedding_keys: set[tuple[int, ...]] = set()
     prompt_idx = 0
