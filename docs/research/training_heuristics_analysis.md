@@ -4,6 +4,10 @@
 
 This document systematically analyzes SOTA for five training heuristics and proposes geometry-derived replacements based on the spectral structure of weight matrices.
 
+> **Implementation note:** Phases 1-3 proposed Barzilai-Borwein (BB) adaptation.
+> BB was never implemented — replaced by MASS step control (2026-02-22).
+> See Appendix A for what was actually built. Only dropout (Phase 5) reached implementation.
+
 ---
 
 ## Executive Summary
@@ -399,7 +403,7 @@ For each heuristic, we should conclude ONE of:
 
 **Phase 1 proposed**: Barzilai-Borwein (BB) quasi-Newton adaptation with spectral bounds.
 
-**What was actually built**: Pure SGD with per-layer gradient scaling. No BB, no momentum, no runtime adaptation. The condition ratio `σ_k/σ_max` precomputed from base weight SVD IS the optimizer.
+**What was actually built**: MASS step control (η = min(η_ceiling, η_sps, η_weyl)) + Cayley-Stiefel retraction. No BB, no momentum. Step size is measured per-step, not adapted via quasi-Newton.
 
 **Why BB was dropped**: RL Spectral Anatomy experiments (Experiment 3) showed weight Jacobians are effectively rank-1 — each layer has one dominant curvature direction. The condition ratio already captures this single direction. BB adaptation would add runtime complexity to estimate something the static spectral analysis already measures.
 

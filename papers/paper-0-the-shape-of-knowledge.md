@@ -4,8 +4,8 @@
 **Affiliation**: EthyrosAI
 **Date**: December 2025 (Updated January 2026)
 
-> **Status**: [VALIDATED] The Geometric Knowledge Thesis is supported by intra-model alignment experiments demonstrating CKA = 1.0 after Procrustes alignment.
-> **Experimental Evidence**: See [`experiments/results/geometry_validation.json`](../experiments/results/geometry_validation.json). Raw CKA = 0.60 → Aligned CKA = 1.0 (layer-wise alignment within SmolLM-135M).
+> **Status**: [EMPIRICAL] The Geometric Knowledge Thesis is supported by intra-model alignment experiments demonstrating CKA = 1.0 after Procrustes alignment (3 model families: LFM2, Qwen, SmolLM).
+> **Experimental Evidence**: Raw CKA = 0.60 → Aligned CKA = 1.0 (layer-wise alignment within SmolLM-135M). CKA = 1.0 on training probes is tautological (Procrustes optimizes for this); the empirical finding is CKA = 0.99 at 50% holdout (see VALIDATION-REPORT.md Claim 2).
 
 ## Abstract
 
@@ -172,7 +172,7 @@ We conducted experiments to verify the Geometric Knowledge Thesis using the Mode
 
 ### 3.2 Results
 
-**Source**: [`experiments/results/geometry_validation.json`](../experiments/results/geometry_validation.json)
+**Source**: Early experiment data (2025-12, artifact not preserved). See VALIDATION-REPORT.md for current validated results.
 
 | Metric | Value |
 |--------|-------|

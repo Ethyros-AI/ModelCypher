@@ -30,7 +30,7 @@ Instead, we observe:
 
 | # | Claim | Status | Key Result |
 |---|-------|--------|------------|
-| 1 | Universal geometric structure | [VALIDATED] | CKA ≥ 0.96 across families |
+| 1 | Geometric structure convergence | [EMPIRICAL] | CKA ≥ 0.96 across 3 families |
 | 2 | Coordinate system invariance | [VALIDATED] | Raw 0.32 → Aligned 0.97 |
 | 3 | Cross-architecture merging | [VALIDATED] | Coherent merged output |
 | 4 | expansion_ratio correlation with correctness | [EMPIRICAL] | Model-dependent |
@@ -41,7 +41,7 @@ Instead, we observe:
 
 ## Claim 1: Universal Geometric Structure
 
-> "All language models trained on human language converge to the same invariant geometric structure."
+> "Language models trained on human language converge to the same invariant geometric structure."
 
 ### Evidence
 
@@ -56,9 +56,9 @@ Instead, we observe:
 - 95% CI: [0.956, 1.000]
 - p-value: < 0.0001
 
-### Verdict: [VALIDATED]
+### Verdict: [EMPIRICAL] (3 model families)
 
-Different architectures (LFM2 liquid vs Qwen transformer vs SmolLM) achieve CKA ≥ 0.95 after Procrustes alignment.
+Different architectures (LFM2 liquid vs Qwen transformer vs SmolLM) achieve CKA ≥ 0.95 after Procrustes alignment. Tested on 3 families; broader validation needed before claiming universality.
 
 ---
 

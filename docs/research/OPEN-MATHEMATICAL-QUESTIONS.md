@@ -864,7 +864,11 @@ The persistence entropy (H) follows the same "dip" pattern as expansion_ratio:
 
 **This matches the intrinsic dimension trajectory** — the highway compresses representation complexity.
 
-### β₁ (Loops) is a Geometric Signature of Reasoning — CONFIRMED (2026-02-03)
+### β₁ (Loops) Appear During Math Processing — [EMPIRICAL] (2026-02-03)
+
+> **Note:** β₁ > 0 during math is an observed pattern (3 models). The separate claim
+> that Δβ₁ *predicts reasoning correctness* was [DISPROVEN] (2026-02-22, 3/6 tests FAIL).
+> Loops form during math; they do not reliably separate correct from incorrect.
 
 **Cross-architecture validation:**
 
@@ -874,7 +878,7 @@ The persistence entropy (H) follows the same "dip" pattern as expansion_ratio:
 | Llama-3.2-3B-Instruct | 1-2 (layers 3-27) | 0 throughout |
 | Qwen3-8B | 1-4 (peaks at layer 22-23) | 0 throughout |
 
-**The pattern is universal:**
+**Observed across 3 models (LFM2-350M, Llama-3.2-3B, Qwen3-8B):**
 - **Math/reasoning prompts** → β₁ > 0 (topological loops form)
 - **Narrative/descriptive prompts** → β₁ = 0 (no loops)
 
@@ -1289,7 +1293,7 @@ See `docs/research/lr_derivation_analysis.md` for full analysis.
 | Highway location | High | High | **1** | **EXPLAINED** - subspace overlap→alignment→selectivity |
 | Attention eigenvalues | High | High | **2** | PARTIAL - LFM2 explained |
 | Jacobian structure | High | High | **3** | CORRECTED - not rank-1, is near-identity |
-| Recovery ratio function | High | Medium | **4** | **SOLVED** - R=4.26/N+1.76+T (R²=0.97) |
+| Recovery ratio function | High | Medium | **4** | **[DISPROVEN]** - R=4.26/N+1.76+T has no geometric meaning (arbitrary constants). New understanding: R = f(exit_geometry) / f(highway_geometry) |
 | Manifold topology | Medium | Medium | 5 | NOT STARTED |
 | RLHF flattening | Low | Medium | 6 | NOT STARTED |
 | Layer invariants | High | Medium | 7 | NOT STARTED |

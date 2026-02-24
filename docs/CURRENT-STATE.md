@@ -1,6 +1,6 @@
 # Current State
 
-> **Last Updated:** 2026-02-20
+> **Last Updated:** 2026-02-23
 >
 > **Mission:** See `docs/MISSION.md`
 > **Research roadmap:** See `docs/RESEARCH-ROADMAP.md`
@@ -27,9 +27,9 @@ Every parameter derived from geometry. See `docs/MISSION.md` for the 15 hyperpar
 | Model | Scale | Training | Outcome |
 |-------|-------|----------|---------|
 | LFM2-350M | 350M | Cayley-Stiefel + CE | val_loss 1.27 (vs 1.38 plain SGD) |
-| LFM2-350M | 350M | + REINFORCE interleaved | 14/20 accuracy (vs 11/20 baseline) [EMPIRICAL: historical unlogged claim; dedicated revalidation required] |
+| LFM2-350M | 350M | + REINFORCE interleaved | [DISPROVEN] Revalidation (2026-02-23): REINFORCE gradient orthogonal to CE on 350M. Degradation monotonic with steps. Model lacks latent capability for RLVR. |
 | LFM2-1.2B | 1.2B | Answer-mask + retention | 36/46 (78%), 0 degenerate |
-| Qwen3-8B | 8B | Geometry + injection + training start | Confirmed working; G5 seeded gate runner is implemented (`scripts/g5_8b_validation.py`) |
+| Qwen3-8B | 8B | Geometry + injection + training start | IN PROGRESS; G5 seeded gate runner implemented (`scripts/g5_8b_validation.py`), full validation pending |
 
 ### Key Architecture Decisions (Validated)
 
@@ -56,7 +56,7 @@ Every parameter derived from geometry. See `docs/MISSION.md` for the 15 hyperpar
 | **G2: Spectral safety** | CLOSED | NB-LoRA Cayley parameterization bounds by construction. |
 | **G3: Data-derived convergence** | CLOSED | 4-arm x 3-seed ablation (2026-02-17). |
 | **G4: Capability preservation** | CLOSED | CKA verification post-training. |
-| **G5: Reproducible across models** | NEARLY CLOSED | 350M, 700M, 1.2B validated. 8B geometry + injection + training confirmed; seeded gate closure pending (`scripts/g5_8b_validation.py`). |
+| **G5: Reproducible across models** | IN PROGRESS | 350M, 700M, 1.2B validated. 8B: geometry analysis complete, full training validation pending (`scripts/g5_8b_validation.py`). |
 | **G6: Verifiable quality** | CLOSED | Spectral bounds, CKA, concept volume, mode connectivity all implemented. |
 | **G7: Falsifiability** | CLOSED | Protocol at `GEOMETRIC-CONJECTURES-FALSIFICATION-PROTOCOL.md`. |
 
@@ -78,7 +78,7 @@ Every parameter derived from geometry. See `docs/MISSION.md` for the 15 hyperpar
 
 ## Test Suite
 
-**6051 tests passing, 39 skipped** (2026-02-20)
+**6294 tests passing** (2026-02-23)
 
 ---
 

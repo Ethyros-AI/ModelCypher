@@ -5,7 +5,7 @@
 **Date**: December 2025 (Updated January 2026)
 
 > **Status**: [EMPIRICAL] Draft observation; preliminary data supports the pattern.
-> **Experimental Evidence**: See [`experiments/results/geometry_validation.json`](../experiments/results/geometry_validation.json).
+> **Experimental Evidence**: Raw data from early experiments (2025-12). See VALIDATION-REPORT.md for current validated results.
 
 ## Abstract
 
@@ -102,7 +102,7 @@ We measured intrinsic dimension across layers of SmolLM-135M:
 | 22 (late middle) | 1.9 |
 | 29 (output) | 9.6 |
 
-**Source**: [`experiments/results/geometry_validation.json`](../experiments/results/geometry_validation.json)
+**Source**: Early experiment data (2025-12, artifact not preserved)
 
 **Observed Pattern**:
 1. **Dimensionality cliff**: ID drops from 15.8 → 8.8 → 1.8 through early layers

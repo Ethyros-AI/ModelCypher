@@ -4,11 +4,11 @@ A practical guide to geometric approaches for understanding and improving neural
 
 ---
 
-## Core Discovery: The Expand-Compress Cycle [VALIDATED]
+## Core Discovery: The Expand-Compress Cycle [EMPIRICAL: LFM2 family]
 
-<!-- evidence: VALIDATED | scope: LFM2-350M, LFM2-1.2B | date: 2026-02-01 | method: null hypothesis test vs random weights -->
+<!-- evidence: EMPIRICAL | scope: LFM2-350M, LFM2-1.2B | date: 2026-02-01 | method: null hypothesis test vs random weights | caveat: DeepSeek-R1 shows constant expansion_ratio (no cycle) -->
 
-Transformer processing follows a predictable geometric pattern. We observe clusters of expansion_ratio values:
+LFM2 models follow a predictable expand-compress pattern. Specialist/RL models (DeepSeek-R1, Qwen-Coder) show constant expansion_ratio with no compression phase (see VALIDATION-REPORT.md Claim 4).
 
 ```
 Layer Progression:

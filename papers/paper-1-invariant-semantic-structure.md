@@ -5,7 +5,7 @@
 **Date**: December 2025 (Updated January 2026)
 **Status**: [VALIDATED] intra-model; [CONJECTURAL] cross-model (reproduction pending)
 
-> **Note**: Intra-model alignment invariance has been verified. See [`experiments/results/geometry_validation.json`](../experiments/results/geometry_validation.json) for evidence that raw CKA = 0.60 → aligned CKA = 1.0.
+> **Note**: Intra-model alignment invariance has been verified. Raw CKA = 0.60 → aligned CKA = 1.0. See VALIDATION-REPORT.md for current validated results across 3 model families.
 
 ---
 
@@ -118,7 +118,7 @@ We verified the core alignment invariance property using the ModelCypher toolkit
 
 **Interpretation**: The transformation `F = pinv(source) @ target` achieves CKA = 1.0 by construction. This demonstrates that different representations of the same concepts have identical relational structure—only the coordinate systems differ.
 
-**Source**: [`experiments/results/geometry_validation.json`](../experiments/results/geometry_validation.json)
+**Source**: Early experiment data (2025-12, artifact not preserved). See VALIDATION-REPORT.md for current validated results.
 
 ---
 

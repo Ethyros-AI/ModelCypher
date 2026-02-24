@@ -21,8 +21,8 @@ One training method. Geometry derives everything:
 - Which layers to target (tail_dims > 0)
 - Rank per layer (min(tail_dims, n_train_samples))
 - Scale bound (sigma_k / 2 * safety_margin)
-- Learning rate (1/L where L = λ_max(Hessian))
-- Optimizer preconditioning (ScaledGD: condition-number-free on rank-r manifold)
+- Learning rate (MASS: min(eta_ceiling, eta_sps, eta_weyl) — spectral bounds)
+- Optimizer (Cayley-Stiefel retraction on rank-r Stiefel manifold)
 - Batch size (B_crit = 1/SNR from gradient noise)
 - When to stop (val loss convergence, Weyl adapter saturation exhaustion, loss stability)
 - Post-training verification (CKA alignment, spectral bounds)
@@ -95,7 +95,7 @@ class DatasetTrainResult:
     dim_final_null_fraction: float | None = None
     dim_null_recruitment_from_baseline: float | None = None
     # G6: Optimizer type used
-    optimizer_type: str = "cayley_riemannian"
+    optimizer_type: str = "cayley_stiefel"
     # Outer similarity (final epoch, when rss_monitor=True)
     rss_final_cosine: float | None = None
     rss_final_spearman: float | None = None
@@ -964,7 +964,7 @@ class DatasetTrainingService:
                 "train_iters": str(train_iters),
                 "method": "nb_lora_cayley",
                 "safety_margin": str(safety_margin),
-                "optimizer": "cayley_riemannian",
+                "optimizer": "cayley_stiefel",
             }
             if min_cka is not None:
                 metadata["min_cka"] = f"{min_cka:.4f}"
@@ -1024,7 +1024,7 @@ class DatasetTrainingService:
             dim_final_used_fraction=dim_final_used_fraction,
             dim_final_null_fraction=dim_final_null_fraction,
             dim_null_recruitment_from_baseline=dim_null_recruitment_from_baseline,
-            optimizer_type="cayley_riemannian",
+            optimizer_type="cayley_stiefel",
             rss_final_cosine=rss_final_cosine,
             rss_final_spearman=rss_final_spearman,
             rss_final_top1=rss_final_top1,
