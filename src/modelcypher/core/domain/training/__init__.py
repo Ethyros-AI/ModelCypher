@@ -68,5 +68,12 @@ from .types import (
 )
 from .geometric_early_stopping import check_loss_stable
 from .hyperparameter_validation import TrainingHyperparameterValidator
+from .mass_step_size import (
+    apply_sqrt_n_epoch_correction,
+    apply_validation_backoff,
+    compute_per_step_rates,
+    compute_reinforce_budget,
+    derive_spectral_ceiling,
+)
 from .scaled_gd import precondition_lora_gradients
 from .spectral_budget import compute_budget_ratios, is_budget_exhausted

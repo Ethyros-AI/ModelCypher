@@ -1183,13 +1183,18 @@ class TestGroundTruthHyperboloid:
         curvature = estimator.estimate_local_curvature(point, neighbors)
 
         # K should be negative (ground truth: K = -1)
-        # Use scalar_curvature (from principal curvatures / shape operator).
-        # The Christoffel-based sectional curvature (mean_sectional) returns
-        # near-zero because finite-difference metric gradient estimation is
-        # too coarse for embedded manifolds. The shape operator's quadratic
-        # surface fit detects curvature directly.
+        # scalar_curvature comes from principal curvatures (shape operator).
         assert curvature.scalar_curvature < 0, (
             f"Hyperboloid scalar curvature should be negative, got {curvature.scalar_curvature}"
+        )
+        # Gauss-equation fallback derives sectional curvature from
+        # principal curvature products when Christoffel returns near-zero.
+        assert curvature.mean_sectional < 0, (
+            f"Hyperboloid mean_sectional should be negative via Gauss fallback, "
+            f"got {curvature.mean_sectional}"
+        )
+        assert curvature.sign in (CurvatureSign.NEGATIVE, CurvatureSign.MIXED), (
+            f"Hyperboloid sign should be NEGATIVE or MIXED, got {curvature.sign}"
         )
         # Majority of principal curvatures should be negative
         if curvature.principal_curvatures is not None:
@@ -1198,6 +1203,50 @@ class TestGroundTruthHyperboloid:
             assert neg_count > len(pc) // 2, (
                 f"Majority of principal curvatures should be negative, got {pc}"
             )
+
+
+    def test_gauss_equation_fallback_sphere(self) -> None:
+        """Gauss-equation fallback derives mean_sectional from principal curvatures.
+
+        On a sphere of radius R, the Christoffel-based sectional curvature
+        returns near-zero (finite-difference metric gradients too coarse),
+        but the shape operator detects κᵢ ≈ 1/R for all principal directions.
+        The fallback computes K(eᵢ, eⱼ) = κᵢ × κⱼ ≈ 1/R² > 0.
+        """
+        backend = get_default_backend()
+        rng = np.random.Generator(np.random.PCG64(99))
+        d = 4  # Ambient dimension (3-sphere in 4D)
+        R = 2.0  # Radius
+
+        # Sample points on sphere of radius R
+        n = 80
+        raw = rng.standard_normal((n, d)).astype(np.float32)
+        norms = np.linalg.norm(raw, axis=1, keepdims=True)
+        points_np = raw / norms * R
+        points = backend.array(points_np)
+        backend.eval(points)
+
+        estimator = SectionalCurvatureEstimator()
+        point = points[0]
+        neighbors = points[1:]
+        curvature = estimator.estimate_local_curvature(point, neighbors)
+
+        # scalar_curvature from shape operator should be positive
+        assert curvature.scalar_curvature > 0, (
+            f"Sphere scalar curvature should be positive, got {curvature.scalar_curvature}"
+        )
+        # Gauss fallback should produce positive mean_sectional
+        assert curvature.mean_sectional > 0, (
+            f"Sphere mean_sectional should be positive via Gauss fallback, "
+            f"got {curvature.mean_sectional}"
+        )
+        assert curvature.sign in (CurvatureSign.POSITIVE, CurvatureSign.MIXED), (
+            f"Sphere sign should be POSITIVE or MIXED, got {curvature.sign}"
+        )
+        # is_positively_curved should now be True
+        assert curvature.is_positively_curved, (
+            "Sphere should be classified as positively curved"
+        )
 
 
 class TestCanonicalSelectorRegression:

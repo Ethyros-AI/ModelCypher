@@ -693,49 +693,23 @@ class _MLXTrainingAdapterCoreMixin:
     ) -> float:
         """Derive static learning rate ceiling from adapter geometry (Weyl 1912).
 
-        eta_ceiling = sigma_k_min / sigma_max_global
-
-        Where sigma_k_min is the minimum structural-rank singular value across
-        all adapted layers (smallest spectral gap) and sigma_max_global is the
-        largest singular value (maximum gradient amplification). This is the
-        per-step Weyl bound.
-
-        After computing n_batches_per_epoch, the caller applies the √N epoch
-        budget correction: eta_ceiling /= √N to account for accumulated
-        displacement over an epoch (Brownian scaling).
-
-        Per-step rates (SPS, Weyl displacement) operate within this ceiling.
+        Delegates to :func:`mass_step_size.derive_spectral_ceiling` for the
+        pure-math derivation. This method adds logging.
         """
-        if lr_override is not None:
-            logger.info("LR from override: %.2e (bypasses spectral ceiling)", float(lr_override))
-            return float(lr_override)
-
-        if sigma_k_min <= 0 or sigma_max_global <= 0:
-            raise TrainingDerivationError(
-                failure_class="insufficient_adapter_geometry",
-                detail=(
-                    "Spectral ceiling derivation failed: sigma_k_min or sigma_max_global "
-                    "non-positive. Check that adapted layers have valid SVD geometry."
-                ),
-                diagnostics={
-                    "sigma_k_min": sigma_k_min,
-                    "sigma_max_global": sigma_max_global,
-                },
-            )
-
-        if not math.isfinite(sigma_k_min) or not math.isfinite(sigma_max_global):
-            raise TrainingDerivationError(
-                failure_class="insufficient_adapter_geometry",
-                detail="sigma_k_min or sigma_max_global is non-finite.",
-                diagnostics={
-                    "sigma_k_min": sigma_k_min,
-                    "sigma_max_global": sigma_max_global,
-                },
-            )
-
-        ceiling = sigma_k_min / sigma_max_global
-        logger.info(
-            "Spectral ceiling (Weyl): eta_ceiling = sigma_k_min/sigma_max = %.4e/%.4e = %.4e",
-            sigma_k_min, sigma_max_global, ceiling,
+        from modelcypher.core.domain.training.mass_step_size import (
+            derive_spectral_ceiling,
         )
+
+        ceiling = derive_spectral_ceiling(
+            sigma_k_min=sigma_k_min,
+            sigma_max_global=sigma_max_global,
+            lr_override=lr_override,
+        )
+        if lr_override is not None:
+            logger.info("LR from override: %.2e (bypasses spectral ceiling)", ceiling)
+        else:
+            logger.info(
+                "Spectral ceiling (Weyl): eta_ceiling = sigma_k_min/sigma_max = %.4e/%.4e = %.4e",
+                sigma_k_min, sigma_max_global, ceiling,
+            )
         return ceiling

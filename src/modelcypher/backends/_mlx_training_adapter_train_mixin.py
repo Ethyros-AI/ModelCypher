@@ -361,17 +361,15 @@ class _MLXTrainingAdapterTrainMixin:
             raise ValueError("Training dataset produced zero batches")
 
         # MASS √N epoch budget correction (Brownian scaling).
-        # The per-step Weyl bound (eta * ||d|| ≤ sigma_k_min) prevents any
-        # single step from crossing an eigenvalue boundary. But over N steps
-        # per epoch, the accumulated displacement scales as √N * eta * ||d||
-        # (random walk). To keep accumulated displacement within sigma_k_min:
-        #   √N * eta_ceiling * ||d_typical|| ≤ sigma_k_min
-        # This is equivalent to dividing the per-step ceiling by √N:
-        #   eta_ceiling_epoch = eta_ceiling_step / √N
-        if lr_override is None and n_batches_per_epoch > 1:
-            sqrt_n = math.sqrt(n_batches_per_epoch)
-            eta_ceiling_before = eta_ceiling
-            eta_ceiling = eta_ceiling / sqrt_n
+        from modelcypher.core.domain.training.mass_step_size import (
+            apply_sqrt_n_epoch_correction,
+        )
+
+        eta_ceiling_before = eta_ceiling
+        eta_ceiling = apply_sqrt_n_epoch_correction(
+            eta_ceiling, n_batches_per_epoch, lr_override=lr_override,
+        )
+        if eta_ceiling != eta_ceiling_before:
             current_eta = eta_ceiling
             optimizer.learning_rate = mx.array(current_eta)
             logger.info(
@@ -451,6 +449,10 @@ class _MLXTrainingAdapterTrainMixin:
 
             # MASS Layer 2: Per-step measured rates on raw gradient.
             # d_t = g_t (P removed — weight space is Euclidean).
+            from modelcypher.core.domain.training.mass_step_size import (
+                compute_per_step_rates,
+            )
+
             mass_metrics: dict[str, float] = {}
             d_flat = [p.reshape(-1) for _, p in mlx_flatten(grad) if p.size > 0]
             d_norm_sq = sum(mx.sum(p * p) for p in d_flat)
@@ -458,17 +460,9 @@ class _MLXTrainingAdapterTrainMixin:
             d_norm_val = float(mx.sqrt(d_norm_sq).item())
             loss_float = float(loss)
 
-            if d_norm_val > 0:
-                # SPS (Loizou et al. 2020): eta = f(x) / ||g||^2, f* = 0
-                eta_sps_val = loss_float / (d_norm_val ** 2)
-                # Weyl displacement bound: eta * ||g|| <= sigma_k_min
-                eta_weyl_val = sigma_k_min / d_norm_val
-            else:
-                eta_sps_val = eta_ceiling
-                eta_weyl_val = eta_ceiling
-
-            eta_step = min(eta_sps_val, eta_weyl_val, eta_ceiling)
-            displacement_val = eta_step * d_norm_val
+            eta_step, eta_sps_val, eta_weyl_val, displacement_val = compute_per_step_rates(
+                loss_float, d_norm_val, sigma_k_min, eta_ceiling,
+            )
 
             mass_metrics["eta_step"] = eta_step
             mass_metrics["eta_sps"] = eta_sps_val
@@ -570,21 +564,24 @@ class _MLXTrainingAdapterTrainMixin:
                 # 3. Adaptive LR: validation-guided ceiling backoff
                 # Per-step rates (SPS, Weyl) adapt within the ceiling automatically.
                 # The ceiling only decreases when validation loss degrades.
-                if adaptive_lr and lr_override is None:
-                    if (v_loss is not None and len(val_losses) >= 2
-                            and val_losses[-1] > val_losses[-2]
-                            and val_losses[-1] > 0):
-                        _BACKOFF_FLOOR = math.ldexp(1.0, -23) ** 0.5  # sqrt(eps_f32)
-                        backoff = max(val_losses[-2] / val_losses[-1], _BACKOFF_FLOOR)
-                        prev_ceiling = eta_ceiling
-                        eta_ceiling = eta_ceiling * backoff
-                        current_eta = eta_ceiling
-                        logger.info(
-                            "Val loss increased (%.4f → %.4f): ceiling backoff=%.3f, "
-                            "eta_ceiling %.2e -> %.2e",
-                            val_losses[-2], val_losses[-1], backoff,
-                            prev_ceiling, eta_ceiling,
-                        )
+                from modelcypher.core.domain.training.mass_step_size import (
+                    apply_validation_backoff,
+                )
+
+                prev_ceiling = eta_ceiling
+                eta_ceiling = apply_validation_backoff(
+                    eta_ceiling, val_losses,
+                    adaptive_lr=adaptive_lr, lr_override=lr_override,
+                )
+                if eta_ceiling != prev_ceiling:
+                    current_eta = eta_ceiling
+                    backoff = eta_ceiling / prev_ceiling
+                    logger.info(
+                        "Val loss increased (%.4f → %.4f): ceiling backoff=%.3f, "
+                        "eta_ceiling %.2e -> %.2e",
+                        val_losses[-2], val_losses[-1], backoff,
+                        prev_ceiling, eta_ceiling,
+                    )
 
                 # 3b. Val loss convergence/overfitting check
                 if use_val_stopping and len(val_losses) >= min_val_windows_for_stop:
@@ -871,41 +868,30 @@ class _MLXTrainingAdapterTrainMixin:
                             outcome_vg = nn.value_and_grad(model, outcome_loss_fn)
 
                         # REINFORCE displacement budget: Weyl remainder after CE.
-                        # Total epoch displacement must stay within sigma_k_min.
-                        # CE consumed update_norm of the budget. REINFORCE gets
-                        # the remainder, distributed across sqrt(N_re) steps
-                        # (Brownian scaling — same argument as CE's sqrt(N_ce)).
+                        from modelcypher.core.domain.training.mass_step_size import (
+                            compute_reinforce_budget,
+                        )
+
                         n_re = len(outcome_batches)
-                        sqrt_n_re = math.sqrt(max(1, n_re))
-                        budget_remaining: float | None = None
+                        target_step_norm, target_step_source = compute_reinforce_budget(
+                            sigma_k_min, update_norm, n_re, check_interval,
+                        )
 
-                        if update_norm is not None and update_norm > 0:
-                            budget_remaining = max(0.0, sigma_k_min - update_norm)
-                            if budget_remaining <= 0.0:
-                                logger.info(
-                                    "REINFORCE skipped: CE displacement %.4e >= "
-                                    "sigma_k_min %.4e (Weyl budget exhausted)",
-                                    update_norm, sigma_k_min,
-                                )
-                                active_completions = []
-                                target_step_norm = 0.0
-                                target_step_source = "budget_exhausted"
-                            else:
-                                target_step_norm = budget_remaining / sqrt_n_re
-                                target_step_source = "weyl_remainder"
-                        else:
-                            # Fallback: no CE displacement measured.
-                            # Share sigma_k_min across total steps (CE + RE).
-                            n_total = max(1, check_interval) + max(1, n_re)
-                            if sigma_k_min > 0:
-                                target_step_norm = sigma_k_min / math.sqrt(n_total)
-                                target_step_source = "sigma_k_min_shared"
-                            else:
-                                # sigma_k_min = 0 → adapter rank is saturated,
-                                # no spectral headroom for REINFORCE steps.
-                                target_step_norm = 0.0
-                                target_step_source = "budget_exhausted"
+                        if target_step_source == "budget_exhausted" and (
+                            update_norm is not None and update_norm > 0
+                        ):
+                            logger.info(
+                                "REINFORCE skipped: CE displacement %.4e >= "
+                                "sigma_k_min %.4e (Weyl budget exhausted)",
+                                update_norm, sigma_k_min,
+                            )
+                            active_completions = []
 
+                        budget_remaining = (
+                            max(0.0, sigma_k_min - update_norm)
+                            if update_norm is not None and update_norm > 0
+                            else None
+                        )
                         logger.info(
                             "REINFORCE budget: sigma_k_min=%.4e, "
                             "ce_displacement=%.4e, remaining=%.4e, "

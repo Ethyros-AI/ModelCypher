@@ -502,6 +502,56 @@ class SectionalCurvatureEstimator:
         else:
             scalar_curv = 0.0
 
+        # Gauss-equation fallback: when the Christoffel-based sectional
+        # curvature returns FLAT (finite-difference metric gradients too
+        # coarse for embedded manifolds) but the shape operator detected
+        # curvature via quadratic surface fit, derive sectional curvature
+        # statistics from principal curvature products.
+        # K(eᵢ, eⱼ) = κᵢ × κⱼ is exact for codimension-1 (Gauss eqn).
+        if sign == CurvatureSign.FLAT and principal_curvs is not None:
+            n_pc = int(principal_curvs.shape[0])
+            if n_pc >= 2:
+                # Outer product gives all κᵢ × κⱼ products
+                pc_col = backend.reshape(principal_curvs, (n_pc, 1))
+                pc_row = backend.reshape(principal_curvs, (1, n_pc))
+                pc_outer = backend.matmul(pc_col, pc_row)
+                # Extract upper-triangular (i < j) pairs
+                triu_indices = []
+                for ii in range(n_pc):
+                    for jj in range(ii + 1, n_pc):
+                        triu_indices.append(ii * n_pc + jj)
+                pc_flat = backend.reshape(pc_outer, (-1,))
+                idx = backend.array(triu_indices)
+                sect_from_pc = backend.take(pc_flat, idx)
+                backend.eval(sect_from_pc)
+
+                n_pairs = len(triu_indices)
+                sum_sect = backend.sum(sect_from_pc)
+                backend.eval(sum_sect)
+                mean_sectional = float(backend.to_scalar(sum_sect)) / n_pairs
+
+                sq_sect = sect_from_pc * sect_from_pc
+                sum_sq = backend.sum(sq_sect)
+                backend.eval(sum_sq)
+                variance_sectional = (
+                    float(backend.to_scalar(sum_sq)) / n_pairs
+                    - mean_sectional ** 2
+                )
+
+                min_sect = backend.min(sect_from_pc)
+                max_sect = backend.max(sect_from_pc)
+                backend.eval(min_sect, max_sect)
+                min_sectional = float(backend.to_scalar(min_sect))
+                max_sectional = float(backend.to_scalar(max_sect))
+
+                # Re-classify sign from derived sectional curvatures
+                # (all entries valid — use equality to create bool mask
+                # because MLX ones_like doesn't accept dtype kwarg)
+                all_valid = sect_from_pc == sect_from_pc
+                sign = self._classify_sign_backend(
+                    sect_from_pc, all_valid, backend,
+                )
+
         return LocalCurvature(
             point=point,
             mean_sectional=mean_sectional,
