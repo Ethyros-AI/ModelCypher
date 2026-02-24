@@ -24,6 +24,7 @@ counterexamples where post-training metrics fail to improve over baseline.
 from __future__ import annotations
 
 import hashlib
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -50,6 +51,7 @@ class DerivedTrainingTrial:
     training_time_seconds: float
     min_cka: float | None
     mean_cka: float | None
+    adapter_saturation_median_ratio: float | None
     passed: bool
     failure_modes: tuple[str, ...]
 
@@ -70,6 +72,7 @@ class DerivedTrainingTrial:
             "training_time_seconds": self.training_time_seconds,
             "min_cka": self.min_cka,
             "mean_cka": self.mean_cka,
+            "adapter_saturation_median_ratio": self.adapter_saturation_median_ratio,
             "passed": self.passed,
             "failure_modes": list(self.failure_modes),
         }
@@ -227,6 +230,8 @@ class DerivedTrainingValidationService:
         perplexity_improved = perplexity_delta > eps
         bounds_ok = bool(train_result.spectral_bounds_ok)
 
+        sqrt_eps = math.sqrt(eps)
+
         failure_modes: list[str] = []
         if not loss_improved:
             failure_modes.append("loss_not_improved")
@@ -234,6 +239,13 @@ class DerivedTrainingValidationService:
             failure_modes.append("perplexity_not_improved")
         if not bounds_ok:
             failure_modes.append("spectral_bounds_violation")
+        if str(train_result.stop_reason).startswith("safety_cap"):
+            failure_modes.append("safety_cap_hit")
+        if train_result.min_cka is not None and float(train_result.min_cka) < 1.0 - sqrt_eps:
+            failure_modes.append("cka_degraded")
+        sat = getattr(train_result, "adapter_saturation_median_ratio", None)
+        if sat is not None and float(sat) >= 1.0:
+            failure_modes.append("adapter_saturation_exceeded")
 
         return DerivedTrainingTrial(
             trial_index=index,
@@ -258,6 +270,9 @@ class DerivedTrainingValidationService:
                 float(train_result.mean_cka)
                 if train_result.mean_cka is not None
                 else None
+            ),
+            adapter_saturation_median_ratio=(
+                float(sat) if sat is not None else None
             ),
             passed=(len(failure_modes) == 0),
             failure_modes=tuple(failure_modes),

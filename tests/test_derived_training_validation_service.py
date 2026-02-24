@@ -43,6 +43,7 @@ class _FakeTrainResult:
     training_time_seconds: float = 1.0
     min_cka: float | None = None
     mean_cka: float | None = None
+    adapter_saturation_median_ratio: float | None = None
 
 
 class _FakeDatasetTrainingService:
@@ -159,3 +160,111 @@ def test_validate_requires_positive_trial_count(tmp_path):
             eval_dataset_path=None,
             trials=0,
         )
+
+
+def _make_service(tmp_path, results):
+    fake = _FakeDatasetTrainingService(results=results)
+    service = DerivedTrainingValidationService(
+        dataset_training_service=fake,
+        backend=get_default_backend(),
+    )
+    model_dir = tmp_path / "model"
+    model_dir.mkdir(exist_ok=True)
+    data_file = tmp_path / "train.jsonl"
+    data_file.write_text('{"text":"hello"}\n', encoding="utf-8")
+    return service, model_dir, data_file
+
+
+def test_safety_cap_hit_is_failure(tmp_path):
+    service, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.4,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+            stop_reason="safety_cap (100000 iters)",
+        ),
+    ])
+    result = service.validate(
+        model_path=model_dir, dataset_path=data_file,
+        eval_dataset_path=None, trials=1, base_seed=1,
+    )
+    assert result.all_passed is False
+    assert "safety_cap_hit" in result.counterexamples[0].failure_modes
+
+
+def test_cka_degraded_is_failure(tmp_path):
+    service, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.4,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+            min_cka=0.5,
+        ),
+    ])
+    result = service.validate(
+        model_path=model_dir, dataset_path=data_file,
+        eval_dataset_path=None, trials=1, base_seed=1,
+    )
+    assert result.all_passed is False
+    assert "cka_degraded" in result.counterexamples[0].failure_modes
+
+
+def test_adapter_saturation_exceeded_is_failure(tmp_path):
+    service, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.4,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+            adapter_saturation_median_ratio=1.01,
+        ),
+    ])
+    result = service.validate(
+        model_path=model_dir, dataset_path=data_file,
+        eval_dataset_path=None, trials=1, base_seed=1,
+    )
+    assert result.all_passed is False
+    assert "adapter_saturation_exceeded" in result.counterexamples[0].failure_modes
+
+
+def test_new_gates_pass_when_healthy(tmp_path):
+    service, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.4,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+            stop_reason="loss_stable",
+            min_cka=0.9999,
+            adapter_saturation_median_ratio=0.85,
+        ),
+    ])
+    result = service.validate(
+        model_path=model_dir, dataset_path=data_file,
+        eval_dataset_path=None, trials=1, base_seed=1,
+    )
+    assert result.all_passed is True
+    trial = result.trial_results[0]
+    assert trial.adapter_saturation_median_ratio == pytest.approx(0.85)
+    assert trial.min_cka == pytest.approx(0.9999)
+
+
+def test_trial_to_dict_includes_adapter_saturation(tmp_path):
+    service, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.4,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+            adapter_saturation_median_ratio=0.75,
+        ),
+    ])
+    result = service.validate(
+        model_path=model_dir, dataset_path=data_file,
+        eval_dataset_path=None, trials=1, base_seed=1,
+    )
+    d = result.trial_results[0].to_dict()
+    assert "adapter_saturation_median_ratio" in d
+    assert d["adapter_saturation_median_ratio"] == pytest.approx(0.75)
