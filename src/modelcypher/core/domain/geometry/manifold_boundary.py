@@ -407,7 +407,7 @@ def detect_manifold_boundary(
     backend: "Backend",
     n_directions: int = 100,
     max_radius: float = 10.0,
-    seed: int = 42,
+    seed: int | None = 42,
 ) -> ManifoldBoundaryResult:
     """Detect manifold boundary by probing in random orthogonal directions.
 
@@ -425,13 +425,14 @@ def detect_manifold_boundary(
         backend: Backend for tensor operations.
         n_directions: Number of random directions to probe.
         max_radius: Maximum radius to probe in each direction.
-        seed: Random seed for reproducibility.
+        seed: Random seed for reproducibility (None = non-deterministic).
 
     Returns:
         ManifoldBoundaryResult with boundary radii and utilization estimate.
     """
     b = backend
-    b.random_seed(seed)
+    if seed is not None:
+        b.random_seed(seed)
 
     activations = _promote_precision(b.array(activations), b)
     b.eval(activations)
@@ -687,7 +688,7 @@ def compute_boundary_radii_from_weights(
     target_weights: dict[str, "Array"],
     backend: "Backend",
     n_directions: int = 20,
-    seed: int = 42,
+    seed: int | None = 42,
 ) -> dict[int, float]:
     """Compute boundary radii per layer using linear weight approximation.
 
@@ -713,7 +714,8 @@ def compute_boundary_radii_from_weights(
         Dict mapping layer_idx -> boundary_radius (min across directions).
     """
     b = backend
-    b.random_seed(seed)
+    if seed is not None:
+        b.random_seed(seed)
 
     boundary_radii: dict[int, float] = {}
 

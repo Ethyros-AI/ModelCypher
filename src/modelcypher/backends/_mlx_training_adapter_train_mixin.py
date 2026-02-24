@@ -89,6 +89,10 @@ class _MLXTrainingAdapterTrainMixin:
         outcome_post_eval: bool = False,
         # Safety: rollback REINFORCE update when post-eval shows degradation.
         outcome_rollback_on_degradation: bool = True,
+        # Research controls: choose which checkpoint drives online-eval stopping.
+        research_online_eval_stop_stage: str = "pre_outcome",
+        # Research controls: choose REINFORCE outcome problem selector.
+        research_outcome_selector: str = "all",
     ) -> tuple[list[tuple[int, float, float]], str, list[EpochMetrics]]:
         """Train with ScaledGD, Weyl adapter-saturation monitoring, and geometric stopping.
 
@@ -122,6 +126,16 @@ class _MLXTrainingAdapterTrainMixin:
 
         Returns: (losses, stop_reason, epoch_metrics)
         """
+        if research_online_eval_stop_stage not in {"pre_outcome", "post_outcome"}:
+            raise ValueError(
+                "research_online_eval_stop_stage must be "
+                "'pre_outcome' or 'post_outcome'",
+            )
+        if research_outcome_selector not in {"all", "lost_only"}:
+            raise ValueError(
+                "research_outcome_selector must be 'all' or 'lost_only'",
+            )
+
         # Fail-fast: rollback requires online eval to measure degradation.
         if (outcome_rollback_on_degradation
                 and outcome_training
@@ -685,6 +699,25 @@ class _MLXTrainingAdapterTrainMixin:
                 online_eval_n_correct = None
                 online_eval_n_total = None
                 online_eval_degraded = None
+                online_eval_n_lost = None
+                online_eval_n_gained = None
+                online_eval_per_type_correct = None
+                online_eval_per_type_total = None
+                online_eval_post_acc = None
+                online_eval_post_n_correct = None
+                online_eval_post_n_total = None
+                online_eval_post_degraded = None
+                online_eval_post_n_lost = None
+                online_eval_post_n_gained = None
+                online_eval_post_per_type_correct = None
+                online_eval_post_per_type_total = None
+                online_eval_stop_basis_acc = None
+                online_eval_stop_basis_n_correct = None
+                online_eval_stop_basis_n_total = None
+                online_eval_stop_basis_degraded = None
+                online_eval_stop_basis_stage = research_online_eval_stop_stage
+                gate_confound_event = False
+                eval_result = None
                 if online_eval_problems and tokenizer is not None:
                     from modelcypher.core.domain.training.online_eval import (
                         evaluate_correctness,
@@ -706,6 +739,14 @@ class _MLXTrainingAdapterTrainMixin:
                     online_eval_n_correct = eval_result.n_correct
                     online_eval_n_total = eval_result.n_total
                     online_eval_degraded = eval_result.degraded
+                    online_eval_n_lost = eval_result.n_lost
+                    online_eval_n_gained = eval_result.n_gained
+                    online_eval_per_type_correct = dict(eval_result.per_type_correct)
+                    online_eval_per_type_total = dict(eval_result.per_type_total)
+                    online_eval_stop_basis_acc = online_eval_acc
+                    online_eval_stop_basis_n_correct = online_eval_n_correct
+                    online_eval_stop_basis_n_total = online_eval_n_total
+                    online_eval_stop_basis_degraded = online_eval_degraded
 
                 # 5c. REINFORCE outcome training (optional)
                 outcome_n_problems_epoch = None
@@ -743,7 +784,38 @@ class _MLXTrainingAdapterTrainMixin:
                         )
                         mx.eval(ce_grad_norm_sq)
                         outcome_ce_grad_norm_epoch = float(mx.sqrt(ce_grad_norm_sq).item())
-                if outcome_training and outcome_problems and tokenizer is not None:
+                selected_outcome_problems = outcome_problems
+                if (
+                    outcome_training
+                    and research_outcome_selector == "lost_only"
+                ):
+                    if (
+                        eval_result is not None
+                        and online_eval_baseline_ids is not None
+                        and online_eval_problems
+                    ):
+                        lost_problem_ids = (
+                            online_eval_baseline_ids - eval_result.correct_ids
+                        )
+                        selected_outcome_problems = [
+                            problem
+                            for problem in online_eval_problems
+                            if getattr(problem, "problem_id", None)
+                            in lost_problem_ids
+                        ]
+                        logger.info(
+                            "REINFORCE selector=lost_only: retained %d/%d lost problems",
+                            len(selected_outcome_problems),
+                            len(online_eval_problems),
+                        )
+                    else:
+                        selected_outcome_problems = []
+                        logger.info(
+                            "REINFORCE selector=lost_only unavailable "
+                            "(requires baseline ids + pre-RE eval); skipping REINFORCE",
+                        )
+
+                if outcome_training and selected_outcome_problems and tokenizer is not None:
                     from modelcypher.core.domain.star.prompting import (
                         default_few_shot_examples,
                     )
@@ -765,7 +837,7 @@ class _MLXTrainingAdapterTrainMixin:
 
                     # Phase A: collect outcomes (eval mode, no gradients)
                     outcome_result = collect_outcomes(
-                        problems=outcome_problems,
+                        problems=selected_outcome_problems,
                         generate_fn=_outcome_gen_fn,
                         tokenize_fn=_outcome_tok_fn,
                         n_variants=_n_variants,
@@ -1076,6 +1148,18 @@ class _MLXTrainingAdapterTrainMixin:
                         outcome_post_eval_accuracy_epoch = post_eval_result.accuracy
                         outcome_post_eval_n_correct_epoch = post_eval_result.n_correct
                         outcome_post_eval_n_total_epoch = post_eval_result.n_total
+                        online_eval_post_acc = post_eval_result.accuracy
+                        online_eval_post_n_correct = post_eval_result.n_correct
+                        online_eval_post_n_total = post_eval_result.n_total
+                        online_eval_post_degraded = post_eval_result.degraded
+                        online_eval_post_n_lost = post_eval_result.n_lost
+                        online_eval_post_n_gained = post_eval_result.n_gained
+                        online_eval_post_per_type_correct = dict(
+                            post_eval_result.per_type_correct,
+                        )
+                        online_eval_post_per_type_total = dict(
+                            post_eval_result.per_type_total,
+                        )
                         if online_eval_n_correct is not None:
                             outcome_post_eval_delta_correct_epoch = (
                                 post_eval_result.n_correct - online_eval_n_correct
@@ -1114,6 +1198,11 @@ class _MLXTrainingAdapterTrainMixin:
                                 "restored pre-RE parameters",
                                 outcome_post_eval_delta_correct_epoch,
                             )
+                elif outcome_training and tokenizer is not None:
+                    outcome_n_problems_epoch = 0
+                    outcome_n_active_epoch = 0
+                    outcome_signal_density_epoch = 0.0
+                    outcome_n_steps_epoch = 0
 
                 # 6. Collect epoch metrics
                 epoch_metrics_list.append(EpochMetrics(

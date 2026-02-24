@@ -99,10 +99,6 @@ class LocalCurvature:
     sign: CurvatureSign
     # Scalar curvature (trace of Ricci tensor, sum of sectional)
     scalar_curvature: float
-    # Ollivier-Ricci curvature at this point (aggregated from incident edges)
-    # Computed via optimal transport: kappa = 1 - W_1(m_x, m_y) / d(x, y)
-    # None if not yet computed (use OllivierRicciCurvature.compute() to populate)
-    ollivier_ricci: float | None = None
 
     @property
     def is_positively_curved(self) -> bool:

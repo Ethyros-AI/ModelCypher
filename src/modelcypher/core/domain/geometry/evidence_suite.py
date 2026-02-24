@@ -82,7 +82,7 @@ def run_synthetic_evidence(
     circle_samples: tuple[int, int] = (32, 64),
     sphere_grid: tuple[tuple[int, int], tuple[int, int]] = ((6, 8), (8, 10)),
     radius: float = 1.0,
-    seed: int = 0,
+    seed: int | None = 0,
     domain_source: "Array | None" = None,
     domain_target: "Array | None" = None,
     domain_probes: "list[AtlasProbeProtocol] | None" = None,
@@ -101,7 +101,8 @@ def run_synthetic_evidence(
         raise ValueError("alignment_samples must be at least 4.")
 
     # Alignment generalization (linear mapping, held-out evaluation)
-    b.random_seed(seed)
+    if seed is not None:
+        b.random_seed(seed)
     source = b.random_normal((alignment_samples, alignment_dim))
     transform = b.random_normal((alignment_dim, alignment_dim))
     target = b.matmul(source, transform)
@@ -193,7 +194,8 @@ def run_synthetic_evidence(
     core_samples = max(4, alignment_dim)
     boundary_samples = max(2, alignment_dim // 4)
 
-    b.random_seed(seed + 1)
+    if seed is not None:
+        b.random_seed(seed + 1)
     weight_target = b.random_normal((out_dim, in_dim))
     activations_core = b.random_normal((core_samples, in_dim))
     delta_activations = b.random_normal((core_samples, out_dim))

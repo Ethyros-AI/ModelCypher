@@ -1150,7 +1150,7 @@ class ModelProfileExtractor:
                 lp = LayerProfile(
                     layer_idx=layer_idx,
                     ollivier_ricci_mean=curvature,
-                    ollivier_ricci_std=result.curvature_std,
+                    ollivier_ricci_std=result.std_edge_curvature,
                     intrinsic_dimension=id_value,
                     intrinsic_dimension_uncertainty=id_std,
                 )
