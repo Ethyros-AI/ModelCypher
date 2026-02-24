@@ -93,8 +93,12 @@ class DatasetTrainResult:
     # G4: Capability preservation (CKA alignment to base model)
     min_cka: float | None = None
     mean_cka: float | None = None
+    per_layer_cka: dict[int, float] | None = None
+    min_cka_layer: int | None = None
     # G3: Weyl adapter saturation monitoring (not model-space capacity)
     adapter_saturation_median_ratio: float | None = None
+    # Effective sequence length used by training/eval (derived from data unless overridden).
+    seq_length_used: int | None = None
     # Model-space dimensional recruitment (null-space utilization over training)
     dim_final_used_fraction: float | None = None
     dim_final_null_fraction: float | None = None
@@ -139,8 +143,14 @@ class DatasetTrainResult:
             result["min_cka"] = self.min_cka
         if self.mean_cka is not None:
             result["mean_cka"] = self.mean_cka
+        if self.per_layer_cka is not None:
+            result["per_layer_cka"] = self.per_layer_cka
+        if self.min_cka_layer is not None:
+            result["min_cka_layer"] = self.min_cka_layer
         if self.adapter_saturation_median_ratio is not None:
             result["adapter_saturation_median_ratio"] = self.adapter_saturation_median_ratio
+        if self.seq_length_used is not None:
+            result["seq_length_used"] = self.seq_length_used
         if self.dim_final_used_fraction is not None:
             result["dim_final_used_fraction"] = self.dim_final_used_fraction
         if self.dim_final_null_fraction is not None:
@@ -978,6 +988,8 @@ class DatasetTrainingService:
         # 11.5. CKA verification — does the adapted model preserve base representations?
         min_cka = None
         mean_cka = None
+        per_layer_cka = None
+        min_cka_layer = None
         if base_activations:
             logger.info("Starting CKA verification...")
             cka_result = self._verify_capability_preservation(
@@ -986,6 +998,9 @@ class DatasetTrainingService:
             )
             min_cka = cka_result.get("min_cka")
             mean_cka = cka_result.get("mean_cka")
+            per_layer_cka = cka_result.get("per_layer_cka")
+            if per_layer_cka:
+                min_cka_layer = min(per_layer_cka, key=per_layer_cka.get)
             logger.info(
                 "CKA verification: min=%.4f, mean=%.4f (%d probes, %d layers)",
                 min_cka, mean_cka,
@@ -1089,7 +1104,10 @@ class DatasetTrainingService:
             epoch_metrics=[m.to_dict() for m in epoch_metrics] if epoch_metrics else None,
             min_cka=min_cka,
             mean_cka=mean_cka,
+            per_layer_cka=per_layer_cka,
+            min_cka_layer=min_cka_layer,
             adapter_saturation_median_ratio=adapter_saturation_median_ratio,
+            seq_length_used=int(seq_length),
             dim_final_used_fraction=dim_final_used_fraction,
             dim_final_null_fraction=dim_final_null_fraction,
             dim_null_recruitment_from_baseline=dim_null_recruitment_from_baseline,
