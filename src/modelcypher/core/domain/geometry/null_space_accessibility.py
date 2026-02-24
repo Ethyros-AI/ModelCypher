@@ -29,6 +29,7 @@ import math
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.exceptions import EstimatorError
 from modelcypher.core.domain.geometry.gram_spectrum import (
     analyze_projection,
     compute_gram_spectrum,
@@ -37,6 +38,7 @@ from modelcypher.core.domain.geometry.null_space import compute_variance_null_sp
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     precision_dtype,
+    svd_rank_threshold,
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.subspace import compute_grassmann_distance
@@ -140,28 +142,99 @@ def analyze_layer_null_observability(
 ) -> dict[str, float | int]:
     """Measure per-layer null-space observability from activations only."""
     b = backend or get_default_backend()
-    spectrum = compute_gram_spectrum(activations, backend=b)
-    coverage_ratio = (
-        spectrum.n_samples / spectrum.d_features
-        if spectrum.d_features > 0
-        else float("nan")
-    )
-    return {
-        "n_samples": int(spectrum.n_samples),
-        "hidden_dim": int(spectrum.d_features),
-        "coverage_ratio": float(coverage_ratio),
-        "available_rank": int(spectrum.null_rank),
-        "used_rank": int(spectrum.numeric_rank),
-        "condition_number": float(spectrum.condition_number),
-        "intrinsic_dimension": float(spectrum.intrinsic_dimension),
-        "energy_ratio_numeric_rank": float(spectrum.energy_ratio_numeric_rank),
-        "energy_ratio_intrinsic_dim": float(spectrum.energy_ratio_intrinsic_dim),
-        "spectral_gap": float(spectrum.spectral_gap),
-        "rank_threshold": float(spectrum.rank_threshold),
-        "total_variance": float(spectrum.total_variance),
-        "max_eigenvalue": float(spectrum.max_eigenvalue),
-        "min_eigenvalue": float(spectrum.min_eigenvalue),
-    }
+    try:
+        spectrum = compute_gram_spectrum(activations, backend=b)
+        coverage_ratio = (
+            spectrum.n_samples / spectrum.d_features
+            if spectrum.d_features > 0
+            else float("nan")
+        )
+        return {
+            "n_samples": int(spectrum.n_samples),
+            "hidden_dim": int(spectrum.d_features),
+            "coverage_ratio": float(coverage_ratio),
+            "available_rank": int(spectrum.null_rank),
+            "used_rank": int(spectrum.numeric_rank),
+            "condition_number": float(spectrum.condition_number),
+            "intrinsic_dimension": float(spectrum.intrinsic_dimension),
+            "energy_ratio_numeric_rank": float(spectrum.energy_ratio_numeric_rank),
+            "energy_ratio_intrinsic_dim": float(spectrum.energy_ratio_intrinsic_dim),
+            "spectral_gap": float(spectrum.spectral_gap),
+            "rank_threshold": float(spectrum.rank_threshold),
+            "total_variance": float(spectrum.total_variance),
+            "max_eigenvalue": float(spectrum.max_eigenvalue),
+            "min_eigenvalue": float(spectrum.min_eigenvalue),
+        }
+    except EstimatorError:
+        # Fallback path for low-sample or degenerate point clouds where TwoNN
+        # cannot provide intrinsic dimension. Keep raw spectrum diagnostics.
+        acts = b.array(activations)
+        shape = b.shape(acts)
+        if len(shape) != 2:
+            raise ValueError(f"Expected 2D activations, got shape {shape}")
+        n_samples = int(shape[0])
+        hidden_dim = int(shape[1])
+        if n_samples == 0 or hidden_dim == 0:
+            raise ValueError(f"Empty activations: shape {shape}")
+
+        acts = b.astype(acts, precision_dtype(b, reference=acts))
+        b.eval(acts)
+        gram = b.matmul(acts, b.transpose(acts))
+        b.eval(gram)
+        eigvals = b.eigvalsh(gram)
+        b.eval(eigvals)
+        idx = b.argsort(-eigvals, axis=0)
+        eigvals = b.take(eigvals, idx, axis=0)
+        b.eval(eigvals)
+        eigvals_pos = b.maximum(eigvals, b.array(0.0))
+        b.eval(eigvals_pos)
+
+        eigvals_list = [
+            float(b.to_scalar(eigvals_pos[i]))
+            for i in range(int(b.shape(eigvals_pos)[0]))
+        ]
+        eps = float(machine_epsilon(b, gram))
+        total_variance = float(sum(eigvals_list))
+        max_eig = eigvals_list[0] if eigvals_list else 0.0
+        min_eig = eigvals_list[-1] if eigvals_list else 0.0
+        nonzero = [v for v in eigvals_list if v > eps]
+        if nonzero:
+            condition_number = nonzero[0] / nonzero[-1]
+        else:
+            condition_number = float("inf")
+
+        rank_scale = svd_rank_threshold(b, eigvals_pos, hidden_dim)
+        rank_threshold = max(max_eig, eps) * rank_scale
+        used_rank = sum(1 for v in eigvals_list if v > rank_threshold)
+        available_rank = max(0, hidden_dim - used_rank)
+        coverage_ratio = (
+            float(n_samples) / float(hidden_dim)
+            if hidden_dim > 0
+            else float("nan")
+        )
+
+        if used_rank > 0:
+            energy_prefix = float(sum(eigvals_list[:used_rank]))
+            energy_ratio_numeric_rank = energy_prefix / max(total_variance, eps)
+        else:
+            energy_ratio_numeric_rank = 0.0
+
+        return {
+            "n_samples": n_samples,
+            "hidden_dim": hidden_dim,
+            "coverage_ratio": coverage_ratio,
+            "available_rank": available_rank,
+            "used_rank": used_rank,
+            "condition_number": float(condition_number),
+            "intrinsic_dimension": float("nan"),
+            "energy_ratio_numeric_rank": float(energy_ratio_numeric_rank),
+            "energy_ratio_intrinsic_dim": float("nan"),
+            "spectral_gap": float("nan"),
+            "rank_threshold": float(rank_threshold),
+            "total_variance": float(total_variance),
+            "max_eigenvalue": float(max_eig),
+            "min_eigenvalue": float(min_eig),
+        }
 
 
 def analyze_module_null_accessibility(

@@ -41,6 +41,27 @@ def test_analyze_layer_null_observability_reports_rank_and_coverage():
     assert math.isfinite(float(result["condition_number"]))
 
 
+def test_analyze_layer_null_observability_small_sample_fallback_keeps_metrics():
+    backend = get_default_backend()
+    activations = backend.array(
+        [
+            [1.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+        ],
+        dtype="float32",
+    )
+    backend.eval(activations)
+
+    result = analyze_layer_null_observability(activations, backend)
+    assert result["n_samples"] == 2
+    assert result["hidden_dim"] == 3
+    assert result["coverage_ratio"] == pytest.approx(2.0 / 3.0)
+    assert result["available_rank"] == 2
+    assert result["used_rank"] == 1
+    assert math.isnan(float(result["intrinsic_dimension"]))
+    assert math.isfinite(float(result["condition_number"]))
+
+
 def test_module_accessibility_delta_in_available_direction_is_preserved():
     backend, activations = _activation_cloud()
     delta_w = backend.array([[0.0, 1.0, 0.0]], dtype="float32")
