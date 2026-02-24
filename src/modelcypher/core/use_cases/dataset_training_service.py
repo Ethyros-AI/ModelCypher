@@ -1574,14 +1574,6 @@ class DatasetTrainingService:
                     if isinstance(s.get("text"), str) and s["text"]
                 ]
 
-            # Truncate to match base activation count — base_activations defines
-            # the canonical probe set.  This guards against count mismatches when
-            # callers supply pre-computed base activations.
-            first_layer = next(iter(base_activations), None)
-            if first_layer is not None:
-                n_base = len(base_activations[first_layer])
-                probe_texts = probe_texts[:n_base]
-
             # Collect adapted model activations via Backend (port, not adapter)
             adapted_acts: dict[int, list] = {}
             for text in probe_texts:

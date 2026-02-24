@@ -272,13 +272,15 @@ def _build_report(
         "| Model | Structural | Inference | Composite | Structural pass/fail "
         "| Inference pass/fail | Composite pass/fail | "
         "online_eval_delta_correct (mean) | max_4gram_repeat_delta (max) | "
-        "CKA worst layer | Null-access min preserved |"
+        "CKA worst layer | Null-access min preserved | "
+        "cka_blindness_ratio (max) | margin_mean_delta (mean) |"
     )
     lines.append(
         "|-------|------------|-----------|-----------|----------------------|"
         "---------------------|---------------------|"
         "----------------------------------|----------------------------|"
         "----------------|----------------------------|"
+        "--------------------------|--------------------------|"
     )
 
     for scale in SCALE_ORDER:
@@ -357,6 +359,27 @@ def _build_report(
         else:
             null_access_str = "n/a"
 
+        blindness_values = [
+            float(trial["cka_blindness_ratio"])
+            for trial in trial_results
+            if trial.get("cka_blindness_ratio") is not None
+        ]
+        blindness_str = (
+            f"{max(blindness_values):.4f}"
+            if blindness_values
+            else "n/a"
+        )
+        margin_delta_values = [
+            float(trial["margin_mean_delta"])
+            for trial in trial_results
+            if trial.get("margin_mean_delta") is not None
+        ]
+        margin_delta_str = (
+            f"{(sum(margin_delta_values) / len(margin_delta_values)):+.4f}"
+            if margin_delta_values
+            else "n/a"
+        )
+
         lines.append(
             f"| {scale} | {structural_status} | {inference_status} | {status} "
             f"| {structural_pass}/{structural_fail} "
@@ -365,7 +388,9 @@ def _build_report(
             f"| {delta_correct_str} "
             f"| {rep_delta_str} "
             f"| {cka_worst_str} "
-            f"| {null_access_str} |"
+            f"| {null_access_str} "
+            f"| {blindness_str} "
+            f"| {margin_delta_str} |"
         )
 
     lines.append("")
@@ -454,6 +479,67 @@ def _build_report(
                     lines.append(
                         "  - online_eval_first_post_degraded_epoch="
                         f"{int(first_post_degraded)}",
+                    )
+                # Dual-manifold CKA diagnostics
+                inf_min_cka = cx.get("inference_min_cka")
+                inf_min_cka_layer = cx.get("inference_min_cka_layer")
+                if inf_min_cka is not None:
+                    if inf_min_cka_layer is None:
+                        lines.append(
+                            f"  - inference_min_cka={float(inf_min_cka):.6f}",
+                        )
+                    else:
+                        lines.append(
+                            f"  - inference_min_cka={float(inf_min_cka):.6f} "
+                            f"(layer={int(inf_min_cka_layer)})",
+                        )
+                cx_blindness = cx.get("cka_blindness_ratio")
+                cx_blindness_layer = cx.get("cka_blindness_worst_layer")
+                if cx_blindness is not None:
+                    if cx_blindness_layer is None:
+                        lines.append(
+                            f"  - cka_blindness_ratio={float(cx_blindness):.4f}",
+                        )
+                    else:
+                        lines.append(
+                            f"  - cka_blindness_ratio={float(cx_blindness):.4f} "
+                            f"(worst_layer={int(cx_blindness_layer)})",
+                        )
+                cx_delta_gap = cx.get("cka_delta_gap")
+                if cx_delta_gap is not None:
+                    lines.append(
+                        f"  - cka_delta_gap={float(cx_delta_gap):+.6f}",
+                    )
+                # Decision-boundary margin diagnostics
+                margin_base = cx.get("margin_mean_baseline")
+                margin_adapt = cx.get("margin_mean_adapted")
+                margin_delta = cx.get("margin_mean_delta")
+                if margin_base is not None:
+                    lines.append(
+                        f"  - margin_mean_baseline={float(margin_base):.4f}",
+                    )
+                if margin_adapt is not None:
+                    lines.append(
+                        f"  - margin_mean_adapted={float(margin_adapt):.4f}",
+                    )
+                if margin_delta is not None:
+                    lines.append(
+                        f"  - margin_mean_delta={float(margin_delta):+.4f}",
+                    )
+                margin_nz_base = cx.get("margin_n_near_zero_baseline")
+                margin_nz_adapt = cx.get("margin_n_near_zero_adapted")
+                margin_flipped = cx.get("margin_n_flipped_sign")
+                if margin_nz_base is not None:
+                    lines.append(
+                        f"  - margin_n_near_zero_baseline={int(margin_nz_base)}",
+                    )
+                if margin_nz_adapt is not None:
+                    lines.append(
+                        f"  - margin_n_near_zero_adapted={int(margin_nz_adapt)}",
+                    )
+                if margin_flipped is not None:
+                    lines.append(
+                        f"  - margin_n_flipped_sign={int(margin_flipped)}",
                     )
             lines.append("")
 
