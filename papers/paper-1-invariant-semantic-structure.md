@@ -41,7 +41,7 @@ This means: the relational structure of concepts—whether semantic primes or ar
 
 ### 1.3 Open Question [DISPROVEN]
 
-~~Whether semantic primes are "special" compared to other concepts remains under investigation.~~ [DISPROVEN: Reproduced and confirmed -- semantic primes do not achieve higher CKA than random words. See NEGATIVE-RESULTS.md.] Initial CKA measurements show similar values for primes and random words. CKA measures relational structure, not:
+~~Whether semantic primes are "special" compared to other concepts remains under investigation.~~ [DISPROVEN: Reproduced and confirmed -- semantic primes do not achieve higher CKA than random words. See NEGATIVE-RESULTS.md.] Replication (2026-02-02): semantic primes mean CKA = 0.466 vs random words 0.612 +/- 0.273 (p = 0.628, not significant). See NEGATIVE-RESULTS.md. CKA measures relational structure, not:
 - Geometric cluster density (how concentrated the representation is)
 - Conceptual connectivity (how many other concepts each prime attracts)
 - Cross-linguistic stability (whether the invariance holds across language models)

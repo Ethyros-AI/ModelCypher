@@ -773,18 +773,24 @@ class SectionalCurvatureEstimator:
 
             selected = radius > radius_floor and improvement > threshold
 
-            # Sphere/hyperboloid fits are accepted only when radial residual
-            # is at the dtype precision floor. This prevents false curved
-            # classification on isotropic Gaussian clouds.
+            # Sphere fits are accepted only when radial residual is at the
+            # dtype precision floor. This prevents false curved classification
+            # on isotropic Gaussian clouds.
             if model == "sphere":
                 sphere_floor = sqrt_eps * max(characteristic_scale, eps_div)
                 selected = selected and best_residual <= sphere_floor
                 candidate["sphere_floor"] = sphere_floor
 
+            # Hyperboloid fits: require that the fit explains a substantial
+            # fraction of the flat-model residual. The projection-based
+            # hyperboloid fitting is approximate, so absolute residual floors
+            # (like sphere) reject genuine hyperboloids. Instead, check that
+            # the residual ratio best/flat is small (good relative fit).
             if model == "hyperboloid":
-                hyper_floor = sqrt_eps * max(characteristic_scale, eps_div)
-                selected = selected and best_residual <= hyper_floor
-                candidate["hyper_floor"] = hyper_floor
+                hyper_ratio = best_residual / max(flat_residual, eps_div)
+                # Must reduce residual to below sqrt(eps) fraction of flat
+                selected = selected and hyper_ratio < sqrt_eps
+                candidate["hyper_ratio"] = hyper_ratio
 
             candidate["selected"] = selected
             candidate["improvement"] = improvement

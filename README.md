@@ -1,155 +1,161 @@
 # ModelCypher
 
-**Geometry-first diagnostic toolkit for Large Language Model internals.** ModelCypher measures the geometric structure of LLM representations — intrinsic dimension, Riemannian curvature, spectral entropy, and representational similarity (CKA) — to guide LoRA adapter training, monitor training stability, and detect behavioral drift. Built on MLX for Apple Silicon, with optional CUDA and JAX backends.
+**Geometry-first LoRA training. Every hyperparameter derived from the weight matrix, not tuned.**
 
-ModelCypher treats neural network activations as points on a high-dimensional manifold and applies differential geometry, spectral analysis, and Procrustes alignment to produce reproducible, quantitative diagnostics. Every threshold in the codebase is derived from SVD, IEEE 754 precision bounds, or peer-reviewed theorems — not heuristics.
+## The Thesis
 
-## What Does ModelCypher Measure?
+A forward pass is a deterministic geometric map. The industry treats 15 training hyperparameters as knobs to tune — learning rate, rank, scale, warmup, clipping, schedule, decay, dropout, batch size, early stopping, target modules, weight init, epsilon, momentum, residual scaling. Every one of these has a closed-form geometric replacement derived from SVD, IEEE 754 machine precision, or a cited theorem. ModelCypher replaces all 15. See [AGENTS.md](AGENTS.md) for the full derivation philosophy.
 
-ModelCypher provides 32 analysis commands across these measurement domains:
+## One Command, Zero Configuration
 
-| Domain | What It Measures | Key Methods |
-|--------|-----------------|-------------|
-| **Representational similarity** | How similar are two models' internal representations? | Procrustes alignment, CKA (Centered Kernel Alignment), probe coverage |
-| **Intrinsic dimension** | How many effective dimensions does each layer use? | TwoNN estimator, per-layer dimension profiles |
-| **Curvature and geodesics** | How curved is the representation manifold? | Geodesic deviation, sectional curvature, Jacobian spectrum |
-| **Spectral structure** | What is the singular value distribution of weight matrices? | SVD decomposition, spectral entropy, condition number analysis |
-| **Entropy trajectories** | How does uncertainty evolve across layers? | Layer-wise logit entropy, entropy differentials, semantic certainty |
-| **LoRA adapter geometry** | How does a LoRA adapter perturb the base model's geometry? | Spectral scale bounds, Weyl perturbation budget, null-space overlap |
-| **Safety and behavioral drift** | Has the model's decision geometry shifted? | Refusal boundary movement, jailbreak entropy analysis, persona drift |
+```bash
+mc train run --model /path/to/model --data /path/to/dataset --output /path/to/adapter
+```
 
-## How Does LoRA Training Differ in ModelCypher? [VALIDATED]
+No learning rate. No rank selection. No warmup schedule. No gradient clipping. The optimizer (Cayley-Stiefel retraction on the Stiefel manifold) and step size (MASS: `eta = min(eta_ceiling, eta_sps, eta_weyl)`) are derived from the weight matrices at initialization.
 
-ModelCypher trains LoRA adapters using Cayley-parameterized updates on the Stiefel manifold with a pullback-preconditioned gradient (Amari 1998, Lezcano-Casado 2019). The key differences from standard LoRA:
+**Validated result** (LFM2-350M): val_loss 1.27 (Cayley-Stiefel) vs 1.38 (plain SGD), with geometric stopping certificate.
 
-- **Norm-bounded by construction** [PROVEN] — adapter factors stay on the Stiefel manifold via Cayley retraction, so spectral norms cannot explode
-- **Geometry-derived step sizes** [PROVEN] — learning rate is bounded by MASS: `eta_step = min(eta_ceiling, eta_sps, eta_weyl)` where each component derives from SVD
-- **Weyl perturbation budget** [PROVEN] — monitors `||BA||_2 / sigma_k(W)` to ensure the adapter stays within the base model's spectral capacity
-- **No magic numbers** — every hyperparameter traces back to SVD, IEEE 754 epsilon, or a cited theorem
+## What Gets Derived
 
-Validated result (LFM2-350M) [VALIDATED]: validation loss 1.27 (Cayley-Stiefel) vs 1.38 (plain SGD), with geometric stopping certificate.
+| # | What Industry Tunes | What ModelCypher Derives | Source |
+|---|---|---|---|
+| 1 | Learning rate (`1e-4`) | MASS spectral ceiling | Weyl 1912, Loizou 2020 |
+| 2 | Adam epsilon (`1e-8`) | Spectral noise floor | IEEE 754 + SVD |
+| 3 | Momentum (`0.9/0.999`) | Cayley-Stiefel retraction | Wen & Yin 2013, Wang 2025 |
+| 4 | Weight decay (`0.01`) | Condition ratio `sigma_k / sigma_max` | SVD |
+| 5 | Gradient clipping (`1.0`) | **Removed** — MASS bounds by construction | Weyl 1912 |
+| 6 | Warmup (5-10% steps) | **Removed** — geometric LR stable from step 0 | Ma & Yarats 2021 |
+| 7 | LR schedule (cosine) | **Optional** — ceiling binds throughout | Defazio 2024 |
+| 8 | Batch size | Gradient noise scale `B_crit` | McCandlish 2018 |
+| 9 | Early stopping (patience) | 4 geometric criteria | SVD + IEEE 754 |
+| 10 | LoRA scale (`alpha/rank`) | Spectral bound `sigma_k(W) / \|\|BA\|\|` | Weyl perturbation theory |
+| 11 | LoRA rank (`8`) | Null-space capacity `tail_dims` | Shannon effective rank |
+| 12 | Target modules (`q+v`) | Spectral decay analysis | SVD per-layer |
+| 13 | Dropout (`0.1`) | Product of two spectral ratios | Roy & Vetterli 2007 |
+| 14 | Weight init (random A, zero B) | Spectral normalized to `sigma_k` | SVD |
+| 15 | Residual scaling (`1`) | Per-layer `sigma_max(x) / sigma_max(f(x))` | Power iteration |
+
+Full derivations with formulas: [Geometric Hyperparameter Rosetta Stone](docs/research/geometric_hyperparameter_rosetta_stone.md)
 
 ## Quick Start
 
 ```bash
 git clone https://github.com/Ethyros-AI/ModelCypher.git
 cd ModelCypher
-poetry install          # Requires Python 3.11+
+poetry install          # Python 3.11+
 ```
 
 ```bash
-# Inspect a model's layer-wise geometry
+# Train a LoRA adapter — all hyperparameters derived from geometry
+poetry run mc train run --model /path/to/model --data /path/to/data.jsonl --output /path/to/adapter
+
+# Inspect a model's per-layer geometry
 poetry run mc model info /path/to/model
 
-# Per-layer intrinsic dimension profile
-poetry run mc analyze dimension-profile --model /path/to/model --prompt "Your prompt here"
+# Layer-wise intrinsic dimension profile
+poetry run mc analyze dimension-profile --model /path/to/model --prompt "What is 2+2?"
 
-# Layer-wise entropy trajectory
-poetry run mc analyze entropy-trajectory --model /path/to/model --prompt "Your prompt here"
-
-# Spectral entropy across layers
-poetry run mc analyze spectral-trajectory --model /path/to/model --prompt "Your prompt here"
-
-# LoRA adapter SVD decomposition
+# LoRA adapter spectral analysis
 poetry run mc analyze lora-svd --adapter /path/to/adapter
-
-# Train a LoRA adapter with geometric constraints
-poetry run mc train run --model /path/to/model --data /path/to/data.jsonl --rank 8 --epochs 3
 ```
 
-## Evidence and Reproducibility [VALIDATED]
+## Results
 
-ModelCypher validates that LLM representations exhibit shared, curved geometric structure through reproducible measurements. The test suite includes 6,000+ tests across 388 test files, including Hypothesis property-based tests for numerical invariants.
+### What Worked
 
-Reproduce key results locally:
+| Model | Method | Result | Tag |
+|-------|--------|--------|-----|
+| LFM2-350M | Cayley-Stiefel + CE | val_loss 1.27 vs 1.38 (plain SGD) | [VALIDATED] |
+| LFM2-1.2B | Answer-mask + retention replay | 36/46 (78%), 0 degenerate outputs | [VALIDATED] |
+| Cross-family | Weight geometry falsification (LFM2 + Qwen2.5) | Weight space Euclidean, activation space curved | [PROVEN] |
+| CKA alignment | Procrustes on training probes | CKA = 1.0 (by construction: `F = pinv(source) @ target`) | [PROVEN] |
+
+### What Failed
+
+| Hypothesis | Result | Tag |
+|------------|--------|-----|
+| REINFORCE on 350M | Gradient orthogonal to CE; degradation monotonic with steps | [DISPROVEN] |
+| SFT on reasoning traces | Format memorization: PPL drops, inference degrades | [DISPROVEN] |
+| Pullback metric P = MM^T | P ≈ I throughout training (median deviation 0.001) | [DISPROVEN] |
+| Stable rank predicts adapter rank | Pearson r = -0.51 vs tail_dims; measures different property | [DISPROVEN] |
+| Constrained training (paired) | Constraints monotonically hurt | [DISPROVEN] |
+
+We publish failures because intellectual honesty is not optional. Full details: [CURRENT-STATE.md](docs/CURRENT-STATE.md)
+
+## Measurement Toolkit
+
+28 analysis subcommands under `mc analyze` across 5 categories:
+
+| Category | What It Measures |
+|----------|-----------------|
+| Geometric | Intrinsic dimension, geodesic curvature, expansion ratio, spectral entropy, Jacobian spectrum |
+| Behavioral | Adapter probes, behavioral signatures, cognitive reflection |
+| Safety | Jailbreak entropy, refusal boundaries, red-team probes, circuit breakers |
+| Benchmark | LoRA SVD, knowledge typing, curriculum profiling, sparse regions |
+| Monitoring | Persona drift, uncertainty modes, entropy baselines |
+
+53 total commands across 7 groups (`train`, `merge`, `infer`, `analyze`, `model`, `system`, `adapter`). Full reference: [CLI-REFERENCE.md](docs/CLI-REFERENCE.md)
+
+## Architecture
+
+Hexagonal (ports-and-adapters) with strict domain boundaries:
+
+- **Core domain** (`core/domain/`) — pure geometry and math, zero framework imports
+- **Use cases** (`core/use_cases/`) — orchestration, cannot import from adapters
+- **Adapters** (`adapters/`) — HuggingFace Hub, filesystem, model loading
+- **Backends** — MLX (primary, Apple Silicon), CUDA, JAX behind a protocol interface
+
+All geometric computations are framework-agnostic. Backend selection is automatic.
+
+## Documentation
+
+| Document | What It Covers |
+|----------|---------------|
+| [Start Here](docs/START-HERE.md) | Installation, first measurement, reading paths for engineers/researchers/auditors |
+| [Geometry Guide](docs/GEOMETRY-GUIDE.md) | Interpreting CKA, intrinsic dimension, curvature, and entropy measurements |
+| [Training Guide](docs/TRAINING-GUIDE.md) | LoRA training workflows and dataset preparation |
+| [CLI Reference](docs/CLI-REFERENCE.md) | All 53 commands with examples |
+| [Mission](docs/MISSION.md) | The 15 hyperparameter replacements and why they work |
+| [Glossary](docs/GLOSSARY.md) | 60+ term definitions |
+| [Architecture](docs/ARCHITECTURE.md) | Hexagonal architecture and domain boundaries |
+| [Bibliography](docs/references/BIBLIOGRAPHY.md) | All cited papers with local reference PDFs |
+
+## Research Papers
+
+| Paper | Status | Thesis |
+|-------|--------|--------|
+| [The Shape of Knowledge](papers/paper-0-the-shape-of-knowledge.md) | [EMPIRICAL] | Knowledge has measurable geometric structure; inference is trajectory |
+| [Invariant Semantic Structure](papers/paper-1-invariant-semantic-structure.md) | [PROVEN] intra-model; [CONJECTURAL] cross-model | CKA alignment invariance across layers (by construction on training probes) |
+| [Entropy Safety Signal](papers/paper-2-entropy-safety-signal.md) | [CONJECTURAL] | Behavioral drift detection via entropy differentials |
+| [Cross-Architecture Transfer](papers/paper-3-cross-architecture-transfer.md) | [CONJECTURAL] | Knowledge transfer between model families via Procrustes alignment |
+| [ModelCypher Toolkit](papers/paper-4-modelcypher-toolkit.md) | [EMPIRICAL] | Implementation methodology and CLI design |
+| [The Semantic Highway](papers/paper-5-semantic-highway.md) | [EMPIRICAL] | Layer-wise intrinsic dimension compression (15.8 → 1.8 → 9.6) |
+
+## Test Suite
+
+6,294 tests across 401 test files. Includes Hypothesis property-based tests for numerical invariants (CKA symmetry, spectral bounds, null-space orthogonality).
 
 ```bash
-# Cross-model reasoning-geometry validation (writes report + JSON)
-poetry run mc analyze reasoning-geometry-validation \
-  --model LFM2-350M \
-  --benchmark arithmetic \
-  --samples 20 \
-  --output results/reasoning_geometry_validation/
-
-# Property-based tests for null-space projection, CKA, and numerical stability
-HYPOTHESIS_PROFILE=full poetry run pytest
-
-# Geodesic deviation profile (curvature measurement)
-poetry run mc analyze geodesic-profile --model /path/to/model --prompt "Your prompt here"
+poetry run pytest                              # Standard run
+HYPOTHESIS_PROFILE=full poetry run pytest       # Full property-based testing
 ```
-
-Key measurements from published validation:
-- **CKA = 1.0** on training probes after Procrustes alignment (by construction) [PROVEN]
-- **Intrinsic dimension compression**: 15.8 (early layers) to 1.8 (bottleneck) to 9.6 (output layers), consistent across architectures [EMPIRICAL]
-- **Geometric stopping certificate**: 4 conditions (stationarity, improvement bound, worst-group, mechanism drift) for training termination [VALIDATED]
-- **Cayley-Stiefel vs plain SGD**: validation loss 1.27 vs 1.38 on LFM2-350M [VALIDATED]
-
-## CLI Command Reference
-
-| Command Group | Purpose |
-|--------------|---------|
-| `mc train` | Train LoRA adapters with Cayley-parameterized Stiefel manifold updates |
-| `mc infer` | Run inference with adapter loading and entropy-based safety scanning |
-| `mc merge` | Experimental model merging via null-space projection |
-| `mc analyze` | 32 geometry, safety, and entropy analysis subcommands |
-| `mc model` | Model registry: inspect architecture, download, search, quantize |
-| `mc system` | System status, backend probes, and hardware benchmarks |
-| `mc adapter` | LoRA adapter spectral analysis and baseline calibration |
-
-All commands output structured JSON by default. Run `poetry run mc --help` for the full command list.
 
 ## Platform Support
 
 | Platform | Backend | Status |
 |----------|---------|--------|
-| macOS Apple Silicon (M1/M2/M3/M4) | MLX | Primary (optimized) |
-| Linux + NVIDIA GPU | CUDA (via PyTorch) | Supported |
+| macOS Apple Silicon (M1-M4) | MLX | Primary (optimized) |
+| Linux + NVIDIA GPU | CUDA (PyTorch) | Supported |
 | Linux + TPU | JAX | Supported |
-
-## Documentation
-
-| Document | Description |
-|----------|-------------|
-| [Start Here](docs/START-HERE.md) | Installation, first measurement, reading paths for engineers/researchers/auditors |
-| [Geometry Guide](docs/GEOMETRY-GUIDE.md) | How to interpret CKA, intrinsic dimension, curvature, and entropy measurements |
-| [CLI Reference](docs/CLI-REFERENCE.md) | Complete command reference with examples for all 7 command groups |
-| [Training Guide](docs/TRAINING-GUIDE.md) | LoRA training workflows, geometric hyperparameters, dataset preparation |
-| [Glossary](docs/GLOSSARY.md) | Definitions for Procrustes alignment, CKA, intrinsic dimension, Weyl bounds, and 60+ terms |
-| [Research Papers](papers/README.md) | 6 research papers on geometric structure, entropy safety, and cross-architecture transfer |
-| [Architecture](docs/ARCHITECTURE.md) | Hexagonal architecture, domain boundaries, backend abstraction |
-| [Bibliography](docs/references/BIBLIOGRAPHY.md) | Cited papers and local reference PDFs |
-
-## Research Papers
-
-ModelCypher includes 6 research papers documenting the geometric framework:
-
-1. **The Shape of Knowledge** — geometric knowledge thesis (supported by measurements)
-2. **Invariant Semantic Structure** — CKA alignment invariance across architectures (supported)
-3. **Entropy Safety Signal** — behavioral drift detection via entropy differentials
-4. **Cross-Architecture Transfer** — knowledge transfer between model families
-5. **ModelCypher Toolkit** — implementation methodology and CLI design
-6. **The Semantic Highway** — layer-wise intrinsic dimension compression (supported: 15.8 to 1.8 to 9.6)
-
-## Architecture
-
-ModelCypher uses hexagonal (ports-and-adapters) architecture with strict domain boundaries:
-
-- **Core domain** (`core/domain/`) — pure math and geometry, no framework imports
-- **Use cases** (`core/use_cases/`) — orchestration layer, cannot import from adapters
-- **Adapters** (`adapters/`) — concrete integrations (HuggingFace Hub, filesystem, MLX)
-- **Backend abstraction** — framework-specific code (MLX, JAX, PyTorch) isolated behind a protocol interface
-
-All geometric computations are framework-agnostic. Backend selection is automatic based on platform.
 
 ## Citation
 
-If you use ModelCypher in your research, please cite:
-
 ```bibtex
-@software{kempf2025modelcypher,
+@software{kempf2026modelcypher,
   author = {Kempf, Jason},
-  title = {ModelCypher: Geometric Diagnostics for LLM Representations},
-  year = {2025},
+  title = {ModelCypher: Geometry-First LoRA Training for LLMs},
+  year = {2026},
   url = {https://github.com/Ethyros-AI/ModelCypher},
   license = {AGPL-3.0}
 }
