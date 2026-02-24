@@ -4,23 +4,23 @@ One-sentence thesis, scope, and verification command for each paper. Results are
 
 ---
 
-## Paper 0: The Shape of Knowledge [VALIDATED]
+## Paper 0: The Shape of Knowledge [EMPIRICAL]
 
 **Thesis:** Knowledge in LLMs has measurable geometric structure—concepts occupy regions, inference follows trajectories, and safety can be enforced as geometric constraints.
 
 **Key Result:** Framework paper synthesizing prior work into the Geometric Knowledge Thesis. Intra-model alignment invariance verified (CKA = 1.0 after Procrustes).
 
-**Status:** [VALIDATED] core alignment invariance; [CONJECTURAL] dimensional hierarchy, physics implications, safety-through-geometry.
+**Status:** [PROVEN: by construction] alignment invariance (CKA = 1.0 on training probes after Procrustes); [CONJECTURAL] dimensional hierarchy, physics implications, safety-through-geometry.
 
 → [Full Paper](paper-0-the-shape-of-knowledge.md)
 
 ---
 
-## Paper 1: Invariant Semantic Structure [VALIDATED] intra-model; [CONJECTURAL] cross-model
+## Paper 1: Invariant Semantic Structure [PROVEN: by construction] intra-model; [CONJECTURAL] cross-model
 
 **Thesis:** Representation geometry is invariant across model families; CKA is used to study cross-model similarity.
 
-**Key Result:** Intra-model alignment invariance verified [VALIDATED]. Cross-family CKA comparisons reported but reproduction pending [CONJECTURAL]. ~~Semantic primes are geometrically special~~ [DISPROVEN: see NEGATIVE-RESULTS.md].
+**Key Result:** Intra-model alignment invariance [PROVEN: by construction] (CKA = 1.0 on training probes after Procrustes). Cross-family CKA comparisons reported but reproduction pending [CONJECTURAL]. ~~Semantic primes are geometrically special~~ [DISPROVEN: see NEGATIVE-RESULTS.md].
 
 **Verify:**
 ```bash

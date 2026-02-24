@@ -88,11 +88,11 @@ Token generation is trajectory through representation space. Each forward pass m
 
 **Evidence**: The logit lens (nostalgebraist, 2020) and tuned lens (Belrose et al., 2023) visualize this trajectory directly. Predictions converge monotonically through layers---the model navigates toward its output.
 
-### Claim 3: Invariant Anchors Exist [VALIDATED]
+### Claim 3: Invariant Anchors Exist [CONJECTURAL]
 
 Across independently trained model families, many concept sets induce stable relational structure when compared via centered, normalized Gram matrices. This invariance is broad rather than limited to theoretically-motivated sets.
 
-**Evidence**: [Paper 1](paper-1-invariant-semantic-structure.md) reports high cross-family CKA across multiple anchor sets; reproduction pending (see [NEGATIVE-RESULTS.md](NEGATIVE-RESULTS.md)).
+**Evidence**: [Paper 1](paper-1-invariant-semantic-structure.md) reports high cross-family CKA across multiple anchor sets; reproduction pending (see [NEGATIVE-RESULTS.md](NEGATIVE-RESULTS.md)). Intra-model alignment invariance is [PROVEN: by construction] (CKA = 1.0 after Procrustes on training probes). Cross-model invariance remains [CONJECTURAL] until reproduced.
 
 ### Claim 4: Formulas Are Constraint Surfaces [CONJECTURAL]
 
@@ -154,7 +154,7 @@ The dimensional hierarchy provides a framework for understanding what is being c
 
 A model trained only on English text cannot align with a model trained only on Chinese text at the 2D level (different vocabularies), but may converge at the 4D+ level if both datasets describe similar concepts. Cross-lingual transfer succeeds to the extent that higher-dimensional structure can compensate for lower-dimensional divergence.
 
-## 3. Experimental Verification (January 2026) [VALIDATED]
+## 3. Experimental Verification (January 2026) [PROVEN: by construction]
 
 We conducted experiments to verify the Geometric Knowledge Thesis using the ModelCypher toolkit.
 
@@ -340,11 +340,11 @@ The Geometric Knowledge Thesis is falsifiable. As of January 2026, the alignment
 
 - **Claim 1 Fails If**: Conceptual boundaries are unbounded or highly non-convex such that region-based analysis provides no predictive power.
 
-- **Claim 3 (Alignment Invariance)**: [VALIDATED] **(January 2026)**
-  - Original criterion: "After Procrustes alignment, CKA should equal 1.0 on training probes."
+- **Claim 3 (Alignment Invariance)**: [PROVEN: by construction] **(January 2026)**
+  - Criterion: "After Procrustes alignment, CKA should equal 1.0 on training probes."
   - Result: Intra-model alignment (layer 7 vs layer 22) achieves raw CKA = 0.60 → aligned CKA = 1.00.
-  - The alignment transformation exists. Raw CKA is moderate only because representations use different coordinate systems. After finding the optimal linear transformation, the geometry is mathematically identical.
-  - **Cross-model extension pending**: The same methodology should be applied to different model families.
+  - CKA = 1.0 after Procrustes on training probes is a mathematical identity (`F = pinv(source) @ target`). The empirical finding is that raw CKA = 0.60 — i.e., the representations ARE related by a linear transformation, not noise.
+  - **Cross-model extension pending**: The same methodology applied to different model families. Cross-family CKA reported but reproduction pending [CONJECTURAL].
 
 - **Claim 4 Fails If**: Cross-model Procrustes alignment shows <70% position similarity for mathematical constraints, OR classification accuracy for valid vs. invalid Pythagorean triples falls below chance (50%). (Reproduction pending)
 
@@ -376,7 +376,7 @@ Bekenstein (2003) and 't Hooft (1993) established that information in volumes ca
 
 Knowledge has shape. Inference is trajectory. Formulas are constraint surfaces. Safety is constraint. Dimensions are nested compressions.
 
-**Experimental evidence supports the core thesis.** Layer-wise alignment within a transformer achieves CKA = 1.0 exactly (raw CKA = 0.60 → aligned CKA = 1.00). The transformation exists; the geometry is invariant under coordinate change.
+**The alignment invariance property is proven by construction** (CKA = 1.0 on training probes after Procrustes; `F = pinv(source) @ target`). The empirical finding is that raw CKA = 0.60 → aligned CKA = 1.00, demonstrating that the representations ARE related by a linear transformation. The broader Geometric Knowledge Thesis remains [EMPIRICAL].
 
 The dimensional hierarchy provides a framework for understanding model behavior:
 

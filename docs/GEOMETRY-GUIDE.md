@@ -96,7 +96,7 @@ h_{l+1} = T_l(h_l)
 h_L = (T_{L-1} ∘ ... ∘ T_1 ∘ T_0)(h_0)
 ```
 
-In transformer blocks, each `T_l` typically has residual structure:
+In standard transformers, each `T_l` has residual structure:
 
 ```text
 h'_l    = h_l + Attn_l(LN_1(h_l))
@@ -145,7 +145,7 @@ graph LR
 - Geometry metrics summarize shape: curvature (flat vs sharp), distance (similar vs different),
   and direction (is training moving toward a known risk direction).
 - Distances: smaller means closer. Similarities: larger means more similar.
-- Many outputs are normalized (often, but not necessarily, to 0–1). Treat them as measurements, not grades.
+- Some outputs are normalized to [0, 1] (CKA, cosine similarity); others are unbounded (condition number, singular values). Treat all as measurements, not grades.
 
 ## The "No Vibes" Principle
 
@@ -289,7 +289,7 @@ data-derived diagnostic, not a thresholded interpretation.
 
 ## Geodesic Distance (Core Principle) [PROVEN]
 
-**When ModelCypher reports a distance in representation space, it is usually geodesic (k-NN graph shortest path), not raw Euclidean.**
+**When ModelCypher reports a distance in representation space, it is geodesic for activation space (`GeometryDomain.CURVED`, k-NN graph shortest path) and Euclidean for weight space (`GeometryDomain.EUCLIDEAN`).**
 
 LLM representations live in high-dimensional spaces (768D to 8192D+). Euclidean distance—the straight-line "as the crow flies" distance—can become less informative in high dimensions due to the [curse of dimensionality](https://en.wikipedia.org/wiki/Curse_of_dimensionality). In extreme regimes, many points appear similarly distant under Euclidean measure.
 

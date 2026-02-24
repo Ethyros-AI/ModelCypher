@@ -95,9 +95,9 @@ Null hypothesis testing revealed that random matrices have MORE constant matches
 
 ---
 
-## Expansion Ratio: Real Structure [VALIDATED]
+## Expansion Ratio: Real Structure [EMPIRICAL: LFM2 family]
 
-<!-- evidence: VALIDATED | scope: LFM2-350M, LFM2-1.2B, DeepSeek-R1-8B, Qwen3-8B | date: 2026-02-01 | method: null hypothesis testing -->
+<!-- evidence: EMPIRICAL | scope: LFM2-350M, LFM2-1.2B | date: 2026-02-01 | method: null hypothesis testing | note: DeepSeek-R1 shows constant expansion_ratio (no expand-compress cycle) -->
 
 The expansion ratio (compression_rate / expansion_rate) measures real structure, not noise. Null hypothesis testing proved this conclusively:
 
@@ -805,7 +805,7 @@ When you quantize weights from float32 to int4:
 - Wrong patterns get "snapped" to quantization lattice incorrectly
 - Errors amplify because noise is mistaken for signal
 
-### Testable Predictions
+### Testable Predictions `[CONJECTURAL]`
 
 1. **Quantization of geometrically-aligned model** should preserve inference rules
 2. **Quantization of base model** should lose capability

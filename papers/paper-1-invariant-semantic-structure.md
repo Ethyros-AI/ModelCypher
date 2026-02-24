@@ -3,9 +3,9 @@
 **Author**: Jason Kempf
 **Affiliation**: EthyrosAI
 **Date**: December 2025 (Updated January 2026)
-**Status**: [VALIDATED] intra-model; [CONJECTURAL] cross-model (reproduction pending)
+**Status**: [PROVEN: by construction] intra-model; [CONJECTURAL] cross-model (reproduction pending)
 
-> **Note**: Intra-model alignment invariance has been verified. Raw CKA = 0.60 → aligned CKA = 1.0. See VALIDATION-REPORT.md for current validated results across 3 model families.
+> **Note**: Intra-model alignment invariance is proven by construction (`F = pinv(source) @ target` → CKA = 1.0 on training probes). The empirical finding is raw CKA = 0.60 (representations related by linear transformation). See VALIDATION-REPORT.md for current results across 3 model families.
 
 ---
 
@@ -103,7 +103,7 @@ Null sample count should be derived from desired confidence and runtime budget.
 
 ## 4. Experiments
 
-### 4.0 Verified: Alignment Invariance (January 2026) [VALIDATED]
+### 4.0 Alignment Invariance (January 2026) [PROVEN: by construction]
 
 We verified the core alignment invariance property using the ModelCypher toolkit:
 

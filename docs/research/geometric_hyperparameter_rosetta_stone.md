@@ -34,9 +34,9 @@ This document maps each traditional hyperparameter to its geometric replacement.
 | | **Optimizer** | | | | |
 | 1 | Learning Rate | `1e-4` (grid search) | MASS step-size controller | `η_step = min(η_ceiling, η_sps, η_weyl)` | Implemented |
 | 2 | Adam Epsilon | `1e-8` (never questioned) | Spectral noise floor | `max(sigma_k^2, sqrt(eps) * sigma_max^2)` | Implemented |
-| 3 | Adam/Momentum | `0.9 / 0.999` | **ScaledGD** preconditioning | `grad_A @ (BBᵀ+εI)⁻¹`, `(AᵀA+εI)⁻¹ @ grad_B` | Implemented |
+| 3 | Adam/Momentum | `0.9 / 0.999` | **Cayley-Stiefel** retraction | Orthogonality constraint on NB-LoRA factors | [SUPERSEDED] ScaledGD by Cayley-Stiefel |
 | 4 | Weight Decay | `0.01` (uniform) | Condition-aware scaling | `sigma_k / sigma_max` | Implemented |
-| 5 | Gradient Clipping | `clip=1.0` | **REMOVED** | ScaledGD + budget monitoring prevent explosion | Removed |
+| 5 | Gradient Clipping | `clip=1.0` | **REMOVED** | Cayley-Stiefel retraction + MASS budget monitoring prevent explosion | Removed |
 | | **Training Loop** | | | | |
 | 6 | Warmup | 5-10% of steps | **REMOVED** | Geometric LR stable from step 0 | Removed |
 | 7 | LR Schedule | Cosine decay | **OPTIONAL** | Condition ratio is static; cosine marginal | Optional |
@@ -109,11 +109,13 @@ Two floors, take the larger:
 
 ---
 
-### 3. Adam / Momentum (Beta1/Beta2) -> ScaledGD `[PROVEN]`
+### 3. Adam / Momentum (Beta1/Beta2) -> ScaledGD `[SUPERSEDED]`
+
+> **Superseded (2026-02-23):** For NB-LoRA, Cayley-Stiefel retraction replaced ScaledGD. The Cayley constraint enforces orthogonality on NB-LoRA factors directly, making preconditioning unnecessary (weight space is Euclidean — P = MM^T ≈ I, Fisher degenerate). ScaledGD remains mathematically valid for standard LoRA but is not used in the active training pipeline. See `geometric_optimizer.py` docstring.
 
 **Industry**: `beta1=0.9, beta2=0.999`, empirically chosen by Kingma & Ba (2014).
 
-**Geometric**: **Replaced by ScaledGD** (Tong, Ma, Chi — JMLR 2021). For factored low-rank problems `X = AB`, preconditioning each factor's gradient by the pseudoinverse of the other factor achieves condition-number-free convergence. This is Riemannian gradient descent on the rank-r manifold:
+**Historical geometric path**: **ScaledGD** (Tong, Ma, Chi — JMLR 2021). For factored low-rank problems `X = AB`, preconditioning each factor's gradient by the pseudoinverse of the other factor achieves condition-number-free convergence. This is Riemannian gradient descent on the rank-r manifold:
 
 ```
 grad_A_preconditioned = grad_A @ (B Bᵀ + εI)⁻¹
@@ -145,7 +147,7 @@ The ε regularization in the inverse uses the geometric epsilon `max(σ_k², √
 
 **Industry**: `clip=1.0`, from Pascanu et al. (2013). No theoretical basis for the threshold.
 
-**Geometric**: **REMOVED**. ScaledGD preconditioning normalizes gradient scale by construction. The spectral budget monitor (`check_budget_exhausted`) catches any violation and halts training — this is cleaner than clipping because halting respects the bound while clipping is a heuristic correction. Experiments showed 0% clipping events across all layers.
+**Geometric**: **REMOVED**. Cayley-Stiefel retraction bounds update norms by construction. The spectral budget monitor (`check_budget_exhausted`) catches any violation and halts training — this is cleaner than clipping because halting respects the bound while clipping is a heuristic correction. Experiments showed 0% clipping events across all layers.
 
 **Deep Dive**: `training_heuristics_analysis.md`, Experiment 1
 
@@ -307,9 +309,9 @@ Uses the full geometric budget from step 0. Each matrix gets `sqrt(sigma_k)` spe
 
 | Heuristic | Why Removed / Replaced | Evidence |
 |---|---|---|
-| Gradient Clipping | ScaledGD normalizes gradient scale; budget monitor halts on violation | 0% clip events across all layers in experiments |
+| Gradient Clipping | Cayley-Stiefel retraction bounds updates; budget monitor halts on violation | 0% clip events across all layers in experiments |
 | Warmup | MASS is stable from step 0, no warmup needed | No divergence without warmup; convergence immediate |
-| Adam / Momentum | Replaced by ScaledGD (Tong et al. JMLR 2021) | Condition-number-free convergence; automatic asymmetric A/B rates |
+| Adam / Momentum | Replaced by Cayley-Stiefel retraction (NB-LoRA). Historical: ScaledGD (Tong et al. JMLR 2021) | Orthogonality constraint makes preconditioning unnecessary |
 | Per-layer LR heuristics | Replaced by MASS controller + Weyl bounds | σ_k/σ_max, 1/σ_max, σ_k/σ_max² were guesses, not measured controls |
 
 ---

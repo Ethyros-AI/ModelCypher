@@ -1117,8 +1117,8 @@ class _MLXTrainingAdapterTrainMixin:
                                 and pre_reinforce_params is not None
                                 and outcome_post_eval_delta_correct_epoch is not None
                                 and outcome_post_eval_delta_correct_epoch < 0):
-                            model.load_weights(pre_reinforce_params)
-                            mx.eval(model.parameters())
+                            model.update(mlx_unflatten(pre_reinforce_params))
+                            mx.eval(model.trainable_parameters())
                             outcome_rollback_performed = True
                             # Zero effective steps — rollback means they didn't happen
                             n_outcome_steps = 0
