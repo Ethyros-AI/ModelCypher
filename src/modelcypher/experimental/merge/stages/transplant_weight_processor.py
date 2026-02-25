@@ -287,6 +287,21 @@ class BehaviorJacobianContext:
     backend: Any  # Backend with compute_per_probe_gradients()
 
 
+@dataclass
+class KFACContext:
+    """Context for K-FAC null-space projection during merge.
+
+    Uses the same per-probe gradient infrastructure as BehaviorJacobianContext
+    but constructs Kronecker-factored approximation instead of the full Jacobian.
+    O(d_in^2 + d_out^2) memory vs O(N × d_in × d_out).
+    """
+
+    model: Any
+    tokenizer: Any
+    probe_texts: list[str]
+    backend: Any  # Backend with compute_per_probe_gradients()
+
+
 def process_layer_weights(
     *,
     layer_idx: int,
@@ -317,6 +332,7 @@ def process_layer_weights(
     source_layers: list[int] | None = None,
     target_layers: list[int] | None = None,
     behavior_jacobian_ctx: BehaviorJacobianContext | None = None,
+    kfac_ctx: KFACContext | None = None,
 ) -> LayerWeightResult:
     b = backend
     hidden_stitch_output = stitches.hidden_output
@@ -1795,7 +1811,39 @@ def process_layer_weights(
                         layer_idx,
                     )
 
-        if behavior_jacobian_ctx is not None:
+        kfac_factors = None
+        if kfac_ctx is not None:
+            # K-FAC: Kronecker-factored GNH null space (memory-efficient)
+            G = kfac_ctx.backend.compute_per_probe_gradients(
+                model=kfac_ctx.model,
+                tokenizer=kfac_ctx.tokenizer,
+                probe_texts=kfac_ctx.probe_texts,
+                weight_name=key,
+            )
+            from modelcypher.core.domain.geometry.kfac_diagnostic import (
+                compute_kfac_diagnostic_from_weight_gradients,
+            )
+            from modelcypher.core.domain.geometry.kfac_projector import (
+                factors_from_diagnostic,
+            )
+
+            kfac_diag = compute_kfac_diagnostic_from_weight_gradients(
+                input_activations=input_activations,
+                per_probe_weight_gradients=G,
+                weight_shape=(int(target_w.shape[0]), int(target_w.shape[1])),
+                backend=b,
+            )
+            kfac_factors = factors_from_diagnostic(kfac_diag)
+            logger.info(
+                "K-FAC: %s gain_ratio=%.3f, kfac_null=%d, activation_null=%d",
+                key,
+                kfac_diag.kfac_gain_ratio,
+                kfac_diag.kfac_null_rank,
+                kfac_diag.activation_null_rank_weight,
+            )
+            del G
+            null_space_projector = None
+        elif behavior_jacobian_ctx is not None:
             G = behavior_jacobian_ctx.backend.compute_per_probe_gradients(
                 model=behavior_jacobian_ctx.model,
                 tokenizer=behavior_jacobian_ctx.tokenizer,
@@ -1824,6 +1872,7 @@ def process_layer_weights(
             source_activations_for_density=src_density_acts,
             target_activations_for_density=tgt_density_acts,
             null_space_projector=null_space_projector,
+            kfac_factors=kfac_factors,
             delta_scale=delta_scale,
             backend=b,
         )

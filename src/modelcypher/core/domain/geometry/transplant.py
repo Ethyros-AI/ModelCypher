@@ -42,6 +42,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 
 if TYPE_CHECKING:
+    from modelcypher.core.domain.geometry.kfac_projector import KFACFactors
     from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
         TrajectoryResult,
         TrajectoryTangentResult,
@@ -1511,6 +1512,7 @@ def compute_weight_space_transplant(
     target_activations_for_density: "Array | None" = None,
     null_space_projector: "NullSpaceProjector | None" = None,
     trajectory_tangent_projector: "TrajectoryTangentProjector | None" = None,
+    kfac_factors: "KFACFactors | None" = None,
     delta_scale: float = 1.0,
     backend: "Backend | None" = None,
 ) -> WeightSpaceTransplantResult:
@@ -1529,9 +1531,12 @@ def compute_weight_space_transplant(
         1. trajectory_tangent_projector: Projects into null-space directions
            aligned with trajectory velocity flow ("building along the road").
            Most targeted - uses velocity alignment to find reachable null space.
-        2. null_space_projector: Variance-based null-space projection.
+        2. kfac_factors: K-FAC null-space projection via Kronecker-factored
+           Gauss-Newton Hessian. Projects into Null(G_cap) ⊇ Null(K_cap).
+           O(d_in^2 + d_out^2) memory vs O(N × d_in × d_out) for full Jacobian.
+        3. null_space_projector: Variance-based null-space projection.
            Projects into ALL low-variance directions.
-        3. Computed from input_activations: Default fallback.
+        4. Computed from input_activations: Default fallback.
 
     Density weighting:
         - Compares k-NN density between source and target activations
@@ -1553,8 +1558,11 @@ def compute_weight_space_transplant(
         null_space_projector: Precomputed variance-based null-space projector.
             Ignored if trajectory_tangent_projector is provided.
         trajectory_tangent_projector: Precomputed trajectory-tangent projector.
-            Takes precedence over null_space_projector if both provided.
+            Takes precedence over all other projectors if provided.
             Projects delta into null-space directions aligned with velocity flow.
+        kfac_factors: Precomputed K-FAC eigensystem factors.
+            Takes precedence over null_space_projector but not trajectory_tangent.
+            Projects delta into the Kronecker-factored GNH null space.
         delta_scale: Scaling factor for the delta (default 1.0).
         backend: Compute backend.
 
@@ -1666,8 +1674,10 @@ def compute_weight_space_transplant(
     # Priority order:
     # 1. trajectory_tangent_projector: Projects into velocity-aligned null space
     #    ("building along the road" - most targeted approach)
-    # 2. null_space_projector: Variance-based null-space projection
-    # 3. Computed from input_activations: Default fallback
+    # 2. kfac_factors: K-FAC null-space projection (Kronecker-factored GNH)
+    #    Null(K_cap) ⊆ Null(G_cap) — strictly more capacity than activation-only
+    # 3. null_space_projector: Variance-based null-space projection
+    # 4. Computed from input_activations: Default fallback
     # =========================================================================
 
     if trajectory_tangent_projector is not None:
@@ -1694,6 +1704,31 @@ def compute_weight_space_transplant(
         else:
             null_rank = trajectory_tangent_projector.tangent_rank
         transfer_strength = trajectory_tangent_projector.velocity_alignment
+
+    elif kfac_factors is not None:
+        # K-FAC null-space projection: Kronecker-factored GNH approximation.
+        # Projects into Null(G_cap) via eigendecomposition of A_cov ⊗ S_cov.
+        # Strictly more capacity than activation-only: Null(K_cap) ⊆ Null(G_cap).
+        from modelcypher.core.domain.geometry.kfac_projector import project_kfac
+
+        logger.info(
+            "TRANSPLANT MODE: K-FAC (gain_ratio=%.3f, kron_threshold=%.3e, "
+            "dims=%dx%d)",
+            kfac_factors.gain_ratio,
+            kfac_factors.kron_threshold,
+            kfac_factors.out_dim,
+            kfac_factors.in_dim,
+        )
+
+        delta_W_proj = project_kfac(delta_W, kfac_factors, backend=b)
+        b.eval(delta_W_proj)
+
+        # Count null directions from the Kronecker null mask
+        null_mask_float = b.astype(kfac_factors.null_mask, compute_dtype)
+        null_rank_arr = b.sum(null_mask_float)
+        b.eval(null_rank_arr)
+        null_rank = int(round(float(b.to_scalar(null_rank_arr))))
+        transfer_strength = 1.0
 
     else:
         # Fall back to variance-based null-space projection
@@ -1764,10 +1799,11 @@ def compute_weight_space_transplant(
     # preserved_fraction > 0 means some delta leaked into used directions
     # Denominator depends on projector type: activation-covariance projects
     # in in_dim, behavior Jacobian projects in out_dim * in_dim.
+    _is_kfac = kfac_factors is not None and trajectory_tangent_projector is None
     _is_vectorized = (
         null_space_projector is not None and null_space_projector.vectorized
-    ) if not (trajectory_tangent_projector is not None) else False
-    null_rank_denom = out_dim * in_dim if _is_vectorized else in_dim
+    ) if not (trajectory_tangent_projector is not None or _is_kfac) else False
+    null_rank_denom = out_dim * in_dim if (_is_vectorized or _is_kfac) else in_dim
     logger.info(
         "BEHAVIORAL TRANSFER: behavioral_before=%.4f, behavioral_after=%.4f, "
         "preserved=%.2f%%, null_rank=%d/%d (capacity=%.1f%%)",
