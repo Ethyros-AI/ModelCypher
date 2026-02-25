@@ -54,6 +54,8 @@ class _Phase5Metrics:
     baseline_margins: dict[str, float] | None = None
     adapted_margins: dict[str, float] | None = None
     max_logit_delta_inf: float | None = None
+    argmax_cert_gap: float | None = None
+    argmax_preservation_certified: bool | None = None
 
 
 @dataclass
@@ -130,6 +132,8 @@ class DerivedTrainingTrial:
     margin_n_near_zero_adapted: int | None
     margin_n_flipped_sign: int | None
     max_logit_delta_inf: float | None
+    argmax_cert_gap: float | None
+    argmax_preservation_certified: bool | None
     structural_passed: bool
     inference_passed: bool
     cooccurrence_class: str
@@ -199,6 +203,8 @@ class DerivedTrainingTrial:
             "margin_n_near_zero_adapted": self.margin_n_near_zero_adapted,
             "margin_n_flipped_sign": self.margin_n_flipped_sign,
             "max_logit_delta_inf": self.max_logit_delta_inf,
+            "argmax_cert_gap": self.argmax_cert_gap,
+            "argmax_preservation_certified": self.argmax_preservation_certified,
             "structural_passed": self.structural_passed,
             "inference_passed": self.inference_passed,
             "cooccurrence_class": self.cooccurrence_class,
@@ -826,6 +832,16 @@ class DerivedTrainingValidationService:
                 if phase5_metrics is not None
                 else None
             ),
+            argmax_cert_gap=(
+                phase5_metrics.argmax_cert_gap
+                if phase5_metrics is not None
+                else None
+            ),
+            argmax_preservation_certified=(
+                phase5_metrics.argmax_preservation_certified
+                if phase5_metrics is not None
+                else None
+            ),
             structural_passed=structural_passed,
             inference_passed=inference_passed,
             cooccurrence_class=cooccurrence_class,
@@ -964,6 +980,19 @@ class DerivedTrainingValidationService:
             baseline_logits=context.baseline_logits,
         )
 
+        argmax_cert_gap: float | None = None
+        argmax_preservation_certified: bool | None = None
+        if (
+            context.baseline_margins is not None
+            and max_logit_delta_inf is not None
+            and len(context.baseline_margins) > 0
+        ):
+            min_margin = min(float(v) for v in context.baseline_margins.values())
+            # If ||Δlogits||_∞ ≤ ε, worst-case margin shrink is 2ε
+            # (top-1 down by ε, top-2 up by ε).
+            argmax_cert_gap = min_margin - (2.0 * max_logit_delta_inf)
+            argmax_preservation_certified = argmax_cert_gap > 0.0
+
         return _Phase5Metrics(
             baseline_n_correct=context.baseline_eval.n_correct,
             baseline_n_total=context.baseline_eval.n_total,
@@ -974,6 +1003,8 @@ class DerivedTrainingValidationService:
             baseline_margins=context.baseline_margins,
             adapted_margins=adapted_margins,
             max_logit_delta_inf=max_logit_delta_inf,
+            argmax_cert_gap=argmax_cert_gap,
+            argmax_preservation_certified=argmax_preservation_certified,
         )
 
     def _run_probe_eval(

@@ -23,6 +23,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import psutil
+
 from modelcypher.backends import initialize_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
@@ -106,6 +108,57 @@ def _safe_clear_backend_cache(backend: Any) -> None:
             clear_fn()
         except Exception:
             pass
+
+
+def _bytes_to_gb(value: int) -> float:
+    return float(value) / float(1024**3)
+
+
+def _capture_memory_snapshot(backend: Any, stage: str) -> dict[str, Any]:
+    proc = psutil.Process()
+    proc_mem = proc.memory_info()
+    vm = psutil.virtual_memory()
+
+    active_fn = getattr(backend, "get_active_memory_gb", None)
+    peak_fn = getattr(backend, "get_peak_memory_gb", None)
+
+    backend_active = float(active_fn()) if callable(active_fn) else None
+    backend_peak = float(peak_fn()) if callable(peak_fn) else None
+
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "stage": stage,
+        "process_rss_gb": _bytes_to_gb(proc_mem.rss),
+        "process_vms_gb": _bytes_to_gb(proc_mem.vms),
+        "system_total_gb": _bytes_to_gb(vm.total),
+        "system_used_gb": _bytes_to_gb(vm.used),
+        "system_available_gb": _bytes_to_gb(vm.available),
+        "backend_active_gb": backend_active,
+        "backend_peak_gb": backend_peak,
+    }
+
+
+def _log_memory_snapshot(run_log: logging.Logger, snapshot: dict[str, Any]) -> None:
+    run_log.info(
+        "Memory snapshot [%s] | rss=%.2f GB vms=%.2f GB "
+        "backend_active=%s backend_peak=%s "
+        "system_used=%.2f GB system_available=%.2f GB",
+        snapshot["stage"],
+        snapshot["process_rss_gb"],
+        snapshot["process_vms_gb"],
+        (
+            f"{snapshot['backend_active_gb']:.2f} GB"
+            if snapshot["backend_active_gb"] is not None
+            else "n/a"
+        ),
+        (
+            f"{snapshot['backend_peak_gb']:.2f} GB"
+            if snapshot["backend_peak_gb"] is not None
+            else "n/a"
+        ),
+        snapshot["system_used_gb"],
+        snapshot["system_available_gb"],
+    )
 
 
 def _build_probe_prompts(problems: list[Any]) -> list[str]:
@@ -194,6 +247,19 @@ def _run_seed(args: argparse.Namespace) -> None:
     )
 
     backend = initialize_default_backend()
+    memory_trace: list[dict[str, Any]] = []
+    memory_trace_path = seed_dir / "memory_trace.json"
+
+    def _record_memory(stage: str) -> None:
+        snapshot = _capture_memory_snapshot(backend, stage)
+        memory_trace.append(snapshot)
+        _log_memory_snapshot(run_log, snapshot)
+        memory_trace_path.write_text(
+            json.dumps({"snapshots": memory_trace}, indent=2),
+            encoding="utf-8",
+        )
+
+    _record_memory("start")
 
     # ------------------------------------------------------------------
     # 1) Capacity profiling with checkpoint/resume
@@ -219,6 +285,7 @@ def _run_seed(args: argparse.Namespace) -> None:
         capacity_report.analyzed_layers,
         capacity_report.analyzed_parameters,
     )
+    _record_memory("after_capacity")
 
     # ------------------------------------------------------------------
     # 2) Baseline accuracy + repetition envelope on fixed probe set
@@ -256,11 +323,13 @@ def _run_seed(args: argparse.Namespace) -> None:
     )
     baseline_repetition = [_fourgram_repetition_rate(resp) for resp in baseline_responses]
     baseline_max_4gram_repeat = max(baseline_repetition) if baseline_repetition else 0.0
+    _record_memory("after_baseline_eval")
 
     del baseline_model
     del baseline_tokenizer
     gc.collect()
     _safe_clear_backend_cache(backend)
+    _record_memory("after_baseline_cleanup")
 
     # ------------------------------------------------------------------
     # 3) Full training run
@@ -286,6 +355,7 @@ def _run_seed(args: argparse.Namespace) -> None:
         json.dumps(result_dict, indent=2),
         encoding="utf-8",
     )
+    _record_memory("after_training")
 
     epoch_metrics = result_dict.get("epoch_metrics", [])
     final_online_eval = _final_online_eval(epoch_metrics)
@@ -312,11 +382,13 @@ def _run_seed(args: argparse.Namespace) -> None:
     )
     adapted_repetition = [_fourgram_repetition_rate(resp) for resp in adapted_responses]
     adapted_max_4gram_repeat = max(adapted_repetition) if adapted_repetition else 0.0
+    _record_memory("after_adapted_eval")
 
     del adapted_model
     del adapted_tokenizer
     gc.collect()
     _safe_clear_backend_cache(backend)
+    _record_memory("after_adapted_cleanup")
 
     # ------------------------------------------------------------------
     # 5) Gate extraction
@@ -373,6 +445,11 @@ def _run_seed(args: argparse.Namespace) -> None:
             "max_spectral_ratio": result.max_spectral_ratio,
             "spectral_bounds_ok": result.spectral_bounds_ok,
             "adapter_path": adapted_adapter_path,
+            "memory_note": (
+                "process_vms_gb is virtual address reservation and can exceed "
+                "physical RAM; use process_rss_gb, system_used_gb, and backend_* "
+                "for resident/allocator pressure."
+            ),
             "all_gates_pass": bool(
                 no_crash and cka_ok and spectral_ok and accuracy_ok and degenerate_ok
             ),
@@ -391,7 +468,6 @@ def _run_seed(args: argparse.Namespace) -> None:
         ),
         encoding="utf-8",
     )
-
     run_log.info(
         "Gate status | no_crash=%s cka_ok=%s spectral_ok=%s accuracy_ok=%s degenerate_ok=%s",
         no_crash,

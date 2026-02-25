@@ -25,8 +25,10 @@ from pathlib import Path
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.training.online_eval import OnlineEvalResult
 from modelcypher.core.use_cases.derived_training_validation_service import (
     DerivedTrainingValidationService,
+    _Phase5Context,
     _Phase5Metrics,
 )
 
@@ -73,6 +75,28 @@ class _FakeDatasetTrainingService:
     def _derive_regime_n_from_ci(self) -> int:
         self.derive_regime_calls += 1
         return 2
+
+
+def _make_online_eval_result(
+    *,
+    n_correct: int,
+    n_total: int,
+    correct_ids: set[str],
+    epoch: int = 0,
+) -> OnlineEvalResult:
+    accuracy = n_correct / n_total if n_total > 0 else 0.0
+    return OnlineEvalResult(
+        epoch=epoch,
+        accuracy=accuracy,
+        n_correct=n_correct,
+        n_total=n_total,
+        correct_ids=frozenset(correct_ids),
+        baseline_n_correct=n_correct,
+        baseline_accuracy=accuracy,
+        n_lost=0,
+        n_gained=0,
+        degraded=False,
+    )
 
 
 def test_validate_all_trials_pass_when_metrics_improve(tmp_path):
@@ -505,6 +529,135 @@ def test_phase5_fourgram_crossing_triggers_failure(tmp_path, monkeypatch):
     assert "fourgram_degenerated" in trial.failure_modes
     assert trial.inference_passed is False
     assert trial.structural_passed is True
+
+
+@pytest.mark.parametrize(
+    ("max_logit_delta_inf", "expected_gap", "expected_certified"),
+    [
+        (0.2, 0.2, True),
+        (0.35, -0.1, False),
+    ],
+)
+def test_phase5_argmax_certificate_uses_two_epsilon_bound(
+    tmp_path,
+    monkeypatch,
+    max_logit_delta_inf,
+    expected_gap,
+    expected_certified,
+):
+    service, model_dir, _ = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.0,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+        ),
+    ])
+
+    context = _Phase5Context(
+        enabled=True,
+        probe_count=2,
+        probe_seed=1,
+        artifact_root=tmp_path / "artifacts",
+        keep_all_artifacts=True,
+        probe_problems=[],
+    )
+
+    baseline_eval = _make_online_eval_result(
+        n_correct=2,
+        n_total=2,
+        correct_ids={"p1", "p2"},
+    )
+    adapted_eval = _make_online_eval_result(
+        n_correct=2,
+        n_total=2,
+        correct_ids={"p1", "p2"},
+    )
+
+    def _fake_run_probe_eval(**kwargs):
+        if kwargs["adapter_path"] is None:
+            return (
+                baseline_eval,
+                0.10,
+                {"p1": 0.8, "p2": 0.6},
+                None,
+                {"p1": object(), "p2": object()},
+            )
+        return (
+            adapted_eval,
+            0.10,
+            {"p1": 0.75, "p2": 0.55},
+            max_logit_delta_inf,
+            None,
+        )
+
+    monkeypatch.setattr(service, "_run_probe_eval", _fake_run_probe_eval)
+
+    metrics = service._run_phase5_for_trial(
+        context=context,
+        model_path=model_dir,
+        train_result=_FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.0,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+        ),
+        epoch_index=0,
+    )
+
+    assert metrics.argmax_cert_gap == pytest.approx(expected_gap, abs=1e-12)
+    assert metrics.argmax_preservation_certified is expected_certified
+    assert metrics.max_logit_delta_inf == pytest.approx(max_logit_delta_inf, abs=1e-12)
+
+
+def test_phase5_argmax_certificate_fields_round_trip_in_trial_dict(
+    tmp_path,
+    monkeypatch,
+):
+    service, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.0,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+            min_cka=0.99999,
+        ),
+    ])
+
+    monkeypatch.setattr(
+        service,
+        "_run_phase5_for_trial",
+        lambda **_kwargs: _Phase5Metrics(
+            baseline_n_correct=8,
+            baseline_n_total=10,
+            adapted_n_correct=8,
+            adapted_n_total=10,
+            baseline_max_4gram_repeat=0.10,
+            adapted_max_4gram_repeat=0.10,
+            max_logit_delta_inf=0.12,
+            argmax_cert_gap=0.36,
+            argmax_preservation_certified=True,
+        ),
+    )
+
+    result = service.validate(
+        model_path=model_dir,
+        dataset_path=data_file,
+        eval_dataset_path=None,
+        trials=1,
+        base_seed=1,
+        enable_phase5_inference=True,
+        artifact_root=tmp_path / "artifacts",
+    )
+
+    trial = result.trial_results[0]
+    payload = trial.to_dict()
+    assert trial.max_logit_delta_inf == pytest.approx(0.12)
+    assert trial.argmax_cert_gap == pytest.approx(0.36)
+    assert trial.argmax_preservation_certified is True
+    assert payload["max_logit_delta_inf"] == pytest.approx(0.12)
+    assert payload["argmax_cert_gap"] == pytest.approx(0.36)
+    assert payload["argmax_preservation_certified"] is True
 
 
 def test_phase5_probe_derivation_is_deterministic(tmp_path, monkeypatch):
