@@ -85,6 +85,11 @@ class _DummyBackend:
         return tensor.shape
 
 
+class _DummyMLXBackend(_DummyBackend):
+    def __init__(self) -> None:
+        self.mx = object()
+
+
 def test_system_probe_cuda_payload() -> None:
     service = SystemService(_DummyStore())
     payload = service.probe("cuda")
@@ -128,7 +133,42 @@ def test_memory_profile_emits_required_fields(tmp_path) -> None:
     assert payload["precision_bits"] == 4
     assert payload["param_count"] == 6
     assert payload["train_probe"] is not None
+    assert payload["train_probe"]["mode"] == "forward_surrogate"
+    assert "probe_error" in payload["train_probe"]
     assert payload["train_probe"]["n_trainable_params"] == 4
     assert payload["decode_slope"]["windows"]
     for stage in payload["memory_stages"]:
         assert stage["peak_gb"] >= stage["active_gb"]
+
+
+def test_memory_profile_uses_nblora_probe_when_available(tmp_path, monkeypatch) -> None:
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_text("{}", encoding="utf-8")
+
+    def _stub_probe(**_kwargs):
+        return {
+            "n_trainable_params": 123,
+            "spectral_bounds_ok": True,
+            "max_spectral_ratio": 0.1,
+            "train_iters": 1,
+            "last_loss": 1.0,
+            "stop_reason": "safety_cap (1 iters)",
+            "geometry_mode": "randomized",
+            "seq_length": 16,
+            "target_module_count": 8,
+            "n_lora_layers": 8,
+        }
+
+    monkeypatch.setattr(SystemService, "_run_nb_lora_train_probe", staticmethod(_stub_probe))
+    service = SystemService(_DummyStore(), backend=_DummyMLXBackend())
+    payload = service.memory_profile(
+        model=str(model_dir),
+        prompt="hello",
+        train_probe=True,
+        decode_tokens=4,
+    )
+    assert payload["train_probe"] is not None
+    assert payload["train_probe"]["mode"] == "nblora_step"
+    assert payload["train_probe"]["n_trainable_params"] == 123
+    assert payload["train_probe"]["spectral_bounds_ok"] is True

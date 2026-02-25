@@ -28,7 +28,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from modelcypher.cli.composition import get_system_service
+from modelcypher.cli.composition import get_quantization_service, get_system_service
 from modelcypher.core.use_cases.feasibility_projection import (
     RuntimeOverhead,
     mean_runtime_overhead,
@@ -128,6 +128,47 @@ def _system_memory_gib() -> float:
         return 0.0
 
 
+def _persist_profile(
+    *,
+    output_dir: Path,
+    profile: dict[str, Any],
+    index: int,
+) -> None:
+    model_id = str(profile.get("model_id") or "model")
+    bits = int(profile.get("precision_bits") or 16)
+    model_tag = f"{index:02d}_{model_id}_{bits}bit".replace("/", "_")
+    _write_json(output_dir / f"{model_tag}.json", profile)
+
+
+def _annotate_profile(
+    *,
+    profile: dict[str, Any],
+    model_path: Path,
+) -> dict[str, Any]:
+    model_id = str(profile.get("model_id") or model_path.name)
+    param_count = int(profile.get("param_count") or 0)
+    profile["excluded"] = _is_mislabeled_order_of_magnitude(model_id, param_count)
+    if profile["excluded"]:
+        profile["excluded_reason"] = (
+            "model_id parameter hint and measured parameters differ by order of magnitude"
+        )
+    return profile
+
+
+def _should_auto_quantize_to_8bit(
+    profile: dict[str, Any],
+    *,
+    scope: str,
+) -> bool:
+    bits = int(profile.get("precision_bits") or 16)
+    if bits <= 8:
+        return False
+    model_id = str(profile.get("model_id") or "").lower()
+    if scope == "all":
+        return True
+    return "qwen" in model_id
+
+
 def _build_projection_table(
     profiles: list[dict[str, Any]],
     target_params: list[int],
@@ -213,7 +254,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--train-probe",
         action="store_true",
-        help="Run optional train-probe surrogate stage",
+        help="Run optional train probe (NB-LoRA one-step when available, otherwise forward surrogate)",
     )
     parser.add_argument(
         "--target-params",
@@ -226,6 +267,38 @@ def parse_args() -> argparse.Namespace:
         "--output-root",
         default="results/feasibility_map",
         help="Output root directory",
+    )
+    parser.add_argument(
+        "--auto-quantize-8bit",
+        action="store_true",
+        help="Automatically generate and profile 8-bit variants from selected source models",
+    )
+    parser.add_argument(
+        "--auto-quantize-scope",
+        choices=["qwen", "all"],
+        default="qwen",
+        help="Model selection scope for auto 8-bit generation",
+    )
+    parser.add_argument(
+        "--quantize-group-size",
+        type=int,
+        default=64,
+        help="Group size for auto-generated 8-bit quantization",
+    )
+    parser.add_argument(
+        "--quantize-mode",
+        default="affine",
+        help="Quantization mode for auto-generated 8-bit models",
+    )
+    parser.add_argument(
+        "--quantize-overwrite",
+        action="store_true",
+        help="Allow overwriting existing derived 8-bit model directories",
+    )
+    parser.add_argument(
+        "--fail-on-quantize-error",
+        action="store_true",
+        help="Fail run immediately if any auto 8-bit quantization step fails",
     )
     return parser.parse_args()
 
@@ -260,19 +333,108 @@ def main() -> None:
                 decode_tokens=args.decode_tokens,
                 train_probe=args.train_probe,
             )
-            model_id = str(profile.get("model_id") or model_path.name)
-            param_count = int(profile.get("param_count") or 0)
-            profile["excluded"] = _is_mislabeled_order_of_magnitude(model_id, param_count)
-            if profile["excluded"]:
-                profile["excluded_reason"] = (
-                    "model_id parameter hint and measured parameters differ by order of magnitude"
-                )
-            bits = int(profile.get("precision_bits") or 16)
-            model_tag = f"{idx:02d}_{model_id}_{bits}bit".replace("/", "_")
-            _write_json(output_dir / f"{model_tag}.json", profile)
+            profile = _annotate_profile(profile=profile, model_path=model_path)
+            _persist_profile(output_dir=output_dir, profile=profile, index=idx)
             profiled.append(profile)
         except Exception as exc:
-            errors.append({"model_path": str(model_path), "error": str(exc)})
+            errors.append({
+                "model_path": str(model_path),
+                "stage": "profile_source_model",
+                "error": str(exc),
+            })
+
+    auto_quantization_runs: list[dict[str, Any]] = []
+    if args.auto_quantize_8bit:
+        quant_service = get_quantization_service()
+        support = quant_service.detect_supported_bits(
+            [8],
+            group_size=args.quantize_group_size,
+            mode=args.quantize_mode,
+        )
+        if support.get(8) is not None:
+            message = f"8-bit quantization unsupported: {support.get(8)}"
+            if args.fail_on_quantize_error:
+                raise RuntimeError(message)
+            errors.append({"stage": "auto_quantize_8bit_setup", "error": message})
+        else:
+            derived_root = output_dir / "derived_models"
+            source_profiles = list(profiled)
+            next_index = len(profiled) + 1
+            for source_profile in source_profiles:
+                if not _should_auto_quantize_to_8bit(
+                    source_profile,
+                    scope=args.auto_quantize_scope,
+                ):
+                    continue
+
+                source_path = Path(str(source_profile["model"])).expanduser().resolve()
+                source_id = str(source_profile.get("model_id") or source_path.name)
+                derived_dir = (
+                    derived_root
+                    / f"{source_path.name}-8bit-g{args.quantize_group_size}-{args.quantize_mode}"
+                )
+                try:
+                    quant_result = quant_service.quantize_model(
+                        model_path=source_path,
+                        output_dir=derived_dir,
+                        bits=8,
+                        group_size=args.quantize_group_size,
+                        mode=args.quantize_mode,
+                        overwrite=args.quantize_overwrite,
+                    )
+                    auto_quantization_runs.append({
+                        "source_model": str(source_path),
+                        "source_model_id": source_id,
+                        "derived_model": str(quant_result.output_dir),
+                        "bits": 8,
+                        "group_size": args.quantize_group_size,
+                        "mode": args.quantize_mode,
+                        "quantized_2d_weights": quant_result.quantized_2d_weights,
+                        "total_2d_weights": quant_result.total_2d_weights,
+                        "skipped_2d_weights": quant_result.skipped_2d_weights,
+                    })
+
+                    derived_profile = _profile_model(
+                        system_service=system_service,
+                        model_path=quant_result.output_dir,
+                        prompt=args.prompt,
+                        decode_tokens=args.decode_tokens,
+                        train_probe=False,
+                    )
+                    derived_profile["derived_from_model_path"] = str(source_path)
+                    derived_profile["derived_from_model_id"] = source_id
+                    derived_profile["auto_quantized"] = {
+                        "bits": 8,
+                        "group_size": args.quantize_group_size,
+                        "mode": args.quantize_mode,
+                    }
+                    # Quantized checkpoints can store packed tensors whose raw
+                    # element count differs from logical model parameter count.
+                    # Preserve measured storage count separately, and reuse the
+                    # source model's logical parameter count for projections.
+                    derived_profile["storage_param_count"] = int(derived_profile.get("param_count") or 0)
+                    derived_profile["param_count"] = int(source_profile.get("param_count") or 0)
+                    derived_profile = _annotate_profile(
+                        profile=derived_profile,
+                        model_path=quant_result.output_dir,
+                    )
+                    _persist_profile(
+                        output_dir=output_dir,
+                        profile=derived_profile,
+                        index=next_index,
+                    )
+                    next_index += 1
+                    profiled.append(derived_profile)
+                except Exception as exc:
+                    error_payload = {
+                        "model_path": str(source_path),
+                        "derived_model_path": str(derived_dir),
+                        "stage": "auto_quantize_8bit",
+                        "error": str(exc),
+                    }
+                    if args.fail_on_quantize_error:
+                        raise RuntimeError(str(error_payload)) from exc
+                    errors.append(error_payload)
 
     projection = _build_projection_table(
         profiles=profiled,
@@ -289,6 +451,7 @@ def main() -> None:
         "models_profiled": len(profiled),
         "models_failed": len(errors),
         "profiles": profiled,
+        "auto_quantization_runs": auto_quantization_runs,
         "errors": errors,
         "projection": projection,
         "assumptions": [
@@ -297,6 +460,13 @@ def main() -> None:
             "Projections reuse measured load overhead, forward delta, and decode slope.",
             "Mislabeled checkpoints are excluded only when model-name hint and measured params differ by order of magnitude.",
         ],
+        "auto_quantize_8bit": {
+            "enabled": bool(args.auto_quantize_8bit),
+            "scope": args.auto_quantize_scope,
+            "group_size": args.quantize_group_size,
+            "mode": args.quantize_mode,
+            "overwrite": bool(args.quantize_overwrite),
+        },
     }
     _write_json(output_dir / "feasibility_map.json", summary)
 

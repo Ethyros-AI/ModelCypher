@@ -322,7 +322,10 @@ class _MLXTrainingAdapterCoreMixin:
 
             # Clear GPU cache between layers to reclaim memory
             try:
-                mx.metal.clear_cache()
+                if hasattr(mx, "clear_cache"):
+                    mx.clear_cache()
+                elif hasattr(mx, "metal") and hasattr(mx.metal, "clear_cache"):
+                    mx.metal.clear_cache()
             except Exception:
                 pass  # Not on Metal or cache clearing unavailable
 
@@ -461,6 +464,114 @@ class _MLXTrainingAdapterCoreMixin:
         # Walk model tree and unfreeze A_tilde, B_tilde, S_raw in each NBLoRALinear
         for _, nb_lora in self._iter_nb_lora_modules(model):
             nb_lora.unfreeze(keys=["A_tilde", "B_tilde", "S_raw"])
+
+    def run_train_probe_step(
+        self,
+        model,
+        tokenizer,
+        *,
+        prompt: str,
+        seed: int = 0,
+        use_randomized_geometry: bool = True,
+        randomized_kwargs: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Run one bounded NB-LoRA probe step for training-memory measurement.
+
+        Probe sequence:
+        1. Streaming geometry analysis
+        2. NB-LoRA injection (geometry-derived targets/ranks)
+        3. Freeze base, unfreeze adapter params
+        4. Single train-loop iteration (forward + backward + update)
+        5. Spectral bound verification
+        """
+        from modelcypher.core.domain.training.geometric_lora import (
+            apply_data_rank_ceiling,
+            compute_coupled_ranks,
+            select_target_modules,
+        )
+
+        sample_tokens = tokenizer.encode(prompt)
+        if len(sample_tokens) < 2:
+            raise ValueError("train probe requires at least 2 tokens")
+        train_dataset = self.prepare_dataset([{"text": prompt}], tokenizer)
+        if not train_dataset:
+            raise ValueError("train probe dataset is empty after tokenization")
+        seq_length = int(train_dataset[0][0].shape[0])
+
+        geometries = self.analyze_model_geometry_streaming(
+            model,
+            use_randomized=use_randomized_geometry,
+            randomized_kwargs=randomized_kwargs,
+        )
+        target_modules = select_target_modules(geometries)
+        if not target_modules:
+            raise ValueError("no targetable modules found for train probe")
+
+        coupled_ranks = compute_coupled_ranks(geometries, target_modules)
+        rank_overrides = apply_data_rank_ceiling(
+            coupled_ranks,
+            n_samples=len(train_dataset),
+        )
+        n_lora_layers = self.inject_nb_lora(
+            model,
+            geometries,
+            target_modules,
+            safety_margin=None,
+            rank_overrides=rank_overrides,
+        )
+        if n_lora_layers <= 0:
+            raise ValueError("NB-LoRA injection produced zero adapted layers")
+
+        self.freeze_and_apply_lora(model)
+
+        n_trainable_params = int(
+            sum(param.size for _, param in self._backend.tree_flatten(model.trainable_parameters()))
+        )
+
+        sigma_candidates = [g.sigma_max for g in geometries.values() if g.sigma_max > 0]
+        if not sigma_candidates:
+            raise ValueError("unable to derive sigma_max from geometry")
+        sigma_max = max(sigma_candidates)
+        sigma_k_candidates = [g.sigma_k for g in geometries.values() if g.sigma_k > 0]
+        if not sigma_k_candidates:
+            raise ValueError("unable to derive sigma_k_min from geometry")
+        sigma_k_min = min(sigma_k_candidates)
+
+        losses, stop_reason, _ = self.train_loop(
+            model=model,
+            train_dataset=train_dataset,
+            batch_size=1,
+            seq_length=seq_length,
+            max_iters=1,
+            seed=seed,
+            sigma_max=sigma_max,
+            sigma_k_min=sigma_k_min,
+            eval_dataset=None,
+            eval_batches=1,
+            adaptive_lr=True,
+            tokenizer=tokenizer,
+        )
+        spectral_bounds_ok, max_spectral_ratio, _ = self.verify_bounds(model)
+
+        last_loss = None
+        if losses:
+            # losses entries are (iter_idx, train_loss, val_loss)
+            last_loss = float(losses[-1][1])
+
+        return {
+            "n_lora_layers": int(n_lora_layers),
+            "n_trainable_params": int(n_trainable_params),
+            "spectral_bounds_ok": bool(spectral_bounds_ok),
+            "max_spectral_ratio": float(max_spectral_ratio),
+            "train_iters": int(len(losses)),
+            "last_loss": last_loss,
+            "stop_reason": str(stop_reason),
+            "geometry_mode": "randomized" if use_randomized_geometry else "full_svd",
+            "seq_length": int(seq_length),
+            "target_module_count": int(len(target_modules)),
+            "sigma_k_min": float(sigma_k_min),
+            "sigma_max": float(sigma_max),
+        }
 
     def evaluate_loss(
         self,

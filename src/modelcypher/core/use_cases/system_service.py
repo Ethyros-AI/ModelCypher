@@ -254,27 +254,56 @@ class SystemService:
 
         train_probe_payload: dict[str, Any] | None = None
         if train_probe:
-            trainable_params = self._count_trainable_parameters(backend, model_obj)
-
-            def _train_surrogate() -> None:
-                logits = backend.collect_logits(
-                    model_obj,
-                    tokenizer,
-                    prompt_text,
-                    token_ids=token_ids,
+            try:
+                probe_result = _timed_stage(
+                    "train_probe_nblora_step",
+                    lambda: self._run_nb_lora_train_probe(
+                        backend=backend,
+                        model=model_obj,
+                        tokenizer=tokenizer,
+                        prompt=prompt_text,
+                    ),
                 )
-                backend.eval(logits)
+                train_stage = _capture("train_probe_nblora_step")
+                train_probe_payload = {
+                    "enabled": True,
+                    "mode": "nblora_step",
+                    "n_trainable_params": int(probe_result.get("n_trainable_params", 0)),
+                    "spectral_bounds_ok": probe_result.get("spectral_bounds_ok"),
+                    "max_spectral_ratio": probe_result.get("max_spectral_ratio"),
+                    "train_iters": probe_result.get("train_iters"),
+                    "last_loss": probe_result.get("last_loss"),
+                    "stop_reason": probe_result.get("stop_reason"),
+                    "geometry_mode": probe_result.get("geometry_mode"),
+                    "seq_length": probe_result.get("seq_length"),
+                    "target_module_count": probe_result.get("target_module_count"),
+                    "n_lora_layers": probe_result.get("n_lora_layers"),
+                    "train_step_active_gb": float(train_stage["active_gb"]),
+                    "train_step_peak_gb": float(train_stage["peak_gb"]),
+                }
+            except Exception as exc:
+                trainable_params = self._count_trainable_parameters(backend, model_obj)
 
-            _timed_stage("train_probe_forward", _train_surrogate)
-            train_stage = _capture("train_probe_forward")
-            train_probe_payload = {
-                "enabled": True,
-                "mode": "forward_surrogate",
-                "n_trainable_params": int(trainable_params),
-                "spectral_bounds_ok": None,
-                "train_step_active_gb": float(train_stage["active_gb"]),
-                "train_step_peak_gb": float(train_stage["peak_gb"]),
-            }
+                def _train_surrogate() -> None:
+                    logits = backend.collect_logits(
+                        model_obj,
+                        tokenizer,
+                        prompt_text,
+                        token_ids=token_ids,
+                    )
+                    backend.eval(logits)
+
+                _timed_stage("train_probe_forward", _train_surrogate)
+                train_stage = _capture("train_probe_forward")
+                train_probe_payload = {
+                    "enabled": True,
+                    "mode": "forward_surrogate",
+                    "probe_error": str(exc),
+                    "n_trainable_params": int(trainable_params),
+                    "spectral_bounds_ok": None,
+                    "train_step_active_gb": float(train_stage["active_gb"]),
+                    "train_step_peak_gb": float(train_stage["peak_gb"]),
+                }
 
         return {
             "model": str(model_path),
@@ -412,3 +441,25 @@ class SystemService:
             return 0.0
         active_delta = float(last["active_gb"]) - float(first["active_gb"])
         return active_delta / float(token_delta)
+
+    @staticmethod
+    def _run_nb_lora_train_probe(
+        *,
+        backend: "Backend",
+        model: Any,
+        tokenizer: Any,
+        prompt: str,
+    ) -> dict[str, Any]:
+        # NB-LoRA adapter probe currently targets MLX backend only.
+        if not hasattr(backend, "mx"):
+            raise RuntimeError("nblora train probe requires MLX backend")
+
+        from modelcypher.backends.mlx_training_adapter import MLXTrainingAdapter
+
+        adapter = MLXTrainingAdapter(backend)
+        return adapter.run_train_probe_step(
+            model,
+            tokenizer,
+            prompt=prompt,
+            use_randomized_geometry=True,
+        )

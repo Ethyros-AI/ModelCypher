@@ -15,7 +15,9 @@ Build a measurement-first envelope for local large-model experimentation:
 2. `mc system memory-profile` to emit real backend memory telemetry:
    - `active_gb`, `peak_gb`, per-stage timestamps
    - `decode_slope.gb_per_token` from bounded decode windows
-   - optional `train_probe` surrogate payload
+   - optional `train_probe` payload:
+     - primary mode: `nblora_step` (streaming geometry + NB-LoRA inject + 1 train iteration)
+     - fallback mode: `forward_surrogate` when backend/probe path is unavailable
 3. Script: `scripts/qwen_feasibility_map.py`:
    - profiles multiple local models
    - writes raw per-model JSON and aggregated feasibility map JSON
@@ -28,7 +30,8 @@ poetry run python scripts/qwen_feasibility_map.py \
   --model /path/to/qwen-7b-quant4 \
   --model /path/to/gemma-3-27b \
   --decode-tokens 32 \
-  --train-probe
+  --train-probe \
+  --auto-quantize-8bit
 ```
 
 Output:
@@ -37,18 +40,21 @@ Output:
 
 ## Current Artifact Snapshot (2026-02-25)
 Run directory:
-- `results/feasibility_map/20260225T151915Z`
+- `results/feasibility_map/20260225T160732Z`
 
 Measured points:
 - Qwen3-1.7B bf16: load `3.20 GiB`, forward peak `3.54 GiB`
 - Qwen3-8B bf16: load `15.26 GiB`, forward peak `15.53 GiB`
 - Gemma-3-27B bf16: load `52.93 GiB`, forward peak `53.27 GiB`
 - Mistral-7B 4-bit: load `3.80 GiB`, forward peak `3.84 GiB`
+- Auto-generated Qwen3-1.7B 8-bit and Qwen3-8B 8-bit variants were profiled in the same run.
 
 Generated projection table (`decode_tokens=8`):
 - 70B @ 4-bit: `35.87 GiB` projected decode active (fits 128 GiB)
+- 70B @ 8-bit: `65.77 GiB` projected decode active (fits 128 GiB)
 - 70B @ 16-bit: `130.39 GiB` projected decode active (does not fit 128 GiB)
 - 120B @ 4-bit: `59.15 GiB` projected decode active (fits 128 GiB)
+- 120B @ 8-bit: `112.34 GiB` projected decode active (fits 128 GiB)
 - 120B @ 16-bit: `223.52 GiB` projected decode active (does not fit 128 GiB)
 
 ## Projection Math
