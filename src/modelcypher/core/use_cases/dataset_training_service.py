@@ -368,6 +368,12 @@ class DatasetTrainingService:
             retention_path = Path(retention_dataset_path).expanduser().resolve()
             explicit_retention_samples = load_jsonl_dataset(retention_path)
 
+        # Load eval data early so seq_length derivation covers ALL splits.
+        # Without this, eval samples longer than train max get truncated silently.
+        eval_samples_early: list[dict[str, Any]] | None = None
+        if eval_path is not None:
+            eval_samples_early = load_jsonl_dataset(eval_path)
+
         # Derive seq_length from data: max token length rounded up to SIMD width.
         # Max preserves ALL training signal — zero truncation by construction.
         if seq_length is None:
@@ -375,6 +381,8 @@ class DatasetTrainingService:
             token_source_samples = list(all_samples)
             if explicit_retention_samples is not None:
                 token_source_samples.extend(explicit_retention_samples)
+            if eval_samples_early is not None:
+                token_source_samples.extend(eval_samples_early)
             for s in token_source_samples:
                 text = s.get("text")
                 if isinstance(text, str) and text:
@@ -394,18 +402,19 @@ class DatasetTrainingService:
             ) * _MLX_SIMD_WIDTH
             logger.info(
                 "Derived seq_length=%d from data (max_tokens=%d, n_primary=%d, "
-                "n_retention=%d, SIMD_width=%d)",
+                "n_retention=%d, n_eval=%d, SIMD_width=%d)",
                 seq_length,
                 max_tokens,
                 len(all_samples),
                 len(explicit_retention_samples) if explicit_retention_samples is not None else 0,
+                len(eval_samples_early) if eval_samples_early is not None else 0,
                 _MLX_SIMD_WIDTH,
             )
 
         validation_split_info: dict[str, Any] | None = None
         if eval_path is not None:
             train_samples = all_samples
-            eval_samples = load_jsonl_dataset(eval_path)
+            eval_samples = eval_samples_early  # already loaded above
             logger.info(
                 "Using explicit eval split: %d train / %d eval",
                 len(train_samples), len(eval_samples),

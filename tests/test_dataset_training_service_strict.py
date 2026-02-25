@@ -925,6 +925,35 @@ def test_train_from_dataset_seq_length_includes_manual_retention(monkeypatch, tm
     assert result.seq_length_used == expected_seq_length
 
 
+def test_train_from_dataset_seq_length_includes_eval_data(monkeypatch, tmp_path: Path):
+    """seq_length must cover eval samples to prevent truncation at evaluation time."""
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(train_path, [{"text": "short"}])
+    # Eval sample much longer than any train sample.
+    long_eval = " ".join(f"tok{i}" for i in range(100))
+    _write_jsonl(eval_path, [{"text": long_eval}])
+
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
+    _patch_lightweight_training(monkeypatch, service)
+    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
+
+    result = service.train_from_dataset(
+        model_path=model_dir,
+        dataset_path=train_path,
+        eval_dataset_path=eval_path,
+        auto_regime=False,
+        no_save=True,
+    )
+
+    simd_width = dataset_training_service_module._MLX_SIMD_WIDTH
+    max_tokens = len(long_eval.split())
+    expected_seq_length = ((max_tokens + simd_width - 1) // simd_width) * simd_width
+    assert result.seq_length_used == expected_seq_length
+
+
 def test_train_from_dataset_passes_research_controls_to_train_loop(
     monkeypatch,
     tmp_path: Path,

@@ -85,6 +85,8 @@ _SUBMODULES = {
     "entanglement_spectrum",
     "fingerprint_cache",
     "fisher_information",  # Fisher Information Geometry for merge compatibility
+    "kfac_diagnostic",  # K-FAC null-space diagnostics (activation vs GNH capacity)
+    "kfac_projector",  # K-FAC matrix-free null-space projection
     "gate_detector",
     "generalized_procrustes",
     "geodesic_null_space",

@@ -72,48 +72,87 @@ A central challenge in large language model (LLM) editing is capability preserva
 
 ### Key Math
 
-**Constrained editing**: `min_θ ℓ_edit(θ) s.t. D_B(θ, θ₀) ≤ ε` where `D_B` = Bregman divergence of capability loss.
+**Constrained editing (Eq. 1)**: `min_θ ℓ_edit(θ) s.t. D_B(θ, θ₀) ≤ ε` where `D_B` = Bregman divergence of capability loss.
 
-**Bregman → Gauss-Newton** (exact, not approximate):
+**Proposition 2 — Bregman → Gauss-Newton Hessian (exact, no convergence assumption)**:
+The Bregman divergence's quadratic approximation yields the Gauss-Newton Hessian:
 ```
-D_B(θ, θ₀) = (θ - θ₀)ᵀ H_GN (θ - θ₀)
-H_GN = Jᵀ J  (Jacobian of outputs w.r.t. params)
+D_B(θ₀ + Δθ, θ₀) = ½ Δθᵀ [Jᵀ H_ℓ J] Δθ + o(||Δθ||²)
+```
+where `J = ∂f_θ/∂θ` (parameter-output Jacobian), `H_ℓ = ∂²ℓ/∂u²` (loss Hessian w.r.t. outputs).
+Critical property: `∇_a D_B(a, a) = 0` always — gradient vanishes at θ₀ regardless of whether θ₀ is a local minimum. The full Hessian can have negative eigenvalues away from minima, but `G = Jᵀ H_ℓ J` is always PSD when `H_ℓ` is PSD (true for cross-entropy). Valid for ANY checkpoint.
+
+**Proposition 1 — AlphaEdit is strictly more conservative**:
+```
+Null(K_cap) ⊆ Null(G_cap)
+```
+where `K_cap = I ⊗ [a₁, ..., aₙ]` (stacked input activations). Proof: if `ΔW` is in Null(K_cap), then `ΔW aᵢ = 0` for all samples, so the per-sample Jacobian `Jᵢ Δw = 0`, and since `G = Σ Jᵢᵀ Hᵢ Jᵢ` with `Hᵢ ≥ 0`, we get `G Δw = 0`. **ModelCypher's `F = pinv(source) @ target` projects into Null(K_cap) — the AlphaEdit-equivalent space. CrispEdit's feasible region is strictly larger.**
+
+**K-FAC factorization (Eq. 5)** per layer:
+```
+G_cap^(l) ≈ A_{l-1} ⊗ S_l
+A_{l-1} = E[a_{l-1} a_{l-1}ᵀ]  (input activation covariance, d_in × d_in)
+S_l     = E[g_l g_lᵀ]          (pre-activation pseudo-gradient covariance, d_out × d_out)
+```
+Storage: O(d_in² + d_out²) instead of O(d_in² · d_out²).
+
+**Energy threshold** for gamma-approximate null space:
+```
+k = min{ r ∈ [p] | Σ_{i=1}^r σᵢ / Σ_{i=1}^p σᵢ ≥ γ }
+P_γ = U_{>k} U_{>k}ᵀ  (projector onto low-curvature directions)
 ```
 
-**K-FAC factorization** per layer:
+**Matrix-free projector (Prop. 3, Eq. 6)** via Kronecker structure:
 ```
-H_l ≈ A_l ⊗ B_l
-A_l = E[a_l a_lᵀ]  (input activation covariance)
-B_l = E[g_l g_lᵀ]  (output gradient covariance)
+Q_proj = U_out @ ((U_outᵀ @ Q @ U_in) ⊙ M) @ U_inᵀ
+M_{ij} = 𝟙[λᵢ^out · λⱼ^in ≤ λ_γ]  (binary mask on Kronecker eigenvalue products)
 ```
-
-**Matrix-free projector** (Kronecker structure):
-```
-grad_proj = U_B @ ((U_Bᵀ @ grad @ U_A) ⊙ Mᵀ) @ U_Aᵀ
-```
-where `U_A`, `U_B` = eigenvectors of Kronecker factors, `M` = low-curvature mask.
+where `U_in, U_out` = eigenvectors of A, S factors. Eigenvalues of `A ⊗ S` are products `λ_{A,i} · λ_{S,j}` with eigenvectors `u_{S,j} ⊗ u_{A,i}`.
 
 ### Extractable Code
 
 [GitHub repo](https://github.com/zarifikram/CrispEdit):
-- `crispedit.py` — K-FAC computation, eigendecomposition, matrix-free projection
-- `run_crispedit.py` — Full pipeline with `energy_threshold` (curvature retention) parameter
-- Supports Meta-Llama-3-8B-Instruct; benchmarked on ZsRE, COUNTERFACT, WikiBigEdit
+
+Core projection cache (`utils.py`):
+```python
+def calculate_projection_cache_with_kfac(A, B, energy_threshold=0.9):
+    Sa, Ua = torch.linalg.eigh(A)     # eigendecomposition of input covariance
+    Sb, Ub = torch.linalg.eigh(B)     # eigendecomposition of gradient covariance
+    M = torch.outer(Sa, Sb)           # Kronecker eigenvalue products
+    rank, null_threshold = get_rank_and_threshold_by_energy_ratio(
+        M.view(-1), percent=energy_threshold)
+    M = M < null_threshold            # boolean mask: True = low curvature (KEEP)
+    return {'Ua': Ua, 'Ub': Ub, 'M': M}
+```
+
+Core projection step (`projected_sgd.py`, `projected_adam.py`):
+```python
+grad_proj = U_B @ ((U_B.T @ grad @ U_A) * M.T) @ U_A.T
+```
+
+Config: gamma=0.99 for LLaMA-3-8B, last 5 MLP down_proj layers, 1000 Wikipedia samples for K-FAC, lr=5e-4, 25 steps.
 
 ### ModelCypher Integration Notes
 
-1. **K-FAC as spectral complement**: SVD analyzes weight structure (what the model *can* represent). K-FAC analyzes loss landscape (what the model *currently uses*). The intersection — directions both low-σ AND low-curvature — is where LoRA can safely write. More precise than activation covariance alone.
+**Direct connection — Proposition 1 is the key result.** ModelCypher's null-space projection via `F = pinv(source) @ target` operates in Null(K_cap) — the activation null space. CrispEdit proves this is a strict subset of Null(G_cap), the Gauss-Newton null space. We're being more conservative than necessary. The GNH null space is the mathematically optimal constraint: it preserves capabilities with a strictly larger feasible region for edits.
 
-2. **Tighter Weyl monitoring**: K-FAC eigenvectors identify which singular value perturbations affect capability. Instead of uniform Weyl bounds, weight monitoring by K-FAC curvature: high-curvature directions get tighter bounds, low-curvature get relaxed. Could increase effective adapter capacity.
+| CrispEdit | ModelCypher Analog | Relationship |
+|---|---|---|
+| Null(G_cap) — GNH null space | Null space of source activations | CrispEdit is strictly LARGER (Prop 1) |
+| K-FAC factor A = E[aaᵀ] | CKA probes / activation covariance | Same object — we already compute this |
+| K-FAC factor S = E[ggᵀ] | Not in ModelCypher | **Missing factor** — adds output gradient curvature |
+| Energy threshold γ | SVD rank selection | Both spectral truncation, different spectra |
+| Bregman divergence | CKA post-training | Bregman is valid pre-convergence; CKA is not a divergence |
 
-3. **Bregman divergence as stopping signal**: `D_B(θ_t, θ₀)` via K-FAC is a proper divergence in parameter space. Could complement loss-stability in `geometric_early_stopping.py`.
+**What we could gain:**
+1. **S_l (output gradient covariance)** is the missing piece. We already compute A_l during activation snapshots. Collecting pseudo-gradients `g_l = ∂ℓ/∂s_l` alongside would give us the full K-FAC factorization for free during the existing probe pass.
+2. **Kronecker eigenvalue mask** replaces uniform Weyl bounds with curvature-weighted per-direction bounds. High-curvature directions get tighter bounds, low-curvature get relaxed. Net effect: more adapter capacity without sacrificing capability preservation.
+3. **Bregman divergence as stopping signal** — a proper parameter-space divergence that works even when the model isn't converged. Could replace or complement CKA in `geometric_early_stopping.py`.
 
-4. **Implementation path**: Add K-FAC pass alongside SVD in `geometric_lora.py`. Collect `E[a_l a_lᵀ]` during existing activation snapshot (Step 4). Use K-FAC eigenvalues to weight per-layer Weyl budget.
-
-5. **Open question addressed**: Q1 (layer-wise invariants) — K-FAC eigenspectrum defines per-layer capability-critical subspaces.
+**Implementation path**: Collect `E[g_l g_lᵀ]` during existing probe pass → eigendecompose both factors → compute Kronecker mask → use matrix-free projector during training. The eigendecomposition is O(d²) per factor, done once before training.
 
 ### Evidence Level
-[VALIDATED] — Tested on Llama-3-8B across 3 benchmarks, <1% capability degradation
+[VALIDATED] — Tested on Llama-3-8B across 3 benchmarks (ZsRE, COUNTERFACT, WikiBigEdit), <1% capability degradation. Proposition 1 is [PROVEN].
 
 ---
 

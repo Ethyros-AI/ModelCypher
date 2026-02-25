@@ -96,6 +96,36 @@ ANTI_KEYWORDS = [
     r"\bmultimodal\b(?!.*representation.*geometry)",
 ]
 
+# Off-topic domains: papers matching these are NOT about LLM internals even if
+# they use geometric language. Hard penalty at ALL score levels.
+OFF_TOPIC_DOMAINS = [
+    r"\b3d\b.*\b(reconstruct|generat|model|render|scene|gaussian)",
+    r"\b4d\b.*\b(reconstruct|generat|model)",
+    r"\bgaussian splat", r"\bnerf\b", r"\bpoint cloud",
+    r"\bmesh\b.*\b(reconstruct|generat|deform|refine)",
+    r"\brecommend\b.*\b(system|engine|model|sequen)",
+    r"\bcollaborative filter", r"\buser.item\b",
+    r"\brobot\b", r"\bautonomous driv", r"\bslam\b",
+    r"\bmedical imag", r"\bsegmentat\b.*\b(image|semantic|instance)",
+    r"\bobject detect", r"\bimage classif",
+    r"\bvideo\b.*\b(generat|synthes|predict|reconstruct)",
+    r"\bspeech\b.*\b(recognit|synthes|enhanc)",
+    r"\baudio\b.*\b(generat|classif|separat)",
+    r"\bdiffusion\b.*\b(image|video|3d|generat|sampl)",
+    r"\btext.to.image\b", r"\bimage.to.image\b",
+]
+
+# Strong LLM context: proves a paper is actually about LLM/transformer internals
+# (used by off-topic domain filter — stricter than general context keywords)
+STRONG_LLM_KEYWORDS = [
+    r"\blanguage model", r"\bllm\b",
+    r"\btransformer\b.*\b(weight|layer|attention|mlp|block)",
+    r"\bfine.tun\w*\b.*\b(llm|language|model weight)",
+    r"\bpre.train\w*\b.*\b(language|model)",
+    r"\bmechanistic interpret",
+    r"\bweight\b.*\b(matrix|matric)\b.*\b(svd|spectral|decompos|rank)",
+]
+
 # Context: paper must be about language models / transformers / neural nets (not pure CV/3D/robotics)
 LLM_CONTEXT_KEYWORDS = [
     r"\blanguage model", r"\bllm\b", r"\btransformer\b", r"\battention\b",
@@ -142,10 +172,24 @@ def score_paper(title: str, summary: str) -> tuple[float, list[str]]:
     if anti_count > 0 and score < 6.0:
         score *= max(0.3, 1.0 - 0.25 * anti_count)
 
+    # Off-topic domain penalty: applies at ALL score levels.
+    # If paper matches off-topic domain AND lacks strong LLM context, hard kill.
+    if score > 0:
+        off_topic_count = sum(
+            1 for p in OFF_TOPIC_DOMAINS if re.search(p, text, re.IGNORECASE)
+        )
+        if off_topic_count > 0:
+            has_strong_llm = any(
+                re.search(p, text, re.IGNORECASE) for p in STRONG_LLM_KEYWORDS
+            )
+            if not has_strong_llm:
+                score *= max(0.1, 0.3 ** off_topic_count)
+                matches.append(f"DOMAIN:off-topic-penalty(x{off_topic_count})")
+
     # Context filter: if paper has NO LLM/neural-net context keywords AND
     # score is below high-signal threshold, it's likely a CV/robotics/3D paper
     # that matched on generic terms like "manifold" or "representation space"
-    if score > 0 and score < 6.0:
+    if score > 0 and score < 9.0:
         has_nn_context = any(
             re.search(p, text, re.IGNORECASE) for p in LLM_CONTEXT_KEYWORDS
         )
@@ -282,8 +326,7 @@ def generate_report(date_str: str, papers: list[dict]) -> tuple[str, list[dict]]
         lines.append("")
 
         lines.append("### ModelCypher Integration Notes")
-        lines.append("<!-- FILL: Claude deep-dive pass populates this section -->")
-        lines.append("_Pending deep analysis — run with --deep flag or review manually._")
+        lines.append("_To be assessed during review._")
         lines.append("")
         lines.append("---")
         lines.append("")
