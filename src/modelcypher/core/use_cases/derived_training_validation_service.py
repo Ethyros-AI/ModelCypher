@@ -56,6 +56,7 @@ class _Phase5Metrics:
     max_logit_delta_inf: float | None = None
     argmax_cert_gap: float | None = None
     argmax_preservation_certified: bool | None = None
+    argmax_n_correct_flipped: int | None = None
 
 
 @dataclass
@@ -134,6 +135,7 @@ class DerivedTrainingTrial:
     max_logit_delta_inf: float | None
     argmax_cert_gap: float | None
     argmax_preservation_certified: bool | None
+    argmax_n_correct_flipped: int | None
     structural_passed: bool
     inference_passed: bool
     cooccurrence_class: str
@@ -205,6 +207,7 @@ class DerivedTrainingTrial:
             "max_logit_delta_inf": self.max_logit_delta_inf,
             "argmax_cert_gap": self.argmax_cert_gap,
             "argmax_preservation_certified": self.argmax_preservation_certified,
+            "argmax_n_correct_flipped": self.argmax_n_correct_flipped,
             "structural_passed": self.structural_passed,
             "inference_passed": self.inference_passed,
             "cooccurrence_class": self.cooccurrence_class,
@@ -846,6 +849,11 @@ class DerivedTrainingValidationService:
                 if phase5_metrics is not None
                 else None
             ),
+            argmax_n_correct_flipped=(
+                phase5_metrics.argmax_n_correct_flipped
+                if phase5_metrics is not None
+                else None
+            ),
             structural_passed=structural_passed,
             inference_passed=inference_passed,
             cooccurrence_class=cooccurrence_class,
@@ -984,27 +992,29 @@ class DerivedTrainingValidationService:
             baseline_logits=context.baseline_logits,
         )
 
+        # Argmax preservation certificate: did the adapted model preserve
+        # the argmax on every baseline-correct probe?  Direct measurement —
+        # check whether adapted_margin > 0 for each correct probe.
         argmax_cert_gap: float | None = None
         argmax_preservation_certified: bool | None = None
+        argmax_n_correct_flipped: int | None = None
         if (
-            context.baseline_margins is not None
-            and max_logit_delta_inf is not None
+            adapted_margins
             and context.baseline_eval is not None
+            and context.baseline_eval.correct_ids
         ):
-            # Scope to baseline-correct probes only: we certify preservation
-            # of correct answers, not invariance of wrong ones.
             correct_ids = context.baseline_eval.correct_ids
-            correct_margins = [
-                float(v)
-                for pid, v in context.baseline_margins.items()
-                if pid in correct_ids
+            correct_adapted_margins = [
+                float(adapted_margins[pid])
+                for pid in correct_ids
+                if pid in adapted_margins
             ]
-            if correct_margins:
-                min_margin = min(correct_margins)
-                # If ||Δlogits||_∞ ≤ ε, worst-case margin shrink is 2ε
-                # (top-1 down by ε, top-2 up by ε).
-                argmax_cert_gap = min_margin - (2.0 * max_logit_delta_inf)
-                argmax_preservation_certified = argmax_cert_gap > 0.0
+            if correct_adapted_margins:
+                argmax_cert_gap = min(correct_adapted_margins)
+                argmax_n_correct_flipped = sum(
+                    1 for m in correct_adapted_margins if m <= 0.0
+                )
+                argmax_preservation_certified = argmax_n_correct_flipped == 0
 
         return _Phase5Metrics(
             baseline_n_correct=context.baseline_eval.n_correct,
@@ -1018,6 +1028,7 @@ class DerivedTrainingValidationService:
             max_logit_delta_inf=max_logit_delta_inf,
             argmax_cert_gap=argmax_cert_gap,
             argmax_preservation_certified=argmax_preservation_certified,
+            argmax_n_correct_flipped=argmax_n_correct_flipped,
         )
 
     def _run_probe_eval(

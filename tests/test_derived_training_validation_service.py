@@ -555,6 +555,7 @@ def test_argmax_not_certified_triggers_inference_failure(tmp_path, monkeypatch):
             max_logit_delta_inf=0.40,
             argmax_cert_gap=-0.05,
             argmax_preservation_certified=False,
+            argmax_n_correct_flipped=1,
         ),
     )
 
@@ -572,6 +573,7 @@ def test_argmax_not_certified_triggers_inference_failure(tmp_path, monkeypatch):
     assert "argmax_not_certified" in trial.failure_modes
     assert trial.inference_passed is False
     assert result.all_passed is False
+    assert trial.argmax_n_correct_flipped == 1
 
 
 def test_argmax_certified_does_not_trigger_failure(tmp_path, monkeypatch):
@@ -598,6 +600,7 @@ def test_argmax_certified_does_not_trigger_failure(tmp_path, monkeypatch):
             max_logit_delta_inf=0.05,
             argmax_cert_gap=0.25,
             argmax_preservation_certified=True,
+            argmax_n_correct_flipped=0,
         ),
     )
 
@@ -614,6 +617,7 @@ def test_argmax_certified_does_not_trigger_failure(tmp_path, monkeypatch):
     trial = result.trial_results[0]
     assert "argmax_not_certified" not in trial.failure_modes
     assert trial.inference_passed is True
+    assert trial.argmax_n_correct_flipped == 0
 
 
 def test_argmax_cert_none_does_not_trigger_failure(tmp_path, monkeypatch):
@@ -640,6 +644,7 @@ def test_argmax_cert_none_does_not_trigger_failure(tmp_path, monkeypatch):
             max_logit_delta_inf=None,
             argmax_cert_gap=None,
             argmax_preservation_certified=None,
+            argmax_n_correct_flipped=None,
         ),
     )
 
@@ -659,18 +664,23 @@ def test_argmax_cert_none_does_not_trigger_failure(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("max_logit_delta_inf", "expected_gap", "expected_certified"),
+    ("adapted_margins", "expected_gap", "expected_certified", "expected_flipped"),
     [
-        (0.2, 0.2, True),
-        (0.35, -0.1, False),
+        # Both correct probes keep positive margin → certified
+        ({"p1": 0.75, "p2": 0.55}, 0.55, True, 0),
+        # One correct probe margin goes negative → not certified
+        ({"p1": 0.75, "p2": -0.10}, -0.10, False, 1),
+        # Both correct probes flip → not certified
+        ({"p1": -0.3, "p2": -0.1}, -0.3, False, 2),
     ],
 )
-def test_phase5_argmax_certificate_uses_two_epsilon_bound(
+def test_phase5_argmax_certificate_from_adapted_margins(
     tmp_path,
     monkeypatch,
-    max_logit_delta_inf,
+    adapted_margins,
     expected_gap,
     expected_certified,
+    expected_flipped,
 ):
     service, model_dir, _ = _make_service(tmp_path, [
         _FakeTrainResult(
@@ -683,38 +693,43 @@ def test_phase5_argmax_certificate_uses_two_epsilon_bound(
 
     context = _Phase5Context(
         enabled=True,
-        probe_count=2,
+        probe_count=3,
         probe_seed=1,
         artifact_root=tmp_path / "artifacts",
         keep_all_artifacts=True,
         probe_problems=[],
     )
 
+    # p1, p2 correct at baseline; p3 incorrect at baseline
     baseline_eval = _make_online_eval_result(
         n_correct=2,
-        n_total=2,
+        n_total=3,
         correct_ids={"p1", "p2"},
     )
     adapted_eval = _make_online_eval_result(
         n_correct=2,
-        n_total=2,
+        n_total=3,
         correct_ids={"p1", "p2"},
     )
+
+    # p3 has margin -0.5 (baseline wrong) — must not affect cert
+    full_adapted_margins = dict(adapted_margins)
+    full_adapted_margins["p3"] = -0.5
 
     def _fake_run_probe_eval(**kwargs):
         if kwargs["adapter_path"] is None:
             return (
                 baseline_eval,
                 0.10,
-                {"p1": 0.8, "p2": 0.6},
+                {"p1": 0.8, "p2": 0.6, "p3": -0.5},
                 None,
-                {"p1": object(), "p2": object()},
+                {"p1": object(), "p2": object(), "p3": object()},
             )
         return (
             adapted_eval,
             0.10,
-            {"p1": 0.75, "p2": 0.55},
-            max_logit_delta_inf,
+            full_adapted_margins,
+            0.5,
             None,
         )
 
@@ -734,7 +749,7 @@ def test_phase5_argmax_certificate_uses_two_epsilon_bound(
 
     assert metrics.argmax_cert_gap == pytest.approx(expected_gap, abs=1e-12)
     assert metrics.argmax_preservation_certified is expected_certified
-    assert metrics.max_logit_delta_inf == pytest.approx(max_logit_delta_inf, abs=1e-12)
+    assert metrics.argmax_n_correct_flipped == expected_flipped
 
 
 def test_phase5_argmax_certificate_fields_round_trip_in_trial_dict(
@@ -764,6 +779,7 @@ def test_phase5_argmax_certificate_fields_round_trip_in_trial_dict(
             max_logit_delta_inf=0.12,
             argmax_cert_gap=0.36,
             argmax_preservation_certified=True,
+            argmax_n_correct_flipped=0,
         ),
     )
 
@@ -782,9 +798,11 @@ def test_phase5_argmax_certificate_fields_round_trip_in_trial_dict(
     assert trial.max_logit_delta_inf == pytest.approx(0.12)
     assert trial.argmax_cert_gap == pytest.approx(0.36)
     assert trial.argmax_preservation_certified is True
+    assert trial.argmax_n_correct_flipped == 0
     assert payload["max_logit_delta_inf"] == pytest.approx(0.12)
     assert payload["argmax_cert_gap"] == pytest.approx(0.36)
     assert payload["argmax_preservation_certified"] is True
+    assert payload["argmax_n_correct_flipped"] == 0
 
 
 def test_phase5_probe_derivation_is_deterministic(tmp_path, monkeypatch):
