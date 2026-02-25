@@ -989,13 +989,22 @@ class DerivedTrainingValidationService:
         if (
             context.baseline_margins is not None
             and max_logit_delta_inf is not None
-            and len(context.baseline_margins) > 0
+            and context.baseline_eval is not None
         ):
-            min_margin = min(float(v) for v in context.baseline_margins.values())
-            # If ||Δlogits||_∞ ≤ ε, worst-case margin shrink is 2ε
-            # (top-1 down by ε, top-2 up by ε).
-            argmax_cert_gap = min_margin - (2.0 * max_logit_delta_inf)
-            argmax_preservation_certified = argmax_cert_gap > 0.0
+            # Scope to baseline-correct probes only: we certify preservation
+            # of correct answers, not invariance of wrong ones.
+            correct_ids = context.baseline_eval.correct_ids
+            correct_margins = [
+                float(v)
+                for pid, v in context.baseline_margins.items()
+                if pid in correct_ids
+            ]
+            if correct_margins:
+                min_margin = min(correct_margins)
+                # If ||Δlogits||_∞ ≤ ε, worst-case margin shrink is 2ε
+                # (top-1 down by ε, top-2 up by ε).
+                argmax_cert_gap = min_margin - (2.0 * max_logit_delta_inf)
+                argmax_preservation_certified = argmax_cert_gap > 0.0
 
         return _Phase5Metrics(
             baseline_n_correct=context.baseline_eval.n_correct,
@@ -1082,13 +1091,18 @@ class DerivedTrainingValidationService:
                         exc_info=True,
                     )
 
-        # Measured logit perturbation: ||Δlogits||_∞ per probe
+        # Measured logit perturbation: ||Δlogits||_∞ over baseline-correct probes.
+        # Only baseline-correct probes matter for preservation: probes the
+        # baseline already got wrong have margin ≈ 0 and SHOULD see large
+        # perturbation (that's training working).
         max_logit_delta_inf: float | None = None
         if baseline_logits is not None:
             max_delta = 0.0
             for problem in problems:
                 pid = problem.problem_id
                 if pid not in baseline_logits:
+                    continue
+                if baseline_correct_ids is not None and pid not in baseline_correct_ids:
                     continue
                 prompt = self._build_probe_prompts([problem])[0]
                 try:
