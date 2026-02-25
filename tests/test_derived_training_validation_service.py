@@ -531,6 +531,133 @@ def test_phase5_fourgram_crossing_triggers_failure(tmp_path, monkeypatch):
     assert trial.structural_passed is True
 
 
+def test_argmax_not_certified_triggers_inference_failure(tmp_path, monkeypatch):
+    service, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.0,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+            min_cka=0.99999,
+        ),
+    ])
+
+    monkeypatch.setattr(
+        service,
+        "_run_phase5_for_trial",
+        lambda **_kwargs: _Phase5Metrics(
+            baseline_n_correct=8,
+            baseline_n_total=10,
+            adapted_n_correct=8,
+            adapted_n_total=10,
+            baseline_max_4gram_repeat=0.10,
+            adapted_max_4gram_repeat=0.10,
+            max_logit_delta_inf=0.40,
+            argmax_cert_gap=-0.05,
+            argmax_preservation_certified=False,
+        ),
+    )
+
+    result = service.validate(
+        model_path=model_dir,
+        dataset_path=data_file,
+        eval_dataset_path=None,
+        trials=1,
+        base_seed=1,
+        enable_phase5_inference=True,
+        artifact_root=tmp_path / "artifacts",
+    )
+
+    trial = result.trial_results[0]
+    assert "argmax_not_certified" in trial.failure_modes
+    assert trial.inference_passed is False
+    assert result.all_passed is False
+
+
+def test_argmax_certified_does_not_trigger_failure(tmp_path, monkeypatch):
+    service, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.0,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+            min_cka=0.99999,
+        ),
+    ])
+
+    monkeypatch.setattr(
+        service,
+        "_run_phase5_for_trial",
+        lambda **_kwargs: _Phase5Metrics(
+            baseline_n_correct=8,
+            baseline_n_total=10,
+            adapted_n_correct=8,
+            adapted_n_total=10,
+            baseline_max_4gram_repeat=0.10,
+            adapted_max_4gram_repeat=0.10,
+            max_logit_delta_inf=0.05,
+            argmax_cert_gap=0.25,
+            argmax_preservation_certified=True,
+        ),
+    )
+
+    result = service.validate(
+        model_path=model_dir,
+        dataset_path=data_file,
+        eval_dataset_path=None,
+        trials=1,
+        base_seed=1,
+        enable_phase5_inference=True,
+        artifact_root=tmp_path / "artifacts",
+    )
+
+    trial = result.trial_results[0]
+    assert "argmax_not_certified" not in trial.failure_modes
+    assert trial.inference_passed is True
+
+
+def test_argmax_cert_none_does_not_trigger_failure(tmp_path, monkeypatch):
+    service, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.0,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+            min_cka=0.99999,
+        ),
+    ])
+
+    monkeypatch.setattr(
+        service,
+        "_run_phase5_for_trial",
+        lambda **_kwargs: _Phase5Metrics(
+            baseline_n_correct=8,
+            baseline_n_total=10,
+            adapted_n_correct=8,
+            adapted_n_total=10,
+            baseline_max_4gram_repeat=0.10,
+            adapted_max_4gram_repeat=0.10,
+            max_logit_delta_inf=None,
+            argmax_cert_gap=None,
+            argmax_preservation_certified=None,
+        ),
+    )
+
+    result = service.validate(
+        model_path=model_dir,
+        dataset_path=data_file,
+        eval_dataset_path=None,
+        trials=1,
+        base_seed=1,
+        enable_phase5_inference=True,
+        artifact_root=tmp_path / "artifacts",
+    )
+
+    trial = result.trial_results[0]
+    assert "argmax_not_certified" not in trial.failure_modes
+    assert trial.inference_passed is True
+
+
 @pytest.mark.parametrize(
     ("max_logit_delta_inf", "expected_gap", "expected_certified"),
     [

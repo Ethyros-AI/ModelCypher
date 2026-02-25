@@ -363,12 +363,19 @@ class DatasetTrainingService:
         # 2. Load + split dataset
         logger.info("Loading dataset from %s", dataset_path)
         all_samples = load_jsonl_dataset(dataset_path)
+        explicit_retention_samples: list[dict[str, Any]] | None = None
+        if retention_dataset_path is not None:
+            retention_path = Path(retention_dataset_path).expanduser().resolve()
+            explicit_retention_samples = load_jsonl_dataset(retention_path)
 
         # Derive seq_length from data: max token length rounded up to SIMD width.
         # Max preserves ALL training signal — zero truncation by construction.
         if seq_length is None:
             token_lengths = []
-            for s in all_samples:
+            token_source_samples = list(all_samples)
+            if explicit_retention_samples is not None:
+                token_source_samples.extend(explicit_retention_samples)
+            for s in token_source_samples:
                 text = s.get("text")
                 if isinstance(text, str) and text:
                     n = len(self._backend.encode_tokens(tokenizer, text))
@@ -386,9 +393,12 @@ class DatasetTrainingService:
                 (max_tokens + _MLX_SIMD_WIDTH - 1) // _MLX_SIMD_WIDTH
             ) * _MLX_SIMD_WIDTH
             logger.info(
-                "Derived seq_length=%d from data (max_tokens=%d, SIMD_width=%d)",
+                "Derived seq_length=%d from data (max_tokens=%d, n_primary=%d, "
+                "n_retention=%d, SIMD_width=%d)",
                 seq_length,
                 max_tokens,
+                len(all_samples),
+                len(explicit_retention_samples) if explicit_retention_samples is not None else 0,
                 _MLX_SIMD_WIDTH,
             )
 
@@ -423,9 +433,8 @@ class DatasetTrainingService:
 
         # 2.5. Retention replay: merge retention samples into training data
         auto_retention_samples_collected = 0
-        if retention_dataset_path is not None:
-            retention_path = Path(retention_dataset_path).expanduser().resolve()
-            retention_samples = load_jsonl_dataset(retention_path)
+        if explicit_retention_samples is not None:
+            retention_samples = explicit_retention_samples
             # Derive mix fraction from data ratio: n_ret / (n_ret + n_train).
             n_ret = len(retention_samples)
             n_trn = len(train_samples)
@@ -1335,6 +1344,17 @@ class DatasetTrainingService:
 
         sampled = random.Random(seed).sample(train_samples, target_count)
         retention_samples: list[dict[str, str]] = []
+        eos_id = getattr(tokenizer, "eos_token_id", None)
+
+        def _encode_text(value: str) -> list[int | str]:
+            if hasattr(tokenizer, "encode") and callable(getattr(tokenizer, "encode")):
+                return list(tokenizer.encode(value))
+            return list(self._backend.encode_tokens(tokenizer, value))
+
+        def _decode_tokens(token_ids: list[int | str]) -> str:
+            if hasattr(tokenizer, "decode") and callable(getattr(tokenizer, "decode")):
+                return str(tokenizer.decode(token_ids))
+            return str(self._backend.decode_tokens(tokenizer, token_ids))
 
         for sample in sampled:
             text = sample.get("text")
@@ -1346,12 +1366,13 @@ class DatasetTrainingService:
                 continue
 
             # Bound prompt only by active sequence window.
-            prompt_cap = max(1, int(seq_length))
-            prompt_tokens = self._backend.encode_tokens(tokenizer, prompt)[:prompt_cap]
+            # Reserve one slot for EOS when the tokenizer uses one.
+            content_cap = max(1, int(seq_length) - (1 if eos_id is not None else 0))
+            prompt_tokens = _encode_text(prompt)[:content_cap]
             if not prompt_tokens:
                 continue
 
-            prompt = self._backend.decode_tokens(tokenizer, prompt_tokens)
+            prompt = _decode_tokens(prompt_tokens)
             if not isinstance(prompt, str) or not prompt:
                 continue
 
@@ -1360,7 +1381,7 @@ class DatasetTrainingService:
                     model,
                     tokenizer,
                     prompt,
-                    max_tokens=seq_length,
+                    max_tokens=max(1, content_cap - len(prompt_tokens)),
                     temp=0.0,
                     top_p=1.0,
                 )
@@ -1369,14 +1390,22 @@ class DatasetTrainingService:
                     model,
                     tokenizer,
                     prompt,
-                    max_tokens=seq_length,
+                    max_tokens=max(1, content_cap - len(prompt_tokens)),
                 )
 
             if not isinstance(generated, str):
                 continue
 
             completion = generated[len(prompt):] if generated.startswith(prompt) else generated
-            retention_samples.append({"text": prompt + completion})
+            retention_text = prompt + completion
+            retention_tokens = _encode_text(retention_text)
+            if not retention_tokens:
+                continue
+            if len(retention_tokens) > content_cap:
+                retention_tokens = retention_tokens[:content_cap]
+                retention_text = _decode_tokens(retention_tokens)
+            if isinstance(retention_text, str) and retention_text:
+                retention_samples.append({"text": retention_text})
 
         return retention_samples
 

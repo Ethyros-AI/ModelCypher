@@ -512,7 +512,10 @@ def test_collect_auto_retention_applies_prompt_rules_and_format():
     assert isinstance(prompt_used, str)
     assert "\n" not in prompt_used
     assert len(prompt_used.split()) == 64
-    assert retention[0] == {"text": f"{prompt_used} ::completion"}
+    # Retention samples are bounded to seq_length by token count.
+    # For full-window prompts, completion overage is truncated away.
+    assert retention[0] == {"text": prompt_used}
+    assert backend.generate_calls[0]["max_tokens"] == 1
     assert backend.generate_calls[0]["kwargs"]["temp"] == 0.0
     assert backend.generate_calls[0]["kwargs"]["top_p"] == 1.0
 
@@ -878,6 +881,48 @@ def test_train_from_dataset_manual_retention_skips_auto(monkeypatch, tmp_path: P
     assert merge_call["fraction"] == pytest.approx(0.25)
     assert result.auto_retention_samples_collected == 0
     assert result.to_dict()["auto_retention_samples_collected"] == 0
+
+
+def test_train_from_dataset_seq_length_includes_manual_retention(monkeypatch, tmp_path: Path):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    retention_path = tmp_path / "retention.jsonl"
+    _write_jsonl(train_path, [{"text": "short sample"}])
+    _write_jsonl(eval_path, [{"text": "eval"}])
+    long_retention = " ".join(f"tok{i}" for i in range(70))
+    _write_jsonl(retention_path, [{"text": long_retention}])
+
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
+    _patch_lightweight_training(monkeypatch, service)
+    monkeypatch.setattr(
+        service,
+        "_collect_auto_retention",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("auto retention should not run when manual retention is provided"),
+        ),
+    )
+
+    monkeypatch.setattr(
+        dataset_training_service_module,
+        "merge_datasets_with_fraction",
+        lambda primary, retention, _fraction: list(primary) + list(retention),
+    )
+
+    result = service.train_from_dataset(
+        model_path=model_dir,
+        dataset_path=train_path,
+        eval_dataset_path=eval_path,
+        retention_dataset_path=retention_path,
+        auto_regime=False,
+        no_save=True,
+    )
+
+    simd_width = dataset_training_service_module._MLX_SIMD_WIDTH
+    max_tokens = len(long_retention.split())
+    expected_seq_length = ((max_tokens + simd_width - 1) // simd_width) * simd_width
+    assert result.seq_length_used == expected_seq_length
 
 
 def test_train_from_dataset_passes_research_controls_to_train_loop(

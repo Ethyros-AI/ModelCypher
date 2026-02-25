@@ -512,6 +512,10 @@ class DerivedTrainingValidationService:
                 inference_failure_modes.append("online_eval_degraded")
             if adapted_max_4gram_repeat > baseline_max_4gram_repeat + sqrt_eps:
                 inference_failure_modes.append("fourgram_degenerated")
+            # Argmax preservation certificate gate (fail-closed on explicit False;
+            # fail-open when measurement is unavailable / None).
+            if phase5_metrics.argmax_preservation_certified is False:
+                inference_failure_modes.append("argmax_not_certified")
 
         # Dual-manifold CKA diagnostics (diagnostic-only, no gating)
         inference_min_cka_val = getattr(train_result, "inference_min_cka", None)
