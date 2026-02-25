@@ -52,6 +52,12 @@ def infer_run(
         False, "--prompt-stdin", help="Read prompt from stdin (multi-line)"
     ),
     adapter: str | None = typer.Option(None, "--adapter", help="Path to adapter directory"),
+    max_tokens: int | None = typer.Option(
+        None,
+        "--max-tokens",
+        min=1,
+        help="Maximum number of generated tokens (default derives from context window)",
+    ),
     security_scan: bool = typer.Option(
         False, "--security-scan", help="Perform dual-path security analysis"
     ),
@@ -98,6 +104,7 @@ def infer_run(
             prompt=prompt_text,
             adapter=adapter,
             security_scan=security_scan,
+            max_tokens=max_tokens,
         )
     except ValueError as exc:
         error = ErrorDetail(

@@ -28,6 +28,63 @@ class _DummyStore:
         self.paths = SimpleNamespace(base=Path("."))
 
 
+class _DummyTensor:
+    def __init__(self, shape: tuple[int, ...]) -> None:
+        self.shape = shape
+
+
+class _DummyModel:
+    def __init__(self) -> None:
+        self._params = {"w": _DummyTensor((2, 3))}
+        self._trainable = {"tw": _DummyTensor((2, 2))}
+
+    def parameters(self):
+        return self._params
+
+    def trainable_parameters(self):
+        return self._trainable
+
+
+class _DummyBackend:
+    def clear_cache(self) -> None:
+        return None
+
+    def reset_peak_memory(self) -> None:
+        return None
+
+    def get_active_memory_gb(self) -> float:
+        return 1.0
+
+    def get_peak_memory_gb(self) -> float:
+        return 2.0
+
+    def load_model(self, _path: str):
+        return _DummyModel(), object()
+
+    def encode_tokens(self, _tokenizer, _text: str) -> list[int]:
+        return [1, 2, 3]
+
+    def collect_logits(self, _model, _tokenizer, _text: str, token_ids=None):
+        del token_ids
+        return _DummyTensor((3,))
+
+    def eval(self, *arrays) -> None:
+        del arrays
+        return None
+
+    def generate(self, _model, _tokenizer, _text: str, max_tokens: int = 512, **kwargs) -> str:
+        del max_tokens, kwargs
+        return "ok"
+
+    def tree_flatten(self, params):
+        if isinstance(params, dict):
+            return list(params.items())
+        raise TypeError("expected dict")
+
+    def shape(self, tensor):
+        return tensor.shape
+
+
 def test_system_probe_cuda_payload() -> None:
     service = SystemService(_DummyStore())
     payload = service.probe("cuda")
@@ -52,3 +109,26 @@ def test_system_readiness_includes_backends() -> None:
     assert "backendVersions" in payload
     assert "backends" in payload
     assert "preferredBackend" in payload
+
+
+def test_memory_profile_emits_required_fields(tmp_path) -> None:
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_text('{"quantization": "4bit"}', encoding="utf-8")
+
+    service = SystemService(_DummyStore(), backend=_DummyBackend())
+    payload = service.memory_profile(
+        model=str(model_dir),
+        prompt="hello",
+        train_probe=True,
+        decode_tokens=8,
+    )
+
+    assert payload["model_id"] == "model"
+    assert payload["precision_bits"] == 4
+    assert payload["param_count"] == 6
+    assert payload["train_probe"] is not None
+    assert payload["train_probe"]["n_trainable_params"] == 4
+    assert payload["decode_slope"]["windows"]
+    for stage in payload["memory_stages"]:
+        assert stage["peak_gb"] >= stage["active_gb"]

@@ -27,6 +27,7 @@ from modelcypher.backends.mlx_training_adapter_core import *  # noqa: F403
 from modelcypher.core.domain.training.exceptions import TrainingDerivationError  # noqa: F401
 
 if TYPE_CHECKING:
+    from modelcypher.core.domain.training.geometric_lora import LayerGeometry
     from modelcypher.ports.backend import Backend
 
 
@@ -171,8 +172,32 @@ class _MLXTrainingAdapterCoreMixin:
 
         return dataset
 
+    @staticmethod
+    def _dequantize_weight(proj) -> Any:
+        """Return the full-precision weight matrix for a projection.
+
+        For ``nn.QuantizedLinear``, dequantizes packed integer data back
+        to float so that SVD and geometry analysis operate on actual
+        weight values, not quantization artifacts.  For standard
+        ``nn.Linear``, returns the weight unchanged.
+        """
+        if isinstance(proj, nn.QuantizedLinear):
+            w = mx.dequantize(
+                proj.weight, proj.scales, proj.biases,
+                proj.group_size, proj.bits,
+            )
+            mx.eval(w)
+            return w
+        mx.eval(proj.weight)
+        return proj.weight
+
     def extract_weight_matrices(self, model) -> dict[str, Any]:
-        """Extract 2D projection weights from the model."""
+        """Extract 2D projection weights from the model.
+
+        For quantized models, weights are dequantized so that downstream
+        geometry analysis (SVD, Shannon effective rank) operates on the
+        actual weight values rather than packed integer representations.
+        """
         weights: dict[str, Any] = {}
         base = getattr(model, "model", model)
 
@@ -186,8 +211,7 @@ class _MLXTrainingAdapterCoreMixin:
                     proj = getattr(attn, proj_name, None)
                     if proj is not None and hasattr(proj, "weight"):
                         key = f"model.layers.{layer_idx}.self_attn.{proj_name}.weight"
-                        weights[key] = proj.weight
-                        mx.eval(proj.weight)
+                        weights[key] = self._dequantize_weight(proj)
 
             mlp = getattr(layer, "mlp", None)
             if mlp is not None:
@@ -195,8 +219,7 @@ class _MLXTrainingAdapterCoreMixin:
                     proj = getattr(mlp, proj_name, None)
                     if proj is not None and hasattr(proj, "weight"):
                         key = f"model.layers.{layer_idx}.mlp.{proj_name}.weight"
-                        weights[key] = proj.weight
-                        mx.eval(proj.weight)
+                        weights[key] = self._dequantize_weight(proj)
 
         logger.info(
             "Extracted %d weight matrices from %d layers",
@@ -204,6 +227,110 @@ class _MLXTrainingAdapterCoreMixin:
             len(base.layers),
         )
         return weights
+
+    def analyze_model_geometry_streaming(
+        self,
+        model,
+        *,
+        use_randomized: bool = False,
+        randomized_kwargs: dict | None = None,
+    ) -> dict[str, "LayerGeometry"]:
+        """Analyze weight geometry one layer at a time, releasing weights immediately.
+
+        Unlike ``extract_weight_matrices()`` + ``analyze_weight_geometries()``,
+        this method never holds all weight matrices in memory simultaneously.
+        Each layer's weight is dequantized (if quantized), analyzed, and then
+        released before moving to the next layer. This enables geometry
+        analysis of 8B-120B models on a single machine.
+
+        Args:
+            model: The model to analyze.
+            use_randomized: If True, use ``compute_layer_geometry_randomized``
+                (O(mnk) per layer) instead of full SVD. Recommended for 8B+.
+            randomized_kwargs: Extra keyword arguments forwarded to
+                ``compute_layer_geometry_randomized`` (oversampling,
+                max_iters, power_iters, seed).
+
+        Returns:
+            Dict mapping layer_key -> LayerGeometry.
+        """
+        from modelcypher.core.domain.training.geometric_lora import (
+            compute_layer_geometry,
+            compute_layer_geometry_randomized,
+        )
+
+        base = getattr(model, "model", model)
+        if not hasattr(base, "layers"):
+            raise ValueError("Model has no .layers attribute — unsupported architecture")
+
+        geometries: dict[str, "LayerGeometry"] = {}
+        rng_kwargs = randomized_kwargs or {}
+        n_layers = len(base.layers)
+        progress_interval = max(1, n_layers // 5)
+        analyzed = 0
+
+        for layer_idx, layer in enumerate(base.layers):
+            for block_name, proj_names in (
+                ("self_attn", ("q_proj", "k_proj", "v_proj", "o_proj")),
+                ("mlp", ("up_proj", "down_proj", "gate_proj")),
+            ):
+                block = getattr(layer, block_name, None)
+                if block is None:
+                    continue
+
+                for proj_name in proj_names:
+                    proj = getattr(block, proj_name, None)
+                    if proj is None or not hasattr(proj, "weight"):
+                        continue
+
+                    key = f"model.layers.{layer_idx}.{block_name}.{proj_name}.weight"
+                    weight = self._dequantize_weight(proj)
+
+                    try:
+                        if use_randomized:
+                            seed = rng_kwargs.get("seed")
+                            if seed is not None:
+                                # Per-layer deterministic seed
+                                rng_kwargs_copy = dict(rng_kwargs)
+                                rng_kwargs_copy["seed"] = (seed + hash(key)) & 0xFFFFFFFF
+                            else:
+                                rng_kwargs_copy = rng_kwargs
+                            geom = compute_layer_geometry_randomized(
+                                weight, key, self._backend, **rng_kwargs_copy,
+                            )
+                        else:
+                            geom = compute_layer_geometry(weight, key, self._backend)
+
+                        geometries[key] = geom
+                        analyzed += 1
+
+                        logger.debug(
+                            "%s: decay=%.1f×, σ_k=%.4f, tail=%d",
+                            key, geom.decay_ratio, geom.sigma_k, geom.tail_dims,
+                        )
+                    except Exception as exc:
+                        logger.warning("Failed to analyze %s: %s", key, exc)
+
+                    # Release the dequantized weight to free memory
+                    del weight
+
+            if (layer_idx + 1) % progress_interval == 0 or layer_idx == n_layers - 1:
+                logger.info(
+                    "Streaming geometry: analyzed layer %d/%d (%d matrices so far)",
+                    layer_idx + 1, n_layers, analyzed,
+                )
+
+            # Clear GPU cache between layers to reclaim memory
+            try:
+                mx.metal.clear_cache()
+            except Exception:
+                pass  # Not on Metal or cache clearing unavailable
+
+        logger.info(
+            "Streaming geometry analysis complete: %d matrices from %d layers",
+            analyzed, n_layers,
+        )
+        return geometries
 
     def extract_lora_weight_deltas(self, model) -> dict[str, Any]:
         """Extract current LoRA-induced weight deltas for injected NB-LoRA modules.

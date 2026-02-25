@@ -25,6 +25,8 @@ Tests:
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from typer.testing import CliRunner
 
@@ -42,6 +44,7 @@ class TestSystemCommandHelp:
         assert result.exit_code == 0
         assert "status" in result.stdout.lower()
         assert "probe" in result.stdout.lower()
+        assert "memory-profile" in result.stdout.lower()
 
     def test_system_status_help(self):
         """Test 'mc system status --help' works."""
@@ -66,6 +69,55 @@ class TestSystemProbeValidation:
         """Test that probe requires a target argument."""
         result = runner.invoke(app, ["system", "probe"])
         assert result.exit_code != 0
+
+
+class TestSystemMemoryProfile:
+    """Test memory-profile command behavior."""
+
+    def test_memory_profile_requires_model(self):
+        result = runner.invoke(app, ["system", "memory-profile"])
+        assert result.exit_code != 0
+
+    def test_memory_profile_emits_schema(self, monkeypatch, tmp_path):
+        model_dir = tmp_path / "model"
+        model_dir.mkdir()
+        (model_dir / "config.json").write_text("{}", encoding="utf-8")
+
+        class _StubSystemService:
+            def memory_profile(self, **_kwargs):
+                return {
+                    "model_id": "model",
+                    "param_count": 42,
+                    "precision_bits": 16,
+                    "quantization_mode": None,
+                    "memory_stages": [
+                        {"stage": "load", "active_gb": 1.0, "peak_gb": 2.0, "timestamp": "t"},
+                    ],
+                    "runtime_stages": [
+                        {"stage": "load", "duration_sec": 0.1, "timestamp": "t"},
+                    ],
+                    "decode_slope": {"gb_per_token": 0.01, "windows": []},
+                    "train_probe": None,
+                }
+
+        monkeypatch.setattr(
+            "modelcypher.cli.commands.system.get_system_service",
+            lambda: _StubSystemService(),
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "--output", "json",
+                "system",
+                "memory-profile",
+                "--model", str(model_dir),
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        payload = json.loads(result.stdout)
+        assert payload["model_id"] == "model"
+        assert payload["decode_slope"]["gb_per_token"] == 0.01
 
 
 class TestSystemStatusExecution:

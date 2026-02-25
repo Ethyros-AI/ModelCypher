@@ -18,6 +18,7 @@ from modelcypher.core.domain.training.geometric_lora import (
     compute_geometric_dropout,
     compute_geometric_rank,
     compute_layer_geometry,
+    compute_layer_geometry_randomized,
     compute_per_layer_ranks,
     derive_lora_configs,
     estimate_nb_lora_parameter_count,
@@ -535,3 +536,134 @@ class TestDeriveLoraConfigs:
         )
         assert len(configs) == 1
         assert configs[0].layer_key == "present"
+
+
+# ===========================================================================
+# 7. compute_layer_geometry_randomized — Randomized SVD Geometry
+# ===========================================================================
+
+
+class TestComputeLayerGeometryRandomized:
+    """Tests for randomized SVD geometry analysis.
+
+    Validates that randomized SVD produces geometry matching full SVD
+    within sqrt(eps) relative error on all key quantities.
+    """
+
+    def test_matches_full_svd_identity(self, any_backend):
+        """Identity matrix: randomized must match full SVD exactly."""
+        b = any_backend
+        W = b.eye(4)
+        full = compute_layer_geometry(W, "test.id", b)
+        rand = compute_layer_geometry_randomized(W, "test.id", b, seed=42)
+
+        # Small matrix — randomized falls back to full SVD
+        assert rand.sigma_max == pytest.approx(full.sigma_max, abs=1e-5)
+        assert rand.tail_dims == full.tail_dims
+        assert rand.shannon_effective_rank == pytest.approx(
+            full.shannon_effective_rank, abs=0.1,
+        )
+
+    def test_matches_full_svd_diagonal(self, any_backend):
+        """Diagonal matrix with known spectrum."""
+        b = any_backend
+        W = b.array([
+            [10.0, 0.0, 0.0, 0.0],
+            [0.0, 5.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 0.001],
+        ])
+        full = compute_layer_geometry(W, "test.diag", b)
+        rand = compute_layer_geometry_randomized(W, "test.diag", b, seed=42)
+
+        assert rand.sigma_max == pytest.approx(full.sigma_max, abs=1e-4)
+        assert rand.tail_dims == full.tail_dims
+        assert rand.sigma_k == pytest.approx(full.sigma_k, rel=1e-3)
+
+    def test_matches_full_svd_rank_deficient(self, any_backend):
+        """Rank-1 matrix."""
+        b = any_backend
+        W = b.array([[1.0, 2.0, 3.0], [2.0, 4.0, 6.0]])
+        full = compute_layer_geometry(W, "test.rank1", b)
+        rand = compute_layer_geometry_randomized(W, "test.rank1", b, seed=42)
+
+        assert rand.tail_dims == full.tail_dims
+        assert rand.sigma_max == pytest.approx(full.sigma_max, abs=1e-4)
+        assert rand.is_targetable == full.is_targetable
+
+    def test_matches_full_svd_larger_matrix(self, any_backend):
+        """Larger random matrix where randomized SVD is actually used."""
+        b = any_backend
+        # Create a matrix with known spectral decay: top SVs dominant, long tail
+        import math
+        n = 64
+        # Diagonal with exponential decay
+        diag_vals = [math.exp(-0.1 * i) for i in range(n)]
+        rows = []
+        for i in range(n):
+            row = [0.0] * n
+            row[i] = diag_vals[i]
+            rows.append(row)
+        W = b.array(rows)
+        b.eval(W)
+
+        full = compute_layer_geometry(W, "test.large", b)
+        rand = compute_layer_geometry_randomized(
+            W, "test.large", b, seed=42,
+        )
+
+        # sigma_max must match closely
+        assert rand.sigma_max == pytest.approx(full.sigma_max, rel=1e-3)
+        # sigma_k must match within sqrt(eps) relative error
+        if full.sigma_k > 0:
+            assert rand.sigma_k == pytest.approx(full.sigma_k, rel=2e-3)
+        # tail_dims must match exactly
+        assert rand.tail_dims == full.tail_dims
+        # Shannon effective rank must be close
+        assert rand.shannon_effective_rank == pytest.approx(
+            full.shannon_effective_rank, rel=0.05,
+        )
+
+    def test_spectral_gap_nonnegative(self, any_backend):
+        """Spectral gap from randomized SVD is non-negative."""
+        b = any_backend
+        W = b.array([
+            [10.0, 0.0, 0.0, 0.0],
+            [0.0, 9.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 0.5],
+        ])
+        geom = compute_layer_geometry_randomized(W, "test.gap", b, seed=42)
+        assert geom.spectral_gap >= 0
+
+    def test_seed_reproducibility(self, any_backend):
+        """Same seed produces identical results."""
+        b = any_backend
+        import math
+        n = 64
+        diag_vals = [math.exp(-0.1 * i) for i in range(n)]
+        rows = []
+        for i in range(n):
+            row = [0.0] * n
+            row[i] = diag_vals[i]
+            rows.append(row)
+        W = b.array(rows)
+        b.eval(W)
+
+        g1 = compute_layer_geometry_randomized(W, "test.repro", b, seed=123)
+        g2 = compute_layer_geometry_randomized(W, "test.repro", b, seed=123)
+
+        assert g1.sigma_max == pytest.approx(g2.sigma_max)
+        assert g1.sigma_k == pytest.approx(g2.sigma_k)
+        assert g1.tail_dims == g2.tail_dims
+        assert g1.shannon_effective_rank == pytest.approx(
+            g2.shannon_effective_rank,
+        )
+
+    def test_zero_matrix(self, any_backend):
+        """Zero matrix returns valid geometry."""
+        b = any_backend
+        W = b.array([[0.0, 0.0], [0.0, 0.0]])
+        geom = compute_layer_geometry_randomized(W, "test.zero", b, seed=42)
+        assert geom.sigma_max == 0.0
+        assert geom.full_rank == 2

@@ -199,6 +199,296 @@ def compute_layer_geometry(
     )
 
 
+def _randomized_singular_values(
+    W: "Array",
+    target_rank: int,
+    backend: "Backend",
+    power_iters: int = 2,
+    seed: int | None = None,
+) -> "Array":
+    """Randomized truncated SVD returning top-k singular values.
+
+    Uses Halko et al. (2011), Algorithm 5.1 to compute the top
+    ``target_rank`` singular values of ``W`` via random projection +
+    subspace iteration, without forming the full decomposition.
+
+    Cost: O(m * n * target_rank * (2 * power_iters + 1)), which is
+    O(mnk) when target_rank << min(m, n) — vastly cheaper than
+    the O(mn * min(m,n)) full SVD.
+
+    Args:
+        W: Weight matrix [m, n] in float32.
+        target_rank: Number of singular values to extract.
+        backend: Backend protocol for tensor operations.
+        power_iters: Subspace power iterations. Error decays as
+            (σ_{k+1}/σ_k)^{2q+1} (Halko et al. 2011, Algorithm 4.3).
+        seed: RNG seed. None uses current backend state.
+
+    Returns:
+        Array of top ``target_rank`` singular values in descending order.
+
+    References:
+        Halko, N., Martinsson, P.G. & Tropp, J.A. (2011). Finding
+        Structure with Randomness. SIAM Review, 53(2), 217-288.
+    """
+    b = backend
+    m, n = int(W.shape[0]), int(W.shape[1])
+
+    if seed is not None:
+        b.random_seed(seed)
+
+    # Step 1: Random Gaussian test matrix Ω ∈ R^{n × target_rank}
+    omega = b.random_normal((n, target_rank))
+    omega = b.astype(omega, "float32")
+    b.eval(omega)
+
+    # Step 2: Sample matrix Y = W @ Ω ∈ R^{m × target_rank}
+    Y = b.matmul(W, omega)
+    b.eval(Y)
+
+    # Step 3: Subspace power iteration for spectral gap amplification
+    for _ in range(power_iters):
+        Y = b.matmul(b.transpose(W), Y)  # W^T @ Y: [n, target_rank]
+        b.eval(Y)
+        Y = b.matmul(W, Y)               # W @ (W^T @ Y): [m, target_rank]
+        b.eval(Y)
+
+    # Step 4: Orthonormal basis via thin SVD of sample matrix
+    Q, _s_y, _vt_y = b.svd(Y, compute_uv=True)
+    b.eval(Q)
+
+    # Step 5: Project into low-rank subspace: B = Q^T @ W ∈ R^{target_rank × n}
+    B = b.matmul(b.transpose(Q), W)
+    b.eval(B)
+
+    # Step 6: SVD of the small matrix B — gives approximate top singular values
+    S_approx = b.svd(B, compute_uv=False)
+    b.eval(S_approx)
+
+    return S_approx
+
+
+def compute_layer_geometry_randomized(
+    weight: "Array",
+    layer_key: str,
+    backend: "Backend",
+    oversampling: int = 10,
+    max_iters: int = 3,
+    power_iters: int = 2,
+    seed: int | None = None,
+) -> LayerGeometry:
+    """Compute spectral geometry via randomized SVD with tail-energy validation.
+
+    Avoids full SVD (O(mn·min(m,n))) by using randomized truncated SVD
+    (Halko et al. 2011) to capture the top-k singular values, then
+    validates that the uncaptured tail energy is negligible.
+
+    The algorithm:
+    1. Compute ||W||_F^2 in O(mn) — this is the total spectral energy.
+    2. Start with k = min(initial_k, full_rank/2) singular values via
+       randomized SVD.
+    3. Check tail energy: tail = ||W||_F^2 - sum(top_k σ_i^2).
+       If tail / ||W||_F^2 < sqrt(eps), the spectrum is captured.
+    4. If not, double k and retry (converges in 1-2 iterations for
+       typical transformer weights where Shannon eff rank << full_rank).
+    5. Compute Shannon effective rank from the captured spectrum,
+       accounting for the tail energy as a correction term.
+
+    Falls back to full SVD when the matrix is small enough that
+    randomized SVD has no advantage (target >= min(m, n)).
+
+    Args:
+        weight: Weight matrix [out_features, in_features].
+        layer_key: Identifier for this layer.
+        backend: Backend for tensor operations.
+        oversampling: Extra columns beyond target rank for Halko capture.
+            p >= 5 gives high-probability accuracy for float32
+            (Halko et al. 2011, §10.3).
+        max_iters: Maximum doubling iterations for tail convergence.
+        power_iters: Subspace power iterations per randomized SVD call.
+        seed: RNG seed for reproducibility.
+
+    Returns:
+        LayerGeometry with all spectral information.
+    """
+    b = backend
+
+    W = b.astype(weight, "float32")
+    b.eval(W)
+
+    shape = (int(W.shape[0]), int(W.shape[1]))
+    full_rank = min(shape)
+
+    # Total spectral energy: ||W||_F^2 = trace(W^T W) = sum(σ_i^2)
+    # Computable in O(mn) without any decomposition.
+    frob_sq = b.sum(W * W)
+    b.eval(frob_sq)
+    frob_sq_val = float(b.to_scalar(frob_sq))
+
+    if frob_sq_val <= 0:
+        return LayerGeometry(
+            layer_key=layer_key,
+            shape=shape,
+            sigma_max=0.0,
+            sigma_k=0.0,
+            effective_rank=0,
+            full_rank=full_rank,
+            decay_ratio=float("inf"),
+            tail_dims=full_rank,
+            shannon_effective_rank=0.0,
+            spectral_gap=0.0,
+        )
+
+    eps_mach = float(b.finfo().eps)
+    tail_threshold = math.sqrt(eps_mach)  # tail energy fraction below which we stop
+
+    # Initial target: min(256, full_rank // 2) — generous for most transformer layers
+    initial_k = min(256, max(16, full_rank // 2))
+
+    S = None
+    for iteration in range(max_iters):
+        target = min(initial_k, full_rank)
+
+        # If target covers the full rank, just do full SVD
+        if target + oversampling >= full_rank:
+            S = b.svd(W, compute_uv=False)
+            b.eval(S)
+            break
+
+        S = _randomized_singular_values(
+            W, target + oversampling, b,
+            power_iters=power_iters,
+            seed=(seed + iteration) if seed is not None else None,
+        )
+
+        # Check tail energy convergence
+        captured_energy = b.sum(S * S)
+        b.eval(captured_energy)
+        captured_val = float(b.to_scalar(captured_energy))
+        tail_fraction = (frob_sq_val - captured_val) / frob_sq_val
+
+        if tail_fraction < tail_threshold:
+            logger.debug(
+                "%s: randomized SVD converged at k=%d (tail=%.2e, iter=%d)",
+                layer_key, target, tail_fraction, iteration,
+            )
+            break
+
+        # Double target and retry
+        initial_k = min(initial_k * 2, full_rank)
+        logger.debug(
+            "%s: tail energy %.2e > threshold %.2e, doubling to k=%d",
+            layer_key, tail_fraction, tail_threshold, initial_k,
+        )
+    else:
+        logger.warning(
+            "%s: randomized SVD did not converge after %d iterations "
+            "(tail=%.2e); falling back to full SVD",
+            layer_key, max_iters, tail_fraction,
+        )
+        S = b.svd(W, compute_uv=False)
+        b.eval(S)
+
+    # From here, compute geometry identically to compute_layer_geometry()
+    n_svs = int(S.shape[0])
+    if n_svs == 0:
+        return LayerGeometry(
+            layer_key=layer_key,
+            shape=shape,
+            sigma_max=0.0,
+            sigma_k=0.0,
+            effective_rank=0,
+            full_rank=full_rank,
+            decay_ratio=float("inf"),
+            tail_dims=full_rank,
+            shannon_effective_rank=0.0,
+            spectral_gap=0.0,
+        )
+
+    sigma_max = float(b.to_scalar(S[0]))
+
+    # Precision-based effective rank (LAPACK/MATLAB convention)
+    rank_eps = svd_rank_threshold(b, S, max(shape))
+    threshold = rank_eps * sigma_max
+    significant_mask = S > threshold
+    significant_count = b.sum(b.astype(significant_mask, "int32"))
+    b.eval(significant_count)
+    effective_rank = int(b.to_scalar(significant_count))
+
+    # Shannon effective rank from captured spectrum.
+    # For randomized SVD, the captured singular values approximate the top-k.
+    # The tail energy (uncaptured dimensions) contributes negligibly to
+    # entropy because Shannon entropy is dominated by the large singular
+    # values. When tail_fraction < sqrt(eps), the entropy error is bounded
+    # by O(tail_fraction * log(full_rank / n_svs)), which is negligible.
+    eigvals = S * S
+    sum_eig = b.sum(eigvals)
+    b.eval(sum_eig)
+    sum_eig_val = float(b.to_scalar(sum_eig))
+
+    # Use Frobenius norm as the normalizer (captures total energy including
+    # any uncaptured tail). This ensures the probability distribution sums
+    # correctly even with a truncated spectrum.
+    eps = division_epsilon(b, eigvals)
+
+    if frob_sq_val > eps:
+        frob_sq_arr = b.full((1,), frob_sq_val, dtype=eigvals.dtype)
+        b.eval(frob_sq_arr)
+        p = eigvals / frob_sq_arr
+        log_eps = safe_log_epsilon(b, eigvals)
+        eps_arr = b.full(p.shape, log_eps, dtype=p.dtype)
+        p_safe = b.where(p > log_eps, p, eps_arr)
+        entropy = b.sum(-p * b.log(p_safe))
+        # Tail correction: the uncaptured dimensions each contribute
+        # at most (frob_sq - captured) / (full_rank - n_svs) energy.
+        # Their entropy contribution is bounded but can be accounted for.
+        tail_energy = frob_sq_val - sum_eig_val
+        n_tail = full_rank - n_svs
+        if n_tail > 0 and tail_energy > eps:
+            # Upper bound: tail dims have uniform energy = tail_energy / n_tail
+            p_tail = tail_energy / (n_tail * frob_sq_val)
+            if p_tail > 0:
+                tail_entropy = -n_tail * p_tail * math.log(p_tail)
+                entropy = entropy + b.full((1,), tail_entropy, dtype=entropy.dtype)
+        b.eval(entropy)
+        shannon_eff_rank = b.exp(entropy)
+        b.eval(shannon_eff_rank)
+        shannon_effective_rank = float(b.to_scalar(shannon_eff_rank))
+    else:
+        shannon_effective_rank = 0.0
+
+    structural_rank = max(1, min(math.floor(shannon_effective_rank), n_svs - 1))
+
+    sigma_k = float(b.to_scalar(S[structural_rank - 1]))
+
+    if sigma_k <= 0:
+        sigma_min = float(b.to_scalar(S[n_svs - 1]))
+        div_eps = division_epsilon(b, S)
+        sigma_k = sigma_min if sigma_min > 0 else max(div_eps, threshold)
+
+    if structural_rank >= 2:
+        sigma_k_prev = float(b.to_scalar(S[structural_rank - 2]))
+        spectral_gap = sigma_k_prev - sigma_k
+    else:
+        spectral_gap = sigma_k
+
+    tail_dims = max(0, full_rank - structural_rank)
+    decay_ratio = sigma_max / sigma_k if sigma_k > 0 else float("inf")
+
+    return LayerGeometry(
+        layer_key=layer_key,
+        shape=shape,
+        sigma_max=sigma_max,
+        sigma_k=sigma_k,
+        effective_rank=effective_rank,
+        full_rank=full_rank,
+        decay_ratio=decay_ratio,
+        tail_dims=tail_dims,
+        shannon_effective_rank=shannon_effective_rank,
+        spectral_gap=spectral_gap,
+    )
+
+
 def analyze_weight_geometries(
     weights: dict[str, "Array"],
     backend: "Backend",
@@ -565,6 +855,7 @@ __all__ = [
     "compute_geometric_dropout",
     "compute_geometric_rank",
     "compute_layer_geometry",
+    "compute_layer_geometry_randomized",
     "compute_per_layer_ranks",
     "derive_lora_configs",
     "estimate_nb_lora_parameter_count",

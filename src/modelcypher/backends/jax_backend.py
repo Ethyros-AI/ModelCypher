@@ -1373,6 +1373,10 @@ class JAXBackend(Backend):
         # Return current allocation as approximation
         return self.get_active_memory_gb()
 
+    def reset_peak_memory(self) -> None:
+        """Reset peak GPU memory counter (no-op for JAX)."""
+        return None
+
     def get_active_memory_gb(self) -> float:
         """Get active GPU memory usage in gigabytes."""
         try:

@@ -27,6 +27,7 @@ Provides commands for:
 Commands:
     mc system status
     mc system probe <target>
+    mc system memory-profile --model <path>
     mc system benchmark cache
     mc system test-cache [model_path]
     mc system commands
@@ -41,7 +42,10 @@ from modelcypher.cli.composition import (
     get_system_service,
 )
 from modelcypher.cli.context import CLIContext
-from modelcypher.cli.output import write_output
+from modelcypher.cli.exit_codes import EXIT_INPUT, EXIT_RUNTIME
+from modelcypher.cli.input_validation import validate_model_path
+from modelcypher.cli.output import write_error, write_output
+from modelcypher.utils.errors import ErrorDetail
 
 app = typer.Typer(no_args_is_help=True)
 benchmark_app = typer.Typer(no_args_is_help=True, help="Benchmark system components")
@@ -91,6 +95,73 @@ def system_probe(ctx: typer.Context, target: str = typer.Argument(...)) -> None:
     context = _context(ctx)
     service = get_system_service()
     write_output(service.probe(target), context.output_format, context.pretty)
+
+
+@app.command("memory-profile")
+def system_memory_profile(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Model identifier or path"),
+    prompt: str | None = typer.Option(None, "--prompt", help="Prompt used for profiling"),
+    decode_tokens: int = typer.Option(
+        32,
+        "--decode-tokens",
+        min=1,
+        help="Maximum decode length for bounded decode profiling",
+    ),
+    train_probe: bool = typer.Option(
+        False,
+        "--train-probe",
+        help="Run an additional train-step memory surrogate after inference stages",
+    ),
+) -> None:
+    """Profile stage-wise active/peak memory for a model on the current backend.
+
+    Stages include load, tokenization, forward, decode windows, and optional
+    train-probe surrogate. Outputs raw measurements suitable for feasibility maps.
+    """
+    context = _context(ctx)
+    validate_model_path(model, context=context)
+    service = get_system_service()
+
+    try:
+        payload = service.memory_profile(
+            model=model,
+            prompt=prompt,
+            train_probe=train_probe,
+            decode_tokens=decode_tokens,
+        )
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1025",
+            title="Invalid memory profile options",
+            detail=str(exc),
+            hint="Ensure decode token count is >= 1 and model path is valid.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_INPUT)
+        raise typer.Exit(code=EXIT_INPUT)
+    except FileNotFoundError as exc:
+        error = ErrorDetail(
+            code="MC-1001",
+            title="Model not found",
+            detail=str(exc),
+            hint="Point to a model directory containing config.json.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_INPUT)
+        raise typer.Exit(code=EXIT_INPUT)
+    except RuntimeError as exc:
+        error = ErrorDetail(
+            code="MC-1018",
+            title="Memory profile failed",
+            detail=str(exc),
+            hint="Check backend runtime status with `mc system status`.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
+
+    write_output(payload, context.output_format, context.pretty)
 
 
 @benchmark_app.command("cache")

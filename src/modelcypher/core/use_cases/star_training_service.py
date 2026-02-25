@@ -549,8 +549,11 @@ class StarTrainingService:
             str(model_path),
             adapter_path=str(adapter_path) if adapter_path else None,
         )
-        weights = self._training_adapter.extract_weight_matrices(model)
-        geometry = analyze_weight_geometries(weights, self._backend)
+        if hasattr(self._training_adapter, "analyze_model_geometry_streaming"):
+            geometry = self._training_adapter.analyze_model_geometry_streaming(model)
+        else:
+            weights = self._training_adapter.extract_weight_matrices(model)
+            geometry = analyze_weight_geometries(weights, self._backend)
         del model, _tokenizer
         self._backend.clear_cache()
         gc.collect()

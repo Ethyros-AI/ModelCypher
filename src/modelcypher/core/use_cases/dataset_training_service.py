@@ -535,8 +535,16 @@ class DatasetTrainingService:
         # 4. Analyze geometry — this IS the configuration
         if rp is not None:
             rp.training_geometry_started()
-        weights = self._adapter.extract_weight_matrices(model)
-        geometries = analyze_weight_geometries(weights, self._backend)
+
+        # Use streaming analysis when available — processes one layer at a
+        # time, releasing weights immediately.  Falls back to batch analysis
+        # for adapters that don't implement the streaming method.
+        if hasattr(self._adapter, "analyze_model_geometry_streaming"):
+            geometries = self._adapter.analyze_model_geometry_streaming(model)
+            weights = {}  # not needed — optimizer config uses precomputed geometries
+        else:
+            weights = self._adapter.extract_weight_matrices(model)
+            geometries = analyze_weight_geometries(weights, self._backend)
 
         # 4.5. Derive optimizer geometry config (ScaledGD epsilon, decay per layer)
         opt_config = derive_optimizer_geometry_config(
@@ -799,7 +807,13 @@ class DatasetTrainingService:
             if not online_eval:
                 effective_online_eval = True
             if online_eval_n_problems is None:
-                effective_online_eval_n_problems = regime_n_problems
+                from modelcypher.core.domain.star.problem_generator import (
+                    StarProblemGenerator,
+                )
+
+                effective_online_eval_n_problems = (
+                    regime_n_problems * len(StarProblemGenerator.PROBLEM_TYPES)
+                )
             logger.info(
                 "Auto regime enabled: deriving online_eval/outcome/entropy flags "
                 "from baseline with N=%d problems",

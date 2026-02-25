@@ -25,6 +25,9 @@ Tests:
 
 from __future__ import annotations
 
+import json
+from types import SimpleNamespace
+
 import pytest
 from typer.testing import CliRunner
 
@@ -49,6 +52,7 @@ class TestInferCommandHelp:
         assert result.exit_code == 0
         assert "--model" in result.stdout
         assert "--prompt" in result.stdout
+        assert "--max-tokens" in result.stdout
 
     def test_infer_suite_help(self):
         """Test 'mc infer suite --help' works."""
@@ -84,6 +88,51 @@ class TestInferRunValidation:
         )
         # Should fail - no prompt provided
         assert result.exit_code != 0
+
+    def test_infer_run_passes_max_tokens_to_engine(self, monkeypatch, tmp_path):
+        """Test that --max-tokens is forwarded to inference engine."""
+        model_dir = tmp_path / "model"
+        model_dir.mkdir()
+        (model_dir / "config.json").write_text("{}", encoding="utf-8")
+
+        captured: dict[str, object] = {}
+
+        class _StubEngine:
+            def run(self, **kwargs):
+                captured.update(kwargs)
+                return SimpleNamespace(
+                    model=str(model_dir),
+                    prompt=kwargs["prompt"],
+                    response="ok",
+                    token_count=1,
+                    tokens_per_second=10.0,
+                    time_to_first_token=None,
+                    total_duration=0.1,
+                    stop_reason="length",
+                    adapter=kwargs.get("adapter"),
+                    security=None,
+                )
+
+        monkeypatch.setattr(
+            "modelcypher.cli.commands.infer.get_inference_engine",
+            lambda: _StubEngine(),
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "--output", "json",
+                "infer",
+                "run",
+                "--model", str(model_dir),
+                "--prompt", "hello",
+                "--max-tokens", "17",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        payload = json.loads(result.stdout)
+        assert payload["stopReason"] == "length"
+        assert captured["max_tokens"] == 17
 
 
 class TestInferSuiteValidation:

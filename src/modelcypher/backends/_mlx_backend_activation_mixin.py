@@ -123,10 +123,22 @@ class _MLXBackendActivationMixin:
 
     def get_peak_memory_gb(self) -> float:
         """Get peak GPU memory usage in gigabytes."""
+        if hasattr(self.mx, "get_peak_memory"):
+            return self.mx.get_peak_memory() / (1024**3)
         return self.mx.metal.get_peak_memory() / (1024**3)
+
+    def reset_peak_memory(self) -> None:
+        """Reset peak GPU memory counter."""
+        if hasattr(self.mx, "reset_peak_memory"):
+            self.mx.reset_peak_memory()
+            return
+        if hasattr(self.mx, "metal") and hasattr(self.mx.metal, "reset_peak_memory"):
+            self.mx.metal.reset_peak_memory()
 
     def get_active_memory_gb(self) -> float:
         """Get active GPU memory usage in gigabytes."""
+        if hasattr(self.mx, "get_active_memory"):
+            return self.mx.get_active_memory() / (1024**3)
         return self.mx.metal.get_active_memory() / (1024**3)
 
     # --- Extended Activation Collection ---

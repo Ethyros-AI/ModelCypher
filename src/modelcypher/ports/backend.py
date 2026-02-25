@@ -953,6 +953,10 @@ class Backend(Protocol):
         """Get peak GPU memory usage in gigabytes."""
         ...
 
+    def reset_peak_memory(self) -> None:
+        """Reset peak GPU memory counter for stage-local measurements."""
+        ...
+
     def get_active_memory_gb(self) -> float:
         """Get active GPU memory usage in gigabytes."""
         ...

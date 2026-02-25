@@ -1434,6 +1434,10 @@ class CUDABackend(Backend):
         """Get peak GPU memory usage in gigabytes."""
         return self.torch.cuda.max_memory_allocated() / (1024**3)
 
+    def reset_peak_memory(self) -> None:
+        """Reset peak GPU memory counter."""
+        self.torch.cuda.reset_peak_memory_stats()
+
     def get_active_memory_gb(self) -> float:
         """Get active GPU memory usage in gigabytes."""
         return self.torch.cuda.memory_allocated() / (1024**3)

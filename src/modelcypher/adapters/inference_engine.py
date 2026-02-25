@@ -310,6 +310,7 @@ class InferenceEngine(HiddenStateEngine):
             duration = time.time() - start_time
             token_count = len(self._backend.encode_tokens(entry.tokenizer, response))
             tokens_per_second = token_count / duration if duration > 0.0 else 0.0
+            stop_reason = "length" if token_count >= max_tokens else "eos"
 
             return {
                 "response": response,
@@ -317,6 +318,7 @@ class InferenceEngine(HiddenStateEngine):
                 "tokens_per_second": tokens_per_second,
                 "time_to_first_token": None,
                 "total_duration": duration,
+                "stop_reason": stop_reason,
                 "model": str(model_path),
                 "adapter": entry.adapter_path,
             }
@@ -396,6 +398,7 @@ class InferenceEngine(HiddenStateEngine):
         prompt: str,
         adapter: str | None = None,
         security_scan: bool = False,
+        max_tokens: int | None = None,
     ) -> InferenceResult:
         """Execute inference with optional adapter and security scanning."""
         model_path = Path(model).expanduser().resolve()
@@ -408,7 +411,8 @@ class InferenceEngine(HiddenStateEngine):
 
         try:
             entry = self._load_model(model_path, adapter)
-            max_tokens = self._derive_max_tokens(model_path, prompt, entry.tokenizer)
+            if max_tokens is None:
+                max_tokens = self._derive_max_tokens(model_path, prompt, entry.tokenizer)
             start_time = time.time()
             response = self._backend.generate(
                 entry.model,
@@ -419,6 +423,7 @@ class InferenceEngine(HiddenStateEngine):
             duration = time.time() - start_time
             token_count = len(self._backend.encode_tokens(entry.tokenizer, response))
             tokens_per_second = token_count / duration if duration > 0.0 else 0.0
+            stop_reason = "length" if token_count >= max_tokens else "eos"
 
             security_summary = None
             if security_scan:
@@ -431,7 +436,7 @@ class InferenceEngine(HiddenStateEngine):
                 tokens_per_second=tokens_per_second,
                 time_to_first_token=None,
                 total_duration=duration,
-                stop_reason="length",
+                stop_reason=stop_reason,
                 model=str(model_path),
                 adapter=entry.adapter_path,
                 security=security_summary,
