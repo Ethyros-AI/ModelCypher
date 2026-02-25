@@ -89,6 +89,11 @@ def merge_run(
         "--behavior-jacobian",
         help="Use behavior Jacobian null-space projector (per-probe CE gradients) instead of activation-covariance",
     ),
+    kfac_projector: bool = typer.Option(
+        False,
+        "--kfac-projector",
+        help="Use K-FAC null-space projector (Kronecker-factored GNH approximation)",
+    ),
 ) -> None:
     """Merge source model into target using null-space geometric transplant.
 
@@ -120,12 +125,12 @@ def merge_run(
     _validate_path(source_path, "Source model", context)
     _validate_path(target_path, "Target model", context)
 
+    import sys
+
     from modelcypher.cli.composition import get_merge_service
 
     # Create progress reporter for structured stderr events when in AI mode
     # or when stderr is not a TTY (agent consumption).
-    import sys
-
     from modelcypher.cli.progress import ProgressReporter
 
     reporter = None
@@ -139,6 +144,7 @@ def merge_run(
         target_path=str(target_path),
         output_dir=output,
         behavior_jacobian=behavior_jacobian,
+        kfac_projector=kfac_projector,
     )
 
     write_output(_result_to_dict(result), context.output_format, context.pretty)

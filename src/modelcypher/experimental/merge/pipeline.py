@@ -52,7 +52,7 @@ from .stages.compression_descent import (
     apply_compression_descent_to_weights,
     stage_compression_descent,
 )
-from .stages.transplant_weight_processor import BehaviorJacobianContext
+from .stages.transplant_weight_processor import BehaviorJacobianContext, KFACContext
 
 if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
@@ -111,6 +111,7 @@ def run_merge(
     inference_engine: "InferenceEngine | None" = None,
     prior_occupancy_by_layer: dict[int, list[float]] | None = None,
     behavior_jacobian: bool = False,
+    kfac_projector: bool = False,
     progress_reporter: Any | None = None,
 ) -> UnifiedMergeResult:
     """
@@ -351,17 +352,22 @@ def run_merge(
     # Models are only needed for probe stage forward passes.
     # Delete them NOW to free ~18GB before ID computation and density stage.
     # The activations and transforms are all we need going forward.
-    # Exception: behavior_jacobian mode needs target_model for per-probe
+    # Exception: gradient-based projector modes need target_model for per-probe
     # gradient computation during transplant.
+    requires_gradient_projection_context = behavior_jacobian or kfac_projector
     del source_model
-    if not behavior_jacobian:
+    if not requires_gradient_projection_context:
         del target_model
     default_backend = get_default_backend()
     ComputationCache.shared().clear_geometry_caches()
     default_backend.clear_cache()
     logger.info(
         "MEMORY: Cleared models and GPU cache after probe stage%s",
-        " (target model retained for behavior Jacobian)" if behavior_jacobian else "",
+        (
+            " (target model retained for gradient-based projector)"
+            if requires_gradient_projection_context
+            else ""
+        ),
     )
 
     probe_result.get("confidences", {})
@@ -1033,31 +1039,50 @@ def run_merge(
     # overlap (CKA ≈ 1) simply means the models use similar coordinate systems,
     # not that there's nothing to transfer. The weights can still differ.
 
-    # Build behavior Jacobian context if enabled
+    # Build gradient-based projector contexts if enabled.
     jacobian_ctx: BehaviorJacobianContext | None = None
-    if behavior_jacobian:
+    kfac_ctx: KFACContext | None = None
+    if kfac_projector or behavior_jacobian:
         from modelcypher.core.domain.atlas.unified_atlas import UnifiedAtlasInventory
 
         # Ensure target model is available — CLI path only passes paths,
         # so target_model may be None after profile-based alignment.
         if target_model is None:
-            logger.info("BEHAVIOR-JACOBIAN: Loading target model from %s", target_path)
+            logger.info("GRADIENT PROJECTOR: Loading target model from %s", target_path)
             target_model, target_tokenizer = model_loader.load_model(target_path)
 
         probe_texts_for_jacobian = [
             p.support_texts[0] if p.support_texts else p.name
             for p in UnifiedAtlasInventory.all_probes()
         ]
-        jacobian_ctx = BehaviorJacobianContext(
-            model=target_model,
-            tokenizer=target_tokenizer,
-            probe_texts=probe_texts_for_jacobian,
-            backend=backend,
-        )
-        logger.info(
-            "BEHAVIOR-JACOBIAN: Built context with %d probes",
-            len(probe_texts_for_jacobian),
-        )
+        if kfac_projector and behavior_jacobian:
+            logger.info(
+                "PROJECTOR MODE: Both --kfac-projector and --behavior-jacobian enabled; "
+                "using K-FAC (higher priority).",
+            )
+
+        if kfac_projector:
+            kfac_ctx = KFACContext(
+                model=target_model,
+                tokenizer=target_tokenizer,
+                probe_texts=probe_texts_for_jacobian,
+                backend=backend,
+            )
+            logger.info(
+                "K-FAC: Built context with %d probes",
+                len(probe_texts_for_jacobian),
+            )
+        elif behavior_jacobian:
+            jacobian_ctx = BehaviorJacobianContext(
+                model=target_model,
+                tokenizer=target_tokenizer,
+                probe_texts=probe_texts_for_jacobian,
+                backend=backend,
+            )
+            logger.info(
+                "BEHAVIOR-JACOBIAN: Built context with %d probes",
+                len(probe_texts_for_jacobian),
+            )
 
     merged_weights, transplant_metrics = stage_transplant(
         source_weights=loaded_source_weights,
@@ -1101,6 +1126,7 @@ def run_merge(
         target_layers=target_layers,
         injection_layer=injection_layer,  # Single-point injection
         behavior_jacobian_ctx=jacobian_ctx,
+        kfac_ctx=kfac_ctx,
     )
     logger.info("STAGE 3: TRANSPLANT completed")
 
@@ -1112,12 +1138,13 @@ def run_merge(
             output_path=output_dir or "",
         )
 
-    # Clean up target model after transplant if behavior Jacobian retained it
-    if behavior_jacobian and jacobian_ctx is not None:
+    # Clean up target model after transplant if gradient projector retained it
+    if (kfac_ctx is not None) or (jacobian_ctx is not None):
         del target_model
         jacobian_ctx = None
+        kfac_ctx = None
         default_backend.clear_cache()
-        logger.info("MEMORY: Cleared target model after behavior Jacobian transplant")
+        logger.info("MEMORY: Cleared target model after gradient-projector transplant")
 
     # =================================================================
     # STAGE 4: COMPRESSION DESCENT (Force null-space knowledge into active stream)

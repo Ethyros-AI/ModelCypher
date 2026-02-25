@@ -66,6 +66,7 @@ from .transplant_stitches import (
 from .transplant_weight_processor import (
     ActivationContext,
     BehaviorJacobianContext,
+    KFACContext,
     StitchContext,
     process_layer_weights,
 )
@@ -139,6 +140,8 @@ def stage_transplant(
     skip_embedding_transplant: bool = False,
     # Behavior Jacobian null-space projection (replaces activation-covariance projector)
     behavior_jacobian_ctx: BehaviorJacobianContext | None = None,
+    # K-FAC null-space projection (Kronecker-factored GNH approximation)
+    kfac_ctx: KFACContext | None = None,
 ) -> TransplantStageResult:
     """Stage 3: Null-space constrained transplant using probe activations.
 
@@ -1069,6 +1072,7 @@ def stage_transplant(
             source_layers=source_layers,
             target_layers=target_layers,
             behavior_jacobian_ctx=behavior_jacobian_ctx,
+            kfac_ctx=kfac_ctx,
         )
         weights_processed = weight_result.weights_processed
         layer_transplanted = weight_result.layer_transplanted
