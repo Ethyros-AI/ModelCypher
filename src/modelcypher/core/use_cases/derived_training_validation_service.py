@@ -25,11 +25,14 @@ from __future__ import annotations
 
 import gc
 import hashlib
+import logging
 import math
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.star.problem_generator import StarProblem, StarProblemGenerator
@@ -50,6 +53,7 @@ class _Phase5Metrics:
     adapted_max_4gram_repeat: float
     baseline_margins: dict[str, float] | None = None
     adapted_margins: dict[str, float] | None = None
+    max_logit_delta_inf: float | None = None
 
 
 @dataclass
@@ -64,6 +68,7 @@ class _Phase5Context:
     baseline_max_4gram_repeat: float | None = None
     max_tokens: int | None = None
     baseline_margins: dict[str, float] | None = None
+    baseline_logits: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -124,6 +129,7 @@ class DerivedTrainingTrial:
     margin_n_near_zero_baseline: int | None
     margin_n_near_zero_adapted: int | None
     margin_n_flipped_sign: int | None
+    max_logit_delta_inf: float | None
     structural_passed: bool
     inference_passed: bool
     cooccurrence_class: str
@@ -192,6 +198,7 @@ class DerivedTrainingTrial:
             "margin_n_near_zero_baseline": self.margin_n_near_zero_baseline,
             "margin_n_near_zero_adapted": self.margin_n_near_zero_adapted,
             "margin_n_flipped_sign": self.margin_n_flipped_sign,
+            "max_logit_delta_inf": self.max_logit_delta_inf,
             "structural_passed": self.structural_passed,
             "inference_passed": self.inference_passed,
             "cooccurrence_class": self.cooccurrence_class,
@@ -814,6 +821,11 @@ class DerivedTrainingValidationService:
             margin_n_near_zero_baseline=margin_n_near_zero_baseline,
             margin_n_near_zero_adapted=margin_n_near_zero_adapted,
             margin_n_flipped_sign=margin_n_flipped_sign,
+            max_logit_delta_inf=(
+                phase5_metrics.max_logit_delta_inf
+                if phase5_metrics is not None
+                else None
+            ),
             structural_passed=structural_passed,
             inference_passed=inference_passed,
             cooccurrence_class=cooccurrence_class,
@@ -909,17 +921,25 @@ class DerivedTrainingValidationService:
             )
 
         if context.baseline_eval is None or context.baseline_max_4gram_repeat is None:
-            baseline_eval, baseline_max_4gram, baseline_margins = self._run_probe_eval(
+            (
+                baseline_eval,
+                baseline_max_4gram,
+                baseline_margins,
+                _,
+                baseline_logits,
+            ) = self._run_probe_eval(
                 model_path=model_path,
                 adapter_path=None,
                 problems=context.probe_problems,
                 max_tokens=context.max_tokens,
                 baseline_correct_ids=None,
                 epoch=epoch_index,
+                collect_logits_for_delta=True,
             )
             context.baseline_eval = baseline_eval
             context.baseline_max_4gram_repeat = baseline_max_4gram
             context.baseline_margins = baseline_margins
+            context.baseline_logits = baseline_logits
 
         adapter_path = getattr(train_result, "adapter_path", None)
         if not adapter_path:
@@ -928,13 +948,20 @@ class DerivedTrainingValidationService:
                 "train run returned no adapter artifact.",
             )
 
-        adapted_eval, adapted_max_4gram, adapted_margins = self._run_probe_eval(
+        (
+            adapted_eval,
+            adapted_max_4gram,
+            adapted_margins,
+            max_logit_delta_inf,
+            _,
+        ) = self._run_probe_eval(
             model_path=model_path,
             adapter_path=Path(adapter_path),
             problems=context.probe_problems,
             max_tokens=context.max_tokens,
             baseline_correct_ids=context.baseline_eval.correct_ids,
             epoch=epoch_index,
+            baseline_logits=context.baseline_logits,
         )
 
         return _Phase5Metrics(
@@ -946,6 +973,7 @@ class DerivedTrainingValidationService:
             adapted_max_4gram_repeat=adapted_max_4gram,
             baseline_margins=context.baseline_margins,
             adapted_margins=adapted_margins,
+            max_logit_delta_inf=max_logit_delta_inf,
         )
 
     def _run_probe_eval(
@@ -957,7 +985,18 @@ class DerivedTrainingValidationService:
         max_tokens: int,
         baseline_correct_ids: frozenset[str] | None,
         epoch: int,
-    ) -> tuple[OnlineEvalResult, float, dict[str, float]]:
+        baseline_logits: dict[str, Any] | None = None,
+        collect_logits_for_delta: bool = False,
+    ) -> tuple[OnlineEvalResult, float, dict[str, float], float | None, dict[str, Any] | None]:
+        """Run probe evaluation and margin measurement.
+
+        Returns (eval_result, max_4gram_repeat, margins, max_logit_delta_inf,
+        collected_logits).
+
+        max_logit_delta_inf is only computed when baseline_logits is provided
+        (adapted run), allowing per-probe ||Δlogits||_∞ measurement.
+        collected_logits is populated when collect_logits_for_delta=True.
+        """
         model, tokenizer = self._backend.load_model(
             str(model_path),
             str(adapter_path) if adapter_path is not None else None,
@@ -989,12 +1028,59 @@ class DerivedTrainingValidationService:
 
         margins = compute_answer_margin(problems, _collect_logits, self._backend)
 
+        # Collect per-probe logit vectors for delta measurement in adapted run
+        collected_logits: dict[str, Any] | None = None
+        if collect_logits_for_delta:
+            collected_logits = {}
+            for problem in problems:
+                pid = problem.problem_id
+                prompt = self._build_probe_prompts([problem])[0]
+                try:
+                    logits = self._backend.collect_logits(
+                        model, tokenizer, prompt,
+                    )
+                    self._backend.eval(logits)
+                    collected_logits[pid] = logits
+                except Exception:
+                    logger.debug(
+                        "Logit collection failed for %s", pid,
+                        exc_info=True,
+                    )
+
+        # Measured logit perturbation: ||Δlogits||_∞ per probe
+        max_logit_delta_inf: float | None = None
+        if baseline_logits is not None:
+            max_delta = 0.0
+            for problem in problems:
+                pid = problem.problem_id
+                if pid not in baseline_logits:
+                    continue
+                prompt = self._build_probe_prompts([problem])[0]
+                try:
+                    adapted_logits = self._backend.collect_logits(
+                        model, tokenizer, prompt,
+                    )
+                    delta = adapted_logits - baseline_logits[pid]
+                    self._backend.eval(delta)
+                    abs_delta = self._backend.abs(delta)
+                    self._backend.eval(abs_delta)
+                    delta_inf = float(
+                        self._backend.to_scalar(self._backend.max(abs_delta))
+                    )
+                    max_delta = max(max_delta, delta_inf)
+                except Exception:
+                    logger.debug(
+                        "Logit delta measurement failed for %s", pid,
+                        exc_info=True,
+                    )
+            max_logit_delta_inf = max_delta
+
         del model
         del tokenizer
         gc.collect()
         self._clear_backend_cache()
 
-        return eval_result, max_repetition, margins
+        return eval_result, max_repetition, margins, max_logit_delta_inf, collected_logits
 
     @staticmethod
     def _build_probe_prompts(problems: list[StarProblem]) -> list[str]:

@@ -540,7 +540,9 @@ class DatasetTrainingService:
         # time, releasing weights immediately.  Falls back to batch analysis
         # for adapters that don't implement the streaming method.
         if hasattr(self._adapter, "analyze_model_geometry_streaming"):
-            geometries = self._adapter.analyze_model_geometry_streaming(model)
+            geometries = self._adapter.analyze_model_geometry_streaming(
+                model, use_randomized=True,
+            )
             weights = {}  # not needed — optimizer config uses precomputed geometries
         else:
             weights = self._adapter.extract_weight_matrices(model)
