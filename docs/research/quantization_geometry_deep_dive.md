@@ -12,8 +12,8 @@
 Quantization is the dominant deployment strategy for large models, yet its geometric effects are poorly understood. Industry treats it as a lossy compression tradeoff. We have 448 layers of measured spectral data showing the real picture is more nuanced — and more useful.
 
 **Core findings:**
-- The spectral quantities that matter (sigma_max, sigma_k, tail_dims) are barely perturbed by 8-bit quantization (<0.3%, <0.05%, 98% match)
-- The Weyl crossing criterion is violated 50-576x, but this measures fine eigenvalue ordering at the noise floor — not the structure the model relies on
+- The spectral quantities that matter (sigma_max, sigma_k, tail_dims) are barely perturbed by 8-bit quantization (<0.032%, <0.153%, 439/448 = 98.0% match)
+- The Weyl crossing criterion is violated 3.7-1700.5x (0/448 layers safe), but this measures fine eigenvalue ordering at the noise floor — not the structure the model relies on
 - T-matrix quantization at 8-bit *outperforms* FP32 (93.3% vs 86.7%), demonstrating quantization-as-regularization
 - Standard QLoRA uses scale=2.0, which violates spectral bounds by 600-2700x independent of quantization. The scale error is 3-4 orders of magnitude larger than the quantization error
 
@@ -54,7 +54,8 @@ This is geometrically significant: random perturbations spread energy uniformly 
 
 We measured the spectral impact of 8-bit-g64-affine quantization on every 2D weight matrix in Qwen3-1.7B (196 layers) and Qwen3-8B (252 layers).
 
-*Data: [`weyl_quantization_validation.json`](../../results/weyl_quantization_validation/20260225T171904Z/weyl_quantization_validation.json)*
+*Data: [`weyl_quantization_validation.json`](../../results/weyl_quantization_validation/20260225T231720Z/weyl_quantization_validation.json)*
+*Note: exact-SVD values are canonical; randomized SVD is retained for fast scans and can inflate boundary metrics.*
 
 **Qwen3-1.7B Layer 0 — Representative Sample:**
 
@@ -68,18 +69,20 @@ We measured the spectral impact of 8-bit-g64-affine quantization on every 2D wei
 | q_proj | 11.867 | 11.865 | 0.018% | 1.183 | 1.183 | 0.017% |
 | v_proj | 3.117 | 3.116 | 0.019% | 0.925 | 0.925 | 0.018% |
 
-**Aggregate across 196 layers (Qwen3-1.7B):**
+**Aggregate across 448 layers (Qwen3-1.7B + Qwen3-8B):**
 
 | Metric | Value |
 |--------|-------|
-| Max sigma_max change | <0.3% |
-| Max sigma_k change | <0.05% |
-| tail_dims match | 192/196 (98.0%) |
-| Weyl crossing safe | 0/196 (0%) |
-| Max error/gap ratio | 576x |
-| Max ||E_q||_2 | 0.055 |
+| Max sigma_max change | <0.032% |
+| Max sigma_k change | <0.153% |
+| tail_dims match | 439/448 (98.0%) |
+| Weyl crossing safe | 0/448 (0%) |
+| Max error/gap ratio | 1700.5x |
+| Max ||E_q||_2 | 0.1415 |
 
-The same pattern holds for the 252 layers of Qwen3-8B.
+Per-model breakdown from the exact run:
+- Qwen3-1.7B: `tail_dims` 192/196, max error/gap 576.2x, max `||E_q||_2` 0.0554
+- Qwen3-8B: `tail_dims` 247/252, max error/gap 1700.5x, max `||E_q||_2` 0.1415
 
 ### 1.3 The Weyl Paradox: Why Violations Don't Kill the Model
 
@@ -89,7 +92,7 @@ Weyl's perturbation theorem (1912) guarantees that for any perturbation E:
 |sigma_i(W + E) - sigma_i(W)| ≤ ||E||_2
 ```
 
-This bound IS satisfied. With ||E_q||_2 ≈ 0.04-0.05 and sigma_max ≈ 7-12, the relative perturbation to any individual singular value is tiny. The top singular value moves by 0.0009 out of 7.825 — a 0.012% change. This is why quantized models work.
+This bound IS satisfied. With ||E_q||_2 ≈ 0.04-0.14 and sigma_max ≈ 7-12, the relative perturbation to any individual singular value is tiny. The top singular value moves by 0.0009 out of 7.825 — a 0.012% change. This is why quantized models work.
 
 The Weyl *crossing criterion* asks a different question: can singular values at the structural rank boundary swap their ordering? The condition is:
 
@@ -97,7 +100,7 @@ The Weyl *crossing criterion* asks a different question: can singular values at 
 ||E_q||_2 < spectral_gap(sigma_k) / 2
 ```
 
-With ||E_q||_2 ≈ 0.04 and spectral gaps at sigma_k ≈ 0.0001-0.001, this is violated 50-576x. Singular values at the noise floor DO cross.
+With ||E_q||_2 ≈ 0.04-0.14 and spectral gaps at sigma_k ≈ 10^-5-10^-3, this is violated 3.7-1700.5x. Singular values at the noise floor DO cross.
 
 **But this crossing is geometrically inconsequential.** Here's why:
 
@@ -105,7 +108,7 @@ With ||E_q||_2 ≈ 0.04 and spectral gaps at sigma_k ≈ 0.0001-0.001, this is v
 
 2. **The tail directions are interchangeable.** Below sigma_k, singular values are packed tightly (gaps ≈ 10^-4) and carry <10% of total energy collectively. Swapping which directions map to which near-degenerate singular values doesn't change the effective transformation.
 
-3. **tail_dims measures what matters.** The count of effective dimensions (tail_dims) is preserved in 98% of layers. The *topology* of the effective subspace — how many dimensions carry meaningful information — is unchanged even when individual eigenvalues shuffle at the boundary.
+3. **tail_dims measures what matters.** The count of effective dimensions (tail_dims) is preserved in 439/448 layers (98.0%). The *topology* of the effective subspace — how many dimensions carry meaningful information — is unchanged even when individual eigenvalues shuffle at the boundary.
 
 The analogy: if you scramble the order of books on a shelf but keep every book, the library still has the same information. Weyl crossing rearranges near-degenerate singular directions without removing or adding any.
 
@@ -162,11 +165,11 @@ Ranking what survives 8-bit quantization, from most robust to least:
 
 | Spectral Quantity | Effect of 8-bit | Status |
 |-------------------|-----------------|--------|
-| sigma_max (dominant direction) | <0.3% change | PRESERVED |
-| sigma_k (structural boundary) | <0.05% change | PRESERVED |
-| tail_dims (effective subspace count) | 98% match | PRESERVED |
+| sigma_max (dominant direction) | <0.032% change | PRESERVED |
+| sigma_k (structural boundary) | <0.153% change | PRESERVED |
+| tail_dims (effective subspace count) | 439/448 (98.0%) match | PRESERVED |
 | Activation manifold topology | Intact (models work) | PRESERVED |
-| Spectral gap at sigma_k | 50-576x violation | DESTROYED |
+| Spectral gap at sigma_k | 3.7-1700.5x violation | DESTROYED |
 | Fine eigenvalue ordering at boundary | Crossings occur | DESTROYED |
 
 **What's destroyed doesn't matter. What matters is preserved.**
@@ -198,7 +201,7 @@ dL/dB = dequantize(W_q)^T @ (dy/dx) @ x^T @ A^T
 Gradients flow through the dequantized weight. The gradient landscape the optimizer sees is the landscape of f(x; W_fp + E_q + scale * B @ A), not f(x; W_fp + scale * B @ A).
 
 **This is a double approximation:**
-1. The base transformation is approximate (quantized): contributes ||E_q||_2 ≈ 0.04
+1. The base transformation is approximate (quantized): contributes ||E_q||_2 ≈ 0.04-0.14
 2. The update is low-rank (LoRA): misses components outside rank(B @ A)
 
 The standard QLoRA adds a third error source that dominates both:
@@ -242,10 +245,10 @@ eta_ceiling = sigma_k_min / (sigma_max_global × sqrt(N))
 ```
 
 From the Weyl validation data:
-- sigma_k changes <0.05% under 8-bit quantization
-- sigma_max changes <0.3% under 8-bit quantization
+- sigma_k changes <0.153% under 8-bit quantization
+- sigma_max changes <0.032% under 8-bit quantization
 
-Therefore eta_ceiling computed on quantized weights differs from the full-precision eta_ceiling by at most ~0.35%. **The MASS learning rate is robust to 8-bit quantization by construction** — its inputs barely move.
+Therefore eta_ceiling computed on quantized weights differs from the full-precision eta_ceiling by at most ~0.19%. **The MASS learning rate is robust to 8-bit quantization by construction** — its inputs barely move.
 
 For 4-bit quantization, we expect larger sigma_k and sigma_max perturbations. Experiment 5 in the validation plan will measure this. However, the hierarchy from Section 1.6 suggests these top-of-spectrum quantities remain robust even as Frobenius error approaches 100%.
 
@@ -264,13 +267,13 @@ From the [spectral scale bound validation](./lora_spectral_scale_bound.md):
 - The standard configuration (alpha=16, rank=8, scale=2.0) produces degenerate output
 - Geometric scaling (~0.1-0.3) produces correct reasoning
 
-**These violations are quantization-independent.** sigma_k barely changes under quantization (<0.05%), so the bound is essentially the same whether computed on bf16 or 8-bit weights.
+**These violations are quantization-independent.** sigma_k barely changes under quantization (<0.153%), so the bound is essentially the same whether computed on bf16 or 8-bit weights.
 
 Let's compare the error magnitudes:
 
 | Error Source | Magnitude | Relative to sigma_k |
 |--------------|-----------|---------------------|
-| Quantization (||E_q||_2) | ~0.04 | ~0.03x sigma_k |
+| Quantization (||E_q||_2) | ~0.04-0.14 | ~0.01-0.08x sigma_k |
 | Standard LoRA scale violation | 600-2700x × sigma_k | 600-2700x sigma_k |
 
 **The scale violation is 20,000-90,000x larger than the quantization error.**
@@ -399,10 +402,10 @@ The experimental plan addresses all three questions.
 
 | Claim | Status | Evidence |
 |-------|--------|----------|
-| sigma_max barely changes under 8-bit quantization | MEASURED | <0.3% across 448 layers (Weyl validation) |
-| sigma_k barely changes under 8-bit quantization | MEASURED | <0.05% across 448 layers (Weyl validation) |
-| Weyl crossing criterion violated 50-576x | MEASURED | 0/448 layers safe (Weyl validation) |
-| tail_dims preserved under 8-bit quantization | MEASURED | 192/196 Qwen3-1.7B (Weyl validation) |
+| sigma_max barely changes under 8-bit quantization | MEASURED | <0.032% max across 448 layers (exact-SVD Weyl validation) |
+| sigma_k barely changes under 8-bit quantization | MEASURED | <0.153% max across 448 layers (exact-SVD Weyl validation) |
+| Weyl crossing criterion violated 3.7-1700.5x | MEASURED | 0/448 layers safe (exact-SVD Weyl validation) |
+| tail_dims preserved under 8-bit quantization | MEASURED | 439/448 aggregate; 192/196 (Qwen3-1.7B), 247/252 (Qwen3-8B) |
 | 4-bit Frobenius error 90-100% yet models work | MEASURED | Compression synthesis |
 | 8-bit T-matrix outperforms FP32 T-matrix | MEASURED | 93.3% vs 86.7% (compression synthesis) |
 | Weyl violations are inconsequential at noise floor | PROVEN | Weyl 1912 + measured gap structure |
@@ -433,8 +436,8 @@ The experimental plan addresses all three questions.
 **Infrastructure:** Extend [`weyl_quantization_validation.py`](../../scripts/weyl_quantization_validation.py) to add SVD of E_q and RMT separation. All tools exist — `compute_signal_rank_from_singular_values()` in [`rmt_signal_separation.py`](../../src/modelcypher/core/domain/geometry/rmt_signal_separation.py) handles the computation.
 
 **Predictions:**
-- If signal_rank > 0 for most layers → corrective LoRA is geometrically justified (proceed to Exp 3)
-- If signal_rank = 0 for most layers → correction is hopeless, stop here
+- If the 95% bootstrap CI lower bound for mean(signal_rank) is > 0 and the 95% bootstrap CI lower bound for mean(signal_variance_fraction) is > 0 → corrective LoRA is geometrically justified (proceed to Exp 3)
+- If either CI includes 0 → correction is unsupported; stop here
 
 **This is the gate experiment.** Everything downstream depends on this result.
 
@@ -455,7 +458,7 @@ The experimental plan addresses all three questions.
 
 **Prediction:** Geometric scale produces coherent output regardless of quantization. Standard scale produces degenerate output regardless of quantization. The variable that matters is scale, not base precision.
 
-**Infrastructure:** Existing `mc train run` pipeline + `LoRASafetyService.compute_geometric_scale()`. No new code needed.
+**Infrastructure:** Existing `mc train run` supports geometry-bounded NB-LoRA via `LoRASafetyService.compute_geometric_scale()`. A standard-scale baseline path (`alpha/rank = 2.0`) is required for this A/B and is not currently exposed by `mc train run`.
 
 ### Experiment 3: Corrective LoRA Training
 
@@ -508,7 +511,7 @@ This is where the stacking hypothesis faces its hardest test. If 4-bit E_q is pr
 ## References
 
 ### Internal
-- Weyl validation data: `results/weyl_quantization_validation/20260225T171904Z/`
+- Weyl validation data (exact-SVD canonical): `results/weyl_quantization_validation/20260225T231720Z/`
 - Weyl validation script: `scripts/weyl_quantization_validation.py`
 - Compression synthesis: `docs/research/COMPRESSION-RESEARCH-SYNTHESIS.md`
 - Spectral scale bound: `docs/research/lora_spectral_scale_bound.md`

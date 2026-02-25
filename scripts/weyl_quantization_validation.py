@@ -48,6 +48,7 @@ DEFAULT_PAIRS = [
 ]
 
 OUTPUT_DIR = Path("results/weyl_quantization_validation")
+DEFAULT_GEOMETRY_SEED = 42
 
 logging.basicConfig(
     level=logging.INFO,
@@ -161,6 +162,9 @@ def _validate_pair(
     q_path: str,
     backend: Any,
     adapter: MLXTrainingAdapter,
+    *,
+    geometry_mode: str,
+    geometry_seed: int,
 ) -> dict[str, Any]:
     """Compare geometry between full-precision and quantized model."""
     logger.info("=== Validating pair ===")
@@ -170,8 +174,12 @@ def _validate_pair(
     # 1. Analyze geometry on both models (for spectral_gap, sigma_k, etc.)
     logger.info("Loading FP model for geometry...")
     fp_model, _ = backend.load_model(fp_path)
+    use_randomized = geometry_mode == "randomized"
+    randomized_kwargs = {"seed": geometry_seed} if use_randomized else None
     fp_geoms = adapter.analyze_model_geometry_streaming(
-        fp_model, use_randomized=True, randomized_kwargs={"seed": 42},
+        fp_model,
+        use_randomized=use_randomized,
+        randomized_kwargs=randomized_kwargs,
     )
 
     # Also extract raw weights from FP model for error computation
@@ -184,7 +192,9 @@ def _validate_pair(
     logger.info("Loading quantized model...")
     q_model, _ = backend.load_model(q_path)
     q_geoms = adapter.analyze_model_geometry_streaming(
-        q_model, use_randomized=True, randomized_kwargs={"seed": 42},
+        q_model,
+        use_randomized=use_randomized,
+        randomized_kwargs=randomized_kwargs,
     )
 
     # Extract raw weights from quantized model
@@ -304,7 +314,86 @@ def _validate_pair(
     return result
 
 
-def _parse_args() -> argparse.Namespace:
+def _compute_aggregate(results: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate per-layer metrics across all validated model pairs."""
+    total_layers = sum(int(r["n_layers"]) for r in results)
+    total_tail_match = sum(int(r["n_tail_dims_match"]) for r in results)
+    tail_match_pct = (
+        (100.0 * float(total_tail_match) / float(total_layers))
+        if total_layers > 0
+        else 0.0
+    )
+
+    all_layers = [layer for r in results for layer in r.get("per_layer", [])]
+    if not all_layers:
+        return {
+            "n_pairs": len(results),
+            "n_layers_total": total_layers,
+            "n_tail_dims_match_total": total_tail_match,
+            "tail_match_pct": tail_match_pct,
+            "max_sigma_max_rel_pct": 0.0,
+            "max_sigma_k_rel_pct": 0.0,
+            "max_error_norm": 0.0,
+            "max_error_over_gap_ratio": 0.0,
+            "per_model": [],
+        }
+
+    def _max_finite(values: list[float]) -> float:
+        finite = [v for v in values if math.isfinite(v)]
+        return max(finite) if finite else 0.0
+
+    max_sigma_max_rel_pct = _max_finite(
+        [100.0 * float(layer["sigma_max_diff"]) / float(layer["fp_sigma_max"]) for layer in all_layers]
+    )
+    max_sigma_k_rel_pct = _max_finite(
+        [100.0 * float(layer["sigma_k_diff"]) / float(layer["fp_sigma_k"]) for layer in all_layers]
+    )
+    max_error_norm = _max_finite([float(layer["error_norm"]) for layer in all_layers])
+    max_error_over_gap_ratio = _max_finite(
+        [float(layer["error_over_gap_ratio"]) for layer in all_layers]
+    )
+
+    per_model = []
+    for result in results:
+        per_layers = result.get("per_layer", [])
+        model_sigma_max = _max_finite(
+            [100.0 * float(layer["sigma_max_diff"]) / float(layer["fp_sigma_max"]) for layer in per_layers]
+        )
+        model_sigma_k = _max_finite(
+            [100.0 * float(layer["sigma_k_diff"]) / float(layer["fp_sigma_k"]) for layer in per_layers]
+        )
+        per_model.append(
+            {
+                "fp_model_id": result["fp_model_id"],
+                "q_model_id": result["q_model_id"],
+                "n_layers": int(result["n_layers"]),
+                "n_tail_dims_match": int(result["n_tail_dims_match"]),
+                "tail_match_pct": (
+                    100.0 * float(result["n_tail_dims_match"]) / float(result["n_layers"])
+                    if int(result["n_layers"]) > 0
+                    else 0.0
+                ),
+                "max_sigma_max_rel_pct": model_sigma_max,
+                "max_sigma_k_rel_pct": model_sigma_k,
+                "max_error_norm": float(result["max_error_norm"]),
+                "max_error_over_gap_ratio": float(result["max_error_over_gap_ratio"]),
+            },
+        )
+
+    return {
+        "n_pairs": len(results),
+        "n_layers_total": total_layers,
+        "n_tail_dims_match_total": total_tail_match,
+        "tail_match_pct": tail_match_pct,
+        "max_sigma_max_rel_pct": max_sigma_max_rel_pct,
+        "max_sigma_k_rel_pct": max_sigma_k_rel_pct,
+        "max_error_norm": max_error_norm,
+        "max_error_over_gap_ratio": max_error_over_gap_ratio,
+        "per_model": per_model,
+    }
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Weyl quantization validation on real model pairs.",
     )
@@ -320,7 +409,23 @@ def _parse_args() -> argparse.Namespace:
         default=OUTPUT_DIR,
         help="Output directory for results.",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--geometry-mode",
+        choices=("randomized", "exact"),
+        default="randomized",
+        help=(
+            "Geometry analysis mode. "
+            "'randomized' uses randomized SVD for faster throughput (default), "
+            "'exact' uses full SVD."
+        ),
+    )
+    parser.add_argument(
+        "--geometry-seed",
+        type=int,
+        default=DEFAULT_GEOMETRY_SEED,
+        help="Seed used when --geometry-mode=randomized.",
+    )
+    return parser.parse_args(argv)
 
 
 def main() -> None:
@@ -348,7 +453,14 @@ def main() -> None:
 
     results: list[dict[str, Any]] = []
     for fp_path, q_path in pairs:
-        result = _validate_pair(fp_path, q_path, backend, adapter)
+        result = _validate_pair(
+            fp_path,
+            q_path,
+            backend,
+            adapter,
+            geometry_mode=args.geometry_mode,
+            geometry_seed=args.geometry_seed,
+        )
         results.append(result)
 
     # Write output
@@ -361,6 +473,11 @@ def main() -> None:
         "run_id": run_id,
         "n_pairs": len(results),
         "all_safe": all(r["all_weyl_safe"] for r in results),
+        "analysis_config": {
+            "geometry_mode": args.geometry_mode,
+            "geometry_seed": args.geometry_seed if args.geometry_mode == "randomized" else None,
+        },
+        "aggregate": _compute_aggregate(results),
         "pairs": results,
     }
 

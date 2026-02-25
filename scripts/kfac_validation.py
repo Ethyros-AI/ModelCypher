@@ -21,7 +21,7 @@ import logging
 import math
 import sys
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -36,9 +36,6 @@ from modelcypher.core.domain.geometry.kfac_projector import (
 )
 from modelcypher.core.domain.geometry.subspace import (
     compute_grassmann_distance,
-)
-from modelcypher.core.domain.geometry.transplant import (
-    compute_behavior_jacobian_projector,
 )
 from modelcypher.core.domain.training.kfac_curvature_monitor import (
     compute_curvature_alignment,

@@ -1038,8 +1038,8 @@ class LoRASafetyService:
             lora_a = pair["a"]
             lora_b = pair["b"]
 
-            # Navigate to base weight
-            W = self._get_base_weight(base_model, base_key)
+            # Navigate to base weight (dequantized when base module is quantized).
+            W = self._get_weight_for_svd(base_model, base_key, backend)
             if W is None:
                 logger.warning(f"Could not find base weight for {base_key}")
                 continue
@@ -1242,14 +1242,15 @@ class LoRASafetyService:
             lora_a = pair["a"]
             lora_b = pair["b"]
 
-            # Get base weight
-            W = self._get_base_weight(base_model, base_key)
-            if W is None:
+            # Get raw base weight for update and dequantized weight for SVD.
+            W_update = self._get_base_weight(base_model, base_key)
+            W_svd = self._get_weight_for_svd(base_model, base_key, backend)
+            if W_update is None or W_svd is None:
                 logger.warning(f"Could not find base weight for {base_key}")
                 continue
 
             # Compute geometry-derived scale using Backend
-            W_f32 = backend.astype(W, "float32")
+            W_f32 = backend.astype(W_svd, "float32")
             backend.eval(W_f32)
             _, S, _ = backend.svd(W_f32, compute_uv=True)
             backend.eval(S)
@@ -1297,7 +1298,16 @@ class LoRASafetyService:
 
             # Apply scaled delta
             scaled_delta = D * applied_scale
-            new_weight = W + backend.astype(scaled_delta, W.dtype)
+            if tuple(int(x) for x in W_update.shape) != tuple(int(x) for x in scaled_delta.shape):
+                logger.warning(
+                    "Shape mismatch when applying LoRA to %s (%s vs %s); "
+                    "using dequantized base weight for update.",
+                    base_key,
+                    tuple(int(x) for x in W_update.shape),
+                    tuple(int(x) for x in scaled_delta.shape),
+                )
+                W_update = W_svd
+            new_weight = W_update + backend.astype(scaled_delta, W_update.dtype)
 
             # Set the weight back
             self._set_base_weight(base_model, base_key, new_weight)
@@ -1311,9 +1321,8 @@ class LoRASafetyService:
                     backend.eval(p)
         return model, applied_scales
 
-    def _get_base_weight(self, base_model, lora_key: str):
-        """Get the base weight matrix for a LoRA key."""
-        # Parse key like "model.layers.7.feed_forward.w1"
+    def _resolve_base_linear(self, base_model, lora_key: str):
+        """Resolve a LoRA key to its target projection module."""
         parts = lora_key.split(".")
         if parts[0] == "model":
             parts = parts[1:]
@@ -1322,40 +1331,98 @@ class LoRASafetyService:
         for part in parts[:-1]:
             if part == "layers":
                 continue
-            elif part.isdigit():
+            if part.isdigit():
                 current = current.layers[int(part)]
             elif hasattr(current, part):
                 current = getattr(current, part)
             else:
                 return None
 
-        # Get the final Linear module
         param_name = parts[-1]
         if hasattr(current, param_name):
-            linear = getattr(current, param_name)
-            if hasattr(linear, "weight"):
-                return linear.weight
+            return getattr(current, param_name)
+        return None
+
+    @staticmethod
+    def _is_quantized_linear(linear) -> bool:
+        return (
+            hasattr(linear, "weight")
+            and hasattr(linear, "scales")
+            and hasattr(linear, "group_size")
+            and hasattr(linear, "bits")
+        )
+
+    @staticmethod
+    def _dequantize_linear_weight(linear, backend: "Backend"):
+        """Dequantize a quantized linear module weight via Backend protocol."""
+        biases = getattr(linear, "biases", None)
+        bits = int(getattr(linear, "bits"))
+        group_size = int(getattr(linear, "group_size"))
+
+        mode = "affine"
+        if biases is None and bits == 4 and group_size == 32:
+            mode = "mxfp4"
+
+        try:
+            dequantized = backend.dequantize(
+                linear.weight,
+                linear.scales,
+                biases=biases,
+                group_size=group_size,
+                bits=bits,
+                mode=mode,
+            )
+            backend.eval(dequantized)
+            return dequantized
+        except Exception as exc:
+            fallback_mode = "affine" if mode == "mxfp4" else "mxfp4"
+            try:
+                dequantized = backend.dequantize(
+                    linear.weight,
+                    linear.scales,
+                    biases=biases,
+                    group_size=group_size,
+                    bits=bits,
+                    mode=fallback_mode,
+                )
+                backend.eval(dequantized)
+                logger.debug(
+                    "Dequantized %s with fallback mode=%s after mode=%s failed: %s",
+                    getattr(linear, "__class__", type(linear)).__name__,
+                    fallback_mode,
+                    mode,
+                    exc,
+                )
+                return dequantized
+            except Exception:
+                logger.warning(
+                    "Failed to dequantize %s with modes (%s, %s).",
+                    getattr(linear, "__class__", type(linear)).__name__,
+                    mode,
+                    fallback_mode,
+                )
+                return None
+
+    def _get_weight_for_svd(self, base_model, lora_key: str, backend: "Backend"):
+        """Get base weight for spectral analysis, dequantizing when needed."""
+        linear = self._resolve_base_linear(base_model, lora_key)
+        if linear is None or not hasattr(linear, "weight"):
+            return None
+        if self._is_quantized_linear(linear):
+            dequantized = self._dequantize_linear_weight(linear, backend)
+            if dequantized is not None:
+                return dequantized
+        return linear.weight
+
+    def _get_base_weight(self, base_model, lora_key: str):
+        """Get the base weight matrix for a LoRA key."""
+        linear = self._resolve_base_linear(base_model, lora_key)
+        if linear is not None and hasattr(linear, "weight"):
+            return linear.weight
         return None
 
     def _set_base_weight(self, base_model, lora_key: str, new_weight):
         """Set the base weight matrix for a LoRA key."""
-        parts = lora_key.split(".")
-        if parts[0] == "model":
-            parts = parts[1:]
-
-        current = base_model
-        for part in parts[:-1]:
-            if part == "layers":
-                continue
-            elif part.isdigit():
-                current = current.layers[int(part)]
-            elif hasattr(current, part):
-                current = getattr(current, part)
-            else:
-                return
-
-        param_name = parts[-1]
-        if hasattr(current, param_name):
-            linear = getattr(current, param_name)
-            if hasattr(linear, "weight"):
-                linear.weight = new_weight
+        linear = self._resolve_base_linear(base_model, lora_key)
+        if linear is not None and hasattr(linear, "weight"):
+            linear.weight = new_weight

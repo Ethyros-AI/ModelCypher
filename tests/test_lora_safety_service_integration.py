@@ -9,6 +9,9 @@
 
 """Tests for LoRA Safety Service per-direction integration."""
 
+import math
+from types import SimpleNamespace
+
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -131,3 +134,148 @@ class TestLoRASafetyPerDirection:
         # (Diagonal entries measure alignment)
 
         assert result.is_safe, f"Orthogonal delta should be safe, max ratio: {result.max_ratio}"
+
+
+class TestLoRASafetyQuantizedBase:
+    """Tests quantized-base handling for spectral scale analysis."""
+
+    @staticmethod
+    def _build_model_with_down_proj(linear_module):
+        layer = SimpleNamespace(mlp=SimpleNamespace(down_proj=linear_module))
+        return SimpleNamespace(model=SimpleNamespace(layers=[layer]))
+
+    def test_get_weight_for_svd_dequantizes_quantized_linear(self, backend, monkeypatch):
+        from modelcypher.core.use_cases.lora_safety_service import LoRASafetyService
+
+        service = LoRASafetyService()
+
+        W_fp = backend.astype(backend.random_normal((64, 64)), "float32")
+        backend.eval(W_fp)
+        q_weight, q_scales, q_biases = backend.quantize(
+            W_fp, group_size=64, bits=8, mode="affine",
+        )
+        backend.eval(q_weight, q_scales)
+        if q_biases is not None:
+            backend.eval(q_biases)
+
+        quantized_linear = SimpleNamespace(
+            weight=q_weight,
+            scales=q_scales,
+            biases=q_biases,
+            group_size=64,
+            bits=8,
+        )
+        model = self._build_model_with_down_proj(quantized_linear)
+
+        calls = {"n": 0}
+        original_dequantize = backend.dequantize
+
+        def _wrapped_dequantize(weight, scales, biases, group_size, bits, mode):
+            calls["n"] += 1
+            return original_dequantize(
+                weight,
+                scales,
+                biases=biases,
+                group_size=group_size,
+                bits=bits,
+                mode=mode,
+            )
+
+        monkeypatch.setattr(backend, "dequantize", _wrapped_dequantize)
+
+        W_svd = service._get_weight_for_svd(
+            model.model,
+            "model.layers.0.mlp.down_proj",
+            backend,
+        )
+        assert W_svd is not None
+        assert calls["n"] >= 1
+        assert tuple(int(x) for x in W_svd.shape) == (64, 64)
+
+    def test_quantized_scale_bound_matches_full_precision(self, backend):
+        from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
+        from modelcypher.core.use_cases.lora_safety_service import LoRASafetyService
+
+        service = LoRASafetyService()
+
+        U_rand = backend.random_normal((64, 64))
+        V_rand = backend.random_normal((64, 64))
+        U, _, _ = backend.svd(U_rand, compute_uv=True)
+        V, _, _ = backend.svd(V_rand, compute_uv=True)
+        singular_vals = backend.linspace(10.0, 1.0, 64, dtype="float32")
+        backend.eval(U, V, singular_vals)
+        W_fp = backend.matmul(U, singular_vals[:, None] * backend.transpose(V))
+        backend.eval(W_fp)
+
+        q_weight, q_scales, q_biases = backend.quantize(
+            W_fp, group_size=64, bits=8, mode="affine",
+        )
+        backend.eval(q_weight, q_scales)
+        if q_biases is not None:
+            backend.eval(q_biases)
+
+        fp_linear = SimpleNamespace(weight=W_fp)
+        q_linear = SimpleNamespace(
+            weight=q_weight,
+            scales=q_scales,
+            biases=q_biases,
+            group_size=64,
+            bits=8,
+        )
+        fp_model = self._build_model_with_down_proj(fp_linear).model
+        q_model = self._build_model_with_down_proj(q_linear).model
+
+        rank = 8
+        lora_a = backend.astype(backend.random_normal((rank, 64)), "float32")
+        lora_b = backend.astype(backend.random_normal((64, rank)), "float32")
+        backend.eval(lora_a, lora_b)
+
+        def _sigma_k(weight):
+            W_f32 = backend.astype(weight, "float32")
+            backend.eval(W_f32)
+            _, S, _ = backend.svd(W_f32, compute_uv=True)
+            backend.eval(S)
+            sigma_max = float(backend.to_scalar(S[0]))
+            max_dim = max(int(W_f32.shape[0]), int(W_f32.shape[1]))
+            eps_svd = float(backend.finfo(S.dtype).eps)
+            threshold = float(max_dim) * eps_svd * sigma_max
+            significant_mask = S > threshold
+            eff_rank_arr = backend.sum(backend.astype(significant_mask, "int32"))
+            backend.eval(eff_rank_arr)
+            effective_rank = int(backend.to_scalar(eff_rank_arr))
+            return (
+                float(backend.to_scalar(S[effective_rank - 1]))
+                if effective_rank > 0
+                else float(backend.to_scalar(S[-1]))
+            )
+
+        D = backend.matmul(backend.transpose(lora_b), backend.transpose(lora_a))
+        D_f32 = backend.astype(D, "float32")
+        backend.eval(D_f32)
+        _, S_D, _ = backend.svd(D_f32, compute_uv=True)
+        backend.eval(S_D)
+        delta_spectral = float(backend.to_scalar(S_D[0]))
+        assert delta_spectral > 0.0
+
+        W_q_for_svd = service._get_weight_for_svd(
+            q_model,
+            "model.layers.0.mlp.down_proj",
+            backend,
+        )
+        assert W_q_for_svd is not None
+
+        scale_fp = _sigma_k(W_fp) / delta_spectral
+        scale_q = _sigma_k(W_q_for_svd) / delta_spectral
+        rel_diff = abs(scale_q - scale_fp) / max(abs(scale_fp), 1e-12)
+
+        # Precision-derived tolerance:
+        # - sqrt(eps_f32): numerical floor of SVD arithmetic
+        # - 1/2^bits: quantization grid resolution (dominant for 8-bit affine)
+        quantization_resolution = 1.0 / float(2 ** int(q_linear.bits))
+        tol = max(
+            float(sqrt_scalar(backend.finfo().eps, backend)),
+            float(sqrt_scalar(backend.finfo(W_q_for_svd.dtype).eps, backend)),
+            quantization_resolution,
+        )
+        assert math.isfinite(rel_diff)
+        assert rel_diff <= tol
