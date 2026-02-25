@@ -51,7 +51,7 @@ class TestAdapterCommandHelp:
         assert result.exit_code == 0
         assert "--four-condition-results" in result.stdout
         assert "--output-artifact" in result.stdout
-        assert "--format" in result.stdout
+        # --format removed; adapter commands now use global --output flag via CLIContext
 
 
 class TestAdapterBaselineArtifact:

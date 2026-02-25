@@ -287,7 +287,9 @@ class TestFailFastCoverage:
             app,
             ["train", "run", "--model", str(model_dir), "--data", str(data_path)],
         )
-        assert result.exit_code == 1
+        from modelcypher.cli.exit_codes import EXIT_RUNTIME
+
+        assert result.exit_code == EXIT_RUNTIME
         payload = json.loads(result.stdout)
         assert payload["error"]["failure_class"] == "insufficient_entropy_baseline"
 
@@ -315,7 +317,9 @@ class TestFailFastCoverage:
                 str(output_dir),
             ],
         )
-        assert result.exit_code == 1
+        from modelcypher.cli.exit_codes import EXIT_RUNTIME
+
+        assert result.exit_code == EXIT_RUNTIME
         payload = json.loads(result.stdout)
         assert payload["error"]["failure_class"] == "insufficient_adapter_geometry"
 
