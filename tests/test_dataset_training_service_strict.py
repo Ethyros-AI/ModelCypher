@@ -205,6 +205,16 @@ def _patch_lightweight_training(monkeypatch: pytest.MonkeyPatch, service: Datase
     )
     monkeypatch.setattr(
         dataset_training_service_module,
+        "compute_per_layer_signal_ranks",
+        lambda *_args, **_kwargs: {},
+    )
+    monkeypatch.setattr(
+        dataset_training_service_module,
+        "apply_signal_rank_ceiling",
+        lambda ranks, *_args, **_kwargs: dict(ranks),
+    )
+    monkeypatch.setattr(
+        dataset_training_service_module,
         "estimate_nb_lora_parameter_count",
         lambda *_args, **_kwargs: 1,
     )
@@ -1086,3 +1096,65 @@ def test_verify_capability_preservation_without_delta_extractor_keeps_null_acces
     assert result["per_layer_null_observability"] is not None
     assert result["per_layer_null_accessibility"] is None
     assert result["per_module_null_accessibility"] is None
+
+
+# ---------------------------------------------------------------------------
+# Signal-rank ceiling unit tests
+# ---------------------------------------------------------------------------
+
+class _FakeSignalRankResult:
+    """Minimal stand-in for SignalRankResult (avoids importing geometry module)."""
+    def __init__(self, signal_rank: int):
+        self.signal_rank = signal_rank
+        self.noise_rank = 0
+        self.mp_upper_edge = 0.0
+        self.signal_variance_fraction = 0.0
+
+
+def test_signal_rank_ceiling_reduces_ranks():
+    """Modules in a measured layer get capped to signal_rank."""
+    from modelcypher.core.domain.training.geometric_lora import apply_signal_rank_ceiling
+
+    ranks = {
+        "model.layers.0.self_attn.q_proj.weight": 500,
+        "model.layers.0.self_attn.k_proj.weight": 800,
+    }
+    signal = {0: _FakeSignalRankResult(signal_rank=25)}
+    result = apply_signal_rank_ceiling(ranks, signal)
+    assert result["model.layers.0.self_attn.q_proj.weight"] == 25
+    assert result["model.layers.0.self_attn.k_proj.weight"] == 25
+
+
+def test_signal_rank_ceiling_floors_at_one():
+    """signal_rank=0 should produce floor of 1, not 0."""
+    from modelcypher.core.domain.training.geometric_lora import apply_signal_rank_ceiling
+
+    ranks = {"model.layers.0.self_attn.q_proj.weight": 500}
+    signal = {0: _FakeSignalRankResult(signal_rank=0)}
+    result = apply_signal_rank_ceiling(ranks, signal)
+    assert result["model.layers.0.self_attn.q_proj.weight"] == 1
+
+
+def test_signal_rank_ceiling_preserves_zero_rank():
+    """Modules with rank=0 (not targetable) stay at 0."""
+    from modelcypher.core.domain.training.geometric_lora import apply_signal_rank_ceiling
+
+    ranks = {"model.layers.0.self_attn.q_proj.weight": 0}
+    signal = {0: _FakeSignalRankResult(signal_rank=25)}
+    result = apply_signal_rank_ceiling(ranks, signal)
+    assert result["model.layers.0.self_attn.q_proj.weight"] == 0
+
+
+def test_signal_rank_ceiling_preserves_unmeasured_layers():
+    """Modules in layers without signal-rank measurement keep original rank."""
+    from modelcypher.core.domain.training.geometric_lora import apply_signal_rank_ceiling
+
+    ranks = {
+        "model.layers.0.self_attn.q_proj.weight": 500,
+        "model.layers.5.self_attn.q_proj.weight": 300,
+    }
+    # Only layer 0 measured
+    signal = {0: _FakeSignalRankResult(signal_rank=25)}
+    result = apply_signal_rank_ceiling(ranks, signal)
+    assert result["model.layers.0.self_attn.q_proj.weight"] == 25
+    assert result["model.layers.5.self_attn.q_proj.weight"] == 300

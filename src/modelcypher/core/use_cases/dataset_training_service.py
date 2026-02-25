@@ -48,7 +48,9 @@ from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 from modelcypher.core.domain.training.geometric_lora import (
     analyze_weight_geometries,
     apply_data_rank_ceiling,
+    apply_signal_rank_ceiling,
     compute_coupled_ranks,
+    compute_per_layer_signal_ranks,
     estimate_nb_lora_parameter_count,
     select_target_modules,
 )
@@ -129,6 +131,8 @@ class DatasetTrainResult:
     inference_per_layer_cka: dict[int, float] | None = None
     inference_per_layer_gram_epsilon: dict[int, float] | None = None
     inference_min_cka_layer: int | None = None
+    # RMT signal-rank ceiling diagnostics (per-layer intrinsic signal dimensionality)
+    per_layer_signal_ranks: dict[int, dict[str, float | int]] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert result to a JSON-serializable dictionary."""
@@ -204,6 +208,8 @@ class DatasetTrainResult:
             result["inference_per_layer_gram_epsilon"] = self.inference_per_layer_gram_epsilon
         if self.inference_min_cka_layer is not None:
             result["inference_min_cka_layer"] = self.inference_min_cka_layer
+        if self.per_layer_signal_ranks is not None:
+            result["per_layer_signal_ranks"] = self.per_layer_signal_ranks
         return result
 
 
@@ -675,22 +681,36 @@ class DatasetTrainingService:
         # Caps q_proj rank at k_proj tail_dims per attention layer.
         # Prevents query-space overshoot beyond key discriminability.
         coupled_ranks = compute_coupled_ranks(geometries, target_modules)
-        data_ceiling_ranks = apply_data_rank_ceiling(
-            coupled_ranks, n_samples=len(train_dataset),
+
+        # 5.6. Signal-rank ceiling via RMT Marchenko-Pastur separation.
+        # Caps ranks at the intrinsic signal dimensionality of the training
+        # data's activation space (typically 10–50, not tail_dims ~959).
+        # Uses base_activations already collected for CKA (zero extra passes).
+        signal_rank_results = compute_per_layer_signal_ranks(
+            base_activations, self._backend,
         )
+        if signal_rank_results:
+            final_ranks = apply_signal_rank_ceiling(coupled_ranks, signal_rank_results)
+            ceiling_label = "RMT signal-rank"
+        else:
+            # Fallback: data-rank ceiling if signal rank computation returned empty
+            final_ranks = apply_data_rank_ceiling(
+                coupled_ranks, n_samples=len(train_dataset),
+            )
+            ceiling_label = "data-rank (fallback)"
 
         uncapped_params = estimate_nb_lora_parameter_count(geometries, coupled_ranks)
-        capped_params = estimate_nb_lora_parameter_count(geometries, data_ceiling_ranks)
+        capped_params = estimate_nb_lora_parameter_count(geometries, final_ranks)
         n_rank_capped = sum(
             1 for key, rank in coupled_ranks.items()
-            if data_ceiling_ranks.get(key, rank) < rank
+            if final_ranks.get(key, rank) < rank
         )
         if n_rank_capped > 0 and uncapped_params > 0:
             logger.info(
-                "Data-rank ceiling applied: %d layers capped (n_train_samples=%d), "
+                "%s ceiling applied: %d layers capped, "
                 "params %d -> %d (%.2fx reduction)",
+                ceiling_label,
                 n_rank_capped,
-                len(train_dataset),
                 uncapped_params,
                 capped_params,
                 uncapped_params / max(capped_params, 1),
@@ -707,7 +727,7 @@ class DatasetTrainingService:
         n_lora_layers = self._adapter.inject_nb_lora(
             model, geometries, target_modules,
             safety_margin=None,
-            rank_overrides=data_ceiling_ranks,
+            rank_overrides=final_ranks,
         )
         if n_lora_layers <= 0:
             raise ValueError("No NB-LoRA layers were injected")
@@ -718,7 +738,7 @@ class DatasetTrainingService:
             geom = geometries.get(mod_name)
             if geom is None:
                 continue
-            actual_rank = data_ceiling_ranks.get(mod_name, geom.tail_dims)
+            actual_rank = final_ranks.get(mod_name, geom.tail_dims)
             logger.info(
                 "Injected %s: rank=%d (tail_dims=%d), shannon_eff_rank=%.1f, "
                 "sigma_k=%.6f, scale_bound=%.6f, capacity_util=%.3f",
@@ -1294,6 +1314,15 @@ class DatasetTrainingService:
             inference_per_layer_cka=inference_per_layer_cka,
             inference_per_layer_gram_epsilon=inference_per_layer_gram_epsilon,
             inference_min_cka_layer=inference_min_cka_layer,
+            per_layer_signal_ranks={
+                layer_idx: {
+                    "signal_rank": sr.signal_rank,
+                    "noise_rank": sr.noise_rank,
+                    "mp_upper_edge": sr.mp_upper_edge,
+                    "signal_variance_fraction": sr.signal_variance_fraction,
+                }
+                for layer_idx, sr in signal_rank_results.items()
+            } if signal_rank_results else None,
         )
 
     def _derive_strict_seed(self, model_path: Path, dataset_path: Path) -> int:

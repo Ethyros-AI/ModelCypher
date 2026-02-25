@@ -629,6 +629,105 @@ def apply_data_rank_ceiling(
     return capped
 
 
+def compute_per_layer_signal_ranks(
+    base_activations: dict[int, list["Array"]],
+    backend: "Backend",
+) -> dict[int, "SignalRankResult"]:
+    """Compute intrinsic signal rank per layer via RMT Marchenko-Pastur separation.
+
+    Uses singular value decomposition on stacked per-layer activations to
+    identify the number of eigenvalues above the MP bulk edge — the intrinsic
+    signal dimensionality.  This is typically 10–50, far below tail_dims.
+
+    Args:
+        base_activations: Per-layer lists of mean-pooled hidden activations
+            (dict[layer_idx, list[Array[hidden_dim]]]).
+        backend: Compute backend (for SVD and array ops).
+
+    Returns:
+        dict mapping layer index to SignalRankResult.  Layers with < 2 probes
+        are skipped.
+    """
+    from modelcypher.core.domain.geometry.rmt_signal_separation import (
+        SignalRankResult,
+        compute_signal_rank_from_singular_values,
+    )
+
+    results: dict[int, SignalRankResult] = {}
+    for layer_idx, acts_list in sorted(base_activations.items()):
+        if len(acts_list) < 2:
+            continue
+        # Stack [n_samples, hidden_dim] and center
+        A = backend.stack(acts_list)
+        col_mean = backend.mean(A, axis=0)
+        A_centered = A - col_mean
+        backend.eval(A_centered)
+
+        n_samples, hidden_dim = int(A_centered.shape[0]), int(A_centered.shape[1])
+
+        # SVD on centered activation matrix
+        S = backend.svd(A_centered, compute_uv=False)
+        backend.eval(S)
+
+        result = compute_signal_rank_from_singular_values(
+            S, n_samples, hidden_dim, backend, center_correction=True,
+        )
+        results[layer_idx] = result
+
+        logger.info(
+            "RMT signal rank layer %d: signal_rank=%d, noise_rank=%d, "
+            "mp_upper_edge=%.6f, signal_var=%.1f%%",
+            layer_idx,
+            result.signal_rank,
+            result.noise_rank,
+            result.mp_upper_edge,
+            100.0 * result.signal_variance_fraction,
+        )
+
+    return results
+
+
+def apply_signal_rank_ceiling(
+    per_module_ranks: dict[str, int],
+    signal_rank_results: dict[int, "SignalRankResult"],
+) -> dict[str, int]:
+    """Cap per-module LoRA ranks at the RMT signal rank for each layer.
+
+    The signal rank measures how many directions actually carry information
+    in the training data's activation space.  Adapting beyond this wastes
+    parameters on noise dimensions.
+
+    Modules with rank=0 stay 0 (not targetable).  Modules in layers without
+    a signal-rank measurement keep their original rank.
+
+    Args:
+        per_module_ranks: Per-module proposed ranks (from coupling / data ceiling).
+        signal_rank_results: Per-layer SignalRankResult from
+            ``compute_per_layer_signal_ranks``.
+
+    Returns:
+        New dict with ranks capped at ``max(1, signal_rank)`` per layer.
+    """
+    capped: dict[str, int] = {}
+    for key, rank in per_module_ranks.items():
+        if rank <= 0:
+            capped[key] = 0
+            continue
+        # Parse layer index: model.layers.{idx}.self_attn.{proj}.weight
+        parts = key.split(".")
+        try:
+            layer_idx = int(parts[2])
+        except (IndexError, ValueError):
+            capped[key] = rank
+            continue
+        sr = signal_rank_results.get(layer_idx)
+        if sr is None:
+            capped[key] = rank
+            continue
+        capped[key] = min(rank, max(1, sr.signal_rank))
+    return capped
+
+
 def estimate_nb_lora_parameter_count(
     geometries: dict[str, LayerGeometry],
     per_layer_ranks: dict[str, int],
@@ -849,6 +948,7 @@ def derive_lora_configs(
 
 __all__ = [
     "apply_data_rank_ceiling",
+    "apply_signal_rank_ceiling",
     "LayerGeometry",
     "analyze_weight_geometries",
     "compute_coupled_ranks",
@@ -857,6 +957,7 @@ __all__ = [
     "compute_layer_geometry",
     "compute_layer_geometry_randomized",
     "compute_per_layer_ranks",
+    "compute_per_layer_signal_ranks",
     "derive_lora_configs",
     "estimate_nb_lora_parameter_count",
     "select_target_modules",
