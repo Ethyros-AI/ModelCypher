@@ -37,6 +37,7 @@ from typing import Any
 import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as opt
+import mlx.utils
 
 logging.basicConfig(
     level=logging.INFO,
@@ -423,7 +424,7 @@ def _train_corrective_round(
     logger.info("  Injected %d NB-LoRA layers", n_injected)
 
     n_trainable = sum(
-        p.size for _, p in mx.utils.tree_flatten(q_model.trainable_parameters())
+        p.size for _, p in mlx.utils.tree_flatten(q_model.trainable_parameters())
     )
 
     # MASS step size
@@ -493,7 +494,7 @@ def _train_corrective_round(
         (loss, ntoks), grad = loss_and_grad(q_model, batch)
 
         flat_grads = [
-            p.reshape(-1) for _, p in mx.utils.tree_flatten(grad) if p.size > 0
+            p.reshape(-1) for _, p in mlx.utils.tree_flatten(grad) if p.size > 0
         ]
         d_norm_sq = sum(mx.sum(p * p) for p in flat_grads)
         mx.eval(d_norm_sq, loss)

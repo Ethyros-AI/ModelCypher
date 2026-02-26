@@ -40,6 +40,8 @@ ARCHITECTURE_FAMILIES: dict[str, str] = {
     "qwen": "llama",
     "qwen2": "llama",
     "qwen3": "llama",
+    "qwen3_5": "llama",
+    "qwen3_5_text": "llama",
     "mistral": "llama",
     "deepseek": "llama",
     "deepseek_v2": "llama",
@@ -81,7 +83,7 @@ ARCHITECTURE_FAMILIES: dict[str, str] = {
 # Causal (decoder-only) model types
 CAUSAL_MODEL_TYPES: frozenset[str] = frozenset({
     "llama", "lfm", "lfm2", "gpt2", "gpt_neox", "falcon", "phi", "phi3", "phi4",
-    "gemma", "gemma2", "qwen", "qwen2", "qwen3", "mistral", "deepseek",
+    "gemma", "gemma2", "qwen", "qwen2", "qwen3", "qwen3_5", "qwen3_5_text", "mistral", "deepseek",
     "deepseek_v2", "deepseek_v3", "internlm", "internlm2", "baichuan", "yi",
     "codellama", "stablelm", "mamba", "gpt_neo",
 })

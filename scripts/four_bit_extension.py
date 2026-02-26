@@ -151,7 +151,7 @@ def _analyze_pair_rmt(
     n_svd_failures = 0
 
     for key in common_keys:
-        E = mx.astype(fp_weights[key], mx.float32) - mx.astype(q_weights[key], mx.float32)
+        E = fp_weights[key].astype(mx.float32) - q_weights[key].astype(mx.float32)
         mx.eval(E)
         m, n = int(E.shape[0]), int(E.shape[1])
         frob_norm = float(mx.sqrt(mx.sum(E * E)).item())

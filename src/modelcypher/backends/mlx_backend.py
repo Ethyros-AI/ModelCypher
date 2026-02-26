@@ -27,7 +27,9 @@ Performance Features (MLX 0.30+):
 
 from __future__ import annotations
 
+import json
 from functools import lru_cache
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.backends._mlx_backend_activation_mixin import _MLXBackendActivationMixin
@@ -1529,6 +1531,155 @@ class MLXBackend(_MLXBackendActivationMixin, Backend):
 
     # --- Model Operations ---
 
+    @staticmethod
+    def _is_qwen35_unsupported_error(error: Exception) -> bool:
+        message = str(error)
+        return (
+            "Model type qwen3_5 not supported." in message
+            or "Model type qwen3_5_text not supported." in message
+        )
+
+    @staticmethod
+    def _is_qwen35_config_path(path: str) -> bool:
+        config_path = Path(path) / "config.json"
+        if not config_path.exists():
+            return False
+        try:
+            with open(config_path, "r", encoding="utf-8") as handle:
+                config = json.load(handle)
+        except Exception:
+            return False
+        model_type = str(config.get("model_type", ""))
+        text_model_type = str(config.get("text_config", {}).get("model_type", ""))
+        return model_type.startswith("qwen3_5") or text_model_type.startswith("qwen3_5")
+
+    @staticmethod
+    def _normalize_qwen35_text_config(raw_config: dict[str, Any]) -> dict[str, Any]:
+        text_config = raw_config.get("text_config")
+        if isinstance(text_config, dict):
+            normalized = dict(text_config)
+        else:
+            normalized = dict(raw_config)
+
+        rope_parameters = normalized.pop("rope_parameters", {})
+        if isinstance(rope_parameters, dict):
+            if "rope_theta" not in normalized and "rope_theta" in rope_parameters:
+                normalized["rope_theta"] = rope_parameters["rope_theta"]
+            if (
+                "partial_rotary_factor" not in normalized
+                and "partial_rotary_factor" in rope_parameters
+            ):
+                normalized["partial_rotary_factor"] = rope_parameters["partial_rotary_factor"]
+
+        normalized["model_type"] = "qwen3_next"
+        normalized.setdefault("num_experts", 0)
+        normalized.setdefault("num_experts_per_tok", 0)
+        normalized.setdefault("decoder_sparse_step", 1)
+
+        intermediate_size = normalized.get("intermediate_size")
+        if intermediate_size is not None:
+            normalized.setdefault("shared_expert_intermediate_size", intermediate_size)
+            normalized.setdefault("moe_intermediate_size", intermediate_size)
+
+        if "tie_word_embeddings" not in normalized:
+            normalized["tie_word_embeddings"] = bool(raw_config.get("tie_word_embeddings", False))
+        if "eos_token_id" not in normalized and "eos_token_id" in raw_config:
+            normalized["eos_token_id"] = raw_config["eos_token_id"]
+
+        return normalized
+
+    @staticmethod
+    def _remap_qwen35_weights_for_qwen3_next(
+        weights: dict[str, Any],
+        concatenate: Callable[..., Any],
+    ) -> dict[str, Any]:
+        remapped: dict[str, Any] = {}
+        for key, value in weights.items():
+            if key.startswith("model.visual.") or key.startswith("visual.") or key.startswith("mtp."):
+                continue
+            if key.startswith("model.language_model."):
+                key = "model." + key[len("model.language_model.") :]
+            elif key.startswith("language_model."):
+                key = "model." + key[len("language_model.") :]
+            remapped[key] = value
+
+        qkv_suffix = ".linear_attn.in_proj_qkv.weight"
+        for key in list(remapped.keys()):
+            if not key.endswith(qkv_suffix):
+                continue
+            prefix = key[: -len("in_proj_qkv.weight")]
+            z_key = f"{prefix}in_proj_z.weight"
+            if z_key not in remapped:
+                continue
+            qkv = remapped.pop(key)
+            z = remapped.pop(z_key)
+            remapped[f"{prefix}in_proj_qkvz.weight"] = concatenate([qkv, z], axis=0)
+
+        b_suffix = ".linear_attn.in_proj_b.weight"
+        for key in list(remapped.keys()):
+            if not key.endswith(b_suffix):
+                continue
+            prefix = key[: -len("in_proj_b.weight")]
+            a_key = f"{prefix}in_proj_a.weight"
+            if a_key not in remapped:
+                continue
+            b = remapped.pop(key)
+            a = remapped.pop(a_key)
+            remapped[f"{prefix}in_proj_ba.weight"] = concatenate([b, a], axis=0)
+
+        stale_suffixes = (
+            ".linear_attn.in_proj_qkv.weight",
+            ".linear_attn.in_proj_z.weight",
+            ".linear_attn.in_proj_a.weight",
+            ".linear_attn.in_proj_b.weight",
+        )
+        for key in [k for k in remapped.keys() if k.endswith(stale_suffixes)]:
+            remapped.pop(key, None)
+
+        return remapped
+
+    def _load_qwen35_with_mlx_compat(
+        self,
+        path: str,
+        adapter_path: str | None = None,
+    ) -> tuple[Any, Any]:
+        from mlx_lm.models import qwen3_next
+        from mlx_lm.utils import (
+            load_adapters,
+            load_config,
+            load_model as load_mlx_model,
+            load_tokenizer,
+        )
+
+        model_path = Path(path)
+        raw_config = load_config(model_path)
+        model_config = self._normalize_qwen35_text_config(raw_config)
+        backend = self
+
+        class Qwen35CompatModel(qwen3_next.Model):
+            def sanitize(self, weights: dict[str, Any]) -> dict[str, Any]:
+                remapped = backend._remap_qwen35_weights_for_qwen3_next(
+                    weights,
+                    concatenate=backend.concatenate,
+                )
+                return super().sanitize(remapped)
+
+        def get_model_classes(_: dict[str, Any]):
+            return Qwen35CompatModel, qwen3_next.ModelArgs
+
+        model, loaded_config = load_mlx_model(
+            model_path,
+            lazy=False,
+            strict=True,
+            model_config=model_config,
+            get_model_classes=get_model_classes,
+        )
+        if adapter_path:
+            model = load_adapters(model, adapter_path)
+            model.eval()
+        tokenizer = load_tokenizer(model_path, eos_token_ids=loaded_config.get("eos_token_id"))
+        return model, tokenizer
+
     def load_model(
         self, path: str, adapter_path: str | None = None
     ) -> tuple[Any, Any]:
@@ -1543,10 +1694,15 @@ class MLXBackend(_MLXBackendActivationMixin, Backend):
         """
         from mlx_lm import load
 
-        if adapter_path:
-            model, tokenizer = load(path, adapter_path=adapter_path)
-        else:
-            model, tokenizer = load(path)
+        try:
+            if adapter_path:
+                model, tokenizer = load(path, adapter_path=adapter_path)
+            else:
+                model, tokenizer = load(path)
+        except ValueError as error:
+            if self._is_qwen35_unsupported_error(error) and self._is_qwen35_config_path(path):
+                return self._load_qwen35_with_mlx_compat(path, adapter_path=adapter_path)
+            raise
         return model, tokenizer
 
     def generate(
