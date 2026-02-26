@@ -240,6 +240,10 @@ class MergePipelineService:
                 "effective_dim_delta": fp.effective_dim_delta,
             }
 
+        # Add family similarity if available
+        if merge_result.family_similarity is not None:
+            result["family_similarity"] = merge_result.family_similarity.as_dict()
+
         return result
 
 

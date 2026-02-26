@@ -273,9 +273,9 @@ def classify_phases(
 ) -> list[Phase]:
     """Classify layers into highway / processing / exit phases.
 
-    Uses data-derived boundaries — no arbitrary thresholds:
+    Uses data-derived boundaries:
         - Median curvature splits high/low curvature (data-derived)
-        - Monotonicity of ID trajectory is boolean
+        - Monotonicity of ID trajectory is boolean (1e-6 tolerance for FP noise)
         - Peak ID position is measured
 
     Algorithm:
