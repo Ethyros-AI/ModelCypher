@@ -30,6 +30,7 @@ import gc
 import json
 import logging
 import math
+import random
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -186,6 +187,9 @@ def main():
             "batch_size": args.batch_size,
             "seed": args.seed,
             "n_cka_probes": args.n_cka_probes,
+            "mask_padding": args.mask_padding,
+            "shuffle": args.shuffle,
+            "diagnose": args.diagnose,
         },
     }
 
@@ -282,36 +286,74 @@ def main():
     optimizer = opt.SGD(learning_rate=eta_ceiling, momentum=0.0)
 
     # Define corrective loss: MSE on logits between quantized+LoRA and bf16
-    def corrective_loss_fn(q_model, batch):
-        """MSE distillation loss: match bf16 logits."""
-        q_logits = q_model(batch)[:, :-1, :]  # [batch, seq-1, vocab]
+    use_mask = args.mask_padding
 
-        # bf16 reference (no gradient flow)
+    def corrective_loss_fn(q_model, batch, lengths_arr):
+        """MSE distillation loss: match bf16 logits.
+
+        When use_mask is True, excludes padding positions from the mean.
+        Always returns (mse, (ntoks, mse_real_sum, mse_pad_sum, n_real, n_pad))
+        so diagnostics can decompose real vs padding MSE at zero extra cost.
+        """
+        q_logits = q_model(batch)[:, :-1, :]  # [batch, seq-1, vocab]
         fp_logits = mx.stop_gradient(fp_model(batch)[:, :-1, :])
 
-        # MSE on logits
         diff = q_logits - fp_logits
-        mse = mx.mean(diff * diff)
+        sq = diff * diff  # [B, T-1, V]
 
-        ntoks = batch.shape[0] * (batch.shape[1] - 1)
-        return mse, mx.array(float(ntoks))
+        # Build position mask: 1 for real tokens, 0 for padding
+        T_minus_1 = batch.shape[1] - 1
+        V = sq.shape[-1]
+        arange = mx.arange(T_minus_1)[None, :]  # [1, T-1]
+        real_lens = lengths_arr[:, None] - 1       # [B, 1] (positions 0..len-2 are real)
+        mask = (arange < real_lens).astype(sq.dtype)  # [B, T-1]
+
+        # MSE decomposition (always computed for diagnostics)
+        mask_3d = mask[:, :, None]  # [B, T-1, 1] broadcast over vocab
+        mse_real_sum = mx.sum(sq * mask_3d)
+        mse_pad_sum = mx.sum(sq * (1.0 - mask_3d))
+        n_real = mx.sum(mask) * V
+        n_pad = mx.sum(1.0 - mask) * V
+
+        if use_mask:
+            mse = mse_real_sum / n_real
+        else:
+            mse = mx.mean(sq)
+
+        return mse, (n_real, mse_real_sum, mse_pad_sum, n_real, n_pad)
 
     loss_and_grad = nn.value_and_grad(q_model, corrective_loss_fn)
 
     # ── Phase 5: Training loop ──
-    logger.info("Starting corrective training: %d iterations, batch_size=%d", args.max_iters, args.batch_size)
+    logger.info(
+        "Starting corrective training: %d iterations, batch_size=%d%s%s",
+        args.max_iters, args.batch_size,
+        ", mask_padding=True" if args.mask_padding else "",
+        ", shuffle=True" if args.shuffle else "",
+    )
 
     backend.random_seed(args.seed)
     seq_length = 256  # Short sequences for efficiency
+
+    # Shuffle sample order if requested
+    sample_order = list(range(len(tokenized)))
+    if args.shuffle:
+        rng = random.Random(args.seed)
+        rng.shuffle(sample_order)
+        logger.info("Shuffled training samples (seed=%d)", args.seed)
 
     losses: list[tuple[int, float]] = []
     f_star = 0.0  # Computed from initial loss + RMT noise fraction
     start_time = time.monotonic()
 
     for it in range(args.max_iters):
-        # Create batch: randomly sample and pad/truncate
-        indices = [i % len(tokenized) for i in range(it * args.batch_size, (it + 1) * args.batch_size)]
+        # Create batch with shuffled or sequential cycling
+        indices = [sample_order[i % len(sample_order)]
+                   for i in range(it * args.batch_size, (it + 1) * args.batch_size)]
         batch_tokens = [tokenized[idx] for idx in indices]
+
+        # Track real token lengths BEFORE padding
+        lengths = [min(len(tokens), seq_length) for tokens in batch_tokens]
 
         # Pad/truncate to seq_length
         padded = []
@@ -321,14 +363,17 @@ def main():
             else:
                 padded.append(tokens + [0] * (seq_length - len(tokens)))
         batch = mx.array(padded)
+        lengths_arr = mx.array(lengths)
 
         # Forward + backward
-        (loss, ntoks), grad = loss_and_grad(q_model, batch)
+        (loss, (n_real_arr, mse_real_sum, mse_pad_sum, _, n_pad_arr)), grad = (
+            loss_and_grad(q_model, batch, lengths_arr)
+        )
 
         # MASS per-step rate
         flat_grads = [p.reshape(-1) for _, p in mlx.utils.tree_flatten(grad) if p.size > 0]
         d_norm_sq = sum(mx.sum(p * p) for p in flat_grads)
-        mx.eval(d_norm_sq, loss)
+        mx.eval(d_norm_sq, loss, mse_real_sum, mse_pad_sum, n_real_arr, n_pad_arr)
         d_norm = float(mx.sqrt(d_norm_sq).item())
         loss_val = float(loss.item())
 
@@ -341,7 +386,7 @@ def main():
                 f_star, loss_val, noise_fraction,
             )
 
-        eta_step, _, _, _, _ = compute_per_step_rates(
+        eta_step, eta_sps, eta_weyl, displacement, _ = compute_per_step_rates(
             loss_val, d_norm, sigma_k_min, eta_ceiling,
             f_star=f_star,
         )
@@ -360,9 +405,27 @@ def main():
 
         if it % 10 == 0 or it == args.max_iters - 1:
             elapsed = time.monotonic() - start_time
+
+            # Compute MSE decomposition for logging
+            n_real_val = float(n_real_arr.item())
+            n_pad_val = float(n_pad_arr.item())
+            mse_real_val = float(mse_real_sum.item()) / n_real_val if n_real_val > 0 else 0.0
+            mse_pad_val = float(mse_pad_sum.item()) / n_pad_val if n_pad_val > 0 else 0.0
+            pad_frac = float(mse_pad_sum.item()) / (float(mse_real_sum.item()) + float(mse_pad_sum.item()))
+
+            # Determine which MASS bound binds
+            if eta_step == eta_sps:
+                binds = "SPS"
+            elif eta_step == eta_weyl:
+                binds = "Weyl"
+            else:
+                binds = "Ceil"
+
             logger.info(
-                "iter %d/%d: loss=%.6f, eta=%.4e, d_norm=%.4e, elapsed=%.1fs",
-                it, args.max_iters, loss_val, eta_step, d_norm, elapsed,
+                "iter %d/%d: loss=%.6f, eta=%.4e, d_norm=%.4e, binds=%s, "
+                "mse_real=%.4f, mse_pad=%.4f, pad_frac=%.1f%%, elapsed=%.1fs",
+                it, args.max_iters, loss_val, eta_step, d_norm, binds,
+                mse_real_val, mse_pad_val, pad_frac * 100, elapsed,
             )
 
     training_time = time.monotonic() - start_time
@@ -517,6 +580,33 @@ def _parse_args() -> argparse.Namespace:
             "SPS uses f* = initial_loss × (1 - sv_frac) as the irreducible "
             "loss floor, where sv_frac is the MP signal fraction. "
             "Without this, uses f*=0 (original SPS)."
+        ),
+    )
+    parser.add_argument(
+        "--mask-padding",
+        action="store_true",
+        help=(
+            "Exclude padding positions from MSE loss. Without this, ~65%% of "
+            "gradient comes from zero-padding tokens — noise relative to the "
+            "correction objective."
+        ),
+    )
+    parser.add_argument(
+        "--shuffle",
+        action="store_true",
+        help=(
+            "Shuffle training samples before sequential cycling. Without this, "
+            "batches are deterministic sequential order, creating gradient "
+            "correlation between adjacent iterations."
+        ),
+    )
+    parser.add_argument(
+        "--diagnose",
+        action="store_true",
+        help=(
+            "Enable per-iteration diagnostics: MSE decomposition (real vs "
+            "padding), per-sample gradient cosine, MASS binding constraint. "
+            "Adds overhead (extra forward passes for cosine)."
         ),
     )
     return parser.parse_args()
