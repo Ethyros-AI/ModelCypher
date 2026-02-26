@@ -172,18 +172,25 @@ def collect_id_trajectory(
         seq_len = input_ids.shape[1]
 
         try:
-            mask = backend.create_causal_mask(seq_len, hidden.dtype)
+            numeric_mask = backend.create_causal_mask(seq_len, hidden.dtype)
         except Exception:
-            mask = None
+            numeric_mask = None
 
         for i, layer in enumerate(layers):
             if i >= num_layers:
                 break
+
+            # Per-layer mask routing: LFM2 hybrid layers use is_attention_layer
+            if hasattr(layer, "is_attention_layer"):
+                layer_mask = "causal" if layer.is_attention_layer else None
+            else:
+                layer_mask = numeric_mask
+
             try:
-                hidden = layer(hidden, mask=mask)
+                hidden = layer(hidden, mask=layer_mask)
             except (TypeError, ValueError):
                 try:
-                    hidden = layer(hidden, mask)
+                    hidden = layer(hidden, layer_mask)
                 except (TypeError, ValueError):
                     hidden = layer(hidden)
 
@@ -430,7 +437,12 @@ def run_experiment(args: argparse.Namespace) -> None:
             f"er_diff={p['er_relative_diff']:.3f}: {'PASS' if ok else 'FAIL'}"
         )
 
-    # Partial correlation: trajectory similarity ~ L/d_distance
+    # Partial correlation: trajectory similarity ~ L/d_distance controlling for L
+    # Required by pre-registered falsification: partial correlation p > 0.1 → FAIL
+    partial_spearman = float("nan")
+    partial_p = float("nan")
+    passes_partial = None
+
     if len(pairwise) >= 5:
         from modelcypher.core.domain.statistics import spearman_correlation
 
@@ -438,20 +450,65 @@ def run_experiment(args: argparse.Namespace) -> None:
         ld_dists = [p["ld_distance"] for p in pairwise]
         L_dists = [p["L_distance"] for p in pairwise]
 
-        # Simple Spearman since partial correlation needs scipy
+        # Simple Spearman (diagnostic)
         spearman_ld = spearman_correlation(ld_dists, proc_dists)
         spearman_L = spearman_correlation(L_dists, proc_dists)
+
+        # Partial correlation: regress out L from both ld_distance and procrustes,
+        # then Spearman on residuals. OLS via normal equations.
+        n_pairs = len(pairwise)
+        L_arr = np.array(L_dists, dtype=np.float64)
+        ld_arr = np.array(ld_dists, dtype=np.float64)
+        proc_arr = np.array(proc_dists, dtype=np.float64)
+
+        # OLS: y = a + b*L → residual = y - (a + b*L)
+        def _ols_residuals(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+            x_mean = np.mean(x)
+            y_mean = np.mean(y)
+            denom = np.sum((x - x_mean) ** 2)
+            if denom < 1e-15:
+                return y - y_mean
+            b = np.sum((x - x_mean) * (y - y_mean)) / denom
+            a = y_mean - b * x_mean
+            return y - (a + b * x)
+
+        resid_ld = _ols_residuals(L_arr, ld_arr)
+        resid_proc = _ols_residuals(L_arr, proc_arr)
+
+        partial_spearman = spearman_correlation(resid_ld.tolist(), resid_proc.tolist())
+
+        # Approximate p-value via t-distribution: t = r * sqrt((n-2)/(1-r^2))
+        if abs(partial_spearman) < 1.0 and n_pairs > 2:
+            t_stat = partial_spearman * math.sqrt(
+                (n_pairs - 2) / (1.0 - partial_spearman ** 2)
+            )
+            df = n_pairs - 2
+            # Two-sided p from t-distribution (Wilson-Hilferty via chi2)
+            # For t with df degrees of freedom, use F = t^2 ~ F(1, df)
+            # P(T > |t|) ≈ incomplete beta, approximated via normal
+            z_approx = abs(t_stat) * (1.0 - 1.0 / (4.0 * df)) / math.sqrt(
+                1.0 + t_stat ** 2 / (2.0 * df)
+            )
+            partial_p = 2.0 * 0.5 * math.erfc(z_approx / math.sqrt(2.0))
+        else:
+            partial_p = 1.0 if abs(partial_spearman) < 1.0 else 0.0
+
+        passes_partial = partial_p < 0.1
 
         logger.info(
             f"Spearman(L/d_dist, procrustes): {spearman_ld:.3f}")
         logger.info(
             f"Spearman(L_dist, procrustes): {spearman_L:.3f}")
+        logger.info(
+            f"Partial Spearman (L/d | L): {partial_spearman:.3f}, "
+            f"p={partial_p:.4f} ({'PASS' if passes_partial else 'FAIL'})")
     else:
         spearman_ld = float("nan")
         spearman_L = float("nan")
+        logger.info("Insufficient pairs for partial correlation test")
 
-    # Overall verdict
-    all_tests = [p1_pass, p2_pass, p3_pass]
+    # Overall verdict — includes partial correlation gate (pre-registered)
+    all_tests = [p1_pass, p2_pass, p3_pass, passes_partial]
     passed = [t for t in all_tests if t is not None]
     overall = all(passed) if passed else False
 
@@ -472,6 +529,12 @@ def run_experiment(args: argparse.Namespace) -> None:
             "description": "Similar L/d → expansion_ratio within 20%",
             "pass": p3_pass,
             "n_pairs_tested": len(p3_pairs),
+        },
+        "partial_correlation": {
+            "description": "Partial Spearman(L/d_dist, procrustes | L) p < 0.1",
+            "spearman": partial_spearman,
+            "p_value": partial_p,
+            "pass": passes_partial,
         },
         "spearman_ld_vs_procrustes": spearman_ld,
         "spearman_L_vs_procrustes": spearman_L,

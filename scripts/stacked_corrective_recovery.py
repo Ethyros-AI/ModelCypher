@@ -154,7 +154,7 @@ def _analyze_residual_rmt(
         c_w = corrected_weights[key]
 
         # Residual in float32
-        E = mx.astype(fp_w, mx.float32) - mx.astype(c_w, mx.float32)
+        E = fp_w.astype(mx.float32) - c_w.astype(mx.float32)
         mx.eval(E)
 
         m, n = int(E.shape[0]), int(E.shape[1])
@@ -233,18 +233,26 @@ def _analyze_residual_rmt(
 # ── LoRA fusion ──────────────────────────────────────────────────────────
 
 
-def _fuse_lora_into_model(model, adapter) -> int:
+def _fuse_lora_into_model(
+    model, adapter, fp_weights: dict[str, Any] | None = None,
+) -> tuple[int, list[dict[str, Any]]]:
     """Fuse all NBLoRALinear modules back into plain nn.Linear.
 
     After fusion, the model has full-precision weights with the LoRA
     correction baked in. Ready for next round of LoRA injection.
 
-    Returns number of layers fused.
+    If fp_weights is provided, computes delta diagnostics:
+    - ||delta||_F per layer
+    - ||E||_F per layer (error = fp - base, before correction)
+    - cosine(E, delta) — alignment between error and correction
+
+    Returns (n_fused, delta_stats).
     """
     from modelcypher.backends.mlx_training_adapter_core import NBLoRALinear
 
     base = getattr(model, "model", model)
     n_fused = 0
+    delta_stats: list[dict[str, Any]] = []
 
     for layer_idx, layer in enumerate(base.layers):
         for block_name in ("self_attn", "mlp"):
@@ -267,11 +275,34 @@ def _fuse_lora_into_model(model, adapter) -> int:
                 S = mx.clip(proj.S_raw, 0.0, proj._scale_bound)
                 delta = 2.0 * B.T @ mx.diag(S) @ A
 
+                # Delta diagnostics
+                if fp_weights is not None:
+                    key = f"model.layers.{layer_idx}.{block_name}.{proj_name}.weight"
+                    fp_w = fp_weights.get(key)
+                    if fp_w is not None:
+                        delta_f32 = delta.astype(mx.float32)
+                        E = fp_w.astype(mx.float32) - base_weight.astype(mx.float32)
+                        mx.eval(delta_f32, E)
+
+                        delta_frob = float(mx.sqrt(mx.sum(delta_f32 * delta_f32)).item())
+                        E_frob = float(mx.sqrt(mx.sum(E * E)).item())
+
+                        # Cosine similarity: <E, delta> / (||E|| * ||delta||)
+                        inner = float(mx.sum(E * delta_f32).item())
+                        denom = E_frob * delta_frob
+                        cosine = inner / denom if denom > 0 else 0.0
+
+                        delta_stats.append({
+                            "layer_key": key,
+                            "delta_frob": delta_frob,
+                            "error_frob": E_frob,
+                            "ratio": delta_frob / E_frob if E_frob > 0 else 0.0,
+                            "cosine_E_delta": cosine,
+                        })
+                        del delta_f32, E
+
                 # Fused weight
-                fused_weight = mx.astype(
-                    base_weight + delta,
-                    base_weight.dtype,
-                )
+                fused_weight = (base_weight + delta).astype(base_weight.dtype)
                 mx.eval(fused_weight)
 
                 # Create plain Linear replacement
@@ -291,7 +322,7 @@ def _fuse_lora_into_model(model, adapter) -> int:
 
     gc.collect()
     _clear_gpu_cache()
-    return n_fused
+    return n_fused, delta_stats
 
 
 # ── Dequantize model ─────────────────────────────────────────────────────
@@ -339,6 +370,151 @@ def _dequantize_model(model, adapter) -> int:
     gc.collect()
     _clear_gpu_cache()
     return n_deq
+
+
+# ── Functional error fraction ────────────────────────────────────────────
+
+
+def _compute_functional_fractions(
+    q_model, fp_weights: dict[str, Any], tokenizer, eval_texts: list[str],
+    n_samples: int = 30, max_len: int = 128,
+) -> list[dict[str, Any]]:
+    """Measure what fraction of E's energy is in high-energy activation directions.
+
+    For each layer, collects input activations X, computes the eigendecomposition
+    of X^T @ X (activation covariance), then measures how much of the weight error
+    E = W_fp - W_q projects onto the top-k eigenvectors.
+
+    The "functional fraction at effective dimension" tells us what fraction of the
+    weight error is in the directions that activations concentrate in.
+
+    Only computed for qkv projections (which share the layer input as activation).
+    """
+    base = getattr(q_model, "model", q_model)
+    if not hasattr(base, "layers"):
+        return []
+
+    # Tokenize evaluation texts
+    all_tokens = []
+    for text in eval_texts[:n_samples]:
+        tokens = tokenizer.encode(text)
+        all_tokens.append(mx.array(tokens[:max_len]))
+
+    # Pad and stack
+    max_seq = max(t.shape[0] for t in all_tokens)
+    padded = []
+    for t in all_tokens:
+        if t.shape[0] < max_seq:
+            pad_len = max_seq - t.shape[0]
+            t = mx.concatenate([t, mx.zeros(pad_len, dtype=t.dtype)])
+        padded.append(t)
+    batch = mx.stack(padded)
+
+    # Run embedding
+    h = base.embed_tokens(batch)
+    mx.eval(h)
+
+    results = []
+
+    for layer_idx, layer in enumerate(base.layers):
+        # h is the input to this layer; qkv projections receive input_layernorm(h)
+        # LayerNorm preserves the subspace (just rescales), so h spans the same space
+
+        # Flatten: [n_samples, seq_len, D] → [N, D]
+        X = h.reshape(-1, h.shape[-1]).astype(mx.float32)
+        N_tok, D = int(X.shape[0]), int(X.shape[1])
+        mx.eval(X)
+
+        # Activation covariance: X^T X / N
+        XtX = (X.T @ X) / N_tok
+        mx.eval(XtX)
+
+        try:
+            eigvals, eigvecs = mx.linalg.eigh(XtX, stream=mx.cpu)
+            mx.eval(eigvals, eigvecs)
+        except Exception as exc:
+            logger.warning("  eigh failed for layer %d: %s, skipping", layer_idx, exc)
+            h = layer(h)
+            mx.eval(h)
+            del X, XtX
+            gc.collect()
+            continue
+
+        # eigh returns ascending order; flip to descending
+        eigvals = eigvals[::-1]
+        eigvecs = eigvecs[:, ::-1]
+
+        # Effective dimensionality (participation ratio)
+        total_var = float(mx.sum(eigvals).item())
+        sum_sq = float(mx.sum(eigvals * eigvals).item())
+        D_eff = total_var ** 2 / sum_sq if sum_sq > 0 else float(D)
+
+        # For each qkv projection, compute functional fraction
+        for proj_name in ("q_proj", "k_proj", "v_proj"):
+            key = f"model.layers.{layer_idx}.self_attn.{proj_name}.weight"
+            fp_w = fp_weights.get(key)
+            if fp_w is None:
+                continue
+
+            proj = getattr(getattr(layer, "self_attn", None), proj_name, None)
+            if proj is None or not hasattr(proj, "weight"):
+                continue
+
+            q_w = proj.weight.astype(mx.float32)
+            E = fp_w.astype(mx.float32) - q_w  # [out, in]
+            mx.eval(E)
+
+            E_frob_sq = float(mx.sum(E * E).item())
+
+            if E_frob_sq <= 0:
+                del E, q_w
+                continue
+
+            # Project E onto each eigenvector: p_i = ||E @ v_i||²
+            # E @ eigvecs → [out, D], then sum squares per column
+            E_proj = E @ eigvecs
+            mx.eval(E_proj)
+            proj_energy = mx.sum(E_proj * E_proj, axis=0)  # [D]
+            mx.eval(proj_energy)
+            pe = proj_energy.tolist()
+
+            # Cumulative fraction at effective dimension
+            k_eff = max(1, int(round(D_eff)))
+            frac_at_eff = sum(pe[:k_eff]) / E_frob_sq
+            # Also compute at k=D/10 and k=D/100
+            k_10pct = max(1, D // 10)
+            k_1pct = max(1, D // 100)
+            frac_at_10pct = sum(pe[:k_10pct]) / E_frob_sq
+            frac_at_1pct = sum(pe[:k_1pct]) / E_frob_sq
+            # Baseline: if E were isotropic, fraction = k/D
+            iso_frac_eff = k_eff / D
+            iso_frac_10pct = k_10pct / D
+
+            results.append({
+                "layer_key": key,
+                "layer_idx": layer_idx,
+                "error_frob": math.sqrt(E_frob_sq),
+                "D": D,
+                "D_eff": D_eff,
+                "k_eff": k_eff,
+                "frac_at_eff_dim": frac_at_eff,
+                "frac_at_10pct": frac_at_10pct,
+                "frac_at_1pct": frac_at_1pct,
+                "iso_frac_eff": iso_frac_eff,
+                "iso_frac_10pct": iso_frac_10pct,
+            })
+
+            del E, E_proj, q_w, proj_energy
+
+        # Advance to next layer
+        h = layer(h)
+        mx.eval(h)
+
+        del X, XtX, eigvals, eigvecs
+        gc.collect()
+        _clear_gpu_cache()
+
+    return results
 
 
 # ── CKA measurement ─────────────────────────────────────────────────────
@@ -400,8 +576,15 @@ def _train_corrective_round(
     batch_size: int,
     seq_length: int,
     seed: int,
+    noise_fraction: float = 0.0,
 ) -> dict[str, Any]:
-    """Train one round of corrective LoRA. Returns training metrics."""
+    """Train one round of corrective LoRA. Returns training metrics.
+
+    Args:
+        noise_fraction: RMT noise fraction (1 - sv_frac) for f* derivation.
+            f* = initial_loss × noise_fraction is the irreducible loss floor.
+            If 0.0, uses f*=0 (original SPS).
+    """
     from modelcypher.core.domain.training.geometric_lora import (
         select_target_modules,
     )
@@ -475,6 +658,9 @@ def _train_corrective_round(
     # Training
     backend.random_seed(seed)
     losses: list[tuple[int, float]] = []
+    f_star = 0.0
+    best_loss = float("inf")
+    best_iter = -1
     start_time = time.monotonic()
 
     for it in range(max_iters):
@@ -501,8 +687,17 @@ def _train_corrective_round(
         d_norm = float(mx.sqrt(d_norm_sq).item())
         loss_val = float(loss.item())
 
+        # Derive f* from initial loss + RMT noise fraction
+        if it == 0 and noise_fraction > 0:
+            f_star = loss_val * noise_fraction
+            logger.info(
+                "  Derived f*=%.6f (initial_loss=%.6f × noise_fraction=%.4f)",
+                f_star, loss_val, noise_fraction,
+            )
+
         eta_step, _, _, _, _ = compute_per_step_rates(
             loss_val, d_norm, sigma_k_min, eta_ceiling,
+            f_star=f_star,
         )
         optimizer.learning_rate = mx.array(eta_step)
 
@@ -513,13 +708,17 @@ def _train_corrective_round(
             module.clamp_scale()
             mx.eval(module.S_raw)
 
+        if loss_val < best_loss:
+            best_loss = loss_val
+            best_iter = it
+
         losses.append((it, loss_val))
 
         if it % 10 == 0 or it == max_iters - 1:
             elapsed = time.monotonic() - start_time
             logger.info(
-                "  iter %d/%d: loss=%.6f, eta=%.4e, elapsed=%.1fs",
-                it, max_iters, loss_val, eta_step, elapsed,
+                "  iter %d/%d: loss=%.6f, eta=%.4e, d_norm=%.4e, elapsed=%.1fs",
+                it, max_iters, loss_val, eta_step, d_norm, elapsed,
             )
 
     training_time = time.monotonic() - start_time
@@ -528,6 +727,9 @@ def _train_corrective_round(
         "n_iters": len(losses),
         "initial_loss": losses[0][1] if losses else 0.0,
         "final_loss": losses[-1][1] if losses else 0.0,
+        "best_loss": best_loss,
+        "best_iter": best_iter,
+        "f_star": f_star,
         "training_time_seconds": training_time,
         "n_trainable_params": n_trainable,
         "n_lora_layers": n_injected,
@@ -630,6 +832,48 @@ def main():
 
     results["initial_cka"] = initial_cka
 
+    # ── Optional: Functional error fraction analysis ──
+    if args.functional_fraction:
+        logger.info("Computing functional error fraction (E projected onto activation subspace)...")
+        func_fracs = _compute_functional_fractions(
+            q_model, fp_weights, tokenizer, eval_texts,
+            n_samples=args.n_cka_probes, max_len=128,
+        )
+        if func_fracs:
+            d_effs = [f["D_eff"] for f in func_fracs]
+            fracs_eff = [f["frac_at_eff_dim"] for f in func_fracs]
+            fracs_10 = [f["frac_at_10pct"] for f in func_fracs]
+            fracs_1 = [f["frac_at_1pct"] for f in func_fracs]
+            iso = [f["iso_frac_eff"] for f in func_fracs]
+            logger.info(
+                "  Functional fraction: D_eff=%.1f, "
+                "frac_at_eff=%.4f (iso=%.4f), "
+                "frac_at_10%%=%.4f, frac_at_1%%=%.4f "
+                "(%d projections)",
+                sum(d_effs) / len(d_effs),
+                sum(fracs_eff) / len(fracs_eff),
+                sum(iso) / len(iso),
+                sum(fracs_10) / len(fracs_10),
+                sum(fracs_1) / len(fracs_1),
+                len(func_fracs),
+            )
+            # Log per-layer summary (one entry per layer, averaging across qkv)
+            by_layer: dict[int, list[float]] = {}
+            for f in func_fracs:
+                by_layer.setdefault(f["layer_idx"], []).append(f["frac_at_eff_dim"])
+            for lidx in sorted(by_layer.keys()):
+                vals = by_layer[lidx]
+                logger.info(
+                    "    Layer %2d: D_eff=%.1f, frac_at_eff=%.4f (mean of %d projections)",
+                    lidx,
+                    next(f["D_eff"] for f in func_fracs if f["layer_idx"] == lidx),
+                    sum(vals) / len(vals),
+                    len(vals),
+                )
+            results["functional_fractions"] = func_fracs
+        gc.collect()
+        _clear_gpu_cache()
+
     # ── Stacking loop ──
     rounds: list[dict[str, Any]] = []
     stop_reason = "max_rounds_reached"
@@ -676,7 +920,13 @@ def main():
             break
 
         # ── Train corrective LoRA ──
-        logger.info("Training corrective LoRA (round %d)...", round_idx + 1)
+        # Derive noise fraction from RMT: f* = initial_loss × (1 - sv_frac)
+        sv_frac = rmt_before["mean_signal_variance_fraction"]
+        round_noise_fraction = 1.0 - sv_frac if sv_frac > 0 else 0.0
+        logger.info(
+            "Training corrective LoRA (round %d, sv_frac=%.4f, noise=%.4f)...",
+            round_idx + 1, sv_frac, round_noise_fraction,
+        )
         training_result = _train_corrective_round(
             q_model=q_model,
             fp_model=fp_model,
@@ -688,6 +938,7 @@ def main():
             batch_size=args.batch_size,
             seq_length=args.seq_length,
             seed=args.seed + round_idx,  # Different seed each round
+            noise_fraction=round_noise_fraction,
         )
 
         # ── Save this round's adapter ──
@@ -695,10 +946,23 @@ def main():
         adapter.save_adapter(q_model, round_adapter_path)
         logger.info("  Adapter saved: %s", round_adapter_path)
 
-        # ── Fuse LoRA into weights ──
+        # ── Fuse LoRA into weights (with delta diagnostics) ──
         logger.info("Fusing LoRA delta into model weights...")
-        n_fused = _fuse_lora_into_model(q_model, adapter)
+        n_fused, delta_stats = _fuse_lora_into_model(
+            q_model, adapter, fp_weights=fp_weights,
+        )
         logger.info("  Fused %d modules", n_fused)
+        if delta_stats:
+            ratios = [s["ratio"] for s in delta_stats]
+            cosines = [s["cosine_E_delta"] for s in delta_stats]
+            mean_ratio = sum(ratios) / len(ratios)
+            mean_cosine = sum(cosines) / len(cosines)
+            max_ratio = max(ratios)
+            logger.info(
+                "  Delta diagnostics: mean ||delta||/||E|| = %.6f, "
+                "max = %.6f, mean cos(E,delta) = %+.4f",
+                mean_ratio, max_ratio, mean_cosine,
+            )
 
         # ── Post-training RMT ──
         logger.info("Analyzing post-training residual (RMT)...")
@@ -741,6 +1005,7 @@ def main():
             "training": training_result,
             "adapter_path": str(round_adapter_path),
             "n_fused": n_fused,
+            "delta_stats": delta_stats,
             "rmt_after_training": rmt_after,
             "cka_after_round": round_cka,
             "round_time_seconds": round_time,
@@ -914,6 +1179,11 @@ def _parse_args() -> argparse.Namespace:
         type=int,
         default=30,
         help="Number of probes for CKA measurement",
+    )
+    parser.add_argument(
+        "--functional-fraction",
+        action="store_true",
+        help="Compute functional error fraction (E projected onto activation subspace)",
     )
     return parser.parse_args()
 

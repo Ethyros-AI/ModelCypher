@@ -252,8 +252,16 @@ def capture_attention_matrices(
             captured[i] = weights[0]  # [n_heads, seq_len, seq_len]
 
         # Forward the actual layer for correct hidden state propagation
+        # Per-layer mask routing: LFM2 hybrid layers use is_attention_layer
+        if hasattr(layer, "is_attention_layer"):
+            layer_mask = "causal" if layer.is_attention_layer else None
+        else:
+            try:
+                layer_mask = backend.create_causal_mask(seq_len, hidden.dtype)
+            except Exception:
+                layer_mask = None
         try:
-            hidden = layer(hidden, mask=backend.create_causal_mask(seq_len, hidden.dtype))
+            hidden = layer(hidden, mask=layer_mask)
         except (TypeError, ValueError):
             try:
                 hidden = layer(hidden)

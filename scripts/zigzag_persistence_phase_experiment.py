@@ -6,14 +6,17 @@ consistent phase structure in transformer processing that correlates with
 intrinsic dimension trajectory inflection points.
 
 Hypothesis:
-    H1: Zigzag persistence identifies 3-4 distinct phases whose boundaries
-        correlate with ID trajectory inflection points (within 2 layers).
+    H1: VR persistence identifies 3-4 distinct phases whose boundaries
+        correlate with ID trajectory inflection points (within 5 layers).
         Loop persistence correlates with prompt complexity.
+
+    Prediction (aspiration): boundaries within 2 layers of ID inflections.
+    Falsification gate (rejection): boundaries within 5 layers, 50% threshold.
 
 Measurements:
     For each model:
         1. Extract last-token hidden state at every layer for 30 prompts
-        2. Build zigzag-style filtration: VR(X_l) per layer, track birth/death
+        2. Compute per-layer VR persistence on category-specific point clouds
         3. Compute topological descriptors per layer: features born/dying,
            mean persistence, beta_0/beta_1 counts
         4. Changepoint detection on descriptor time series
@@ -22,7 +25,7 @@ Measurements:
 Falsification criteria:
     FAIL if no consistent phase structure (Kruskal-Wallis p > 0.05)
     FAIL if phase boundaries differ from ID inflection by >5 layers in >50% of cases
-    FAIL if loop persistence does not correlate with complexity (Spearman r < 0.3)
+    FAIL if math loop persistence not significantly > narrative (Mann-Whitney p > 0.05)
 
 References:
     Gardinazzi et al. (ICML 2025, arXiv:2410.11042v3): Zigzag persistence in LLMs
@@ -246,20 +249,26 @@ def collect_per_layer_hidden_states(
         seq_len = input_ids.shape[1]
 
         try:
-            mask = backend.create_causal_mask(seq_len, hidden.dtype)
+            numeric_mask = backend.create_causal_mask(seq_len, hidden.dtype)
         except Exception:
-            mask = None
+            numeric_mask = None
 
         layer_states = []
         for i, layer in enumerate(layers):
             if i >= num_layers:
                 break
 
+            # Per-layer mask routing: LFM2 hybrid layers use is_attention_layer
+            if hasattr(layer, "is_attention_layer"):
+                layer_mask = "causal" if layer.is_attention_layer else None
+            else:
+                layer_mask = numeric_mask
+
             try:
-                hidden = layer(hidden, mask=mask)
+                hidden = layer(hidden, mask=layer_mask)
             except (TypeError, ValueError):
                 try:
-                    hidden = layer(hidden, mask)
+                    hidden = layer(hidden, layer_mask)
                 except (TypeError, ValueError):
                     hidden = layer(hidden)
 
@@ -645,12 +654,13 @@ def mann_whitney_u_test(x: list[float], y: list[float]) -> float:
 
 
 def run_single_model(
-    model_name: str, model_info: dict, backend
+    model_name: str, model_info: dict, backend,
+    probe_categories: dict[str, list[str]] | None = None,
 ) -> dict:
     """Run all measurements for a single model."""
     import numpy as np
 
-    from modelcypher.core.domain.statistics import spearman_correlation
+    active_probes = probe_categories if probe_categories is not None else PROBE_CATEGORIES
 
     model_path = model_info["path"]
     logger.info(f"Loading model: {model_name} from {model_path}")
@@ -666,7 +676,7 @@ def run_single_model(
     # Collect all prompts
     all_prompts = []
     prompt_categories = {}
-    for cat, prompts in PROBE_CATEGORIES.items():
+    for cat, prompts in active_probes.items():
         for p in prompts:
             all_prompts.append(p)
             prompt_categories[p] = cat
@@ -714,53 +724,58 @@ def run_single_model(
         sum(1 for d in boundary_distances if d <= 5) > len(boundary_distances) * 0.5
     )
 
-    # Phase 6: Per-category loop persistence analysis
-    logger.info("Computing per-category loop persistence...")
+    # Phase 6: Per-CATEGORY loop persistence (distinct point clouds)
+    # At each layer, each category's point cloud = its 10 prompts' last-token states.
+    # VR on each gives category-specific topology → testable complexity correlation.
+    logger.info("Computing per-category VR persistence...")
+    from modelcypher.core.domain.geometry.topological_fingerprint import (
+        TopologicalFingerprint,
+    )
+
     category_loop_persistence = {}
-    per_prompt_results = []
+    # Per-layer H1 persistence per category (for Mann-Whitney across layers)
+    category_layer_h1: dict[str, list[float]] = {}
 
-    for cat, prompts in PROBE_CATEGORIES.items():
-        cat_loop_pers = []
+    for cat, prompts in active_probes.items():
+        layer_h1_values = []
+        for layer_idx in range(num_layers):
+            # Build point cloud: one point per prompt in this category at this layer
+            points = []
+            for prompt in prompts:
+                states = all_states.get(prompt)
+                if states is None or layer_idx >= len(states):
+                    continue
+                state = states[layer_idx]
+                state_list = state.reshape(-1).tolist()
+                points.append(state_list[:64])  # First 64 dims for tractability
 
-        for prompt in prompts:
-            states = all_states.get(prompt)
-            if states is None:
+            if len(points) < 3:
+                layer_h1_values.append(0.0)
                 continue
 
-            # Compute per-prompt topology at each layer
-            # Use a smaller point cloud: this prompt's states across layers
-            prompt_topologies = []
-            prompt_loop_pers = 0.0
-            for layer_idx in range(num_layers):
-                if layer_idx < len(topologies):
-                    # Reuse the aggregate topology (per-prompt VR would need
-                    # multiple samples per prompt, which we don't have)
-                    prompt_topologies.append({
-                        "layer_idx": layer_idx,
-                        "n_components": topologies[layer_idx].n_components,
-                        "n_loops": topologies[layer_idx].n_loops,
-                        "total_persistence_h1": topologies[layer_idx].total_persistence_h1,
-                        "persistence_entropy": topologies[layer_idx].persistence_entropy,
-                    })
-                    prompt_loop_pers += topologies[layer_idx].total_persistence_h1
+            try:
+                fingerprint = TopologicalFingerprint.compute(points)
+                h1_bars = [
+                    p for p in fingerprint.diagram.points
+                    if p.dimension == 1 and p.persistence > 0
+                ]
+                total_h1 = sum(p.persistence for p in h1_bars)
+                layer_h1_values.append(total_h1)
+            except Exception:
+                layer_h1_values.append(0.0)
 
-            cat_loop_pers.append(prompt_loop_pers / num_layers if num_layers > 0 else 0.0)
-
-            per_prompt_results.append({
-                "prompt": prompt[:60],
-                "category": cat,
-                "mean_loop_persistence": prompt_loop_pers / num_layers if num_layers > 0 else 0.0,
-                "total_loop_persistence": prompt_loop_pers,
-            })
-
+        category_layer_h1[cat] = layer_h1_values
         category_loop_persistence[cat] = (
-            float(np.mean(cat_loop_pers)) if cat_loop_pers else 0.0
+            float(np.mean(layer_h1_values)) if layer_h1_values else 0.0
+        )
+        logger.info(
+            f"  {cat}: mean H1 persistence = {category_loop_persistence[cat]:.6f} "
+            f"({len(layer_h1_values)} layers)"
         )
 
     # Phase 7: Statistical tests
-    # Kruskal-Wallis on topological descriptors across detected phases
+    # 7a: Kruskal-Wallis on topological descriptors across detected phases
     if cross_layer.n_phases >= 2 and cross_layer.phase_boundaries:
-        # Split layers into phases
         boundaries = [0] + cross_layer.phase_boundaries + [num_layers]
         phase_groups = []
         for i in range(len(boundaries) - 1):
@@ -776,32 +791,34 @@ def run_single_model(
 
     passes_phase = kw_p < 0.05
 
-    # Mann-Whitney: math loop persistence > narrative loop persistence
-    math_pers = [r["mean_loop_persistence"] for r in per_prompt_results if r["category"] == "math"]
-    narrative_pers = [r["mean_loop_persistence"] for r in per_prompt_results if r["category"] == "narrative"]
-    mw_p = mann_whitney_u_test(math_pers, narrative_pers)
+    # 7b: Mann-Whitney on per-layer H1 persistence: math vs narrative
+    # This is the primary complexity gate — uses per-layer H1 vectors
+    # which have num_layers data points each (sufficient for MW).
+    math_h1 = category_layer_h1.get("math", [])
+    narrative_h1 = category_layer_h1.get("narrative", [])
+    mw_p = mann_whitney_u_test(math_h1, narrative_h1)
 
-    # Spearman: complexity rank vs loop persistence
-    # Complexity ordering: math=3, factual=2, narrative=1
-    complexity_map = {"math": 3, "factual": 2, "narrative": 1}
-    complexity_ranks = [complexity_map[r["category"]] for r in per_prompt_results]
-    loop_pers_values = [r["mean_loop_persistence"] for r in per_prompt_results]
+    # 7c: Rank ordering check (secondary diagnostic)
+    # Expected: math > factual > narrative
+    cat_means = [
+        (cat, category_loop_persistence.get(cat, 0.0))
+        for cat in ["math", "factual", "narrative"]
+    ]
+    rank_correct = (
+        cat_means[0][1] > cat_means[2][1]  # math > narrative
+    )
 
-    if len(complexity_ranks) >= 3:
-        loop_spearman = spearman_correlation(complexity_ranks, loop_pers_values)
-    else:
-        loop_spearman = 0.0
-
-    passes_loop = loop_spearman > 0.3
+    # Loop complexity gate: Mann-Whitney p < 0.05 AND math > narrative (directional)
+    passes_loop = mw_p < 0.05 and rank_correct
 
     logger.info(
         f"Results: KW p={kw_p:.4f} ({'PASS' if passes_phase else 'FAIL'}), "
         f"Boundary alignment: {sum(1 for d in boundary_distances if d <= 5)}/{len(boundary_distances)} "
         f"({'PASS' if passes_boundary else 'FAIL'}), "
-        f"Loop Spearman={loop_spearman:.3f} ({'PASS' if passes_loop else 'FAIL'})"
+        f"MW math>narrative p={mw_p:.4f} ({'PASS' if passes_loop else 'FAIL'})"
     )
     logger.info(f"  Category loop persistence: {category_loop_persistence}")
-    logger.info(f"  Mann-Whitney math>narrative p={mw_p:.4f}")
+    logger.info(f"  Rank ordering (math>narrative): {rank_correct}")
 
     # Cleanup
     del model, tokenizer, all_states
@@ -840,7 +857,8 @@ def run_single_model(
         "kruskal_wallis_p": kw_p,
         "mann_whitney_p": mw_p,
         "mean_loop_persistence_by_category": category_loop_persistence,
-        "loop_persistence_spearman": loop_spearman,
+        "loop_mann_whitney_p": mw_p,
+        "loop_rank_correct": rank_correct,
         "passes_phase_structure": passes_phase,
         "passes_boundary_alignment": passes_boundary,
         "passes_loop_complexity": passes_loop,
@@ -855,15 +873,22 @@ def run_experiment(args: argparse.Namespace) -> None:
 
     backend = initialize_default_backend()
 
-    # Select models
+    # Select models and probe count
+    # Local copy of probes to avoid mutating module-level global
+    probe_categories = {cat: list(prompts) for cat, prompts in PROBE_CATEGORIES.items()}
+
     if args.smoke:
         model_names = ["LFM2-350M", "Llama-3.2-3B"]
+        # Reduce probes in smoke mode: 2 per category (6 total)
+        for cat in probe_categories:
+            probe_categories[cat] = probe_categories[cat][:2]
     elif args.models:
         model_names = args.models
     else:
         model_names = list(MODEL_REGISTRY.keys())
 
-    logger.info(f"Experiment: {len(model_names)} models, 30 probes (10 per category)")
+    n_probes = sum(len(v) for v in probe_categories.values())
+    logger.info(f"Experiment: {len(model_names)} models, {n_probes} probes")
 
     # Run per model
     results = ExperimentResults(
@@ -875,7 +900,7 @@ def run_experiment(args: argparse.Namespace) -> None:
             logger.warning(f"Unknown model: {model_name}, skipping")
             continue
         model_info = MODEL_REGISTRY[model_name]
-        model_result = run_single_model(model_name, model_info, backend)
+        model_result = run_single_model(model_name, model_info, backend, probe_categories)
         results.models.append(model_result)
         gc.collect()
 
@@ -900,7 +925,7 @@ def run_experiment(args: argparse.Namespace) -> None:
 
     results.summary = {
         "n_models": n_models,
-        "n_probes": 30,
+        "n_probes": n_probes,
         "phase_structure_passes": phase_passes,
         "boundary_alignment_passes": boundary_passes,
         "loop_complexity_passes": loop_passes,
@@ -912,8 +937,8 @@ def run_experiment(args: argparse.Namespace) -> None:
             "kruskal_wallis_p_threshold": 0.05,
             "boundary_distance_max": 5,
             "boundary_alignment_fraction": 0.5,
-            "loop_spearman_min": 0.3,
-            "loop_spearman_source": "existing entropy->curvature r=0.507 as lower bound",
+            "loop_mann_whitney_p_threshold": 0.05,
+            "loop_test": "Mann-Whitney on per-layer H1 persistence: math vs narrative",
         },
         "references": [
             "Gardinazzi et al. (ICML 2025, arXiv:2410.11042v3): Zigzag persistence in LLMs",

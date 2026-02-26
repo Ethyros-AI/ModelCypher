@@ -93,6 +93,12 @@ MODEL_REGISTRY = {
         "d": 3072,
         "architecture": "llama",
     },
+    "Qwen3-1.7B": {
+        "path": f"{MODELS_BASE}/mlx-community/Qwen3-1.7B-MLX-bf16",
+        "L": 28,
+        "d": 2048,
+        "architecture": "qwen3",
+    },
 }
 
 # =============================================================================
@@ -270,23 +276,30 @@ def collect_per_layer_activations(
         hidden = embed(input_ids)
         seq_len = input_ids.shape[1]
 
-        # Create causal mask
+        # Create numeric causal mask (used only for standard transformer layers)
         try:
-            mask = backend.create_causal_mask(seq_len, hidden.dtype)
+            numeric_mask = backend.create_causal_mask(seq_len, hidden.dtype)
         except Exception:
-            mask = None
+            numeric_mask = None
 
         for i, layer in enumerate(layers):
             if i >= num_layers:
                 break
 
             h_in = hidden
+            # Per-layer mask routing: LFM2 hybrid layers have is_attention_layer
+            # attribute — attention layers expect "causal", conv layers expect None
+            if hasattr(layer, "is_attention_layer"):
+                layer_mask = "causal" if layer.is_attention_layer else None
+            else:
+                layer_mask = numeric_mask
+
             # Forward through layer
             try:
-                h_out = layer(hidden, mask=mask)
+                h_out = layer(hidden, mask=layer_mask)
             except (TypeError, ValueError):
                 try:
-                    h_out = layer(hidden, mask)
+                    h_out = layer(hidden, layer_mask)
                 except (TypeError, ValueError):
                     h_out = layer(hidden)
 
@@ -663,6 +676,11 @@ def run_experiment(args: argparse.Namespace) -> None:
 
     # Experiment-level falsification
     # FAIL if Spearman < 0.3 for >2 of 5 models
+    if n_models < 5:
+        logger.warning(
+            f"Only {n_models} models — Spearman gate has reduced statistical power "
+            f"(designed for 5 models, allows 2 failures). Smoke verdict is provisional."
+        )
     spearman_fail_count = n_models - spearman_passes
     experiment_passes_spearman = spearman_fail_count <= 2
 

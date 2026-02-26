@@ -25,12 +25,10 @@ Regime selection is derived from measured baseline behavior:
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import Mapping
 
-from scipy.stats import beta
-
+from modelcypher.core.domain.statistics import clopper_pearson_interval
 from modelcypher.core.domain.training.online_eval import OnlineEvalResult
 
 DEFAULT_PROBLEM_TYPE_CHANCE_RATES: dict[str, float] = {
@@ -71,38 +69,8 @@ class TrainingRegime:
     derivation_log: tuple[str, ...]
 
 
-def _clopper_pearson_interval(
-    *,
-    n_correct: int,
-    n_total: int,
-    alpha: float,
-) -> tuple[float, float]:
-    """Compute exact Clopper-Pearson interval for Binomial(n_total, p)."""
-    if n_total <= 0:
-        raise ValueError(f"n_total must be > 0, got {n_total}")
-    if n_correct < 0 or n_correct > n_total:
-        raise ValueError(
-            f"n_correct must satisfy 0 <= n_correct <= n_total, got {n_correct}",
-        )
-    if not (0.0 < alpha < 1.0):
-        raise ValueError(f"alpha must satisfy 0 < alpha < 1, got {alpha}")
-
-    lower = (
-        0.0
-        if n_correct == 0
-        else float(beta.ppf(alpha / 2.0, n_correct, n_total - n_correct + 1))
-    )
-    upper = (
-        1.0
-        if n_correct == n_total
-        else float(beta.ppf(1.0 - alpha / 2.0, n_correct + 1, n_total - n_correct))
-    )
-    if not math.isfinite(lower) or not math.isfinite(upper):
-        raise ValueError(
-            "Clopper-Pearson interval returned non-finite bounds: "
-            f"lower={lower}, upper={upper}",
-        )
-    return lower, upper
+# Backwards-compatible alias for the private name used in tests.
+_clopper_pearson_interval = clopper_pearson_interval
 
 
 def select_training_regime(
@@ -150,7 +118,7 @@ def select_training_regime(
         observed_accuracy = n_correct / float(n_type)
         chance_rate = float(chance_rates.get(problem_type, 0.0))
 
-        ci_lower, ci_upper = _clopper_pearson_interval(
+        ci_lower, ci_upper = clopper_pearson_interval(
             n_correct=n_correct,
             n_total=n_type,
             alpha=alpha,

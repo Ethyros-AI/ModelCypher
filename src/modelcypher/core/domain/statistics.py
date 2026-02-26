@@ -32,6 +32,66 @@ from __future__ import annotations
 import math
 import random
 
+from scipy.stats import beta
+
+# ---------------------------------------------------------------------------
+# Exact confidence intervals
+# ---------------------------------------------------------------------------
+
+
+def clopper_pearson_interval(
+    *,
+    n_correct: int,
+    n_total: int,
+    alpha: float,
+) -> tuple[float, float]:
+    """Compute exact Clopper-Pearson interval for Binomial(n_total, p).
+
+    Reference: Clopper & Pearson (1934), "The use of confidence or fiducial
+    limits illustrated in the case of the binomial," Biometrika 26(4):404-413.
+
+    Parameters
+    ----------
+    n_correct:
+        Number of successes observed.
+    n_total:
+        Number of trials.
+    alpha:
+        Significance level (e.g. 0.05 for 95% CI). The interval is
+        [alpha/2, 1 - alpha/2] in probability.
+
+    Returns
+    -------
+    (lower, upper):
+        Exact confidence bounds for the true success rate p.
+    """
+    if n_total <= 0:
+        raise ValueError(f"n_total must be > 0, got {n_total}")
+    if n_correct < 0 or n_correct > n_total:
+        raise ValueError(
+            f"n_correct must satisfy 0 <= n_correct <= n_total, got {n_correct}",
+        )
+    if not (0.0 < alpha < 1.0):
+        raise ValueError(f"alpha must satisfy 0 < alpha < 1, got {alpha}")
+
+    lower = (
+        0.0
+        if n_correct == 0
+        else float(beta.ppf(alpha / 2.0, n_correct, n_total - n_correct + 1))
+    )
+    upper = (
+        1.0
+        if n_correct == n_total
+        else float(beta.ppf(1.0 - alpha / 2.0, n_correct + 1, n_total - n_correct))
+    )
+    if not math.isfinite(lower) or not math.isfinite(upper):
+        raise ValueError(
+            "Clopper-Pearson interval returned non-finite bounds: "
+            f"lower={lower}, upper={upper}",
+        )
+    return lower, upper
+
+
 # ---------------------------------------------------------------------------
 # Descriptive statistics
 # ---------------------------------------------------------------------------

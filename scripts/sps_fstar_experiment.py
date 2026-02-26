@@ -7,8 +7,10 @@ agree on the f* value.
 
 Hypothesis:
     H1: Geometrically-derived f* > 0 causes SPS to bind on >10% of iterations
-        in the final 25% of training, improving convergence. Three f* methods
-        agree within 2x of each other.
+        in the final 25% of training, improving convergence.
+
+    Prediction (aspiration): Three f* methods agree within 2x.
+    Falsification gate (rejection): Methods disagree by >10x.
 
 Methods for f* estimation:
     A: RMT noise floor: f* = L_0 * (1 - sv_frac)
@@ -25,8 +27,8 @@ Measurements:
     5. Compare: SPS binding frequency, final loss, CKA, f* agreement
 
 Falsification criteria:
-    FAIL if SPS never binds for ANY f* method
-    FAIL if three methods disagree by >10x
+    FAIL if SPS binds <10% of final-quarter iterations for ALL f* methods
+    FAIL if <2 valid f* methods, or methods disagree by >10x
     FAIL if f*>0 gives WORSE CKA than f*=0
 
 References:
@@ -264,7 +266,7 @@ def estimate_fstar_exponential(
 def estimate_fstar_signal_propagation(
     exp1_results_path: str | None,
     initial_loss: float,
-    model_name: str = "Qwen3-8B",
+    model_name: str = "",
 ) -> FStarEstimate:
     """Method C: Signal propagation bound.
 
@@ -281,7 +283,7 @@ def estimate_fstar_signal_propagation(
         # Find matching model or use first available
         for model_result in exp1_data.get("models", []):
             name = model_result.get("model_name", "")
-            if model_name.lower() in name.lower() or not model_name:
+            if model_name.lower() in name.lower() or name.lower() in model_name.lower() or not model_name:
                 highway = model_result.get("highway_layers", [])
                 num_layers = model_result.get("num_layers", 1)
                 highway_fraction = len(highway) / num_layers if num_layers > 0 else 0.0
@@ -585,7 +587,9 @@ def run_experiment(args: argparse.Namespace) -> None:
     logger.info(f"Method A (RMT): f*={est_rmt.f_star:.6f} — {est_rmt.derivation}")
 
     # Method C: Signal propagation (from Experiment 1)
-    est_sp = estimate_fstar_signal_propagation(args.exp1_results, initial_loss)
+    # Derive model name from bf16 reference path to match training target
+    fp_model_name = Path(args.fp_model).name
+    est_sp = estimate_fstar_signal_propagation(args.exp1_results, initial_loss, model_name=fp_model_name)
     f_star_estimates.append(est_sp)
     logger.info(f"Method C (Signal prop): f*={est_sp.f_star:.6f} — {est_sp.derivation}")
 
@@ -748,8 +752,8 @@ def run_experiment(args: argparse.Namespace) -> None:
         max_ratio = max(valid_fstars) / min(valid_fstars)
         methods_agree = max_ratio <= 10.0
     elif len(valid_fstars) == 1:
-        max_ratio = 1.0
-        methods_agree = True
+        max_ratio = float("nan")
+        methods_agree = False  # Cannot test agreement with a single method
     else:
         max_ratio = float("inf")
         methods_agree = False
@@ -766,8 +770,8 @@ def run_experiment(args: argparse.Namespace) -> None:
     else:
         fstar_improves_cka = False
 
-    # Overall
-    passes_sps_binds = any_sps_binds
+    # Overall — use final-quarter binding gate (pre-registered: >10% of final 25%)
+    passes_sps_binds = sps_binds_final_any
     passes_agreement = methods_agree
     passes_cka = fstar_improves_cka
 

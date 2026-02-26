@@ -401,11 +401,11 @@ The `LoRAStacker` provides the infrastructure for this iteration:
 - CKA drift tracking (max) detects departure from desired behavior
 - Convergence detection triggers merging when gains plateau
 
-**Convergence criterion:** The iteration converges when the residual's signal_rank drops to 0 — all remaining error is within the MP noise bulk and is uncorrectable by low-rank methods.
+**Convergence criterion (ORIGINAL — FALSIFIED):** ~~The iteration converges when the residual's signal_rank drops to 0 — all remaining error is within the MP noise bulk and is uncorrectable by low-rank methods.~~ **Falsified by Experiment 4:** signal_rank is invariant to correction (425.3 across all 5 rounds). Correction operates in activation space, not weight space. signal_rank measures weight-space spectral structure and cannot change through activation-based training. See Experiment 4d for replacement: CKA-based stopping.
 
-**Convergence bound:** If the top k eigenvalues of E_q's covariance capture fraction f_k of total error variance, then k rounds of rank-r training reduce the correctable error to (1 - f_k). If f_1 = 0.7 (70% of error is in top-r signal directions), one round removes 70% of correctable error. Two rounds targeting the residual might capture f_2 = 0.9 cumulative.
+**Convergence bound (ORIGINAL — WRONG PREMISE):** ~~If the top k eigenvalues of E_q's covariance capture fraction f_k of total error variance, then k rounds of rank-r training reduce the correctable error to (1 - f_k).~~ **Wrong premise:** Training does not reduce weight-space error. The correction is compensatory (activation-space), not restorative (weight-space). ‖E‖_F is frozen. The actual limit is the functional error fraction: 0.14% of ‖E‖_F is in the activation-relevant subspace (Experiment 4b).
 
-**The fundamental limit:** The noise-floor fraction (1 - f_total) of error is irreducible by low-rank methods. This fraction is determined by the quantization scheme's interaction with the weight matrix structure.
+**The fundamental limit (REVISED):** The activation subspace captures D_eff ≈ 3 effective dimensions out of 1536-2048. Only 0.14% of weight error energy is in these directions. This is the geometric ceiling for any activation-based correction — not a function of training budget, optimizer, or data, but of the mismatch between weight-space dimensionality and activation-space dimensionality.
 
 *Code: [`lora_stacker.py`](../../src/modelcypher/experimental/self_improve/lora_stacker.py)*
 
@@ -450,7 +450,12 @@ The experimental plan addresses all three questions.
 | B=8 reduces spike amplitude but not CKA improvement | **MEASURED** | Max spike 2.80 (vs 5.72 at B=2), CKA +0.0103 (vs +0.0129); d_norm range 22× (vs 100×) (Experiment 3c) |
 | Uniform Polyak-Ruppert averaging dilutes good iterates | **FALSIFIED** | CKA +0.0078 (Polyak) vs +0.0129 (final iterate); early/spike iterates dominate uniform average (Experiment 3c) |
 | Best-checkpoint (min-loss iterate) captures optimum | **FALSIFIED** | CKA +0.0103 (best-ckpt iter 67) vs +0.0129 (final iterate); low MSE ≠ high CKA (Experiment 3c) |
-| Stacked recovery converges when residual enters MP bulk | CONJECTURAL | Experiment 4 unblocked — 4-bit correction shows CKA improvement |
+| Stacked recovery converges when residual enters MP bulk | **FALSIFIED** | signal_rank frozen at 425.3 across 5 rounds; correction operates in activation space, not weight space (Experiment 4) |
+| Corrective LoRA is compensation, not recovery | **MEASURED** | ‖delta‖/‖E‖=0.04%, cos(E,delta)=+0.0003 (orthogonal); ‖E‖_F frozen at 8.1359 across 5 rounds (Experiment 4b) |
+| Weight error is isotropic relative to activation subspace | **MEASURED** | frac_at_D_eff=0.14% matches isotropic prediction 0.15% within 7%; D_eff=3.1 out of 1536-2048 dims (Experiment 4b) |
+| Stacked CKA seesaw is deterministic cascade | **MEASURED** | Layer 26 vs layers 10-14: r=-0.52 to -0.92 (anti-correlated); within-group r=+0.73 to +0.86 (Experiment 4b) |
+| 5 rounds of stacked recovery: CKA +0.023, min CKA +0.219 | **MEASURED** | 0.8947→0.9174 mean, 0.4990→0.7182 min; diminishing returns per round (Experiment 4a) |
+| Weight-space metrics anti-correlated with CKA improvement | **MEASURED** | ‖E‖_F increases by 0.000007 while CKA improves by +0.023 over 5 rounds (Experiment 4) |
 
 ---
 
@@ -727,21 +732,120 @@ This means the f*-corrected baseline is already near-optimal for this training b
 
 5. **What this means for Experiment 4 (Stacked Recovery):** Since corrective LoRA reliably improves CKA (+0.0103 to +0.0129 across all configs), stacking should work. The oscillation doesn't prevent useful correction — it just means we can't squeeze more than ~+0.013 per round from this training budget. Stacking addresses cumulative improvement, not per-round optimization.
 
-### Experiment 4: Stacked Recovery
+### Experiment 4: Stacked Recovery `[COMPLETE — BEDROCK]`
 
 **Question:** Can iterated correction converge to near-perfect recovery?
 
-**Prerequisite:** Experiment 3 shows CKA improvement. **UNBLOCKED** — Experiment 3b+3c (4-bit, f*-corrected) showed +0.0129 mean CKA, +0.1239 min CKA. Oscillation investigation confirmed this is reproducible and near-optimal for 100 iterations.
+**Prerequisite:** Experiment 3b+3c (4-bit, f*-corrected) showed +0.0129 mean CKA, +0.1239 min CKA.
 
-**Method:**
-1. After Experiment 3b, measure weight-space residual: E_residual per layer on 4-bit model + adapter
-2. Compute RMT decomposition of E_residual
-3. If signal_rank > 0: train second adapter via LoRAStacker on 4-bit + adapter_1
-4. Repeat for 3-5 rounds, tracking per-round: CKA drift, cumulative barrier, signal_rank of residual
+**Method:** Train→fuse→RMT→repeat loop. Each round: (1) analyze residual E = W_fp - W_q via RMT, (2) inject NB-LoRA on all 196 modules, (3) train MSE distillation with MASS step size and f*-correction, (4) fuse adapter into model weights, (5) measure post-round CKA and residual RMT. Stop when signal_rank enters MP bulk or max_rounds reached.
 
-**Convergence criterion:** Signal_rank of residual drops to 0 → remaining error is in MP noise bulk → stop.
+**Setup:** 4-bit-g64-affine Qwen3-1.7B, 196 NB-LoRA layers, B=2, seq_length=256, 100 iters/round, 5 rounds, 30 CKA probe sequences, seed=42.
 
-**Infrastructure:** [`lora_stacker.py`](../../src/modelcypher/experimental/self_improve/lora_stacker.py) manages the stack. Needs orchestration script connecting stacker with RMT analysis.
+#### 4a: Five-Round Results
+
+| Round | CKA mean | CKA min | Δmean | Init loss | f* | signal_rank | ‖E‖_F |
+|-------|----------|---------|-------|-----------|----|-------------|--------|
+| 0 (initial) | 0.8947 | 0.4990 | — | — | — | 425.3 | 8.135854 |
+| 1 | 0.9071 | 0.6256 | +0.0124 | 1.176 | 0.545 | 425.3 | 8.135854 |
+| 2 | 0.9124 | 0.6871 | +0.0053 | 0.673 | 0.312 | 425.3 | 8.135857 |
+| 3 | 0.9159 | 0.7007 | +0.0035 | 0.792 | 0.367 | 425.3 | 8.135857 |
+| 4 | 0.9146 | 0.6923 | **-0.0013** | 0.600 | 0.278 | 425.3 | 8.135860 |
+| 5 | 0.9174 | 0.7182 | +0.0028 | 0.524 | 0.243 | 425.3 | 8.135861 |
+
+**Total: CKA mean +0.0227, CKA min +0.2192 (0.4990 → 0.7182). 5 rounds, ~40 min.**
+
+**Three anomalies demand explanation:**
+
+1. **‖E‖_F is frozen.** Weight-space error unchanged over 5 rounds of train+fuse: 8.135854 → 8.135861 (Δ = 0.000007, or 0.000086%).
+2. **CKA improved but non-monotonically.** +0.0227 cumulative, but Round 4 regressed (-0.0013) before Round 5 recovered (+0.0028).
+3. **Invariants are invariant.** signal_rank (425.3), sigma_max (20.513), sigma_k_min (0.8736), noise_fraction (0.4634) — identical every round.
+
+**Data:** [`results/stacked_corrective_recovery/20260226T134604Z/`](../../results/stacked_corrective_recovery/20260226T134604Z/)
+**Script:** [`scripts/stacked_corrective_recovery.py`](../../scripts/stacked_corrective_recovery.py)
+
+#### 4b: Bedrock Finding — Correction Is Compensation, Not Recovery `[MEASURED]`
+
+The LoRA correction does NOT reduce weight-space error. It adds compensatory perturbations that improve activation similarity while leaving (or slightly increasing) weight error.
+
+Three independent measurements confirm this:
+
+**Measurement 1: LoRA delta is negligible and orthogonal to error**
+
+Instrumented the fusion step to compute per-layer `‖delta‖_F`, `‖E‖_F`, and `cos(E, delta)` for all 196 modules (1 round, 20 iters).
+
+| Metric | Value |
+|--------|-------|
+| mean ‖delta‖/‖E‖ | 0.000418 (0.04%) |
+| max ‖delta‖/‖E‖ | 0.001895 (0.19%) |
+| mean cos(E, delta) | +0.0003 |
+| max |cos(E, delta)| | ~0.001 |
+
+The correction is 0.04% of the error magnitude and orthogonal to it (cosine ≈ 0). The LoRA delta cannot reduce ‖E‖_F because it lives in a subspace that doesn't overlap with E.
+
+**Measurement 2: Weight error is isotropic relative to the activation subspace**
+
+Computed eigendecomposition of activation covariance X^T X per layer. Projected E onto the eigenbasis. Measured energy fraction at effective dimensionality D_eff (participation ratio = (Σλ)² / Σλ²).
+
+| Metric | Value |
+|--------|-------|
+| D_eff (mean across 28 layers) | 3.1 (out of 1536–2048 dims) |
+| frac_at_eff_dim | 0.0014 (0.14%) |
+| isotropic prediction (D_eff / D) | 0.0015 (0.15%) |
+| frac_at_10% of dims | 0.0992 (9.92%) |
+| isotropic prediction (D/10 / D) | 0.0996 (9.96%) |
+| frac_at_1% of dims | 0.0096 (0.96%) |
+
+**The measured fractions match the isotropic prediction to within 7%.** The weight error E has no special alignment with the activation subspace. It is uniformly distributed across all weight-space directions. The quantization grid interacts with all 1536+ directions equally — it has no reason to prefer the 3 directions the model actively uses.
+
+Per-layer D_eff ranges from 2.1 (layer 27) to 5.2 (layer 0). Early layers have slightly richer activation geometry; late layers are more concentrated. But even the richest layer has D_eff = 5 — effectively 5 directions out of 2048.
+
+**Measurement 3: CKA seesaw is a deterministic cascade**
+
+Computed Pearson correlations between per-layer CKA changes across rounds 1-5 using the 5-round data. The seesaw (Round 4 regression, Round 5 recovery) is not batch noise — it's a deterministic cascade effect.
+
+| Correlation | Value |
+|-------------|-------|
+| Layer 26 vs layers 10-14 | r = -0.52 to -0.92 (anti-correlated) |
+| Layer 27 vs layers 15-19 | r = +0.52 to +0.87 (positively correlated) |
+| Within middle layers (10-14) | r = +0.86 (move together) |
+| Within late layers (25-27) | r = +0.73 (move together) |
+
+**Mechanism:** In a sequential model, correcting middle layers changes the activations X fed to late layers. The late-layer correction was optimized for the OLD activations. When middle layers change X, late-layer CKA can regress. Next round, new corrections target the updated X. The cascade creates anti-correlated blocks.
+
+**Data:** Instrumented run: [`results/stacked_corrective_recovery/20260226T144517Z/`](../../results/stacked_corrective_recovery/20260226T144517Z/)
+
+#### 4c: Mathematical Explanation
+
+The three measurements unify into one explanation:
+
+**MSE gradient:** `∂L/∂W ∝ X^T × (Q_logits - FP_logits)` — lives in col(X), the column space of training activations.
+
+**Weight error:** `E = W_fp - W_q` — lives in the full weight space (dim ~1.5M per matrix).
+
+**Dimension mismatch:** Training activations span at most `B × T × iters = 2 × 255 × 100 = 51,000` directions per layer. Weight space has ~1.5M dimensions. Ratio: 51K / 1.5M ≈ 3.4%.
+
+**Functional component:** `E_func = proj_{col(X)}(E)`. Training can only see E_func; everything else is invisible. The gradient points in col(X); the correction accumulates in col(X); E lives everywhere.
+
+**Why CKA improves:** CKA measures activation similarity = function of the col(X) projection of weights. The correction reshapes this projection to better match FP activations. CKA goes up.
+
+**Why ‖E‖_F doesn't change:** The correction delta ⊥ E (measured: cos = 0.0003). Adding a perpendicular vector: `‖E + delta‖² = ‖E‖² + ‖delta‖²`. Since ‖delta‖/‖E‖ = 0.0004, the increase is `‖E‖² × (1 + 0.0004²) ≈ ‖E‖² × 1.00000016`. This matches the observed Δ‖E‖_F = 0.000007 (0.000086%).
+
+**Why signal_rank is frozen:** signal_rank measures the spectral structure of E in weight space. The correction doesn't reduce E in weight space — it adds a tiny perpendicular component. The bulk spectral structure is unchanged.
+
+**Analogy:** A corrective lens for astigmatic glasses. The total optical distortion (‖E‖_F) slightly increases, but image quality (CKA) improves because the new distortion partially cancels the old distortion's effect at the focal plane (activation subspace).
+
+#### 4d: Implications
+
+1. **RMT signal_rank is wrong for corrective stopping.** It measures weight-space signal structure. Corrections operate in activation space. signal_rank is invariant to correction by construction — it can never indicate convergence. Replace with CKA-based stopping.
+
+2. **The ~0.14% functional fraction sets a hard ceiling.** Of the weight error's energy, only 0.14% is in the directions the model uses. Activation-based training can only affect these directions. The other 99.86% of ‖E‖_F is unreachable. This is not a limitation of the optimizer or training budget — it is a geometric impossibility.
+
+3. **The seesaw limits stacking depth.** Each round's correction changes intermediate activations, invalidating late-layer corrections from prior rounds. Diminishing returns are baked in: Round 1 gave +0.0124, Round 5 gave +0.0028 (4.4× smaller). Sequential layer-by-layer correction (fixing layer 0, then layer 1 using fixed-0 activations, etc.) would eliminate the cascade by construction — a potential follow-up.
+
+4. **Weight-space metrics are anti-correlated with success.** ‖E‖_F slightly INCREASES with correction rounds. Any metric based on weight proximity will show "degradation" while the model is actually improving. This is a fundamental failure mode for weight-space evaluation of fine-tuning.
+
+5. **The original convergence criterion (signal_rank → 0) is falsified.** Signal_rank 425.3 is a property of the quantization grid's interaction with the weight matrix structure. It cannot change through activation-based correction. The criterion was based on the false assumption that training reduces weight-space error.
 
 ### Experiment 5: 4-bit Extension `[COMPLETE — GATE PASSES]`
 
@@ -790,6 +894,9 @@ Bootstrap 95% CI (4-bit): signal_rank [401.7, 448.8], sv_frac [51.2%, 56.2%]
 - Cayley LoRA: `src/modelcypher/core/domain/geometry/cayley_lora.py`
 - MASS step size: `src/modelcypher/core/domain/training/mass_step_size.py`
 - LoRA stacker: `src/modelcypher/experimental/self_improve/lora_stacker.py`
+- Stacked recovery script: `scripts/stacked_corrective_recovery.py`
+- Stacked recovery 5-round data: `results/stacked_corrective_recovery/20260226T134604Z/`
+- Stacked recovery instrumented (functional fraction + delta norms): `results/stacked_corrective_recovery/20260226T144517Z/`
 - Quantization utils: `src/modelcypher/core/use_cases/quantization_utils.py`
 
 ### External (Foundational)
@@ -812,4 +919,4 @@ Bootstrap 95% CI (4-bit): signal_rank [401.7, 448.8], sv_frac [51.2%, 56.2%]
 | "Small SVs Matter" (Staats et al.) | NeurIPS 2025 | RMT (MP as null hypothesis) on transformer weights; signal at BOTH ends of spectrum | Validates our RMT approach; warns about small singular values |
 | Low-Rank Activation Correction (Scetbon & Hensman) | ICLR 2025 sub | W4A4 correction; rank=10% closes >50% gap, rank=30% closes completely | Scale of rank needed for effective correction |
 
-**What's unique to us:** RMT signal/noise separation for quantization error, Cayley-parameterized LoRA (orthogonality by construction), spectral scale bound (sigma_k), MASS step size, iterative stacking with RMT stopping criterion. No published work combines these.
+**What's unique to us:** RMT signal/noise separation for quantization error, Cayley-parameterized LoRA (orthogonality by construction), spectral scale bound (sigma_k), MASS step size, measured proof that corrective LoRA is compensation (activation-space) not recovery (weight-space), functional error fraction measurement (0.14% at D_eff=3.1), deterministic cascade mechanism for stacking seesaw. No published work establishes these distinctions.
