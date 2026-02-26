@@ -34,6 +34,15 @@ def _build_raw_prompt(fact: FactTriple) -> str:
     return f"{fact.subject} {fact.relation}"
 
 
+def _normalize_relation_text(relation: str) -> str:
+    """Normalize relation tokens for chat prompts.
+
+    Replaces underscores with spaces and collapses repeated whitespace so
+    prompts like ``capital_of`` become ``capital of``.
+    """
+    return " ".join(relation.replace("_", " ").split())
+
+
 def _build_chat_prompt(
     fact: FactTriple,
     template: ChatTemplate,
@@ -44,6 +53,7 @@ def _build_chat_prompt(
     asking the fact question.  The template formats them per the model's
     expected chat format.
     """
+    relation_text = _normalize_relation_text(fact.relation)
     messages = [
         ChatMessage(
             role="system",
@@ -51,7 +61,12 @@ def _build_chat_prompt(
         ),
         ChatMessage(
             role="user",
-            content=f"What is the {fact.relation} of {fact.subject}?",
+            content=(
+                "Return only the object for this fact triple.\n"
+                f"Subject: {fact.subject}\n"
+                f"Relation: {relation_text}\n"
+                "Object:"
+            ),
         ),
     ]
     return template.format_messages(messages)

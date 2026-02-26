@@ -301,7 +301,7 @@ class DatasetTrainingService:
         # Outer similarity monitoring (Kucukahmetler et al. 2026)
         rss_monitor: bool = False,
         # Ablation experiment params (research only, not CLI-exposed)
-        entropy_floor_fraction: float | None = None,
+        entropy_floor_fraction: float | None = None,  # Research only — NOT in strict CLI
         kl_reference_penalty: bool = False,
         outcome_signal_density_gate: float = 0.0,
         outcome_post_eval: bool = False,
@@ -452,7 +452,9 @@ class DatasetTrainingService:
         auto_retention_samples_collected = 0
         if explicit_retention_samples is not None:
             retention_samples = explicit_retention_samples
-            # Derive mix fraction from data ratio: n_ret / (n_ret + n_train).
+            # Maximum entropy principle: absent per-sample importance signal,
+            # uniform weighting over available data maximizes sample entropy.
+            # Mix fraction = data ratio = n_ret / (n_ret + n_train).
             n_ret = len(retention_samples)
             n_trn = len(train_samples)
             retention_fraction = n_ret / (n_ret + n_trn) if (n_ret + n_trn) > 0 else 0.0
@@ -771,6 +773,8 @@ class DatasetTrainingService:
         if (use_constraints or use_geometric_reshape) and logic_groups and template_groups:
             n_logic = len(logic_groups)
             n_template = len(template_groups)
+            # Pigeonhole surplus: max(groups) + 1 guarantees at least one group
+            # has ≥2 representatives, enabling a contrastive pair per group.
             min_constrained_batch = max(n_logic, n_template) + 1
             batch_size = max(batch_size, min_constrained_batch)
         logger.info("Geometry-derived batch size: %d", batch_size)
@@ -1967,7 +1971,10 @@ class DatasetTrainingService:
             m2 += delta * delta2
 
             variance = m2 / float(i - 1) if i > 1 else 0.0
-            target_se = sqrt_eps * max(1.0, abs(mean_loss))
+            # Relative precision: resolve mean_loss to sqrt(eps) relative error.
+            # When |mean_loss| < sqrt(eps) (near-zero = already converged),
+            # use absolute precision eps (machine epsilon = irreducible floor).
+            target_se = sqrt_eps * abs(mean_loss) if abs(mean_loss) > sqrt_eps else sqrt_eps * sqrt_eps
             n_val_req = max(1, int(math.ceil(variance / (target_se * target_se))))
             n_val_upper = max(n_val_upper, n_val_req)
 
@@ -2073,7 +2080,10 @@ class DatasetTrainingService:
             m2 += delta * delta2
 
             variance = m2 / float(i - 1) if i > 1 else 0.0
-            target_se = sqrt_eps * max(1.0, abs(mean_loss))
+            # Relative precision: resolve mean_loss to sqrt(eps) relative error.
+            # When |mean_loss| < sqrt(eps) (near-zero = already converged),
+            # use absolute precision eps (machine epsilon = irreducible floor).
+            target_se = sqrt_eps * abs(mean_loss) if abs(mean_loss) > sqrt_eps else sqrt_eps * sqrt_eps
             n_val_req = max(1, int(math.ceil(variance / (target_se * target_se))))
             n_val_upper = max(n_val_upper, n_val_req)
 
@@ -2247,6 +2257,10 @@ class DatasetTrainingService:
                     return False
                 half_width = (upper - lower) / 2.0
                 # CI must resolve: half-width < max(chance, 1/n) to be useful.
+                # When chance=0 (no-guess baseline), the smallest detectable
+                # effect at sample size n is 1/n (one correct out of n).
+                # Clopper-Pearson: CI_upper for k=0 ≈ 1-(α)^(1/n) ≈ -ln(α)/n.
+                # With α ≈ 1/n, target ≈ 1/n.
                 target = chance if chance > 0.0 else 1.0 / n
                 return half_width <= target
 

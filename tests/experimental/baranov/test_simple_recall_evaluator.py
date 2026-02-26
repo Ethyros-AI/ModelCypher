@@ -13,6 +13,7 @@ from modelcypher.experimental.baranov.recall_evaluator import (
 from modelcypher.experimental.baranov.simple_recall_evaluator import (
     SimpleRecallEvaluator,
     _build_chat_prompt,
+    _normalize_relation_text,
     _build_raw_prompt,
     _check_recall,
 )
@@ -69,7 +70,8 @@ class TestBuildChatPrompt:
         fact = _make_fact()
         prompt = _build_chat_prompt(fact, ChatTemplate.chatml)
         assert "Paris" in prompt
-        assert "capital_of" in prompt
+        assert "capital of" in prompt
+        assert "Object:" in prompt
 
     def test_uses_template_formatting(self) -> None:
         from modelcypher.core.domain.chat_template import ChatTemplate
@@ -79,6 +81,14 @@ class TestBuildChatPrompt:
         # Llama3 uses <|begin_of_text|> header tokens
         assert "<|begin_of_text|>" in prompt
         assert "<|start_header_id|>" in prompt
+
+
+class TestNormalizeRelationText:
+    def test_replaces_underscores(self) -> None:
+        assert _normalize_relation_text("capital_of") == "capital of"
+
+    def test_collapses_whitespace(self) -> None:
+        assert _normalize_relation_text("  chemical___symbol  ") == "chemical symbol"
 
 
 # ---------------------------------------------------------------------------
