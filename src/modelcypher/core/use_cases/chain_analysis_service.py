@@ -137,8 +137,9 @@ class ChainAnalysisService:
     ) -> list[float]:
         """Compute per-layer entropy using BehavioralAnalyzer.
 
-        Falls back to zeros if entropy computation fails (e.g., model
-        architecture not supported by LayerEntropyProjector).
+        Falls back to NaN if entropy computation fails (e.g., model
+        architecture not supported by LayerEntropyProjector). NaN values
+        are excluded from downstream correlation computation.
         """
         try:
             from modelcypher.core.use_cases.behavioral_analyzer import BehavioralAnalyzer
@@ -147,9 +148,9 @@ class ChainAnalysisService:
             result = analyzer.analyze_entropy_trajectory(
                 model, tokenizer, tuple(probe_texts)
             )
-            # Map layer_indices → entropies, filling gaps with 0.0
+            # Map layer_indices → entropies, filling gaps with NaN
             entropy_map = dict(zip(result.layer_indices, result.layer_entropies))
-            return [entropy_map.get(i, 0.0) for i in range(num_layers)]
+            return [entropy_map.get(i, float("nan")) for i in range(num_layers)]
         except Exception as exc:
-            logger.warning("Entropy computation failed: %s. Using zeros.", exc)
-            return [0.0] * num_layers
+            logger.warning("Entropy computation failed: %s. Using NaN.", exc)
+            return [float("nan")] * num_layers

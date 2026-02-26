@@ -20,6 +20,16 @@ from modelcypher.experimental.baranov.artifact_writer import (
 from modelcypher.experimental.baranov.consolidation_tracker import (
     FactConsolidationTracker,
 )
+from modelcypher.experimental.baranov.decision import (
+    ModeVerdict,
+    ModelVerdict,
+    NoiseFloor,
+    TrackADecision,
+    compute_mode_verdict,
+    compute_model_verdict,
+    compute_noise_floor,
+    compute_track_a_decision,
+)
 from modelcypher.experimental.baranov.fact_dataset import (
     fact_to_training_text,
     facts_to_training_samples,
@@ -76,7 +86,10 @@ __all__ = [
     "FactTriple",
     "GenerateFn",
     "GeometrySnapshot",
+    "ModeVerdict",
     "ModelInfo",
+    "ModelVerdict",
+    "NoiseFloor",
     "OuterProductEditor",
     "PreRegisteredDecision",
     "REQUIRED_METRIC_KEYS",
@@ -87,10 +100,15 @@ __all__ = [
     "RecallResult",
     "ReplicationManifest",
     "SimpleRecallEvaluator",
+    "TrackADecision",
     "VALID_TRANSITIONS",
     "collect_probe_activations",
     "compute_cka_drift",
+    "compute_mode_verdict",
+    "compute_model_verdict",
+    "compute_noise_floor",
     "compute_recall_aggregate",
+    "compute_track_a_decision",
     "fact_to_training_text",
     "facts_to_training_samples",
     "validate_manifest",

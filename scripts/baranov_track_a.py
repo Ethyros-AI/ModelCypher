@@ -33,6 +33,7 @@ Usage:
     poetry run python scripts/baranov_track_a.py --output results/baranov/track_a/
     poetry run python scripts/baranov_track_a.py --smoke
     poetry run python scripts/baranov_track_a.py --intervention lora_only --smoke
+    poetry run python scripts/baranov_track_a.py --intervention lora_only --seeds 42 123 456
     poetry run python scripts/baranov_track_a.py --intervention no_op --models LFM2-350M
     poetry run python scripts/baranov_track_a.py --models LFM2-350M LFM2-1.2B
 
@@ -273,6 +274,7 @@ def run_lora_intervention(
     facts: list[Any],
     output_dir: Path,
     model_name: str,
+    seed: int = 42,
 ) -> dict[str, Any]:
     """Train a LoRA adapter on the fact pool.
 
@@ -289,15 +291,16 @@ def run_lora_intervention(
     logger.info("Wrote training JSONL: %s (%d facts)", jsonl_path, len(facts))
 
     # Train via DatasetTrainingService
-    adapter_dir = output_dir / "adapters" / model_name
+    adapter_dir = output_dir / "adapters" / f"{model_name}_seed{seed}"
     service = get_dataset_training_service()
 
-    logger.info("Starting LoRA training on %s...", model_name)
+    logger.info("Starting LoRA training on %s (seed=%d)...", model_name, seed)
     t0 = time.monotonic()
     train_result = service.train_from_dataset_research(
         model_path=model_path,
         dataset_path=str(jsonl_path),
         output_path=str(adapter_dir),
+        seed=seed,
     )
     train_elapsed = time.monotonic() - t0
 
@@ -312,6 +315,7 @@ def run_lora_intervention(
 
     return {
         "adapter_path": train_result.adapter_path,
+        "seed": seed,
         "train_iters": train_result.train_iters,
         "initial_loss": train_result.initial_loss,
         "final_loss": train_result.final_loss,
@@ -337,8 +341,9 @@ def evaluate_model(
     backend: Any,
     intervention: InterventionMode,
     output_dir: Path,
+    seed: int = 42,
 ) -> dict[str, Any]:
-    """Run the full evaluation pipeline for a single model.
+    """Run the full evaluation pipeline for a single model and seed.
 
     Phases:
         1. Pre-measurement: load base model, measure recall + geometry
@@ -383,9 +388,9 @@ def evaluate_model(
     adapter_path: str | None = None
 
     if intervention == InterventionMode.lora_only:
-        logger.info("=== %s: LoRA intervention ===", model_name)
+        logger.info("=== %s: LoRA intervention (seed=%d) ===", model_name, seed)
         training_meta = run_lora_intervention(
-            model_path, fact_triples, output_dir, model_name,
+            model_path, fact_triples, output_dir, model_name, seed=seed,
         )
         adapter_path = training_meta["adapter_path"]
     elif intervention == InterventionMode.no_op:
@@ -451,6 +456,7 @@ def evaluate_model(
         "quantization": model_info.get("quantization", "unknown"),
         "architecture": arch,
         "intervention": intervention.value,
+        "seed": seed,
         "n_facts": len(fact_triples),
         "pre": pre_recall,
         "post": post_recall,
@@ -822,16 +828,58 @@ def _parse_args() -> argparse.Namespace:
         default=InterventionMode.baseline.value,
         help="Intervention mode (default: baseline)",
     )
+    parser.add_argument(
+        "--seeds",
+        nargs="+",
+        type=int,
+        default=[42],
+        help="Training seeds for multi-seed runs (default: [42])",
+    )
+    parser.add_argument(
+        "--noop-dir",
+        default=None,
+        help="Path to no_op results dir for noise floor (optional)",
+    )
     return parser.parse_args()
+
+
+def _load_noop_noise_floor(noop_dir: str | None) -> Any:
+    """Load noise floor from a prior no_op run, if available."""
+    from modelcypher.experimental.baranov.decision import NoiseFloor
+
+    if noop_dir is None:
+        return NoiseFloor()
+
+    summary_path = Path(noop_dir) / "track_a_summary.json"
+    if not summary_path.exists():
+        logger.warning("No no_op summary at %s, using zero noise floor", summary_path)
+        return NoiseFloor()
+
+    summary = json.loads(summary_path.read_text())
+    max_raw = 0.0
+    max_chat = 0.0
+    for model_data in summary.get("models", {}).values():
+        deltas = model_data.get("deltas", {})
+        max_raw = max(max_raw, abs(deltas.get("delta_raw_recall", 0.0)))
+        max_chat = max(max_chat, abs(deltas.get("delta_chat_recall", 0.0)))
+
+    floor = NoiseFloor(raw=max_raw, chat=max_chat)
+    logger.info("Loaded noise floor from %s: raw=%.4f chat=%.4f", noop_dir, floor.raw, floor.chat)
+    return floor
 
 
 def run_experiment(args: argparse.Namespace) -> None:
     """Execute the Track A experiment."""
     from modelcypher.backends import initialize_default_backend
+    from modelcypher.experimental.baranov.decision import (
+        compute_model_verdict,
+        compute_track_a_decision,
+    )
     from modelcypher.experimental.baranov.models import FactTriple
 
     backend = initialize_default_backend()
     intervention = InterventionMode(args.intervention)
+    seeds = args.seeds
 
     model_names = args.models or DEFAULT_MODEL_ORDER
     for name in model_names:
@@ -846,53 +894,165 @@ def run_experiment(args: argparse.Namespace) -> None:
         logger.info("SMOKE TEST: using %d facts", len(facts))
 
     fact_triples = [FactTriple.from_dict(f) for f in facts]
+    n_facts = len(facts)
 
     run_id = args.run_id or f"track-a-{int(time.time())}"
     output_dir = Path(args.output)
 
     logger.info("Run ID: %s", run_id)
     logger.info("Models: %s", model_names)
-    logger.info("Facts: %d", len(facts))
+    logger.info("Facts: %d", n_facts)
     logger.info("Intervention: %s", intervention.value)
+    logger.info("Seeds: %s", seeds)
     logger.info("Output: %s", output_dir)
 
-    results: list[dict[str, Any]] = []
+    # Collect per-model, per-seed results
+    # model_seed_results[model_name] = [result_per_seed, ...]
+    model_seed_results: dict[str, list[dict[str, Any]]] = {}
+
     for model_name in model_names:
         model_info = MODEL_REGISTRY[model_name]
-        result = evaluate_model(
-            model_name=model_name,
-            model_info=model_info,
-            facts=facts,
-            fact_triples=fact_triples,
-            backend=backend,
-            intervention=intervention,
-            output_dir=output_dir,
-        )
-        results.append(result)
 
-    # Build artifacts
-    manifest_dict = build_manifest(results, facts, run_id, intervention)
-    summary = build_summary(results, intervention, run_id)
-    write_artifacts(results, manifest_dict, summary, output_dir, intervention)
+        if intervention == InterventionMode.baseline:
+            # Baseline: single run, no seeds
+            result = evaluate_model(
+                model_name=model_name,
+                model_info=model_info,
+                facts=facts,
+                fact_triples=fact_triples,
+                backend=backend,
+                intervention=intervention,
+                output_dir=output_dir,
+            )
+            model_seed_results[model_name] = [result]
+        else:
+            # Multi-seed: run each seed
+            seed_results = []
+            for seed in seeds:
+                logger.info("=== %s seed=%d ===", model_name, seed)
+                result = evaluate_model(
+                    model_name=model_name,
+                    model_info=model_info,
+                    facts=facts,
+                    fact_triples=fact_triples,
+                    backend=backend,
+                    intervention=intervention,
+                    output_dir=output_dir,
+                    seed=seed,
+                )
+                seed_results.append(result)
+            model_seed_results[model_name] = seed_results
+
+    # Flatten to first-seed results for existing artifact format
+    flat_results = [results[0] for results in model_seed_results.values()]
+
+    # Build artifacts (backward-compatible)
+    manifest_dict = build_manifest(flat_results, facts, run_id, intervention)
+    summary = build_summary(flat_results, intervention, run_id)
+    write_artifacts(flat_results, manifest_dict, summary, output_dir, intervention)
+
+    # Compute decision (if intervention has post-measurement)
+    decision = None
+    if intervention != InterventionMode.baseline:
+        noise_floor = _load_noop_noise_floor(args.noop_dir)
+
+        model_verdicts = {}
+        for model_name in model_names:
+            seed_results = model_seed_results[model_name]
+            # Pre is constant across seeds; use first seed
+            pre_raw = seed_results[0]["pre"]["raw_completion"]["recall_rate"]
+            pre_chat = seed_results[0]["pre"]["chat_template_result"]["recall_rate"]
+
+            # Build per-seed data for decision module
+            per_seed_data = []
+            for r in seed_results:
+                if r["post"] is not None:
+                    per_seed_data.append({
+                        "post_raw_rate": r["post"]["raw_completion"]["recall_rate"],
+                        "post_chat_rate": r["post"]["chat_template_result"]["recall_rate"],
+                        "cka_drift": r["geometry"]["cka_drift"],
+                        "preserved_fraction": r["geometry"]["preserved_fraction"],
+                    })
+
+            if per_seed_data:
+                model_verdicts[model_name] = compute_model_verdict(
+                    model=model_name,
+                    pre_raw_rate=pre_raw,
+                    pre_chat_rate=pre_chat,
+                    seed_results=per_seed_data,
+                    n_facts=n_facts,
+                    noise_floor=noise_floor,
+                )
+
+        if model_verdicts:
+            decision = compute_track_a_decision(model_verdicts, model_names)
+
+            # Write decision artifact
+            decision_path = output_dir / "track_a_decision.json"
+            decision_path.write_text(
+                json.dumps(decision.as_dict(), indent=2) + "\n",
+                encoding="utf-8",
+            )
+            logger.info("Wrote decision: %s", decision_path)
+
+            # Update manifest with decision verdict
+            manifest_dict["pre_registered_decision"]["outcome"] = decision.overall_verdict
+            manifest_dict["pre_registered_decision"]["reason"] = decision.overall_reason
+            manifest_path = output_dir / "track_a_manifest.json"
+            manifest_path.write_text(
+                json.dumps(manifest_dict, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
 
     # Print final summary
+    _print_final_summary(model_seed_results, intervention, output_dir, decision)
+
+
+def _print_final_summary(
+    model_seed_results: dict[str, list[dict[str, Any]]],
+    intervention: InterventionMode,
+    output_dir: Path,
+    decision: Any,
+) -> None:
+    """Print a compact final summary to the log."""
     logger.info("=" * 60)
     logger.info("Track A Summary (%s)", intervention.value)
     logger.info("=" * 60)
-    for r in results:
+
+    for model_name, seed_results in model_seed_results.items():
+        r = seed_results[0]
         pre = r["pre"]
-        line = f"  {r['model_name']}: pre_raw={pre['raw_completion']['recall_rate']*100:.1f}%"
+        line = f"  {model_name}: pre_raw={pre['raw_completion']['recall_rate']*100:.1f}%"
         line += f" pre_chat={pre['chat_template_result']['recall_rate']*100:.1f}%"
+
         if r["post"] is not None:
-            post = r["post"]
-            line += f" | post_raw={post['raw_completion']['recall_rate']*100:.1f}%"
-            line += f" post_chat={post['chat_template_result']['recall_rate']*100:.1f}%"
+            # Show mean post across seeds
+            post_raw_rates = [
+                s["post"]["raw_completion"]["recall_rate"]
+                for s in seed_results if s["post"] is not None
+            ]
+            post_chat_rates = [
+                s["post"]["chat_template_result"]["recall_rate"]
+                for s in seed_results if s["post"] is not None
+            ]
+            if post_raw_rates:
+                mean_post_raw = sum(post_raw_rates) / len(post_raw_rates)
+                mean_post_chat = sum(post_chat_rates) / len(post_chat_rates)
+                line += f" | post_raw={mean_post_raw*100:.1f}%"
+                line += f" post_chat={mean_post_chat*100:.1f}%"
+                line += f" ({len(seed_results)} seeds)"
+
         if r["deltas"] is not None:
             d = r["deltas"]
-            line += f" | Δraw={d['delta_raw_recall']*100:+.1f}%"
-            line += f" Δchat={d['delta_chat_recall']*100:+.1f}%"
-            line += f" cka_drift={d['delta_cka_drift']:.4f}"
+            line += f" | cka_drift={d['delta_cka_drift']:.4f}"
+
         logger.info(line)
+
+    if decision is not None:
+        logger.info("-" * 60)
+        logger.info("Decision: %s", decision.overall_verdict.upper())
+        logger.info("Reason: %s", decision.overall_reason)
+
     logger.info("Artifacts written to: %s", output_dir)
 
 

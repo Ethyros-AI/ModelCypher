@@ -22,7 +22,9 @@ Computes the validated causal chain per layer:
 
 All measurements are deterministic geometric properties of the forward pass.
 Phase classification uses data-derived boundaries (median curvature,
-monotonicity of ID trajectory) — no arbitrary thresholds.
+monotonicity of ID trajectory). Small numerical stability guards (1e-10 for
+near-zero norms, 1e-6 for monotonicity tolerance) are used to prevent
+division-by-zero and floating-point noise; these are not decision thresholds.
 
 Validated on 6 models: LFM2-350M, LFM2-1.2B, Qwen2.5-3B, Qwen3-8B,
 Llama-3.2-3B, Qwen3-1.7B. Key cross-link correlations:
@@ -37,9 +39,12 @@ References:
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass
 from enum import Enum
+
+logger = logging.getLogger(__name__)
 
 
 class Phase(str, Enum):
@@ -198,6 +203,7 @@ def compute_layer_curvatures(
     Returns:
         List of dicts with curvature measurements per layer.
     """
+    from modelcypher.core.domain.geometry.exceptions import EstimatorError
     from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 
     measurements = []
@@ -220,7 +226,8 @@ def compute_layer_curvatures(
             try:
                 estimate = IntrinsicDimension.compute_two_nn(h_out)
                 id_val = estimate.intrinsic_dimension
-            except Exception:
+            except (EstimatorError, ValueError, ArithmeticError) as exc:
+                logger.debug("Layer %d ID estimation failed: %s", i, exc)
                 id_val = float("nan")
 
         layer_result: dict = {
@@ -242,10 +249,13 @@ def compute_layer_curvatures(
 
             layer_result["attn_curvature"] = attn_curv
             layer_result["mlp_curvature"] = mlp_curv
+            # When total curvature is near-zero, both sub-components are
+            # negligible — use NaN to signal "not measurable" rather than
+            # an arbitrary 0.5 fallback.
             layer_result["attn_fraction"] = (
                 attn_curv / (attn_curv + mlp_curv)
                 if (attn_curv + mlp_curv) > 1e-10
-                else 0.5
+                else float("nan")
             )
 
         measurements.append(layer_result)
@@ -392,11 +402,19 @@ def compute_chain_correlations(
     # Filter to layers with valid ID (not NaN)
     valid = [m for m in measurements if not math.isnan(m["id_two_nn"])]
 
-    # entropy ↔ curvature (use all layers that have entropy)
-    entropies = [m.get("entropy", 0.0) for m in measurements]
-    curvatures = [m["total_curvature"] for m in measurements]
-    if len(entropies) >= 3 and _std(entropies) > 1e-10 and _std(curvatures) > 1e-10:
-        ent_curv_r = _spearman_r(entropies, curvatures)
+    # entropy ↔ curvature (only layers with valid entropy, not NaN)
+    ent_curv_pairs = [
+        (m.get("entropy", float("nan")), m["total_curvature"])
+        for m in measurements
+        if not math.isnan(m.get("entropy", float("nan")))
+    ]
+    if len(ent_curv_pairs) >= 3:
+        entropies = [p[0] for p in ent_curv_pairs]
+        curvatures_for_corr = [p[1] for p in ent_curv_pairs]
+        if _std(entropies) > 1e-10 and _std(curvatures_for_corr) > 1e-10:
+            ent_curv_r = _spearman_r(entropies, curvatures_for_corr)
+        else:
+            ent_curv_r = float("nan")
     else:
         ent_curv_r = float("nan")
 
@@ -411,11 +429,11 @@ def compute_chain_correlations(
     else:
         cum_id_r = float("nan")
 
-    # Mean attention fraction (layers with decomposition)
+    # Mean attention fraction (layers with valid decomposition, excluding NaN)
     attn_fracs = [
         m["attn_fraction"]
         for m in measurements
-        if m["attn_fraction"] is not None
+        if m["attn_fraction"] is not None and not math.isnan(m["attn_fraction"])
     ]
     mean_attn = _mean(attn_fracs) if attn_fracs else None
 
@@ -449,9 +467,9 @@ def assemble_chain_profile(
         curvature_measurements: Output of compute_layer_curvatures().
         entropies: Per-layer entropy values (from BehavioralAnalyzer).
     """
-    # Attach entropy to curvature measurements
+    # Attach entropy to curvature measurements (NaN for missing layers)
     for i, m in enumerate(curvature_measurements):
-        m["entropy"] = entropies[i] if i < len(entropies) else 0.0
+        m["entropy"] = entropies[i] if i < len(entropies) else float("nan")
 
     # Classify phases
     ids = [m["id_two_nn"] for m in curvature_measurements]

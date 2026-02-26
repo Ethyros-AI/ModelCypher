@@ -57,7 +57,7 @@ def _validate_path(path: Path, label: str, context: CLIContext) -> None:
 
 def _result_to_dict(result) -> dict:
     """Extract serializable metrics from UnifiedMergeResult."""
-    return {
+    d = {
         "merge_strategy": result.merge_strategy,
         "output_path": result.output_path,
         "layer_count": result.layer_count,
@@ -70,6 +70,9 @@ def _result_to_dict(result) -> dict:
         "density_metrics": result.density_metrics,
         "transplant_metrics": result.transplant_metrics,
     }
+    if result.family_similarity is not None:
+        d["family_similarity"] = result.family_similarity.as_dict()
+    return d
 
 
 @merge_app.command("run")

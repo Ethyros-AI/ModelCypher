@@ -511,19 +511,29 @@ def _parse_args() -> argparse.Namespace:
         "--n-calibration",
         type=int,
         default=30,
-        help="Number of calibration samples for activation covariance",
+        help=(
+            "Number of calibration samples for activation covariance. "
+            "CLI-overridable, not a decision boundary. 30 is >10x "
+            "oversampled for D_eff~3 (measured on Qwen3-1.7B)."
+        ),
     )
     parser.add_argument(
         "--n-cka-samples",
         type=int,
         default=30,
-        help="Number of samples for CKA measurement",
+        help=(
+            "Number of samples for CKA measurement. "
+            "CLI-overridable, not a decision boundary."
+        ),
     )
     parser.add_argument(
         "--max-seq-len",
         type=int,
         default=128,
-        help="Maximum sequence length for calibration",
+        help=(
+            "Maximum sequence length for calibration. "
+            "Memory-compute tradeoff, CLI-overridable."
+        ),
     )
     return parser.parse_args()
 
@@ -701,7 +711,8 @@ def main():
         )
 
     print("=" * 72)
-    print("\nReference: 5-round stacked corrective recovery achieved CKA delta +0.023")
+    # Source: results/stacked_corrective_recovery/20260226T134604Z/stacked_recovery.json
+    print("\nReference: 5-round stacked corrective recovery CKA delta +0.023 (measured)")
     print()
 
     # ── Write results ──

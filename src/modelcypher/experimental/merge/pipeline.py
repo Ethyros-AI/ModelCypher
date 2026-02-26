@@ -1601,7 +1601,6 @@ def _compute_family_similarity_check(
         if source_sv is None or target_sv is None:
             continue
 
-        # Pad to same length if needed
         min_len = min(len(source_sv), len(target_sv))
         if min_len == 0:
             continue
@@ -1611,10 +1610,18 @@ def _compute_family_similarity_check(
     if len(source_spectra) < 2:
         return None
 
+    # Ensure all rows have uniform length (different layers may produce
+    # different min_len values; compute_family_similarity assumes rectangular)
+    global_min_len = min(len(row) for row in source_spectra + target_spectra)
+    if global_min_len == 0:
+        return None
+    source_spectra = [row[:global_min_len] for row in source_spectra]
+    target_spectra = [row[:global_min_len] for row in target_spectra]
+
     try:
         return compute_family_similarity(source_spectra, target_spectra)
     except Exception as exc:
-        logger.debug("Family similarity check failed: %s", exc)
+        logger.warning("Family similarity check failed: %s", exc)
         return None
 
 
