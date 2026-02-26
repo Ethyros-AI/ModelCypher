@@ -1380,7 +1380,18 @@ Training → Exit convergence → Gap → Decay → Effective rank → Recovery 
 
 **Critical observation:** With f*=0, SPS binds on 50/50 iterations (100%). This means eta_sps < eta_ceiling ALWAYS. Setting f*>0 reduces the SPS step size further (tighter bound), which may hurt convergence rather than help. The hypothesis that f*>0 enables SPS binding is backwards — SPS already binds without it.
 
-**Status:** Re-running with fixes (Qwen3-1.7B added to Exp 1, RMT results wired, max_iters=500). Awaiting completion.
+**Re-run results (2026-02-26, max_iters=500, RMT wired):**
+
+| Method | f* | final_loss | SPS binds (final 25%) | CKA |
+|--------|-----|------------|----------------------|-----|
+| Baseline | 0.000 | 0.0205 | 98.4% | 0.9938 |
+| RMT (A) | 0.002 | 0.0189 | 100.0% | 0.9938 |
+| Exponential (B) | 0.000 | — | — | — |
+| Signal prop (C) | NaN | — | — | — |
+
+SPS binds ~100% at both f*=0 and f*=0.002. CKA identical. Loss difference within noise (losses oscillate 0.01-0.09). Method B estimated f*=0 (asymptote of exponential fit). Method C failed due to model name mismatch (now fixed).
+
+**Verdict: REFUTED.** SPS is always the binding constraint. f*>0 does not meaningfully change convergence or alignment quality. The SPS step size mechanism already operates at the floor; further tightening has no effect.
 
 ---
 

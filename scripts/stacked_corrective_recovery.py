@@ -877,6 +877,7 @@ def main():
     # ── Stacking loop ──
     rounds: list[dict[str, Any]] = []
     stop_reason = "max_rounds_reached"
+    cka_history: list[float] = [initial_cka["mean_cka"]]
 
     for round_idx in range(args.max_rounds):
         round_start = time.monotonic()
@@ -905,19 +906,13 @@ def main():
             rmt_before["mean_frobenius_norm"],
         )
 
-        # Check stopping criterion BEFORE training
+        # Diagnostic: log if signal_rank enters bulk (won't happen —
+        # signal_rank is invariant to activation-space correction, see Experiment 4)
         if round_idx > 0 and rmt_before["signal_rank_zero"]:
             logger.info(
-                "STOPPING: Residual signal_rank CI upper bound <= 0. "
-                "Remaining error is in MP noise bulk."
+                "  NOTE: signal_rank CI upper bound <= 0 (unexpected — "
+                "signal_rank should be invariant to correction)"
             )
-            stop_reason = "noise_floor_reached"
-            rounds.append({
-                "round": round_idx + 1,
-                "rmt_before_training": rmt_before,
-                "stopped_before_training": True,
-            })
-            break
 
         # ── Train corrective LoRA ──
         # Derive noise fraction from RMT: f* = initial_loss × (1 - sv_frac)
@@ -1031,6 +1026,21 @@ def main():
             round_cka["mean_cka"],
             round_time,
         )
+
+        # ── CKA plateau detection ──
+        # TODO: derive plateau threshold from CKA measurement variance
+        # (empirical: run CKA N times on same model, compute std of mean_cka;
+        #  plateau = delta < k * std for some justified k, e.g. 2-sigma).
+        # Until derived, log deltas for analysis but do NOT auto-stop.
+        cka_history.append(round_cka["mean_cka"])
+        if len(cka_history) >= 3:
+            recent_deltas = [
+                cka_history[-i] - cka_history[-i - 1] for i in range(1, 3)
+            ]
+            logger.info(
+                "  CKA deltas (last 2 rounds): %s",
+                ", ".join(f"{d:+.4f}" for d in reversed(recent_deltas)),
+            )
 
     # ── Final summary ──
     results["rounds"] = rounds

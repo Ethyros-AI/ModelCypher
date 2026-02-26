@@ -21,6 +21,7 @@ from modelcypher.experimental.baranov.consolidation_tracker import (
     FactConsolidationTracker,
 )
 from modelcypher.experimental.baranov.edit_applicator import EditApplicator
+from modelcypher.experimental.baranov.outer_product_editor import OuterProductEditor
 from modelcypher.experimental.baranov.manifest import (
     CodeInfo,
     ControlFlags,
@@ -37,6 +38,9 @@ from modelcypher.experimental.baranov.models import (
     EditStatus,
     FactTriple,
     VALID_TRANSITIONS,
+)
+from modelcypher.experimental.baranov.simple_recall_evaluator import (
+    SimpleRecallEvaluator,
 )
 from modelcypher.experimental.baranov.recall_evaluator import (
     GenerateFn,
@@ -55,6 +59,7 @@ __all__ = [
     "DataHashes",
     "EditApplicator",
     "EditState",
+    "OuterProductEditor",
     "EditStatus",
     "FactConsolidationTracker",
     "FactTriple",
@@ -68,6 +73,7 @@ __all__ = [
     "RecallOutcome",
     "RecallResult",
     "ReplicationManifest",
+    "SimpleRecallEvaluator",
     "VALID_TRANSITIONS",
     "compute_recall_aggregate",
     "validate_manifest",

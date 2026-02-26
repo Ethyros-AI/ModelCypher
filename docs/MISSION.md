@@ -131,6 +131,8 @@ Every training parameter must be derived from one of exactly three sources:
 
 **Test**: Grep the training codepath for any literal number that isn't derived from one of these three sources. If you find one, it's a guardrail violation.
 
+**Scope**: This applies to ALL code — production, experiment scripts, research prototypes. A magic number in a script is the same category of bug as a magic number in `train_loop`. "It's just an experiment" is not an exemption. If you cannot derive the threshold, mark it `# TODO: derive from [source]` and do not use it as a decision boundary until derived.
+
 The 15 hyperparameters and their geometric replacements:
 
 | # | Hyperparameter | Geometric Replacement | Formula |
