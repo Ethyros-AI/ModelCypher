@@ -1310,7 +1310,7 @@ class LoRASafetyService:
             new_weight = W_update + backend.astype(scaled_delta, W_update.dtype)
 
             # Set the weight back
-            self._set_base_weight(base_model, base_key, new_weight)
+            self._set_base_weight(base_model, base_key, new_weight, backend=backend)
             applied_scales[base_key] = applied_scale
 
         # Evaluate model parameters
@@ -1353,15 +1353,24 @@ class LoRASafetyService:
         )
 
     @staticmethod
+    def _infer_quantization_mode(linear) -> str:
+        mode = getattr(linear, "mode", None)
+        if isinstance(mode, str) and mode:
+            return mode
+        bits = int(getattr(linear, "bits"))
+        group_size = int(getattr(linear, "group_size"))
+        biases = getattr(linear, "biases", None)
+        if biases is None and bits == 4 and group_size == 32:
+            return "mxfp4"
+        return "affine"
+
+    @staticmethod
     def _dequantize_linear_weight(linear, backend: "Backend"):
         """Dequantize a quantized linear module weight via Backend protocol."""
         biases = getattr(linear, "biases", None)
         bits = int(getattr(linear, "bits"))
         group_size = int(getattr(linear, "group_size"))
-
-        mode = "affine"
-        if biases is None and bits == 4 and group_size == 32:
-            mode = "mxfp4"
+        mode = LoRASafetyService._infer_quantization_mode(linear)
 
         try:
             dequantized = backend.dequantize(
@@ -1374,34 +1383,13 @@ class LoRASafetyService:
             )
             backend.eval(dequantized)
             return dequantized
-        except Exception as exc:
-            fallback_mode = "affine" if mode == "mxfp4" else "mxfp4"
-            try:
-                dequantized = backend.dequantize(
-                    linear.weight,
-                    linear.scales,
-                    biases=biases,
-                    group_size=group_size,
-                    bits=bits,
-                    mode=fallback_mode,
-                )
-                backend.eval(dequantized)
-                logger.debug(
-                    "Dequantized %s with fallback mode=%s after mode=%s failed: %s",
-                    getattr(linear, "__class__", type(linear)).__name__,
-                    fallback_mode,
-                    mode,
-                    exc,
-                )
-                return dequantized
-            except Exception:
-                logger.warning(
-                    "Failed to dequantize %s with modes (%s, %s).",
-                    getattr(linear, "__class__", type(linear)).__name__,
-                    mode,
-                    fallback_mode,
-                )
-                return None
+        except Exception:
+            logger.warning(
+                "Failed to dequantize %s with mode=%s.",
+                getattr(linear, "__class__", type(linear)).__name__,
+                mode,
+            )
+            return None
 
     def _get_weight_for_svd(self, base_model, lora_key: str, backend: "Backend"):
         """Get base weight for spectral analysis, dequantizing when needed."""
@@ -1412,6 +1400,7 @@ class LoRASafetyService:
             dequantized = self._dequantize_linear_weight(linear, backend)
             if dequantized is not None:
                 return dequantized
+            return None
         return linear.weight
 
     def _get_base_weight(self, base_model, lora_key: str):
@@ -1421,8 +1410,33 @@ class LoRASafetyService:
             return linear.weight
         return None
 
-    def _set_base_weight(self, base_model, lora_key: str, new_weight):
+    def _set_base_weight(self, base_model, lora_key: str, new_weight, backend: "Backend" | None = None):
         """Set the base weight matrix for a LoRA key."""
         linear = self._resolve_base_linear(base_model, lora_key)
-        if linear is not None and hasattr(linear, "weight"):
-            linear.weight = new_weight
+        if linear is None or not hasattr(linear, "weight"):
+            return
+
+        if self._is_quantized_linear(linear):
+            if backend is None:
+                raise ValueError("Backend is required to set weights on quantized modules.")
+            mode = self._infer_quantization_mode(linear)
+            bits = int(getattr(linear, "bits"))
+            group_size = int(getattr(linear, "group_size"))
+            new_weight_f32 = backend.astype(new_weight, "float32")
+            backend.eval(new_weight_f32)
+            q_weight, q_scales, q_biases = backend.quantize(
+                new_weight_f32,
+                group_size=group_size,
+                bits=bits,
+                mode=mode,
+            )
+            backend.eval(q_weight, q_scales)
+            if q_biases is not None:
+                backend.eval(q_biases)
+            linear.weight = q_weight
+            linear.scales = q_scales
+            if hasattr(linear, "biases"):
+                linear.biases = q_biases
+            return
+
+        linear.weight = new_weight

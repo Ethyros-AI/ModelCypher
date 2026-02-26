@@ -92,7 +92,7 @@ Weyl's perturbation theorem (1912) guarantees that for any perturbation E:
 |sigma_i(W + E) - sigma_i(W)| ≤ ||E||_2
 ```
 
-This bound IS satisfied. With ||E_q||_2 ≈ 0.04-0.14 and sigma_max ≈ 7-12, the relative perturbation to any individual singular value is tiny. The top singular value moves by 0.0009 out of 7.825 — a 0.012% change. This is why quantized models work.
+This bound IS satisfied. With ||E_q||_2 ≈ 0.013-0.142 and sigma_max ≈ 7-12, the relative perturbation to any individual singular value is tiny. The top singular value moves by 0.0009 out of 7.825 — a 0.012% change. This is why quantized models work.
 
 The Weyl *crossing criterion* asks a different question: can singular values at the structural rank boundary swap their ordering? The condition is:
 
@@ -100,7 +100,7 @@ The Weyl *crossing criterion* asks a different question: can singular values at 
 ||E_q||_2 < spectral_gap(sigma_k) / 2
 ```
 
-With ||E_q||_2 ≈ 0.04-0.14 and spectral gaps at sigma_k ≈ 10^-5-10^-3, this is violated 3.7-1700.5x. Singular values at the noise floor DO cross.
+With ||E_q||_2 ≈ 0.013-0.142 and spectral gaps at sigma_k ≈ 10^-5-10^-3, this is violated 3.7-1700.5x. Singular values at the noise floor DO cross.
 
 **But this crossing is geometrically inconsequential.** Here's why:
 
@@ -201,7 +201,7 @@ dL/dB = dequantize(W_q)^T @ (dy/dx) @ x^T @ A^T
 Gradients flow through the dequantized weight. The gradient landscape the optimizer sees is the landscape of f(x; W_fp + E_q + scale * B @ A), not f(x; W_fp + scale * B @ A).
 
 **This is a double approximation:**
-1. The base transformation is approximate (quantized): contributes ||E_q||_2 ≈ 0.04-0.14
+1. The base transformation is approximate (quantized): contributes ||E_q||_2 ≈ 0.013-0.142
 2. The update is low-rank (LoRA): misses components outside rank(B @ A)
 
 The standard QLoRA adds a third error source that dominates both:
@@ -273,10 +273,10 @@ Let's compare the error magnitudes:
 
 | Error Source | Magnitude | Relative to sigma_k |
 |--------------|-----------|---------------------|
-| Quantization (||E_q||_2) | ~0.04-0.14 | ~0.01-0.08x sigma_k |
+| Quantization (||E_q||_2) | ~0.013-0.142 | ~0.01-0.08x sigma_k |
 | Standard LoRA scale violation | 600-2700x × sigma_k | 600-2700x sigma_k |
 
-**The scale violation is 20,000-90,000x larger than the quantization error.**
+**The scale violation is 7,500-270,000x larger than the quantization error.**
 
 When practitioners report that QLoRA produces worse results than full-precision LoRA, they're observing the compounding of two errors: the catastrophic scale violation (which exists in both cases) and the small quantization perturbation (which exists only in QLoRA). But the scale violation dominates so completely that the quantization effect is unmeasurable.
 
@@ -286,7 +286,7 @@ This is testable with existing infrastructure (Experiment 2).
 
 ---
 
-## Part 3: Geometric LoRA as Quantization Offset `[CONJECTURAL]`
+## Part 3: Geometric LoRA as Quantization Offset `[PARTIALLY MEASURED]`
 
 ### 3.1 The Additive Recovery Hypothesis
 
@@ -308,7 +308,7 @@ The answer depends on the quantization scheme:
 
 This is exactly what RMT signal separation is designed to measure.
 
-### 3.2 RMT Signal Separation Applied to Quantization Error
+### 3.2 RMT Signal Separation Applied to Quantization Error `[MEASURED]`
 
 The existing `separate_signal_noise()` function applies the Marchenko-Pastur distribution to separate eigenvalues of a matrix's spectrum into signal (above MP bulk edge) and noise (within bulk).
 
@@ -320,12 +320,37 @@ Applied to E_q = W_fp - W_q:
 4. Eigenvalues above MP upper edge = **systematic quantization artifacts** (signal)
 5. Eigenvalues within bulk = **effectively random quantization noise**
 
-**If signal_rank(E_q) > 0:** The quantization error has systematic structure that a rank-r LoRA adapter can target. The signal_variance_fraction tells us how much of the error is correctable.
+**Measured result: E_q has massive systematic structure.** Every single layer in both models has signal above the MP bulk edge.
 
-**If signal_rank(E_q) = 0:** The error is indistinguishable from random noise. Low-rank correction is hopeless — every rank-r approximation captures the same small fraction of total error.
+| Model | Layers | With Signal | Mean signal_rank | Mean sv_frac | 95% CI (signal_rank) | 95% CI (sv_frac) |
+|-------|--------|-------------|------------------|--------------|----------------------|-------------------|
+| Qwen3-1.7B | 196 | 196 (100%) | 425.3 | 53.7% | [401.6, 448.7] | [51.2%, 56.1%] |
+| Qwen3-8B | 252 | 252 (100%) | 750.8 | 48.2% | [696.5, 803.8] | [46.0%, 50.4%] |
 
-This is the pivotal experiment. The answer determines whether corrective LoRA training is geometrically justified or futile.
+**Key observations:**
+- **100% of layers have signal** — not a single layer where E_q is pure noise
+- **~50% of error energy is systematic** — half of the quantization error is above the MP bulk and targetable by low-rank methods
+- **Signal rank scales with matrix dimension** — larger matrices (8B) have proportionally more signal directions, suggesting the structure comes from the quantization grid interacting with weight structure
+- **0 SVD failures** across 448 layers (SVD of E_q is numerically stable)
 
+**Per-projection pattern (Qwen3-8B typical layer):**
+
+| Projection | Shape | signal_rank | sv_frac | ||E_q||_2 |
+|------------|-------|-------------|---------|-----------|
+| q_proj | 4096×4096 | ~1325 | ~75% | ~0.025 |
+| o_proj | 4096×4096 | ~1306 | ~73% | ~0.031 |
+| down_proj | 4096×12288 | ~680 | ~33% | ~0.053 |
+| gate_proj | 12288×4096 | ~736 | ~36% | ~0.031 |
+| up_proj | 12288×4096 | ~677 | ~33% | ~0.025 |
+| k_proj | 1024×4096 | ~179 | ~35% | ~0.017 |
+| v_proj | 1024×4096 | ~162 | ~30% | ~0.016 |
+
+The square attention matrices (q_proj, o_proj) have the highest signal_variance_fraction (~73-75%), meaning their quantization error is most structured and most correctable. The rectangular MLP matrices have lower but still substantial signal fractions (~30-36%).
+
+**Implication:** Corrective LoRA is geometrically justified. A rank-r adapter targeting the top signal directions of E_q can capture a measurable fraction of the quantization error. The question is no longer *whether* correction is possible, but *how much* correction each adapter round achieves.
+
+*Data: [`rmt_quantization_error.json` (1.7B)](../../results/rmt_quantization_error/20260226T001044Z/rmt_quantization_error.json), [`rmt_quantization_error.json` (8B)](../../results/rmt_quantization_error/20260226T002308Z/rmt_quantization_error.json)*
+*Script: [`rmt_quantization_error.py`](../../scripts/rmt_quantization_error.py)*
 *Code: [`rmt_signal_separation.py`](../../src/modelcypher/core/domain/geometry/rmt_signal_separation.py) — `compute_signal_rank_from_singular_values()`*
 
 ### 3.3 Spectral Scale Bounds for Corrective LoRA
@@ -413,7 +438,7 @@ The experimental plan addresses all three questions.
 | NB-LoRA handles QuantizedLinear bases correctly | MEASURED | Code path verified, geometry valid |
 | Standard LoRA scale violates spectral bound 600-2700x | MEASURED | All 9 tested adapters (spectral scale bound) |
 | QLoRA failures are spectral scale violations, not quantization | CONJECTURAL | Needs A/B test (Experiment 2) |
-| E_q has exploitable low-rank signal structure | CONJECTURAL | Testable via RMT (Experiment 1) |
+| E_q has exploitable low-rank signal structure | **MEASURED** | 100% of layers have signal (Experiment 1) |
 | Corrective LoRA can recover quantization error | CONJECTURAL | Testable (Experiment 3) |
 | Stacked recovery converges when residual enters MP bulk | CONJECTURAL | Testable (Experiment 4) |
 | 4-bit correction more effective per-adapter than 8-bit | CONJECTURAL | Testable (Experiment 5) |
@@ -422,24 +447,28 @@ The experimental plan addresses all three questions.
 
 ## Part 5: Experimental Validation Plan
 
-### Experiment 1: RMT Decomposition of Quantization Error
+### Experiment 1: RMT Decomposition of Quantization Error `[COMPLETE — GATE PASSES]`
 
 **Question:** Does E_q = W_fp - W_q have systematic (above-MP-bulk) structure?
 
+**Result: YES — decisively.** 448/448 layers have signal. ~50% of error energy is systematic.
+
+| Model | Layers with signal | Mean signal_rank | Mean sv_frac | 95% CI (rank) | 95% CI (sv_frac) |
+|-------|-------------------|------------------|--------------|---------------|-------------------|
+| Qwen3-1.7B | 196/196 (100%) | 425.3 | 53.7% | [401.6, 448.7] | [51.2%, 56.1%] |
+| Qwen3-8B | 252/252 (100%) | 750.8 | 48.2% | [696.5, 803.8] | [46.0%, 50.4%] |
+
+Gate criterion: 95% bootstrap CI lower bound for mean(signal_rank) > 0 ✓ AND mean(signal_variance_fraction) > 0 ✓
+
 **Method:**
-1. Load Qwen3-1.7B bf16 and 8-bit models (already available from Weyl validation)
-2. For each layer, compute E_q = dequantize(W_q) - W_fp
-3. Compute SVD of E_q → singular values S_e
+1. Load Qwen3-1.7B and 8B bf16/8-bit model pairs
+2. For each layer, compute E_q = W_fp - dequantize(W_q)
+3. Compute SVD of E_q → singular values S_e (`compute_uv=False, stream=mx.cpu`)
 4. Apply `compute_signal_rank_from_singular_values(S_e, m, n)` from RMT module
-5. Report per-layer: signal_rank, noise_rank, signal_variance_fraction, MP upper edge
+5. Bootstrap CI with 10,000 resamples for gate decision
 
-**Infrastructure:** Extend [`weyl_quantization_validation.py`](../../scripts/weyl_quantization_validation.py) to add SVD of E_q and RMT separation. All tools exist — `compute_signal_rank_from_singular_values()` in [`rmt_signal_separation.py`](../../src/modelcypher/core/domain/geometry/rmt_signal_separation.py) handles the computation.
-
-**Predictions:**
-- If the 95% bootstrap CI lower bound for mean(signal_rank) is > 0 and the 95% bootstrap CI lower bound for mean(signal_variance_fraction) is > 0 → corrective LoRA is geometrically justified (proceed to Exp 3)
-- If either CI includes 0 → correction is unsupported; stop here
-
-**This is the gate experiment.** Everything downstream depends on this result.
+**Data:** [`results/rmt_quantization_error/20260226T001044Z/`](../../results/rmt_quantization_error/20260226T001044Z/) (1.7B), [`results/rmt_quantization_error/20260226T002308Z/`](../../results/rmt_quantization_error/20260226T002308Z/) (8B)
+**Script:** [`scripts/rmt_quantization_error.py`](../../scripts/rmt_quantization_error.py)
 
 ### Experiment 2: Scale Bound A/B Test (QLoRA)
 
@@ -512,7 +541,10 @@ This is where the stacking hypothesis faces its hardest test. If 4-bit E_q is pr
 
 ### Internal
 - Weyl validation data (exact-SVD canonical): `results/weyl_quantization_validation/20260225T231720Z/`
+- RMT quantization error (1.7B): `results/rmt_quantization_error/20260226T001044Z/`
+- RMT quantization error (8B): `results/rmt_quantization_error/20260226T002308Z/`
 - Weyl validation script: `scripts/weyl_quantization_validation.py`
+- RMT quantization error script: `scripts/rmt_quantization_error.py`
 - Compression synthesis: `docs/research/COMPRESSION-RESEARCH-SYNTHESIS.md`
 - Spectral scale bound: `docs/research/lora_spectral_scale_bound.md`
 - LoRA geometric derivation: `docs/research/lora_geometric_derivation.md`

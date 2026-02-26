@@ -279,3 +279,95 @@ class TestLoRASafetyQuantizedBase:
         )
         assert math.isfinite(rel_diff)
         assert rel_diff <= tol
+
+    def test_get_weight_for_svd_returns_none_if_dequantization_fails(self, backend, monkeypatch):
+        from modelcypher.core.use_cases.lora_safety_service import LoRASafetyService
+
+        service = LoRASafetyService()
+        W_fp = backend.astype(backend.random_normal((64, 64)), "float32")
+        backend.eval(W_fp)
+        q_weight, q_scales, q_biases = backend.quantize(
+            W_fp, group_size=64, bits=8, mode="affine",
+        )
+        backend.eval(q_weight, q_scales)
+        if q_biases is not None:
+            backend.eval(q_biases)
+
+        quantized_linear = SimpleNamespace(
+            weight=q_weight,
+            scales=q_scales,
+            biases=q_biases,
+            group_size=64,
+            bits=8,
+            mode="affine",
+        )
+        model = self._build_model_with_down_proj(quantized_linear)
+
+        def _raise_dequantize(*_args, **_kwargs):
+            raise RuntimeError("dequantize failed")
+
+        monkeypatch.setattr(backend, "dequantize", _raise_dequantize)
+
+        W_svd = service._get_weight_for_svd(
+            model.model,
+            "model.layers.0.mlp.down_proj",
+            backend,
+        )
+        assert W_svd is None
+
+    def test_set_base_weight_requantizes_quantized_module(self, backend):
+        from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
+        from modelcypher.core.use_cases.lora_safety_service import LoRASafetyService
+
+        service = LoRASafetyService()
+
+        W_fp = backend.astype(backend.random_normal((64, 64)), "float32")
+        backend.eval(W_fp)
+        q_weight, q_scales, q_biases = backend.quantize(
+            W_fp, group_size=64, bits=8, mode="affine",
+        )
+        backend.eval(q_weight, q_scales)
+        if q_biases is not None:
+            backend.eval(q_biases)
+
+        quantized_linear = SimpleNamespace(
+            weight=q_weight,
+            scales=q_scales,
+            biases=q_biases,
+            group_size=64,
+            bits=8,
+            mode="affine",
+        )
+        model = self._build_model_with_down_proj(quantized_linear)
+        new_weight = W_fp * 0.9
+        backend.eval(new_weight)
+
+        service._set_base_weight(
+            model.model,
+            "model.layers.0.mlp.down_proj",
+            new_weight,
+            backend=backend,
+        )
+
+        restored = service._get_weight_for_svd(
+            model.model,
+            "model.layers.0.mlp.down_proj",
+            backend,
+        )
+        assert restored is not None
+        diff = backend.norm(backend.astype(restored, "float32") - backend.astype(new_weight, "float32"))
+        base_norm = backend.norm(backend.astype(new_weight, "float32"))
+        backend.eval(diff, base_norm)
+        rel_err = float(backend.to_scalar(diff)) / max(float(backend.to_scalar(base_norm)), 1e-12)
+
+        scales_f32 = backend.astype(quantized_linear.scales, "float32")
+        backend.eval(scales_f32)
+        max_scale = float(backend.to_scalar(backend.max(scales_f32)))
+        m, n = int(new_weight.shape[0]), int(new_weight.shape[1])
+        # Affine quantization bound: |e_ij| <= scale_group/2, so
+        # ||E||_F <= sqrt(m*n) * max_scale / 2.
+        abs_err_bound = 0.5 * max_scale * math.sqrt(float(m * n))
+        denom = max(float(backend.to_scalar(base_norm)), 1e-12)
+        tol = (abs_err_bound / denom) + float(sqrt_scalar(backend.finfo().eps, backend))
+        assert math.isfinite(rel_err)
+        assert rel_err <= tol

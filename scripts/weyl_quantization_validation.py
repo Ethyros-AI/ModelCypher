@@ -88,11 +88,14 @@ def _spectral_norm_power_iter(
     Returns:
         Estimated spectral norm (float).
     """
-    m, n = int(matrix.shape[0]), int(matrix.shape[1])
-    # Start with random vector
-    v = backend.random_normal((n, 1))
-    v = backend.astype(v, "float32")
+    _, n = int(matrix.shape[0]), int(matrix.shape[1])
+    # Deterministic initialization for reproducibility.
+    v = backend.linspace(1.0, float(n), n, dtype="float32")
+    v = backend.reshape(v, (n, 1))
     backend.eval(v)
+    v_norm = float(backend.to_scalar(backend.norm(v)))
+    if v_norm > 0.0:
+        v = v / v_norm
 
     M = backend.astype(matrix, "float32")
     backend.eval(M)
@@ -118,6 +121,17 @@ def _spectral_norm_power_iter(
         sigma = v_norm
         v = v / v_norm
 
+    del M
+    return sigma
+
+
+def _spectral_norm_exact(matrix: Any, backend: Any) -> float:
+    """Compute ||M||_2 exactly from SVD."""
+    M = backend.astype(matrix, "float32")
+    backend.eval(M)
+    _, S, _ = backend.svd(M, compute_uv=True)
+    backend.eval(S)
+    sigma = float(backend.to_scalar(S[0])) if int(S.shape[0]) > 0 else 0.0
     del M
     return sigma
 
@@ -226,7 +240,10 @@ def _validate_pair(
         if fp_w is not None and q_w is not None:
             E = backend.astype(fp_w, "float32") - backend.astype(q_w, "float32")
             backend.eval(E)
-            error_norm = _spectral_norm_power_iter(E, backend)
+            if geometry_mode == "exact":
+                error_norm = _spectral_norm_exact(E, backend)
+            else:
+                error_norm = _spectral_norm_power_iter(E, backend)
             del E
 
         spectral_gap = fp_g.spectral_gap
@@ -261,6 +278,7 @@ def _validate_pair(
             "tail_dims_match": tail_dims_match,
             "fp_spectral_gap": spectral_gap,
             "error_norm": error_norm,
+            "error_norm_mode": "exact_svd" if geometry_mode == "exact" else "power_iter_20",
             "weyl_threshold": weyl_threshold,
             "error_over_gap_ratio": error_over_gap,
             "weyl_safe": weyl_safe,
@@ -476,6 +494,7 @@ def main() -> None:
         "analysis_config": {
             "geometry_mode": args.geometry_mode,
             "geometry_seed": args.geometry_seed if args.geometry_mode == "randomized" else None,
+            "error_norm_mode": "exact_svd" if args.geometry_mode == "exact" else "power_iter_20",
         },
         "aggregate": _compute_aggregate(results),
         "pairs": results,
