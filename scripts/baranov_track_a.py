@@ -22,9 +22,18 @@ Fail criteria:
     - No consistent trend across scales, or trend reverses under controls,
       or CIs include no-effect across all splits.
 
+Intervention modes:
+    - baseline:  Pre-measurement only, no training or post-measurement.
+    - no_op:     Full pre/post measurement cycle, no intervention applied.
+                 Measures the pipeline noise floor — all deltas should be ~0.
+    - lora_only: Full pre/post cycle with LoRA training on the fact pool.
+                 The real alignment-tax measurement.
+
 Usage:
     poetry run python scripts/baranov_track_a.py --output results/baranov/track_a/
     poetry run python scripts/baranov_track_a.py --smoke
+    poetry run python scripts/baranov_track_a.py --intervention lora_only --smoke
+    poetry run python scripts/baranov_track_a.py --intervention no_op --models LFM2-350M
     poetry run python scripts/baranov_track_a.py --models LFM2-350M LFM2-1.2B
 
 References:
@@ -42,6 +51,7 @@ import json
 import logging
 import subprocess
 import time
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +60,19 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Intervention mode
+# =============================================================================
+
+
+class InterventionMode(str, Enum):
+    """Intervention type for Track A experiment."""
+
+    baseline = "baseline"
+    no_op = "no_op"
+    lora_only = "lora_only"
 
 
 # =============================================================================
@@ -133,42 +156,50 @@ def _get_git_commit() -> str:
 
 
 # =============================================================================
-# Evaluation
+# Recall measurement
 # =============================================================================
 
 
-def evaluate_model_recall(
-    model_name: str,
-    model_info: dict[str, Any],
-    facts: list[dict[str, str]],
-    backend: Any,
-) -> dict[str, Any]:
-    """Evaluate recall on a single model in both modes.
+def _make_generate_fn(backend: Any) -> Any:
+    """Create a generate_fn callback for the evaluator."""
 
-    Returns a dict with per-mode recall results and geometry metrics.
+    def generate_fn(
+        model: Any,
+        tokenizer: Any,
+        prompt: str,
+        max_tokens: int,
+        verbose: bool = False,
+    ) -> str:
+        return backend.generate(model, tokenizer, prompt, max_tokens=max_tokens)
+
+    return generate_fn
+
+
+def measure_recall(
+    model: Any,
+    tokenizer: Any,
+    facts: list[Any],
+    backend: Any,
+    architecture: str,
+) -> dict[str, Any]:
+    """Measure recall on a model in both raw_completion and chat_template modes.
+
+    Returns a dict with per-mode recall results (rate, count, per-fact outcomes).
     """
     from modelcypher.core.domain.chat_template import ChatTemplate
-    from modelcypher.experimental.baranov.models import FactTriple
+    from modelcypher.experimental.baranov.recall_evaluator import RecallMode
     from modelcypher.experimental.baranov.simple_recall_evaluator import (
         SimpleRecallEvaluator,
     )
-    from modelcypher.experimental.baranov.recall_evaluator import RecallMode
 
-    logger.info("Loading model: %s", model_name)
-    model_path = model_info["path"]
-    model, tokenizer = backend.load_model(model_path)
-
-    fact_triples = [FactTriple.from_dict(f) for f in facts]
     evaluator = SimpleRecallEvaluator(max_tokens=64)
-
-    def generate_fn(m: Any, t: Any, prompt: str, max_tokens: int, verbose: bool = False) -> str:
-        return backend.generate(m, t, prompt, max_tokens=max_tokens)
+    generate_fn = _make_generate_fn(backend)
 
     # --- Raw completion mode ---
-    logger.info("  Evaluating raw_completion recall (%d facts)...", len(fact_triples))
+    logger.info("  Evaluating raw_completion recall (%d facts)...", len(facts))
     t0 = time.monotonic()
     raw_result = evaluator.evaluate_recall(
-        facts=fact_triples,
+        facts=facts,
         generate_fn=generate_fn,
         model=model,
         tokenizer=tokenizer,
@@ -184,12 +215,11 @@ def evaluate_model_recall(
     )
 
     # --- Chat template mode ---
-    arch = model_info.get("architecture", "")
-    template = ChatTemplate.detect(arch)
+    template = ChatTemplate.detect(architecture)
     logger.info("  Evaluating chat_template recall (template=%s)...", template.value)
     t0 = time.monotonic()
     chat_result = evaluator.evaluate_recall(
-        facts=fact_triples,
+        facts=facts,
         generate_fn=generate_fn,
         model=model,
         tokenizer=tokenizer,
@@ -205,19 +235,7 @@ def evaluate_model_recall(
         chat_elapsed,
     )
 
-    # --- CKA drift (baseline vs self — placeholder for pre/post comparison) ---
-    # In the full experiment, CKA drift is measured before vs after LoRA
-    # injection.  Here we record the baseline geometry fingerprint.
-    cka_drift = 0.0  # Placeholder: no edit applied yet
-    preserved_fraction = 1.0  # Placeholder: no edit applied yet
-
-    result = {
-        "model_name": model_name,
-        "model_path": model_path,
-        "quantization": model_info.get("quantization", "unknown"),
-        "architecture": arch,
-        "chat_template": template.value,
-        "n_facts": len(fact_triples),
+    return {
         "raw_completion": {
             "recall_rate": raw_result.aggregate.recall_rate,
             "recalled_count": raw_result.aggregate.recalled_count,
@@ -242,17 +260,237 @@ def evaluate_model_recall(
             "elapsed_s": chat_elapsed,
             "per_fact": [o.as_dict() for o in chat_result.per_fact_outcomes],
         },
-        "geometry": {
-            "cka_drift": cka_drift,
-            "preserved_fraction": preserved_fraction,
-        },
     }
 
-    # Cleanup
+
+# =============================================================================
+# Intervention: LoRA training
+# =============================================================================
+
+
+def run_lora_intervention(
+    model_path: str,
+    facts: list[Any],
+    output_dir: Path,
+    model_name: str,
+) -> dict[str, Any]:
+    """Train a LoRA adapter on the fact pool.
+
+    Returns a dict with training metadata and adapter_path.
+    """
+    from modelcypher.cli.composition import get_dataset_training_service
+    from modelcypher.experimental.baranov.fact_dataset import (
+        write_fact_training_jsonl,
+    )
+
+    # Write facts to JSONL for training
+    jsonl_path = output_dir / "training_data" / f"{model_name}_facts.jsonl"
+    write_fact_training_jsonl(facts, jsonl_path, overwrite=True)
+    logger.info("Wrote training JSONL: %s (%d facts)", jsonl_path, len(facts))
+
+    # Train via DatasetTrainingService
+    adapter_dir = output_dir / "adapters" / model_name
+    service = get_dataset_training_service()
+
+    logger.info("Starting LoRA training on %s...", model_name)
+    t0 = time.monotonic()
+    train_result = service.train_from_dataset_research(
+        model_path=model_path,
+        dataset_path=str(jsonl_path),
+        output_path=str(adapter_dir),
+    )
+    train_elapsed = time.monotonic() - t0
+
+    logger.info(
+        "LoRA training complete: %d iters, loss %.4f → %.4f, stop=%s (%.1fs)",
+        train_result.train_iters,
+        train_result.initial_loss,
+        train_result.final_loss,
+        train_result.stop_reason,
+        train_elapsed,
+    )
+
+    return {
+        "adapter_path": train_result.adapter_path,
+        "train_iters": train_result.train_iters,
+        "initial_loss": train_result.initial_loss,
+        "final_loss": train_result.final_loss,
+        "stop_reason": train_result.stop_reason,
+        "n_lora_layers": train_result.n_lora_layers,
+        "n_trainable_params": train_result.n_trainable_params,
+        "training_time_s": train_elapsed,
+        "training_min_cka": train_result.min_cka,
+        "training_mean_cka": train_result.mean_cka,
+    }
+
+
+# =============================================================================
+# Full model evaluation pipeline
+# =============================================================================
+
+
+def evaluate_model(
+    model_name: str,
+    model_info: dict[str, Any],
+    facts: list[dict[str, str]],
+    fact_triples: list[Any],
+    backend: Any,
+    intervention: InterventionMode,
+    output_dir: Path,
+) -> dict[str, Any]:
+    """Run the full evaluation pipeline for a single model.
+
+    Phases:
+        1. Pre-measurement: load base model, measure recall + geometry
+        2. Intervention: train LoRA (if lora_only), or skip
+        3. Post-measurement: load model (with adapter if applicable),
+           measure recall + geometry, compute CKA drift
+        4. Compute deltas
+    """
+    from modelcypher.experimental.baranov.geometry_measurement import (
+        CKADriftResult,
+        collect_probe_activations,
+        compute_cka_drift,
+    )
+    from modelcypher.experimental.baranov.simple_recall_evaluator import (
+        _build_raw_prompt,
+    )
+
+    model_path = model_info["path"]
+    arch = model_info.get("architecture", "")
+
+    # Probe texts for geometry: use the raw prompts (subject + relation)
+    probe_texts = [_build_raw_prompt(f) for f in fact_triples]
+
+    # ----- Phase 1: Pre-measurement -----
+    logger.info("=== %s: Pre-measurement ===", model_name)
+    model, tokenizer = backend.load_model(model_path)
+
+    pre_recall = measure_recall(model, tokenizer, fact_triples, backend, arch)
+
+    pre_geometry = None
+    if intervention != InterventionMode.baseline:
+        logger.info("  Collecting pre-intervention geometry...")
+        pre_geometry = collect_probe_activations(
+            model, tokenizer, probe_texts, backend,
+        )
+
     del model, tokenizer
     gc.collect()
 
+    # ----- Phase 2: Intervention -----
+    training_meta: dict[str, Any] | None = None
+    adapter_path: str | None = None
+
+    if intervention == InterventionMode.lora_only:
+        logger.info("=== %s: LoRA intervention ===", model_name)
+        training_meta = run_lora_intervention(
+            model_path, fact_triples, output_dir, model_name,
+        )
+        adapter_path = training_meta["adapter_path"]
+    elif intervention == InterventionMode.no_op:
+        logger.info("=== %s: No-op control (no intervention) ===", model_name)
+
+    # ----- Phase 3: Post-measurement -----
+    post_recall: dict[str, Any] | None = None
+    drift_result: CKADriftResult | None = None
+
+    if intervention != InterventionMode.baseline:
+        logger.info("=== %s: Post-measurement ===", model_name)
+        if adapter_path:
+            model, tokenizer = backend.load_model(model_path, adapter_path=adapter_path)
+        else:
+            model, tokenizer = backend.load_model(model_path)
+
+        post_recall = measure_recall(model, tokenizer, fact_triples, backend, arch)
+
+        logger.info("  Collecting post-intervention geometry...")
+        post_geometry = collect_probe_activations(
+            model, tokenizer, probe_texts, backend,
+        )
+
+        del model, tokenizer
+        gc.collect()
+
+        # CKA drift
+        assert pre_geometry is not None
+        drift_result = compute_cka_drift(pre_geometry, post_geometry, backend)
+
+    # ----- Phase 4: Assemble result -----
+    # Geometry: use drift result if available, otherwise placeholders
+    if drift_result is not None:
+        geometry = drift_result.as_dict()
+    else:
+        geometry = {
+            "per_layer_cka": {},
+            "min_cka": 1.0,
+            "mean_cka": 1.0,
+            "cka_drift": 0.0,
+            "preserved_fraction": 1.0,
+        }
+
+    # Deltas (only if we have post-measurement)
+    deltas: dict[str, float] | None = None
+    if post_recall is not None:
+        deltas = {
+            "delta_raw_recall": (
+                post_recall["raw_completion"]["recall_rate"]
+                - pre_recall["raw_completion"]["recall_rate"]
+            ),
+            "delta_chat_recall": (
+                post_recall["chat_template_result"]["recall_rate"]
+                - pre_recall["chat_template_result"]["recall_rate"]
+            ),
+            "delta_cka_drift": geometry["cka_drift"],
+            "delta_preserved_fraction": geometry["preserved_fraction"] - 1.0,
+        }
+
+    result: dict[str, Any] = {
+        "model_name": model_name,
+        "model_path": model_path,
+        "quantization": model_info.get("quantization", "unknown"),
+        "architecture": arch,
+        "intervention": intervention.value,
+        "n_facts": len(fact_triples),
+        "pre": pre_recall,
+        "post": post_recall,
+        "deltas": deltas,
+        "geometry": geometry,
+        "training_meta": training_meta,
+    }
+
+    # Log summary
+    _log_model_summary(model_name, result)
+
     return result
+
+
+def _log_model_summary(model_name: str, result: dict[str, Any]) -> None:
+    """Log a compact summary of results for a single model."""
+    pre = result["pre"]
+    logger.info(
+        "  %s PRE:  raw=%.1f%% chat=%.1f%%",
+        model_name,
+        pre["raw_completion"]["recall_rate"] * 100,
+        pre["chat_template_result"]["recall_rate"] * 100,
+    )
+    if result["post"] is not None:
+        post = result["post"]
+        logger.info(
+            "  %s POST: raw=%.1f%% chat=%.1f%%",
+            model_name,
+            post["raw_completion"]["recall_rate"] * 100,
+            post["chat_template_result"]["recall_rate"] * 100,
+        )
+    if result["deltas"] is not None:
+        d = result["deltas"]
+        logger.info(
+            "  %s DELTA: raw=%+.1f%% chat=%+.1f%% cka_drift=%.4f",
+            model_name,
+            d["delta_raw_recall"] * 100,
+            d["delta_chat_recall"] * 100,
+            d["delta_cka_drift"],
+        )
 
 
 # =============================================================================
@@ -264,6 +502,7 @@ def build_manifest(
     results: list[dict[str, Any]],
     facts: list[dict[str, str]],
     run_id: str,
+    intervention: InterventionMode,
 ) -> dict[str, Any]:
     """Build a Track A manifest dict from results."""
     from modelcypher.experimental.baranov.manifest import (
@@ -275,14 +514,36 @@ def build_manifest(
         ReplicationManifest,
     )
 
-    # Use first model as representative for the manifest model field
     first = results[0]
-
-    # Aggregate metrics across models (use worst-case for manifest)
-    raw_rates = [r["raw_completion"]["recall_rate"] for r in results]
-    chat_rates = [r["chat_template_result"]["recall_rate"] for r in results]
-
     commit = _get_git_commit()
+
+    # Aggregate pre-measurement metrics across models (worst-case)
+    pre_raw_rates = [r["pre"]["raw_completion"]["recall_rate"] for r in results]
+    pre_chat_rates = [r["pre"]["chat_template_result"]["recall_rate"] for r in results]
+
+    # Use real geometry if available
+    cka_drift = max(r["geometry"]["cka_drift"] for r in results)
+    preserved_fraction = min(r["geometry"]["preserved_fraction"] for r in results)
+
+    # Decision logic
+    if intervention == InterventionMode.baseline:
+        outcome = "inconclusive"
+        reason = "Baseline recall measurement only — no intervention applied."
+    elif intervention == InterventionMode.no_op:
+        outcome = "inconclusive"
+        reason = "No-op control run — validates measurement pipeline noise floor."
+    else:
+        # lora_only: check if we have any delta signal
+        has_deltas = any(r["deltas"] is not None for r in results)
+        if not has_deltas:
+            outcome = "inconclusive"
+            reason = "LoRA intervention completed but no deltas computed."
+        else:
+            outcome = "inconclusive"
+            reason = (
+                "LoRA intervention completed. "
+                "Requires multi-seed replication before pass/fail determination."
+            )
 
     manifest = ReplicationManifest.from_metrics_dict(
         run_id=run_id,
@@ -303,36 +564,75 @@ def build_manifest(
             reference_corpus_hash="none",
         ),
         controls=ControlFlags(
-            base_control=True,
-            lora_only_control=False,
+            base_control=(intervention == InterventionMode.baseline),
+            lora_only_control=(intervention == InterventionMode.lora_only),
             edit_only_control=False,
         ),
         metrics_dict={
-            "cka_drift": max(r["geometry"]["cka_drift"] for r in results),
-            "preserved_fraction": min(
-                r["geometry"]["preserved_fraction"] for r in results
-            ),
+            "cka_drift": cka_drift,
+            "preserved_fraction": preserved_fraction,
             "perplexity_drift_identity": 0.0,
             "perplexity_drift_general": 0.0,
-            "recall_raw_completion": min(raw_rates),
-            "recall_chat_template": min(chat_rates),
+            "recall_raw_completion": min(pre_raw_rates),
+            "recall_chat_template": min(pre_chat_rates),
             "null_rank": 0.0,
             "condition_number": 0.0,
             "spectral_gap": 0.0,
         },
         pre_registered_decision=PreRegisteredDecision(
             criteria_version="v1",
-            outcome="inconclusive",
-            reason="Baseline recall measurement only — no LoRA intervention applied yet.",
+            outcome=outcome,
+            reason=reason,
         ),
     )
     return manifest.as_dict()
 
 
+def build_summary(
+    results: list[dict[str, Any]],
+    intervention: InterventionMode,
+    run_id: str,
+) -> dict[str, Any]:
+    """Build a decision-ready summary from all model results."""
+    models_summary = {}
+    for r in results:
+        name = r["model_name"]
+        entry: dict[str, Any] = {
+            "intervention": r["intervention"],
+            "n_facts": r["n_facts"],
+            "pre_raw_recall": r["pre"]["raw_completion"]["recall_rate"],
+            "pre_chat_recall": r["pre"]["chat_template_result"]["recall_rate"],
+        }
+        if r["post"] is not None:
+            entry["post_raw_recall"] = r["post"]["raw_completion"]["recall_rate"]
+            entry["post_chat_recall"] = r["post"]["chat_template_result"]["recall_rate"]
+        if r["deltas"] is not None:
+            entry["deltas"] = r["deltas"]
+        if r["geometry"]:
+            entry["cka_drift"] = r["geometry"]["cka_drift"]
+            entry["preserved_fraction"] = r["geometry"]["preserved_fraction"]
+        if r["training_meta"] is not None:
+            entry["training"] = {
+                k: v
+                for k, v in r["training_meta"].items()
+                if k != "adapter_path"
+            }
+        models_summary[name] = entry
+
+    return {
+        "run_id": run_id,
+        "intervention": intervention.value,
+        "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "models": models_summary,
+    }
+
+
 def write_artifacts(
     results: list[dict[str, Any]],
     manifest_dict: dict[str, Any],
+    summary: dict[str, Any],
     output_dir: Path,
+    intervention: InterventionMode,
 ) -> None:
     """Write all Track A artifacts to the output directory."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -346,26 +646,7 @@ def write_artifacts(
     logger.info("Wrote manifest: %s", manifest_path)
 
     # Metrics CSV rows
-    csv_rows = []
-    for r in results:
-        csv_rows.append({
-            "model": r["model_name"],
-            "mode": "raw_completion",
-            "recall_rate": r["raw_completion"]["recall_rate"],
-            "recalled_count": r["raw_completion"]["recalled_count"],
-            "total": r["raw_completion"]["total"],
-            "cka_drift": r["geometry"]["cka_drift"],
-            "preserved_fraction": r["geometry"]["preserved_fraction"],
-        })
-        csv_rows.append({
-            "model": r["model_name"],
-            "mode": "chat_template",
-            "recall_rate": r["chat_template_result"]["recall_rate"],
-            "recalled_count": r["chat_template_result"]["recalled_count"],
-            "total": r["chat_template_result"]["total"],
-            "cka_drift": r["geometry"]["cka_drift"],
-            "preserved_fraction": r["geometry"]["preserved_fraction"],
-        })
+    csv_rows = _build_csv_rows(results, intervention)
 
     from modelcypher.experimental.baranov.artifact_writer import write_metrics_csv
 
@@ -376,13 +657,7 @@ def write_artifacts(
     logger.info("Wrote metrics: %s", metrics_path)
 
     # Full recall curves (per-fact detail)
-    recall_curves = {
-        r["model_name"]: {
-            "raw_completion": r["raw_completion"]["per_fact"],
-            "chat_template": r["chat_template_result"]["per_fact"],
-        }
-        for r in results
-    }
+    recall_curves = _build_recall_curves(results)
     curves_path = output_dir / "track_a_recall_curves.json"
     curves_path.write_text(
         json.dumps(recall_curves, indent=2) + "\n",
@@ -401,6 +676,113 @@ def write_artifacts(
         encoding="utf-8",
     )
     logger.info("Wrote geometry: %s", geometry_path)
+
+    # Decision-ready summary
+    summary_path = output_dir / "track_a_summary.json"
+    summary_path.write_text(
+        json.dumps(summary, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    logger.info("Wrote summary: %s", summary_path)
+
+
+def _build_csv_rows(
+    results: list[dict[str, Any]],
+    intervention: InterventionMode,
+) -> list[dict[str, Any]]:
+    """Build CSV rows from results, including pre/post/delta phases."""
+    rows: list[dict[str, Any]] = []
+
+    for r in results:
+        # Pre-measurement rows
+        rows.append({
+            "model": r["model_name"],
+            "mode": "raw_completion",
+            "phase": "pre",
+            "recall_rate": r["pre"]["raw_completion"]["recall_rate"],
+            "recalled_count": r["pre"]["raw_completion"]["recalled_count"],
+            "total": r["pre"]["raw_completion"]["total"],
+            "cka_drift": r["geometry"]["cka_drift"],
+            "preserved_fraction": r["geometry"]["preserved_fraction"],
+        })
+        rows.append({
+            "model": r["model_name"],
+            "mode": "chat_template",
+            "phase": "pre",
+            "recall_rate": r["pre"]["chat_template_result"]["recall_rate"],
+            "recalled_count": r["pre"]["chat_template_result"]["recalled_count"],
+            "total": r["pre"]["chat_template_result"]["total"],
+            "cka_drift": r["geometry"]["cka_drift"],
+            "preserved_fraction": r["geometry"]["preserved_fraction"],
+        })
+
+        # Post-measurement rows (if available)
+        if r["post"] is not None:
+            rows.append({
+                "model": r["model_name"],
+                "mode": "raw_completion",
+                "phase": "post",
+                "recall_rate": r["post"]["raw_completion"]["recall_rate"],
+                "recalled_count": r["post"]["raw_completion"]["recalled_count"],
+                "total": r["post"]["raw_completion"]["total"],
+                "cka_drift": r["geometry"]["cka_drift"],
+                "preserved_fraction": r["geometry"]["preserved_fraction"],
+            })
+            rows.append({
+                "model": r["model_name"],
+                "mode": "chat_template",
+                "phase": "post",
+                "recall_rate": r["post"]["chat_template_result"]["recall_rate"],
+                "recalled_count": r["post"]["chat_template_result"]["recalled_count"],
+                "total": r["post"]["chat_template_result"]["total"],
+                "cka_drift": r["geometry"]["cka_drift"],
+                "preserved_fraction": r["geometry"]["preserved_fraction"],
+            })
+
+        # Delta rows (if available)
+        if r["deltas"] is not None:
+            rows.append({
+                "model": r["model_name"],
+                "mode": "raw_completion",
+                "phase": "delta",
+                "recall_rate": r["deltas"]["delta_raw_recall"],
+                "recalled_count": 0,
+                "total": r["pre"]["raw_completion"]["total"],
+                "cka_drift": r["deltas"]["delta_cka_drift"],
+                "preserved_fraction": r["geometry"]["preserved_fraction"],
+            })
+            rows.append({
+                "model": r["model_name"],
+                "mode": "chat_template",
+                "phase": "delta",
+                "recall_rate": r["deltas"]["delta_chat_recall"],
+                "recalled_count": 0,
+                "total": r["pre"]["chat_template_result"]["total"],
+                "cka_drift": r["deltas"]["delta_cka_drift"],
+                "preserved_fraction": r["geometry"]["preserved_fraction"],
+            })
+
+    return rows
+
+
+def _build_recall_curves(results: list[dict[str, Any]]) -> dict[str, Any]:
+    """Build recall curves JSON from results."""
+    curves: dict[str, Any] = {}
+    for r in results:
+        name = r["model_name"]
+        entry: dict[str, Any] = {
+            "pre": {
+                "raw_completion": r["pre"]["raw_completion"]["per_fact"],
+                "chat_template": r["pre"]["chat_template_result"]["per_fact"],
+            },
+        }
+        if r["post"] is not None:
+            entry["post"] = {
+                "raw_completion": r["post"]["raw_completion"]["per_fact"],
+                "chat_template": r["post"]["chat_template_result"]["per_fact"],
+            }
+        curves[name] = entry
+    return curves
 
 
 # =============================================================================
@@ -433,14 +815,23 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="Run ID (default: auto-generated from timestamp)",
     )
+    parser.add_argument(
+        "--intervention",
+        type=str,
+        choices=[m.value for m in InterventionMode],
+        default=InterventionMode.baseline.value,
+        help="Intervention mode (default: baseline)",
+    )
     return parser.parse_args()
 
 
 def run_experiment(args: argparse.Namespace) -> None:
     """Execute the Track A experiment."""
     from modelcypher.backends import initialize_default_backend
+    from modelcypher.experimental.baranov.models import FactTriple
 
     backend = initialize_default_backend()
+    intervention = InterventionMode(args.intervention)
 
     model_names = args.models or DEFAULT_MODEL_ORDER
     for name in model_names:
@@ -454,33 +845,54 @@ def run_experiment(args: argparse.Namespace) -> None:
         facts = facts[:SMOKE_FACT_COUNT]
         logger.info("SMOKE TEST: using %d facts", len(facts))
 
+    fact_triples = [FactTriple.from_dict(f) for f in facts]
+
     run_id = args.run_id or f"track-a-{int(time.time())}"
+    output_dir = Path(args.output)
+
     logger.info("Run ID: %s", run_id)
     logger.info("Models: %s", model_names)
     logger.info("Facts: %d", len(facts))
+    logger.info("Intervention: %s", intervention.value)
+    logger.info("Output: %s", output_dir)
 
     results: list[dict[str, Any]] = []
     for model_name in model_names:
         model_info = MODEL_REGISTRY[model_name]
-        result = evaluate_model_recall(model_name, model_info, facts, backend)
+        result = evaluate_model(
+            model_name=model_name,
+            model_info=model_info,
+            facts=facts,
+            fact_triples=fact_triples,
+            backend=backend,
+            intervention=intervention,
+            output_dir=output_dir,
+        )
         results.append(result)
 
-    # Build manifest and write artifacts
-    manifest_dict = build_manifest(results, facts, run_id)
-    output_dir = Path(args.output)
-    write_artifacts(results, manifest_dict, output_dir)
+    # Build artifacts
+    manifest_dict = build_manifest(results, facts, run_id, intervention)
+    summary = build_summary(results, intervention, run_id)
+    write_artifacts(results, manifest_dict, summary, output_dir, intervention)
 
-    # Print summary
+    # Print final summary
     logger.info("=" * 60)
-    logger.info("Track A Summary")
+    logger.info("Track A Summary (%s)", intervention.value)
     logger.info("=" * 60)
     for r in results:
-        logger.info(
-            "  %s: raw=%.1f%% chat=%.1f%%",
-            r["model_name"],
-            r["raw_completion"]["recall_rate"] * 100,
-            r["chat_template_result"]["recall_rate"] * 100,
-        )
+        pre = r["pre"]
+        line = f"  {r['model_name']}: pre_raw={pre['raw_completion']['recall_rate']*100:.1f}%"
+        line += f" pre_chat={pre['chat_template_result']['recall_rate']*100:.1f}%"
+        if r["post"] is not None:
+            post = r["post"]
+            line += f" | post_raw={post['raw_completion']['recall_rate']*100:.1f}%"
+            line += f" post_chat={post['chat_template_result']['recall_rate']*100:.1f}%"
+        if r["deltas"] is not None:
+            d = r["deltas"]
+            line += f" | Δraw={d['delta_raw_recall']*100:+.1f}%"
+            line += f" Δchat={d['delta_chat_recall']*100:+.1f}%"
+            line += f" cka_drift={d['delta_cka_drift']:.4f}"
+        logger.info(line)
     logger.info("Artifacts written to: %s", output_dir)
 
 

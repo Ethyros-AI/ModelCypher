@@ -18,6 +18,7 @@
 """Geometric analysis safety CLI commands.
 
 Provides commands for geometric analysis of model representations:
+- chain-profile: Unified causal chain diagnostic (entropy → curvature → ID → phase)
 - concept-volume: Multi-concept Riemannian volume analysis
 - dimension-profile: Per-layer intrinsic dimension profiling
 - entropy-trajectory: Layer-wise entropy trajectory analysis
@@ -1874,6 +1875,246 @@ def concept_volume_analysis(
                 lines.append(f"    Curvature Div: {r.curvature_divergence:.6f}")
                 lines.append(f"    Subspace Align: {r.subspace_alignment:.4f}")
             lines.append("")
+
+        write_output("\n".join(lines), context.output_format, context.pretty)
+    else:
+        write_output(payload, context.output_format, context.pretty)
+
+
+# Default probes for chain-profile — 6 categories × 10, covering diverse
+# semantic domains to sample the representation space uniformly.
+_CHAIN_PROFILE_PROBES: tuple[str, ...] = (
+    # Factual recall
+    "The capital of France is Paris.",
+    "Water boils at 100 degrees Celsius at standard pressure.",
+    "The speed of light is approximately 299,792 kilometers per second.",
+    "DNA carries genetic information in living organisms.",
+    "The periodic table organizes elements by atomic number.",
+    "Gravity causes objects to fall toward Earth.",
+    "The human body contains 206 bones.",
+    "Photosynthesis converts sunlight into chemical energy.",
+    "The Earth revolves around the Sun in approximately 365 days.",
+    "Sound travels faster in water than in air.",
+    # Logical reasoning
+    "If all mammals are warm-blooded, and dolphins are mammals, then dolphins are warm-blooded.",
+    "A number that is divisible by 6 must also be divisible by 2 and 3.",
+    "If it rains, the ground gets wet. The ground is wet. Can we conclude it rained?",
+    "All squares are rectangles, but not all rectangles are squares.",
+    "If A implies B, and B implies C, then A implies C.",
+    "The contrapositive of 'if P then Q' is 'if not Q then not P'.",
+    "A set with n elements has 2^n subsets.",
+    "If no fish can fly and all birds can fly, then no fish are birds.",
+    "The negation of 'all cats are black' is 'there exists a cat that is not black'.",
+    "If the sum of two numbers is even, they are either both even or both odd.",
+    # Creative / abstract
+    "Imagine a world where colors have sounds and music has texture.",
+    "The meaning of life is a question that has puzzled philosophers for millennia.",
+    "Art transcends language barriers and speaks to the human condition.",
+    "A poem about autumn leaves falling like memories fading.",
+    "The boundary between dreaming and waking is thinner than we think.",
+    "Music is mathematics made audible, patterns made beautiful.",
+    "Time flows like a river, but rivers can be dammed.",
+    "The stars are not just lights — they are furnaces forging the elements.",
+    "Consciousness might be the universe experiencing itself.",
+    "Language shapes thought as much as thought shapes language.",
+    # Technical / mathematical
+    "The eigenvalues of a symmetric matrix are always real.",
+    "Gradient descent minimizes a function by following the negative gradient.",
+    "The Fourier transform decomposes a signal into its frequency components.",
+    "A neural network with one hidden layer can approximate any continuous function.",
+    "The determinant of a matrix is zero if and only if it is singular.",
+    "Convolution in the spatial domain equals multiplication in the frequency domain.",
+    "The chain rule computes derivatives of composed functions.",
+    "Singular value decomposition factors a matrix into rotation and scaling.",
+    "Entropy measures the uncertainty in a probability distribution.",
+    "The central limit theorem states that sample means converge to normal distribution.",
+    # Conversational / social
+    "Hello, how are you doing today?",
+    "Could you explain this concept in simpler terms?",
+    "I disagree with that assessment. Here is why.",
+    "Thank you for your help. I appreciate it.",
+    "What would you recommend for someone just starting out?",
+    "That is an interesting perspective I had not considered before.",
+    "Can you summarize the main points of this discussion?",
+    "I think we should approach this problem differently.",
+    "Let me know if you need any clarification on my question.",
+    "What are the potential risks we should be aware of?",
+    # Ambiguous / adversarial
+    "The bank was steep and the river was deep.",
+    "She saw the man with the telescope.",
+    "Flying planes can be dangerous.",
+    "Time flies like an arrow; fruit flies like a banana.",
+    "The old man the boats.",
+    "Buffalo buffalo Buffalo buffalo buffalo buffalo Buffalo buffalo.",
+    "I never said she stole my money.",
+    "The chicken is ready to eat.",
+    "Visiting relatives can be boring.",
+    "The horse raced past the barn fell.",
+)
+
+
+@app.command("chain-profile")
+def safety_chain_profile(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Path to model directory"),
+    probes: str | None = typer.Option(
+        None, "--probes", help="Path to file with probe texts (one per line)"
+    ),
+    samples: int = typer.Option(
+        60, "--samples", help="Number of probe samples to use"
+    ),
+) -> None:
+    """Compute unified causal chain profile for a model.
+
+    Measures the validated causal chain at every layer:
+
+        Entropy -> Curvature (angular) -> Cumulative curvature -> ID -> Phase
+
+    Per-layer measurements:
+    - Entropy: Shannon entropy via unembedding projection (Entropy-Lens)
+    - Curvature: Angular change in radians (arccos of cosine similarity)
+    - Attn/MLP decomposition: Fraction of curvature from attention vs MLP
+    - Intrinsic dimension: TwoNN estimator (Facco et al., 2017)
+    - Phase: highway / processing / exit (data-derived boundaries)
+
+    Cross-link correlations:
+    - Entropy <-> Curvature: Spearman r (validated range: 0.4-0.6)
+    - Cumulative curvature <-> ID: Spearman r (family-dependent)
+    - Mean attention fraction: ~0.37 (universal across architectures)
+
+    For LFM2 hybrid models, non-attention layers (ShortConv/SSM) get total
+    curvature only -- attn/MLP decomposition is not available.
+
+    Examples:
+        mc safety chain-profile --model ./my-model
+        mc safety chain-profile --model ./my-model --samples 100
+        mc safety chain-profile --model ./my-model --probes ./probes.txt
+    """
+    import math
+
+    context = get_context(ctx)
+
+    model_path = Path(model)
+    if not model_path.exists():
+        error = ErrorDetail(
+            code="MC-3030",
+            title="Model not found",
+            detail=f"Model path does not exist: {model}",
+            hint="Ensure the model path points to a valid directory with config.json.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Load probe texts if provided
+    probe_texts: list[str] | None = None
+    if probes:
+        probes_path = Path(probes)
+        if not probes_path.exists():
+            error = ErrorDetail(
+                code="MC-3031",
+                title="Probes file not found",
+                detail=f"Probes file does not exist: {probes}",
+                hint="Provide a valid path to a probes text file (one probe per line).",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+        probe_texts = [
+            line.strip() for line in probes_path.read_text().splitlines() if line.strip()
+        ]
+
+    try:
+        from modelcypher.adapters.model_loader import ModelLoader
+        from modelcypher.cli.composition import get_chain_analysis_service
+
+        service = get_chain_analysis_service()
+
+        # Load model
+        loader = ModelLoader()
+        loaded_model, tokenizer = loader.load_model(str(model_path))
+
+        # Use default probes if not provided
+        if probe_texts is None:
+            probe_texts = list(_CHAIN_PROFILE_PROBES)
+
+        # Limit to requested samples
+        probe_texts = probe_texts[:samples]
+
+        # Compute chain profile
+        profile = service.analyze_chain(loaded_model, tokenizer, probe_texts)
+
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-3032",
+            title="Chain profile analysis failed",
+            detail=str(exc),
+            hint="Check model path and backend status (mc system status).",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
+
+    payload = profile.as_dict()
+
+    if context.output_format == "text":
+        lines = [
+            "CAUSAL CHAIN PROFILE",
+            f"Model: {model_path}",
+            f"Layers: {profile.num_layers}",
+            f"Hidden Dim: {profile.hidden_dim}",
+            f"Probes: {profile.probe_count}",
+            "",
+            "Per-Layer Chain:",
+            f"  {'Layer':>5} | {'Entropy':>8} | {'Curv (rad)':>10} | {'Attn frac':>9} | {'ID (TwoNN)':>10} | Phase",
+            f"  {'-----':>5}-+-{'--------':>8}-+-{'----------':>10}-+-{'---------':>9}-+-{'----------':>10}-+------",
+        ]
+
+        for m in profile.layers:
+            entropy_str = f"{m.entropy:8.4f}" if m.entropy > 0 else "     N/A"
+            curv_str = f"{m.total_curvature:10.4f}"
+            attn_str = f"{m.attn_fraction:9.2%}" if m.attn_fraction is not None else "      N/A"
+            id_str = f"{m.intrinsic_dimension:10.2f}" if not math.isnan(m.intrinsic_dimension) else "       N/A"
+            phase_str = m.phase.value
+
+            lines.append(
+                f"  {m.layer_idx:5d} | {entropy_str} | {curv_str} | {attn_str} | {id_str} | {phase_str}"
+            )
+
+        lines.extend([
+            "",
+            "Cross-Link Correlations:",
+            f"  Entropy -> Curvature:       Spearman r = {profile.correlations.entropy_to_curvature:.3f}"
+            if not math.isnan(profile.correlations.entropy_to_curvature)
+            else "  Entropy -> Curvature:       N/A (insufficient data)",
+            f"  Cumulative curv -> ID:      Spearman r = {profile.correlations.cumulative_curvature_to_id:.3f}"
+            if not math.isnan(profile.correlations.cumulative_curvature_to_id)
+            else "  Cumulative curv -> ID:      N/A (insufficient data)",
+        ])
+
+        if profile.correlations.mean_attn_fraction is not None:
+            lines.append(
+                f"  Mean attention fraction:   {profile.correlations.mean_attn_fraction:.3f}"
+            )
+        else:
+            lines.append("  Mean attention fraction:   N/A (no decomposition available)")
+
+        # Phase summary
+        phase_counts: dict[str, int] = {}
+        for m in profile.layers:
+            phase_counts[m.phase.value] = phase_counts.get(m.phase.value, 0) + 1
+
+        lines.extend([
+            "",
+            "Phase Summary:",
+        ])
+        for phase_name in ("highway", "processing", "exit"):
+            count = phase_counts.get(phase_name, 0)
+            if count > 0:
+                layer_idxs = [
+                    m.layer_idx for m in profile.layers if m.phase.value == phase_name
+                ]
+                lines.append(f"  {phase_name:>10}: {count} layers ({layer_idxs})")
 
         write_output("\n".join(lines), context.output_format, context.pretty)
     else:

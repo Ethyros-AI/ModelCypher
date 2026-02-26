@@ -20,6 +20,17 @@ from modelcypher.experimental.baranov.artifact_writer import (
 from modelcypher.experimental.baranov.consolidation_tracker import (
     FactConsolidationTracker,
 )
+from modelcypher.experimental.baranov.fact_dataset import (
+    fact_to_training_text,
+    facts_to_training_samples,
+    write_fact_training_jsonl,
+)
+from modelcypher.experimental.baranov.geometry_measurement import (
+    CKADriftResult,
+    GeometrySnapshot,
+    collect_probe_activations,
+    compute_cka_drift,
+)
 from modelcypher.experimental.baranov.edit_applicator import EditApplicator
 from modelcypher.experimental.baranov.outer_product_editor import OuterProductEditor
 from modelcypher.experimental.baranov.manifest import (
@@ -53,18 +64,20 @@ from modelcypher.experimental.baranov.recall_evaluator import (
 )
 
 __all__ = [
+    "CKADriftResult",
     "CodeInfo",
     "ConsolidationStage",
     "ControlFlags",
     "DataHashes",
     "EditApplicator",
     "EditState",
-    "OuterProductEditor",
     "EditStatus",
     "FactConsolidationTracker",
     "FactTriple",
     "GenerateFn",
+    "GeometrySnapshot",
     "ModelInfo",
+    "OuterProductEditor",
     "PreRegisteredDecision",
     "REQUIRED_METRIC_KEYS",
     "RecallAggregate",
@@ -75,8 +88,13 @@ __all__ = [
     "ReplicationManifest",
     "SimpleRecallEvaluator",
     "VALID_TRANSITIONS",
+    "collect_probe_activations",
+    "compute_cka_drift",
     "compute_recall_aggregate",
+    "fact_to_training_text",
+    "facts_to_training_samples",
     "validate_manifest",
+    "write_fact_training_jsonl",
     "write_manifest_json",
     "write_metrics_csv",
     "write_summary_stub",

@@ -22,6 +22,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from modelcypher.core.domain.geometry.alignment import FamilySimilarity
     from modelcypher.ports.backend import Array
 
 
@@ -86,6 +87,9 @@ class UnifiedMergeResult:
 
     # Geometric fingerprint comparison (source vs target geometry)
     fingerprint_comparison: "FingerprintComparison | None" = None
+
+    # Family similarity (spectral Procrustes distance for merge quality prediction)
+    family_similarity: "FamilySimilarity | None" = None
 
 
 @dataclass

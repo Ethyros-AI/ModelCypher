@@ -140,6 +140,24 @@ def get_geometry_analysis_service():
     )
 
 
+def get_chain_analysis_service() -> "ChainAnalysisService":
+    """Get ChainAnalysisService with proper dependency injection.
+
+    Returns a service for computing the unified causal chain profile
+    (entropy, curvature, intrinsic dimension, phase classification).
+    Injects the backend-specific sublayer collector via DI.
+    """
+    from modelcypher.backends.sublayer_collector import collect_sublayer_activations
+    from modelcypher.core.use_cases.chain_analysis_service import ChainAnalysisService
+
+    registry = _get_registry()
+    return ChainAnalysisService(
+        backend=registry.backend,
+        activation_provider=registry.activation_provider,
+        sublayer_collector=collect_sublayer_activations,
+    )
+
+
 def get_verification_depth_profile_service() -> "VerificationDepthProfileService":
     """Get VerificationDepthProfileService with proper dependency injection."""
     from modelcypher.core.use_cases.verification_depth_profile_service import (

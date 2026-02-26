@@ -55,6 +55,7 @@ from .stages.compression_descent import (
 from .stages.transplant_weight_processor import BehaviorJacobianContext
 
 if TYPE_CHECKING:
+    from modelcypher.core.domain.geometry.alignment import FamilySimilarity
     from modelcypher.ports.activation_provider import ActivationProvider
     from modelcypher.ports.backend import Array, Backend
     from modelcypher.ports.inference import InferenceEngine
@@ -344,6 +345,35 @@ def run_merge(
         fingerprint_comparison.condition_number_ratio,
         fingerprint_comparison.effective_dim_delta,
     )
+
+    # =================================================================
+    # FAMILY SIMILARITY CHECK (spectral Procrustes distance)
+    # =================================================================
+    # Fast pre-check: compare spectral profiles of representative weight
+    # matrices to predict merge quality. Same-family merges (Procrustes < 0.5)
+    # are expected to work well. Cross-family (Procrustes > 1.0) may produce
+    # poor results. Does NOT block — informational only.
+    family_similarity = _compute_family_similarity_check(
+        source_weights=loaded_source_weights,
+        target_weights=loaded_target_weights,
+        layer_indices=layer_indices,
+        backend=backend,
+    )
+    if family_similarity is not None:
+        if family_similarity.quality_class == "cross_family":
+            logger.warning(
+                "FAMILY SIMILARITY: Cross-family merge detected "
+                "(Procrustes=%.4f). Results may be poor. "
+                "Consider using a same-family source model.",
+                family_similarity.procrustes_distance,
+            )
+        else:
+            logger.info(
+                "FAMILY SIMILARITY: Procrustes=%.4f (%s, %d layers compared)",
+                family_similarity.procrustes_distance,
+                family_similarity.quality_class.replace("_", " "),
+                family_similarity.n_layers_compared,
+            )
 
     # =================================================================
     # EARLY MODEL CLEANUP - Free GPU memory ASAP
@@ -1487,6 +1517,7 @@ def run_merge(
         density_metrics=density_metrics,
         post_merge_density=post_merge_density,
         fingerprint_comparison=fingerprint_comparison,
+        family_similarity=family_similarity,
     )
 
     logger.info(
@@ -1514,3 +1545,113 @@ def run_merge(
     set_model_compute_dtype(None)
 
     return result
+
+
+def _compute_family_similarity_check(
+    source_weights: dict[str, "Array"],
+    target_weights: dict[str, "Array"],
+    layer_indices: list[int],
+    backend: "Backend",
+) -> "FamilySimilarity | None":
+    """Fast spectral Procrustes distance for merge quality prediction.
+
+    Extracts top-k singular values from 3 representative layers (first,
+    middle, last) and computes Procrustes distance between the spectral
+    signatures.
+
+    Returns None if extraction fails (e.g., incompatible architectures).
+    """
+    from modelcypher.core.domain.geometry.alignment import (
+        FamilySimilarity,
+        compute_family_similarity,
+    )
+
+    if len(layer_indices) < 3:
+        return None
+
+    # Pick 3 representative layers: first, middle, last
+    representative = [
+        layer_indices[0],
+        layer_indices[len(layer_indices) // 2],
+        layer_indices[-1],
+    ]
+
+    # Find a weight matrix key pattern (try common patterns)
+    # Weight keys look like: model.layers.{i}.self_attn.q_proj.weight
+    weight_patterns = [
+        "self_attn.q_proj.weight",
+        "self_attn.qkv_proj.weight",
+        "mlp.gate_proj.weight",
+        "mlp.up_proj.weight",
+    ]
+
+    k = 20  # top-k singular values for spectral signature
+
+    source_spectra: list[list[float]] = []
+    target_spectra: list[list[float]] = []
+
+    for layer_idx in representative:
+        source_sv = _extract_layer_singular_values(
+            source_weights, layer_idx, weight_patterns, k, backend
+        )
+        target_sv = _extract_layer_singular_values(
+            target_weights, layer_idx, weight_patterns, k, backend
+        )
+
+        if source_sv is None or target_sv is None:
+            continue
+
+        # Pad to same length if needed
+        min_len = min(len(source_sv), len(target_sv))
+        if min_len == 0:
+            continue
+        source_spectra.append(source_sv[:min_len])
+        target_spectra.append(target_sv[:min_len])
+
+    if len(source_spectra) < 2:
+        return None
+
+    try:
+        return compute_family_similarity(source_spectra, target_spectra)
+    except Exception as exc:
+        logger.debug("Family similarity check failed: %s", exc)
+        return None
+
+
+def _extract_layer_singular_values(
+    weights: dict[str, "Array"],
+    layer_idx: int,
+    patterns: list[str],
+    k: int,
+    backend: "Backend",
+) -> list[float] | None:
+    """Extract top-k singular values from a weight matrix in the given layer.
+
+    Tries multiple weight key patterns and returns the first successful
+    extraction. Normalizes singular values by the largest one.
+    """
+    for pattern in patterns:
+        key = f"model.layers.{layer_idx}.{pattern}"
+        if key not in weights:
+            continue
+
+        try:
+            w = backend.array(weights[key])
+            # SVD for singular values (compute_uv=False returns just S)
+            s_vals = backend.svd(w, compute_uv=False)
+            backend.eval(s_vals)
+
+            # Convert to Python list, take top-k
+            s_list = [float(x) for x in s_vals.tolist()]
+            s_list = sorted(s_list, reverse=True)[:k]
+
+            # Normalize by largest singular value
+            if s_list and s_list[0] > 1e-10:
+                s_max = s_list[0]
+                s_list = [x / s_max for x in s_list]
+
+            return s_list
+        except Exception:
+            continue
+
+    return None
