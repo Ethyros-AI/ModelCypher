@@ -505,6 +505,8 @@ Activation weighting is **right-side**: SVD of `E_q @ sqrt(Σ_x)`, NOT left-side
 
 **Implication:** Corrective LoRA is even more justified than raw RMT suggested. Nearly 90% of the error the model functionally experiences is systematic and targetable.
 
+**Limitation:** Currently n_pairs=1 (Qwen3-1.7B only). Needs 8B confirmation run for cross-model validation.
+
 **Data:** [`results/rmt_quantization_error/20260226T022102Z/`](../../results/rmt_quantization_error/20260226T022102Z/)
 **Script:** `scripts/rmt_quantization_error.py --mode input_weighted`
 

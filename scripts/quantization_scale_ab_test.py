@@ -376,33 +376,27 @@ def main():
 
     results["comparison"] = comparison
 
-    # Hypothesis verdict
+    # Measured deltas — no heuristic thresholds.
+    # The data determines the verdict, not a magic number.
     std_ppl = arm_a["post_perplexity"]
     geo_ppl = arm_b["post_perplexity"]
     std_spectral = arm_a["spectral_bounds_ok"]
     geo_spectral = arm_b["spectral_bounds_ok"]
+    ppl_delta = geo_ppl - std_ppl  # negative = geometric wins
+    ppl_rel = ppl_delta / max(std_ppl, 1e-8)
 
-    if geo_ppl < std_ppl and geo_spectral and not std_spectral:
-        verdict = (
-            "HYPOTHESIS SUPPORTED: geometric scale produces lower perplexity "
-            "and maintains spectral bounds; standard scale violates bounds. "
-            "Scale violation, not quantization, is the dominant error source."
-        )
-    elif geo_ppl < std_ppl:
-        verdict = (
-            "HYPOTHESIS PARTIALLY SUPPORTED: geometric scale produces lower "
-            "perplexity, but spectral bound analysis is mixed."
-        )
-    elif abs(geo_ppl - std_ppl) / max(geo_ppl, 1e-8) < 0.01:
-        verdict = (
-            "INCONCLUSIVE: perplexity difference < 1%. Both arms perform "
-            "similarly, suggesting scale may not matter for this model/dataset."
-        )
-    else:
-        verdict = (
-            "HYPOTHESIS NOT SUPPORTED: standard scale produces equal or lower "
-            "perplexity. Further investigation needed."
-        )
+    comparison["ppl_delta_geo_minus_std"] = ppl_delta
+    comparison["ppl_relative_delta"] = ppl_rel
+    comparison["geometric_ppl_lower"] = geo_ppl < std_ppl
+    comparison["geometric_spectral_ok"] = geo_spectral
+    comparison["standard_spectral_ok"] = std_spectral
+
+    verdict = (
+        f"MEASURED: ppl(geometric)={geo_ppl:.4f}, ppl(standard)={std_ppl:.4f}, "
+        f"delta={ppl_delta:+.4f} ({ppl_rel:+.2%}). "
+        f"Spectral bounds: geometric={'OK' if geo_spectral else 'VIOLATED'}, "
+        f"standard={'OK' if std_spectral else 'VIOLATED'}."
+    )
 
     results["verdict"] = verdict
 
