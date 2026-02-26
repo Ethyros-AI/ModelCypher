@@ -1,7 +1,7 @@
 # Quantization Geometry Deep Dive
 
 **Status**: Research synthesis + experimental plan
-**Date**: 2026-02-25
+**Date**: 2026-02-26
 **Dependencies**: Weyl validation data, compression synthesis, spectral scale bound
 **Related**: [`COMPRESSION-RESEARCH-SYNTHESIS.md`](./COMPRESSION-RESEARCH-SYNTHESIS.md), [`lora_spectral_scale_bound.md`](./lora_spectral_scale_bound.md)
 
@@ -13,7 +13,7 @@ Quantization is the dominant deployment strategy for large models, yet its geome
 
 **Core findings:**
 - The spectral quantities that matter (sigma_max, sigma_k, tail_dims) are barely perturbed by 8-bit quantization (<0.032%, <0.153%, 439/448 = 98.0% match)
-- The Weyl crossing criterion is violated 3.7-1700.5x (0/448 layers safe), but this measures fine eigenvalue ordering at the noise floor — not the structure the model relies on
+- The Weyl crossing criterion is violated 3.9-1700.5x (0/448 layers safe), but this measures fine eigenvalue ordering at the noise floor — not the structure the model relies on
 - T-matrix quantization at 8-bit *outperforms* FP32 (93.3% vs 86.7%), demonstrating quantization-as-regularization
 - Standard QLoRA uses scale=2.0, which violates spectral bounds by 600-2700x independent of quantization. The scale error is 3-4 orders of magnitude larger than the quantization error
 
@@ -54,7 +54,7 @@ This is geometrically significant: random perturbations spread energy uniformly 
 
 We measured the spectral impact of 8-bit-g64-affine quantization on every 2D weight matrix in Qwen3-1.7B (196 layers) and Qwen3-8B (252 layers).
 
-*Data: [`weyl_quantization_validation.json`](../../results/weyl_quantization_validation/20260225T231720Z/weyl_quantization_validation.json)*
+*Data: [`weyl_quantization_validation.json`](../../results/weyl_quantization_validation/20260226T015425Z/weyl_quantization_validation.json)*
 *Note: exact-SVD values are canonical; randomized SVD is retained for fast scans and can inflate boundary metrics.*
 
 **Qwen3-1.7B Layer 0 — Representative Sample:**
@@ -92,7 +92,7 @@ Weyl's perturbation theorem (1912) guarantees that for any perturbation E:
 |sigma_i(W + E) - sigma_i(W)| ≤ ||E||_2
 ```
 
-This bound IS satisfied. With ||E_q||_2 ≈ 0.013-0.142 and sigma_max ≈ 7-12, the relative perturbation to any individual singular value is tiny. The top singular value moves by 0.0009 out of 7.825 — a 0.012% change. This is why quantized models work.
+This bound IS satisfied. With ||E_q||_2 ≈ 0.0139-0.1415 and sigma_max ≈ 7-12, the relative perturbation to any individual singular value is tiny. The top singular value moves by 0.0009 out of 7.825 — a 0.012% change. This is why quantized models work.
 
 The Weyl *crossing criterion* asks a different question: can singular values at the structural rank boundary swap their ordering? The condition is:
 
@@ -100,7 +100,7 @@ The Weyl *crossing criterion* asks a different question: can singular values at 
 ||E_q||_2 < spectral_gap(sigma_k) / 2
 ```
 
-With ||E_q||_2 ≈ 0.013-0.142 and spectral gaps at sigma_k ≈ 10^-5-10^-3, this is violated 3.7-1700.5x. Singular values at the noise floor DO cross.
+With ||E_q||_2 ≈ 0.0139-0.1415 and spectral gaps at sigma_k ≈ 10^-5-10^-3, this is violated 3.9-1700.5x. Singular values at the noise floor DO cross.
 
 **But this crossing is geometrically inconsequential.** Here's why:
 
@@ -169,7 +169,7 @@ Ranking what survives 8-bit quantization, from most robust to least:
 | sigma_k (structural boundary) | <0.153% change | PRESERVED |
 | tail_dims (effective subspace count) | 439/448 (98.0%) match | PRESERVED |
 | Activation manifold topology | Intact (models work) | PRESERVED |
-| Spectral gap at sigma_k | 3.7-1700.5x violation | DESTROYED |
+| Spectral gap at sigma_k | 3.9-1700.5x violation | DESTROYED |
 | Fine eigenvalue ordering at boundary | Crossings occur | DESTROYED |
 
 **What's destroyed doesn't matter. What matters is preserved.**
@@ -201,7 +201,7 @@ dL/dB = dequantize(W_q)^T @ (dy/dx) @ x^T @ A^T
 Gradients flow through the dequantized weight. The gradient landscape the optimizer sees is the landscape of f(x; W_fp + E_q + scale * B @ A), not f(x; W_fp + scale * B @ A).
 
 **This is a double approximation:**
-1. The base transformation is approximate (quantized): contributes ||E_q||_2 ≈ 0.013-0.142
+1. The base transformation is approximate (quantized): contributes ||E_q||_2 ≈ 0.0139-0.1415
 2. The update is low-rank (LoRA): misses components outside rank(B @ A)
 
 The standard QLoRA adds a third error source that dominates both:
@@ -273,10 +273,10 @@ Let's compare the error magnitudes:
 
 | Error Source | Magnitude | Relative to sigma_k |
 |--------------|-----------|---------------------|
-| Quantization (||E_q||_2) | ~0.013-0.142 | ~0.01-0.08x sigma_k |
+| Quantization (||E_q||_2) | ~0.0139-0.1415 | ~0.012-0.078x sigma_k |
 | Standard LoRA scale violation | 600-2700x × sigma_k | 600-2700x sigma_k |
 
-**The scale violation is 7,500-270,000x larger than the quantization error.**
+**The scale violation is 7,700-220,000x larger than the quantization error.**
 
 When practitioners report that QLoRA produces worse results than full-precision LoRA, they're observing the compounding of two errors: the catastrophic scale violation (which exists in both cases) and the small quantization perturbation (which exists only in QLoRA). But the scale violation dominates so completely that the quantization effect is unmeasurable.
 
@@ -429,7 +429,7 @@ The experimental plan addresses all three questions.
 |-------|--------|----------|
 | sigma_max barely changes under 8-bit quantization | MEASURED | <0.032% max across 448 layers (exact-SVD Weyl validation) |
 | sigma_k barely changes under 8-bit quantization | MEASURED | <0.153% max across 448 layers (exact-SVD Weyl validation) |
-| Weyl crossing criterion violated 3.7-1700.5x | MEASURED | 0/448 layers safe (exact-SVD Weyl validation) |
+| Weyl crossing criterion violated 3.9-1700.5x | MEASURED | 0/448 layers safe (exact-SVD Weyl validation) |
 | tail_dims preserved under 8-bit quantization | MEASURED | 439/448 aggregate; 192/196 (Qwen3-1.7B), 247/252 (Qwen3-8B) |
 | 4-bit Frobenius error 90-100% yet models work | MEASURED | Compression synthesis |
 | 8-bit T-matrix outperforms FP32 T-matrix | MEASURED | 93.3% vs 86.7% (compression synthesis) |
@@ -540,7 +540,7 @@ This is where the stacking hypothesis faces its hardest test. If 4-bit E_q is pr
 ## References
 
 ### Internal
-- Weyl validation data (exact-SVD canonical): `results/weyl_quantization_validation/20260225T231720Z/`
+- Weyl validation data (exact-SVD canonical): `results/weyl_quantization_validation/20260226T015425Z/`
 - RMT quantization error (1.7B): `results/rmt_quantization_error/20260226T001044Z/`
 - RMT quantization error (8B): `results/rmt_quantization_error/20260226T002308Z/`
 - Weyl validation script: `scripts/weyl_quantization_validation.py`
