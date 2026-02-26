@@ -190,6 +190,8 @@ def main():
             "mask_padding": args.mask_padding,
             "shuffle": args.shuffle,
             "diagnose": args.diagnose,
+            "polyak_avg": args.polyak_avg,
+            "best_ckpt": args.best_ckpt,
         },
     }
 
@@ -344,6 +346,19 @@ def main():
 
     losses: list[tuple[int, float]] = []
     f_star = 0.0  # Computed from initial loss + RMT noise fraction
+    best_loss = float("inf")
+    best_iter = -1
+
+    # Polyak-Ruppert iterate averaging: θ̄_t = θ̄_{t-1} + (θ_t - θ̄_{t-1})/(t+1)
+    avg_params: dict[str, mx.array] | None = None
+    if args.polyak_avg:
+        logger.info("Polyak-Ruppert iterate averaging enabled")
+
+    # Best-checkpoint saving: snapshot trainable params at minimum loss
+    best_params: dict[str, mx.array] | None = None
+    if args.best_ckpt:
+        logger.info("Best-checkpoint saving enabled")
+
     start_time = time.monotonic()
 
     for it in range(args.max_iters):
@@ -401,6 +416,34 @@ def main():
             module.clamp_scale()
             mx.eval(module.S_raw)
 
+        # Track best checkpoint (save params if --best-ckpt)
+        if loss_val < best_loss:
+            best_loss = loss_val
+            best_iter = it
+            if args.best_ckpt:
+                best_params = {
+                    name: mx.array(p) for name, p
+                    in mlx.utils.tree_flatten(q_model.trainable_parameters())
+                }
+                mx.eval(*best_params.values())
+
+        # Polyak-Ruppert iterate averaging
+        if args.polyak_avg:
+            current = {
+                name: p for name, p
+                in mlx.utils.tree_flatten(q_model.trainable_parameters())
+            }
+            if avg_params is None:
+                # First iterate: initialize average
+                avg_params = {name: mx.array(p) for name, p in current.items()}
+            else:
+                # Running average: θ̄_t = θ̄_{t-1} + (θ_t - θ̄_{t-1})/(t+1)
+                for name in avg_params:
+                    avg_params[name] = avg_params[name] + (
+                        current[name] - avg_params[name]
+                    ) / (it + 1)
+            mx.eval(*avg_params.values())
+
         losses.append((it, loss_val))
 
         if it % 10 == 0 or it == args.max_iters - 1:
@@ -429,12 +472,17 @@ def main():
             )
 
     training_time = time.monotonic() - start_time
-    logger.info("Training complete: %.1fs, final_loss=%.6f", training_time, losses[-1][1] if losses else 0.0)
+    logger.info(
+        "Training complete: %.1fs, final_loss=%.6f, best_loss=%.6f (iter %d)",
+        training_time, losses[-1][1] if losses else 0.0, best_loss, best_iter,
+    )
 
     results["training"] = {
         "n_iters": len(losses),
         "initial_loss": losses[0][1] if losses else 0.0,
         "final_loss": losses[-1][1] if losses else 0.0,
+        "best_loss": best_loss,
+        "best_iter": best_iter,
         "training_time_seconds": training_time,
         "n_trainable_params": n_trainable,
         "n_lora_layers": n_injected,
@@ -442,9 +490,45 @@ def main():
         "sigma_max": sigma_max,
         "sigma_k_min": sigma_k_min,
         "f_star": f_star,
+        "polyak_avg": args.polyak_avg,
+        "best_ckpt": args.best_ckpt,
     }
 
     # ── Phase 6: Post-training CKA measurement ──
+
+    # If best-checkpoint enabled, swap in best-loss parameters
+    if args.best_ckpt and best_params is not None:
+        logger.info(
+            "Swapping to best-checkpoint parameters (iter %d, loss=%.6f)",
+            best_iter, best_loss,
+        )
+        q_model.load_weights(list(best_params.items()), strict=False)
+        mx.eval(q_model.parameters())
+        # Re-clamp scales (best checkpoint should be within bounds, but verify)
+        for _, module in adapter._iter_nb_lora_modules(q_model):
+            module.clamp_scale()
+            mx.eval(module.S_raw)
+        logger.info("Best-checkpoint parameters loaded and scale-clamped")
+
+    # If Polyak averaging enabled, swap in averaged parameters
+    elif args.polyak_avg and avg_params is not None:
+        logger.info(
+            "Swapping to Polyak-averaged parameters (averaged over %d iterates)",
+            len(losses),
+        )
+        # Save final-iterate params for comparison
+        final_params = {
+            name: mx.array(p) for name, p
+            in mlx.utils.tree_flatten(q_model.trainable_parameters())
+        }
+        q_model.load_weights(list(avg_params.items()), strict=False)
+        mx.eval(q_model.parameters())
+        # Re-clamp scales on averaged adapter (average may violate bounds)
+        for _, module in adapter._iter_nb_lora_modules(q_model):
+            module.clamp_scale()
+            mx.eval(module.S_raw)
+        logger.info("Polyak-averaged parameters loaded and scale-clamped")
+
     logger.info("Collecting post-training CKA...")
     q_activations_after = _collect_activations(
         q_model, tokenizer, eval_texts, backend, n_samples=args.n_cka_probes,
@@ -504,6 +588,11 @@ def main():
     print(f"  Training iterations:          {len(losses)}")
     print(f"  Initial loss:                 {losses[0][1]:.6f}" if losses else "  No training")
     print(f"  Final loss:                   {losses[-1][1]:.6f}" if losses else "")
+    print(f"  Best loss:                    {best_loss:.6f} (iter {best_iter})")
+    if args.best_ckpt:
+        print(f"  Adapter source:               Best checkpoint (iter {best_iter}, loss={best_loss:.6f})")
+    elif args.polyak_avg:
+        print(f"  Adapter source:               Polyak-averaged ({len(losses)} iterates)")
     print(f"  Trainable params:             {n_trainable:,}")
     print(f"  LoRA layers:                  {n_injected}")
     print()
@@ -607,6 +696,26 @@ def _parse_args() -> argparse.Namespace:
             "Enable per-iteration diagnostics: MSE decomposition (real vs "
             "padding), per-sample gradient cosine, MASS binding constraint. "
             "Adds overhead (extra forward passes for cosine)."
+        ),
+    )
+    parser.add_argument(
+        "--polyak-avg",
+        action="store_true",
+        help=(
+            "Enable Polyak-Ruppert iterate averaging. Maintains a running "
+            "average of adapter parameters across all iterations. Evaluates "
+            "CKA on the averaged adapter instead of the final iterate. "
+            "Extracts the convergent signal from oscillating SPS trajectories."
+        ),
+    )
+    parser.add_argument(
+        "--best-ckpt",
+        action="store_true",
+        help=(
+            "Save adapter parameters at the minimum-loss iteration and evaluate "
+            "CKA on that checkpoint instead of the final iterate. Addresses "
+            "endpoint sensitivity: SPS oscillation means the final iterate is "
+            "random — the best-loss iterate is closest to the optimum."
         ),
     )
     return parser.parse_args()
