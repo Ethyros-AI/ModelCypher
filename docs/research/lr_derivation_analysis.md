@@ -179,6 +179,8 @@ At epoch 1: `(2.49 - 2.7) / ||d||² < 0` → would give 0 (already past baseline
 
 This reveals a fundamental mismatch: SPS is designed for **convex optimization toward zero loss**. For fine-tuning where we're making small adjustments near baseline, SPS's f* = 0 assumption makes it non-binding.
 
+**Update (2026-02-26):** `compute_per_step_rates()` now accepts `f_star` parameter: `η_sps = max(0, f(x) - f*) / ||g||²`. For MSE distillation (corrective LoRA), f* is derived from the RMT noise floor: `f* = initial_loss × (1 - sv_frac)`. Validated on 4-bit corrective training where f*=0 caused loss oscillation (0.56 → 1.90) and f*=0.544 (RMT-derived) predicted the observed floor within 3.7%. For CE fine-tuning, f* = 0.0 (default) preserves existing behavior.
+
 ### Key Finding: √N Correction Resolves Q11.2
 
 The open question "√N budget distribution" (Q11 in OPEN-MATHEMATICAL-QUESTIONS.md) is now empirically confirmed:

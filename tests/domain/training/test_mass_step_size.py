@@ -176,7 +176,7 @@ class TestSqrtNCorrection:
 # Class 3: SPS (Stochastic Polyak Step Size)
 # ===================================================================
 class TestEtaSPS:
-    """Tests for eta_sps = loss / ||g||^2 (Loizou et al. 2020, f*=0)."""
+    """Tests for eta_sps = max(0, loss - f*) / ||g||^2 (Loizou et al. 2020)."""
 
     def test_formula_known_values(self):
         assert _extract_sps(2.0, 1.0, 0.01) == pytest.approx(2.0)
@@ -722,3 +722,111 @@ class TestBoundedGainCertificate:
                 )
                 is_bounded, _ = verify_bounded_gain(eta_step, ceiling)
                 assert is_bounded is True
+
+
+# ===================================================================
+# Class 12: f_star — Irreducible Loss Floor (RMT Noise Floor)
+# ===================================================================
+class TestFStar:
+    """Tests for f_star parameter in SPS: η_sps = max(0, f(x) - f*) / ||g||².
+
+    f* is the irreducible loss floor, derived from the RMT noise fraction:
+    f* = initial_loss × (1 - mean_sv_frac).
+
+    Without f* (f*=0), SPS treats the entire loss as recoverable distance,
+    overestimating step size near the noise floor and causing oscillation.
+    """
+
+    def test_f_star_zero_recovers_original_sps(self):
+        """f_star=0.0 gives identical results to the original formula."""
+        for loss in [0.01, 1.0, 5.0]:
+            for d_norm in [0.1, 1.0, 100.0]:
+                original = compute_per_step_rates(loss, d_norm, 0.5, 0.01)
+                with_zero = compute_per_step_rates(
+                    loss, d_norm, 0.5, 0.01, f_star=0.0,
+                )
+                assert original[0] == with_zero[0]  # eta_step
+                assert original[1] == with_zero[1]  # eta_sps
+
+    def test_f_star_reduces_sps(self):
+        """Positive f_star produces smaller SPS than f_star=0."""
+        loss, d_norm = 1.0, 10.0
+        _, sps_0, _, _, _ = compute_per_step_rates(
+            loss, d_norm, 0.5, 1.0, f_star=0.0,
+        )
+        _, sps_half, _, _, _ = compute_per_step_rates(
+            loss, d_norm, 0.5, 1.0, f_star=0.5,
+        )
+        assert sps_half < sps_0
+        assert sps_half == pytest.approx((1.0 - 0.5) / 10.0**2)
+
+    def test_f_star_equals_loss_gives_zero_sps(self):
+        """When loss equals f*, SPS is zero (at the noise floor)."""
+        _, sps, _, _, _ = compute_per_step_rates(
+            loss=0.544, d_norm=14.3, sigma_k_min=0.874, eta_ceiling=0.01,
+            f_star=0.544,
+        )
+        assert sps == 0.0
+
+    def test_f_star_above_loss_gives_zero_sps(self):
+        """When f* > loss, SPS is zero (below the noise floor)."""
+        _, sps, _, _, _ = compute_per_step_rates(
+            loss=0.5, d_norm=10.0, sigma_k_min=0.5, eta_ceiling=0.01,
+            f_star=0.6,
+        )
+        assert sps == 0.0
+
+    def test_f_star_at_noise_floor_ceiling_binds(self):
+        """When loss ≈ f*, SPS → 0, so ceiling or Weyl binds instead."""
+        eta_step, sps, _, _, _ = compute_per_step_rates(
+            loss=0.55, d_norm=14.3, sigma_k_min=0.874, eta_ceiling=0.002,
+            f_star=0.544,
+        )
+        # SPS = (0.55 - 0.544) / 14.3² = 0.006 / 204.49 ≈ 2.93e-5
+        assert sps == pytest.approx(0.006 / 14.3**2, rel=1e-3)
+        # ceiling = 0.002, weyl = 0.874/14.3 ≈ 0.061
+        # SPS binds because 2.93e-5 < 0.002 < 0.061
+        assert eta_step == pytest.approx(sps)
+
+    def test_4bit_scenario_corrected_vs_uncorrected(self):
+        """Reproduce the 4-bit iter 80 scenario from Experiment 3b.
+
+        At iter 80: loss=0.564, d_norm=14.3, sigma_k_min=0.874, ceiling=2.24e-3.
+        With f*=0: SPS=2.76e-3, ceiling binds at 2.24e-3.
+        With f*=0.544: SPS=9.78e-5, SPS binds (23× smaller).
+        """
+        # Uncorrected (f*=0)
+        eta_0, sps_0, _, _, _ = compute_per_step_rates(
+            loss=0.564, d_norm=14.3, sigma_k_min=0.874, eta_ceiling=2.24e-3,
+            f_star=0.0,
+        )
+        assert sps_0 == pytest.approx(0.564 / 14.3**2, rel=1e-3)
+        assert eta_0 == pytest.approx(2.24e-3)  # ceiling binds
+
+        # Corrected (f*=0.544)
+        eta_corrected, sps_corrected, _, _, _ = compute_per_step_rates(
+            loss=0.564, d_norm=14.3, sigma_k_min=0.874, eta_ceiling=2.24e-3,
+            f_star=0.544,
+        )
+        expected_sps = (0.564 - 0.544) / 14.3**2
+        assert sps_corrected == pytest.approx(expected_sps, rel=1e-3)
+        assert eta_corrected == pytest.approx(sps_corrected)  # SPS binds
+        assert eta_corrected < eta_0 / 20  # at least 20× smaller
+
+    def test_f_star_sps_always_nonneg(self):
+        """SPS is always non-negative regardless of f_star value."""
+        for loss in [0.0, 0.5, 1.0, 5.0]:
+            for f_star in [0.0, 0.5, 1.0, 10.0]:
+                _, sps, _, _, _ = compute_per_step_rates(
+                    loss, 1.0, 0.5, 0.01, f_star=f_star,
+                )
+                assert sps >= 0.0
+
+    def test_weyl_and_ceiling_unchanged_by_f_star(self):
+        """f_star only affects SPS, not Weyl or ceiling."""
+        for f_star in [0.0, 0.5, 1.0]:
+            _, _, eta_weyl, _, _ = compute_per_step_rates(
+                loss=1.0, d_norm=10.0, sigma_k_min=0.5, eta_ceiling=0.01,
+                f_star=f_star,
+            )
+            assert eta_weyl == pytest.approx(0.5 / 10.0)

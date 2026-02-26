@@ -140,19 +140,27 @@ def compute_per_step_rates(
     sigma_k_min: float,
     eta_ceiling: float,
     remaining_budget: float | None = None,
+    f_star: float = 0.0,
 ) -> tuple[float, float, float, float, float | None]:
     """Compute SPS, Weyl, optional conformal margin, and combined eta_step.
 
-    - SPS (Loizou et al. 2020): eta_sps = f(x) / ||g||^2, f* = 0
+    - SPS (Loizou et al. 2020): eta_sps = max(0, f(x) - f*) / ||g||^2
     - Weyl displacement bound: eta_weyl = sigma_k_min / ||g||
     - Conformal margin (Sahraee-Ardakan et al. 2026): eta_margin = remaining / ||g||
     - Combined: eta_step = min(eta_sps, eta_weyl, [eta_margin,] eta_ceiling)
+
+    Args:
+        f_star: Irreducible loss floor. For MSE distillation, derived from RMT:
+            f_star = initial_loss × (1 - mean_sv_frac), where sv_frac is the
+            mean signal_variance_fraction from RMT analysis of E_q. The MP
+            noise floor bounds the loss achievable by any low-rank corrector.
+            Default 0.0 preserves original SPS behavior.
 
     Returns (eta_step, eta_sps, eta_weyl, displacement, eta_margin).
     eta_margin is None when remaining_budget is None.
     """
     if d_norm > 0:
-        eta_sps = loss / (d_norm ** 2)
+        eta_sps = max(0.0, loss - f_star) / (d_norm ** 2)
         eta_weyl = sigma_k_min / d_norm
     else:
         eta_sps = eta_ceiling

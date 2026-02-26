@@ -263,6 +263,22 @@ def main():
         eta_ceiling = eta_ceiling / math.sqrt(n_batches_per_epoch)
         logger.info("MASS sqrt(N) correction: eta=%.4e (N=%d)", eta_ceiling, n_batches_per_epoch)
 
+    # Derive f* from RMT noise floor (if RMT results provided)
+    noise_fraction: float | None = None
+    if args.rmt_results:
+        with open(args.rmt_results) as f:
+            rmt_data = json.load(f)
+        mean_sv_frac = rmt_data["aggregate"]["mean_signal_variance_fraction"]
+        noise_fraction = 1.0 - mean_sv_frac
+        logger.info(
+            "RMT noise fraction: %.4f (sv_frac=%.4f). "
+            "f* will be derived after initial loss evaluation.",
+            noise_fraction, mean_sv_frac,
+        )
+        results["config"]["rmt_results"] = args.rmt_results
+        results["config"]["rmt_sv_frac"] = mean_sv_frac
+        results["config"]["rmt_noise_fraction"] = noise_fraction
+
     optimizer = opt.SGD(learning_rate=eta_ceiling, momentum=0.0)
 
     # Define corrective loss: MSE on logits between quantized+LoRA and bf16
@@ -289,6 +305,7 @@ def main():
     seq_length = 256  # Short sequences for efficiency
 
     losses: list[tuple[int, float]] = []
+    f_star = 0.0  # Computed from initial loss + RMT noise fraction
     start_time = time.monotonic()
 
     for it in range(args.max_iters):
@@ -315,8 +332,18 @@ def main():
         d_norm = float(mx.sqrt(d_norm_sq).item())
         loss_val = float(loss.item())
 
+        # Derive f* from initial loss on first iteration
+        if it == 0 and noise_fraction is not None:
+            f_star = loss_val * noise_fraction
+            logger.info(
+                "Derived f*=%.6f from RMT noise floor "
+                "(initial_loss=%.6f × noise_fraction=%.4f)",
+                f_star, loss_val, noise_fraction,
+            )
+
         eta_step, _, _, _, _ = compute_per_step_rates(
             loss_val, d_norm, sigma_k_min, eta_ceiling,
+            f_star=f_star,
         )
         optimizer.learning_rate = mx.array(eta_step)
 
@@ -351,6 +378,7 @@ def main():
         "eta_ceiling": eta_ceiling,
         "sigma_max": sigma_max,
         "sigma_k_min": sigma_k_min,
+        "f_star": f_star,
     }
 
     # ── Phase 6: Post-training CKA measurement ──
@@ -479,6 +507,17 @@ def _parse_args() -> argparse.Namespace:
         type=int,
         default=30,
         help="Number of probe samples for CKA measurement",
+    )
+    parser.add_argument(
+        "--rmt-results",
+        type=str,
+        default=None,
+        help=(
+            "Path to rmt_quantization_error.json for f* derivation. "
+            "SPS uses f* = initial_loss × (1 - sv_frac) as the irreducible "
+            "loss floor, where sv_frac is the MP signal fraction. "
+            "Without this, uses f*=0 (original SPS)."
+        ),
     )
     return parser.parse_args()
 
