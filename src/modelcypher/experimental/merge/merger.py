@@ -97,7 +97,6 @@ class UnifiedGeometricMerger:
         target_tokenizer: Any | None = None,
         inference_engine: "InferenceEngine | None" = None,
         behavior_jacobian: bool = False,
-        kfac_projector: bool = False,
     ) -> UnifiedMergeResult:
         """Execute the unified geometric merge pipeline (geometry-only, no domain overrides).
         """
@@ -115,7 +114,6 @@ class UnifiedGeometricMerger:
             activation_provider=self._activation_provider,
             inference_engine=inference_engine or self._inference_engine,
             behavior_jacobian=behavior_jacobian,
-            kfac_projector=kfac_projector,
             progress_reporter=self._progress_reporter,
         )
 

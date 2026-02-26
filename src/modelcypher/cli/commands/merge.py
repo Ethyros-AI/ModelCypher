@@ -89,11 +89,6 @@ def merge_run(
         "--behavior-jacobian",
         help="Use behavior Jacobian null-space projector (per-probe CE gradients) instead of activation-covariance",
     ),
-    kfac_projector: bool = typer.Option(
-        False,
-        "--kfac-projector",
-        help="Use K-FAC null-space projector (Kronecker-factored GNH approximation)",
-    ),
 ) -> None:
     """Merge source model into target using null-space geometric transplant.
 
@@ -144,7 +139,6 @@ def merge_run(
         target_path=str(target_path),
         output_dir=output,
         behavior_jacobian=behavior_jacobian,
-        kfac_projector=kfac_projector,
     )
 
     write_output(_result_to_dict(result), context.output_format, context.pretty)

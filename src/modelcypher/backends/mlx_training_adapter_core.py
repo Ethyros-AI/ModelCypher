@@ -174,10 +174,6 @@ class EpochMetrics:
     rss_top1_agreement: float | None = None
     # Projected residual diagnostic (tighter than spectral norm ratio)
     projected_residual_max: float | None = None
-    # K-FAC curvature alignment diagnostic (Experiment 3)
-    kfac_median_top10_fraction: float | None = None
-    kfac_max_top10_fraction: float | None = None
-    kfac_median_null_fraction: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {k: v for k, v in self.__dict__.items()}
