@@ -129,7 +129,11 @@ def _spectral_norm_exact(matrix: Any, backend: Any) -> float:
     """Compute ||M||_2 exactly from SVD."""
     M = backend.astype(matrix, "float32")
     backend.eval(M)
-    _, S, _ = backend.svd(M, compute_uv=True)
+    svd_out = backend.svd(M, compute_uv=False)
+    if isinstance(svd_out, tuple):
+        S = svd_out[0] if len(svd_out) == 1 else svd_out[1] if len(svd_out) == 2 else svd_out[1]
+    else:
+        S = svd_out
     backend.eval(S)
     sigma = float(backend.to_scalar(S[0])) if int(S.shape[0]) > 0 else 0.0
     del M

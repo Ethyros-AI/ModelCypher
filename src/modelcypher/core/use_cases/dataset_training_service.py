@@ -296,6 +296,8 @@ class DatasetTrainingService:
         eval_interval: int | None = None,
         # Global EOS exclusion from CE
         eos_exclude: bool = False,
+        # Research: override geometric scale bound (bypasses spectral safety)
+        scale_bound_override: float | None = None,
         # Outer similarity monitoring (Kucukahmetler et al. 2026)
         rss_monitor: bool = False,
         # Ablation experiment params (research only, not CLI-exposed)
@@ -728,6 +730,7 @@ class DatasetTrainingService:
             model, geometries, target_modules,
             safety_margin=None,
             rank_overrides=final_ranks,
+            scale_bound_override=scale_bound_override,
         )
         if n_lora_layers <= 0:
             raise ValueError("No NB-LoRA layers were injected")
