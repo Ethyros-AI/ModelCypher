@@ -665,8 +665,10 @@ def compute_per_layer_signal_ranks(
 
         n_samples, hidden_dim = int(A_centered.shape[0]), int(A_centered.shape[1])
 
-        # SVD on centered activation matrix
-        S = backend.svd(A_centered, compute_uv=False)
+        # SVD on centered activation matrix (cast to float32 — SVD requires float32+)
+        A_f32 = backend.astype(A_centered, "float32")
+        backend.eval(A_f32)
+        S = backend.svd(A_f32, compute_uv=False)
         backend.eval(S)
 
         result = compute_signal_rank_from_singular_values(

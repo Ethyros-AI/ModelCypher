@@ -66,6 +66,12 @@ class TrainingRegime:
     use_entropy_regularization: bool
     confidence_level: float
     n_total: int
+    baseline_ci_lower: float
+    baseline_ci_upper: float
+    headroom_upper: float
+    headroom_resolution: float
+    ceiling_bound: bool
+    ceiling_rationale: str
     derivation_log: tuple[str, ...]
 
 
@@ -96,6 +102,26 @@ def select_training_regime(
 
     alpha = 1.0 / float(n_total)
     confidence_level = 1.0 - alpha
+    observed_accuracy = float(baseline_result.accuracy)
+    baseline_n_correct = int(baseline_result.n_correct)
+    baseline_ci_lower, baseline_ci_upper = clopper_pearson_interval(
+        n_correct=baseline_n_correct,
+        n_total=n_total,
+        alpha=alpha,
+    )
+    headroom_upper = baseline_ci_upper - observed_accuracy
+    headroom_resolution = alpha
+    ceiling_bound = headroom_upper <= headroom_resolution
+    ceiling_rationale = (
+        (
+            "ceiling-bound baseline: upper confidence headroom is below or at "
+            "measurement resolution; force CE-only updates"
+        )
+        if ceiling_bound
+        else (
+            "baseline has measurable upward headroom beyond 1/N resolution"
+        )
+    )
 
     chance_rates = dict(DEFAULT_PROBLEM_TYPE_CHANCE_RATES)
     if problem_type_chance_rates is not None:
@@ -107,6 +133,17 @@ def select_training_regime(
             "confidence derivation: "
             f"n_total={n_total}, alpha=1/n_total={alpha:.10f}, "
             f"confidence_level={confidence_level:.10f}"
+        ),
+        (
+            "global baseline interval: "
+            f"k={baseline_n_correct}, n={n_total}, acc={observed_accuracy:.10f}, "
+            f"ci=[{baseline_ci_lower:.10f}, {baseline_ci_upper:.10f}]"
+        ),
+        (
+            "headroom derivation: "
+            f"headroom_upper=ci_upper-acc={headroom_upper:.10f}, "
+            f"resolution=1/n={headroom_resolution:.10f}, "
+            f"ceiling_bound={ceiling_bound}"
         ),
     ]
 
@@ -189,6 +226,16 @@ def select_training_regime(
     else:
         raise ValueError(f"Unexpected regime set: {sorted(set(regimes))}")
 
+    if ceiling_bound:
+        use_outcome_training = False
+        use_entropy_regularization = False
+        derivation_log.append(
+            (
+                "ceiling override: forcing CE-only effective behavior "
+                "(use_outcome_training=False, use_entropy_regularization=False)"
+            ),
+        )
+
     derivation_log.append(
         (
             "global decision: "
@@ -206,6 +253,12 @@ def select_training_regime(
         use_entropy_regularization=use_entropy_regularization,
         confidence_level=confidence_level,
         n_total=n_total,
+        baseline_ci_lower=baseline_ci_lower,
+        baseline_ci_upper=baseline_ci_upper,
+        headroom_upper=headroom_upper,
+        headroom_resolution=headroom_resolution,
+        ceiling_bound=ceiling_bound,
+        ceiling_rationale=ceiling_rationale,
         derivation_log=tuple(derivation_log),
     )
 

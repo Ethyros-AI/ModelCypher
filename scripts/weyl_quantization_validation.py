@@ -32,6 +32,9 @@ from typing import Any
 
 from modelcypher.backends import initialize_default_backend
 from modelcypher.backends.mlx_training_adapter import MLXTrainingAdapter
+from modelcypher.core.domain.training.quantization_weyl_precheck import (
+    run_quantization_weyl_precheck,
+)
 
 # Default pairs: Codex's 8-bit derived models
 DEFAULT_PAIRS = [
@@ -222,7 +225,17 @@ def _validate_pair(
     gc.collect()
     _clear_gpu_cache()
 
-    # 2. For each matching layer, compute Weyl bound
+    # 2. Run shared domain precheck for Weyl crossing metrics
+    precheck_payload = run_quantization_weyl_precheck(
+        fp_weights=fp_weights,
+        quantized_weights=q_weights,
+        backend=backend,
+    )
+    precheck_by_layer = {
+        row["layer_key"]: row for row in precheck_payload["per_layer"]
+    }
+
+    # 3. For each matching layer, merge geometry deltas + precheck
     common_keys = sorted(set(fp_geoms.keys()) & set(q_geoms.keys()))
     logger.info("Comparing %d layers...", len(common_keys))
 
@@ -235,27 +248,14 @@ def _validate_pair(
     for key in common_keys:
         fp_g = fp_geoms[key]
         q_g = q_geoms[key]
-
-        # Compute ||E_q||_2 via power iteration
-        fp_w = fp_weights.get(key)
-        q_w = q_weights.get(key)
-
-        error_norm = 0.0
-        if fp_w is not None and q_w is not None:
-            E = backend.astype(fp_w, "float32") - backend.astype(q_w, "float32")
-            backend.eval(E)
-            if geometry_mode == "exact":
-                error_norm = _spectral_norm_exact(E, backend)
-            else:
-                error_norm = _spectral_norm_power_iter(E, backend)
-            del E
-
-        spectral_gap = fp_g.spectral_gap
-        weyl_threshold = spectral_gap / 2.0
-        weyl_safe = error_norm < weyl_threshold if spectral_gap > 0 else False
-        error_over_gap = (
-            error_norm / weyl_threshold if weyl_threshold > 0 else float("inf")
-        )
+        precheck_layer = precheck_by_layer.get(key)
+        if precheck_layer is None:
+            continue
+        error_norm = float(precheck_layer["error_norm_2"])
+        spectral_gap = float(precheck_layer["spectral_gap"])
+        weyl_threshold = float(precheck_layer["gap_half"])
+        error_over_gap = float(precheck_layer["error_over_gap_half"])
+        weyl_safe = not bool(precheck_layer["crossing"])
 
         tail_dims_match = fp_g.tail_dims == q_g.tail_dims
 
@@ -282,7 +282,7 @@ def _validate_pair(
             "tail_dims_match": tail_dims_match,
             "fp_spectral_gap": spectral_gap,
             "error_norm": error_norm,
-            "error_norm_mode": "exact_svd" if geometry_mode == "exact" else "power_iter_20",
+            "error_norm_mode": "exact_svd",
             "weyl_threshold": weyl_threshold,
             "error_over_gap_ratio": error_over_gap,
             "weyl_safe": weyl_safe,
@@ -305,7 +305,7 @@ def _validate_pair(
     gc.collect()
     _clear_gpu_cache()
 
-    all_safe = n_weyl_safe == len(common_keys)
+    all_safe = bool(precheck_payload["all_non_crossing"])
 
     result = {
         "fp_model": fp_path,
@@ -498,7 +498,7 @@ def main() -> None:
         "analysis_config": {
             "geometry_mode": args.geometry_mode,
             "geometry_seed": args.geometry_seed if args.geometry_mode == "randomized" else None,
-            "error_norm_mode": "exact_svd" if args.geometry_mode == "exact" else "power_iter_20",
+            "error_norm_mode": "exact_svd",
         },
         "aggregate": _compute_aggregate(results),
         "pairs": results,

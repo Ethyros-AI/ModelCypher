@@ -766,6 +766,13 @@ class _MLXTrainingAdapterTrainMixin:
                 online_eval_n_correct = None
                 online_eval_n_total = None
                 online_eval_degraded = None
+                online_eval_degraded_raw = None
+                online_eval_degraded_significant = None
+                online_eval_alpha = None
+                online_eval_current_ci_lower = None
+                online_eval_current_ci_upper = None
+                online_eval_baseline_ci_lower = None
+                online_eval_baseline_ci_upper = None
                 online_eval_n_lost = None
                 online_eval_n_gained = None
                 online_eval_per_type_correct = None
@@ -774,6 +781,13 @@ class _MLXTrainingAdapterTrainMixin:
                 online_eval_post_n_correct = None
                 online_eval_post_n_total = None
                 online_eval_post_degraded = None
+                online_eval_post_degraded_raw = None
+                online_eval_post_degraded_significant = None
+                online_eval_post_alpha = None
+                online_eval_post_current_ci_lower = None
+                online_eval_post_current_ci_upper = None
+                online_eval_post_baseline_ci_lower = None
+                online_eval_post_baseline_ci_upper = None
                 online_eval_post_n_lost = None
                 online_eval_post_n_gained = None
                 online_eval_post_per_type_correct = None
@@ -782,6 +796,13 @@ class _MLXTrainingAdapterTrainMixin:
                 online_eval_stop_basis_n_correct = None
                 online_eval_stop_basis_n_total = None
                 online_eval_stop_basis_degraded = None
+                online_eval_stop_basis_degraded_raw = None
+                online_eval_stop_basis_degraded_significant = None
+                online_eval_stop_basis_alpha = None
+                online_eval_stop_basis_current_ci_lower = None
+                online_eval_stop_basis_current_ci_upper = None
+                online_eval_stop_basis_baseline_ci_lower = None
+                online_eval_stop_basis_baseline_ci_upper = None
                 online_eval_stop_basis_stage = research_online_eval_stop_stage
                 gate_confound_event = False
                 eval_result = None
@@ -806,6 +827,13 @@ class _MLXTrainingAdapterTrainMixin:
                     online_eval_n_correct = eval_result.n_correct
                     online_eval_n_total = eval_result.n_total
                     online_eval_degraded = eval_result.degraded
+                    online_eval_degraded_raw = eval_result.degraded_raw
+                    online_eval_degraded_significant = eval_result.degraded_significant
+                    online_eval_alpha = eval_result.alpha
+                    online_eval_current_ci_lower = eval_result.current_ci_lower
+                    online_eval_current_ci_upper = eval_result.current_ci_upper
+                    online_eval_baseline_ci_lower = eval_result.baseline_ci_lower
+                    online_eval_baseline_ci_upper = eval_result.baseline_ci_upper
                     online_eval_n_lost = eval_result.n_lost
                     online_eval_n_gained = eval_result.n_gained
                     online_eval_per_type_correct = dict(eval_result.per_type_correct)
@@ -814,6 +842,15 @@ class _MLXTrainingAdapterTrainMixin:
                     online_eval_stop_basis_n_correct = online_eval_n_correct
                     online_eval_stop_basis_n_total = online_eval_n_total
                     online_eval_stop_basis_degraded = online_eval_degraded
+                    online_eval_stop_basis_degraded_raw = online_eval_degraded_raw
+                    online_eval_stop_basis_degraded_significant = (
+                        online_eval_degraded_significant
+                    )
+                    online_eval_stop_basis_alpha = online_eval_alpha
+                    online_eval_stop_basis_current_ci_lower = online_eval_current_ci_lower
+                    online_eval_stop_basis_current_ci_upper = online_eval_current_ci_upper
+                    online_eval_stop_basis_baseline_ci_lower = online_eval_baseline_ci_lower
+                    online_eval_stop_basis_baseline_ci_upper = online_eval_baseline_ci_upper
 
                 # 5c. REINFORCE outcome training (optional)
                 outcome_n_problems_epoch = None
@@ -1219,6 +1256,23 @@ class _MLXTrainingAdapterTrainMixin:
                         online_eval_post_n_correct = post_eval_result.n_correct
                         online_eval_post_n_total = post_eval_result.n_total
                         online_eval_post_degraded = post_eval_result.degraded
+                        online_eval_post_degraded_raw = post_eval_result.degraded_raw
+                        online_eval_post_degraded_significant = (
+                            post_eval_result.degraded_significant
+                        )
+                        online_eval_post_alpha = post_eval_result.alpha
+                        online_eval_post_current_ci_lower = (
+                            post_eval_result.current_ci_lower
+                        )
+                        online_eval_post_current_ci_upper = (
+                            post_eval_result.current_ci_upper
+                        )
+                        online_eval_post_baseline_ci_lower = (
+                            post_eval_result.baseline_ci_lower
+                        )
+                        online_eval_post_baseline_ci_upper = (
+                            post_eval_result.baseline_ci_upper
+                        )
                         online_eval_post_n_lost = post_eval_result.n_lost
                         online_eval_post_n_gained = post_eval_result.n_gained
                         online_eval_post_per_type_correct = dict(
@@ -1232,13 +1286,14 @@ class _MLXTrainingAdapterTrainMixin:
                                 post_eval_result.n_correct - online_eval_n_correct
                             )
                             outcome_post_eval_degraded_epoch = (
-                                post_eval_result.n_correct < online_eval_n_correct
+                                post_eval_result.degraded_significant
                             )
                         else:
                             outcome_post_eval_delta_correct_epoch = None
                             outcome_post_eval_degraded_epoch = None
                         logger.info(
-                            "Post-RE online eval: %d/%d (%.1f%%), Δcorrect=%s vs pre-RE",
+                            "Post-RE online eval: %d/%d (%.1f%%), Δcorrect=%s vs pre-RE, "
+                            "degraded_raw=%s degraded_significant=%s",
                             post_eval_result.n_correct,
                             post_eval_result.n_total,
                             post_eval_result.accuracy * 100,
@@ -1247,13 +1302,14 @@ class _MLXTrainingAdapterTrainMixin:
                                 if outcome_post_eval_delta_correct_epoch is not None
                                 else "n/a"
                             ),
+                            post_eval_result.degraded_raw,
+                            post_eval_result.degraded_significant,
                         )
 
                         # Rollback: restore pre-REINFORCE params on degradation
                         if (outcome_rollback_on_degradation
                                 and pre_reinforce_params is not None
-                                and outcome_post_eval_delta_correct_epoch is not None
-                                and outcome_post_eval_delta_correct_epoch < 0):
+                                and post_eval_result.degraded_significant):
                             model.update(mlx_unflatten(pre_reinforce_params))
                             mx.eval(model.trainable_parameters())
                             outcome_rollback_performed = True
@@ -1261,9 +1317,13 @@ class _MLXTrainingAdapterTrainMixin:
                             n_outcome_steps = 0
                             outcome_n_steps_epoch = 0
                             logger.info(
-                                "REINFORCE ROLLBACK: Δcorrect=%d, "
-                                "restored pre-RE parameters",
-                                outcome_post_eval_delta_correct_epoch,
+                                "REINFORCE ROLLBACK: significant post-RE degradation "
+                                "(raw Δcorrect=%s), restored pre-RE parameters",
+                                (
+                                    f"{outcome_post_eval_delta_correct_epoch:+d}"
+                                    if outcome_post_eval_delta_correct_epoch is not None
+                                    else "n/a"
+                                ),
                             )
                 elif outcome_training and tokenizer is not None:
                     outcome_n_problems_epoch = 0
@@ -1277,6 +1337,25 @@ class _MLXTrainingAdapterTrainMixin:
                         online_eval_stop_basis_n_correct = online_eval_post_n_correct
                         online_eval_stop_basis_n_total = online_eval_post_n_total
                         online_eval_stop_basis_degraded = online_eval_post_degraded
+                        online_eval_stop_basis_degraded_raw = (
+                            online_eval_post_degraded_raw
+                        )
+                        online_eval_stop_basis_degraded_significant = (
+                            online_eval_post_degraded_significant
+                        )
+                        online_eval_stop_basis_alpha = online_eval_post_alpha
+                        online_eval_stop_basis_current_ci_lower = (
+                            online_eval_post_current_ci_lower
+                        )
+                        online_eval_stop_basis_current_ci_upper = (
+                            online_eval_post_current_ci_upper
+                        )
+                        online_eval_stop_basis_baseline_ci_lower = (
+                            online_eval_post_baseline_ci_lower
+                        )
+                        online_eval_stop_basis_baseline_ci_upper = (
+                            online_eval_post_baseline_ci_upper
+                        )
                         online_eval_stop_basis_stage = "post_outcome"
                     else:
                         online_eval_stop_basis_stage = "pre_outcome_fallback"
@@ -1326,10 +1405,24 @@ class _MLXTrainingAdapterTrainMixin:
                     online_eval_n_correct=online_eval_n_correct,
                     online_eval_n_total=online_eval_n_total,
                     online_eval_degraded=online_eval_degraded,
+                    online_eval_degraded_raw=online_eval_degraded_raw,
+                    online_eval_degraded_significant=online_eval_degraded_significant,
+                    online_eval_alpha=online_eval_alpha,
+                    online_eval_current_ci_lower=online_eval_current_ci_lower,
+                    online_eval_current_ci_upper=online_eval_current_ci_upper,
+                    online_eval_baseline_ci_lower=online_eval_baseline_ci_lower,
+                    online_eval_baseline_ci_upper=online_eval_baseline_ci_upper,
                     online_eval_pre_accuracy=online_eval_acc,
                     online_eval_pre_n_correct=online_eval_n_correct,
                     online_eval_pre_n_total=online_eval_n_total,
                     online_eval_pre_degraded=online_eval_degraded,
+                    online_eval_pre_degraded_raw=online_eval_degraded_raw,
+                    online_eval_pre_degraded_significant=online_eval_degraded_significant,
+                    online_eval_pre_alpha=online_eval_alpha,
+                    online_eval_pre_current_ci_lower=online_eval_current_ci_lower,
+                    online_eval_pre_current_ci_upper=online_eval_current_ci_upper,
+                    online_eval_pre_baseline_ci_lower=online_eval_baseline_ci_lower,
+                    online_eval_pre_baseline_ci_upper=online_eval_baseline_ci_upper,
                     online_eval_pre_n_lost=online_eval_n_lost,
                     online_eval_pre_n_gained=online_eval_n_gained,
                     online_eval_pre_per_type_correct=online_eval_per_type_correct,
@@ -1338,6 +1431,13 @@ class _MLXTrainingAdapterTrainMixin:
                     online_eval_post_n_correct=online_eval_post_n_correct,
                     online_eval_post_n_total=online_eval_post_n_total,
                     online_eval_post_degraded=online_eval_post_degraded,
+                    online_eval_post_degraded_raw=online_eval_post_degraded_raw,
+                    online_eval_post_degraded_significant=online_eval_post_degraded_significant,
+                    online_eval_post_alpha=online_eval_post_alpha,
+                    online_eval_post_current_ci_lower=online_eval_post_current_ci_lower,
+                    online_eval_post_current_ci_upper=online_eval_post_current_ci_upper,
+                    online_eval_post_baseline_ci_lower=online_eval_post_baseline_ci_lower,
+                    online_eval_post_baseline_ci_upper=online_eval_post_baseline_ci_upper,
                     online_eval_post_n_lost=online_eval_post_n_lost,
                     online_eval_post_n_gained=online_eval_post_n_gained,
                     online_eval_post_per_type_correct=online_eval_post_per_type_correct,
@@ -1346,6 +1446,23 @@ class _MLXTrainingAdapterTrainMixin:
                     online_eval_stop_basis_n_correct=online_eval_stop_basis_n_correct,
                     online_eval_stop_basis_n_total=online_eval_stop_basis_n_total,
                     online_eval_stop_basis_degraded=online_eval_stop_basis_degraded,
+                    online_eval_stop_basis_degraded_raw=online_eval_stop_basis_degraded_raw,
+                    online_eval_stop_basis_degraded_significant=(
+                        online_eval_stop_basis_degraded_significant
+                    ),
+                    online_eval_stop_basis_alpha=online_eval_stop_basis_alpha,
+                    online_eval_stop_basis_current_ci_lower=(
+                        online_eval_stop_basis_current_ci_lower
+                    ),
+                    online_eval_stop_basis_current_ci_upper=(
+                        online_eval_stop_basis_current_ci_upper
+                    ),
+                    online_eval_stop_basis_baseline_ci_lower=(
+                        online_eval_stop_basis_baseline_ci_lower
+                    ),
+                    online_eval_stop_basis_baseline_ci_upper=(
+                        online_eval_stop_basis_baseline_ci_upper
+                    ),
                     online_eval_stop_basis_stage=online_eval_stop_basis_stage,
                     gate_confound_event=gate_confound_event,
                     outcome_n_problems=outcome_n_problems_epoch,
@@ -1668,7 +1785,7 @@ class _MLXTrainingAdapterTrainMixin:
                 # 7c. Online eval degradation stop
                 if online_eval_stop_basis_degraded:
                     stop_reason = (
-                        f"online_eval_degraded ("
+                        f"online_eval_degraded_significant ("
                         f"stage={online_eval_stop_basis_stage}, "
                         f"{online_eval_stop_basis_n_correct}/{online_eval_stop_basis_n_total} correct, "
                         f"epoch={epoch_num})"

@@ -225,6 +225,8 @@ def run_experiment(exp_name: str) -> None:
                     "n_correct": m.get("online_eval_n_correct"),
                     "n_total": m.get("online_eval_n_total"),
                     "degraded": m.get("online_eval_degraded"),
+                    "degraded_raw": m.get("online_eval_degraded_raw"),
+                    "degraded_significant": m.get("online_eval_degraded_significant"),
                 }
                 online_eval_history.append(entry)
                 log.info(

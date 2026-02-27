@@ -69,19 +69,26 @@ class TestEvaluateCorrectness:
         assert "p1" in result.correct_ids
         assert "p2" not in result.correct_ids
         assert result.degraded is False  # baseline can't be degraded
+        assert result.degraded_raw is False
+        assert result.degraded_significant is False
+        assert result.degraded == result.degraded_significant
+        assert result.alpha == pytest.approx(0.5)
         assert result.n_lost == 0
         assert result.n_gained == 0
 
-    def test_degradation_detected(self):
-        """When fewer problems are correct than baseline, degraded=True."""
-        problems = [
-            _make_problem("p1", "yes"),
-            _make_problem("p2", "no"),
-        ]
-        baseline_ids = frozenset(["p1", "p2"])  # pretend both were correct
+    def test_degradation_detected_when_significant(self):
+        """Large drops should be significant under CP non-overlap."""
+        problems = [_make_problem(f"p{i}", "yes") for i in range(25)]
+        baseline_ids = frozenset(f"p{i}" for i in range(24))
+
+        call_count = [0]
 
         def gen_fn(prompt, max_tokens):
-            return "yes"  # only p1 will match
+            idx = call_count[0]
+            call_count[0] += 1
+            if idx < 10:
+                return "yes"
+            return "no"
 
         result = evaluate_correctness(
             problems=problems,
@@ -91,11 +98,40 @@ class TestEvaluateCorrectness:
             max_tokens=_TEST_MAX_TOKENS,
         )
 
+        assert result.degraded_raw is True
+        assert result.degraded_significant is True
         assert result.degraded is True
-        assert result.n_correct == 1
-        assert result.baseline_n_correct == 2
-        assert result.n_lost == 1  # p2 was correct at baseline, wrong now
-        assert result.n_gained == 0
+        assert result.degraded == result.degraded_significant
+        assert result.n_correct == 10
+        assert result.baseline_n_correct == 24
+
+    def test_degradation_raw_drop_not_significant_for_24_to_21_of_25(self):
+        problems = [_make_problem(f"p{i}", "yes") for i in range(25)]
+        baseline_ids = frozenset(f"p{i}" for i in range(24))
+
+        call_count = [0]
+
+        def gen_fn(prompt, max_tokens):
+            idx = call_count[0]
+            call_count[0] += 1
+            if idx < 21:
+                return "yes"
+            return "no"
+
+        result = evaluate_correctness(
+            problems=problems,
+            generate_fn=gen_fn,
+            epoch=1,
+            baseline_correct_ids=baseline_ids,
+            max_tokens=_TEST_MAX_TOKENS,
+        )
+
+        assert result.n_correct == 21
+        assert result.baseline_n_correct == 24
+        assert result.degraded_raw is True
+        assert result.degraded_significant is False
+        assert result.degraded is False
+        assert result.degraded == result.degraded_significant
 
     def test_improvement_detected(self):
         """When more problems are correct than baseline, degraded=False."""
@@ -117,6 +153,9 @@ class TestEvaluateCorrectness:
         )
 
         assert result.degraded is False
+        assert result.degraded_raw is False
+        assert result.degraded_significant is False
+        assert result.degraded == result.degraded_significant
         assert result.n_correct == 2
         assert result.baseline_n_correct == 1
         assert result.n_gained == 1  # p2 newly correct
@@ -162,17 +201,16 @@ class TestEvaluateCorrectness:
         assert result.n_correct == 0
         assert result.n_total == 1
 
-    def test_exact_set_comparison_no_statistics(self):
-        """Degradation is exact (n_correct < baseline_n), not statistical."""
-        problems = [_make_problem(f"p{i}", "yes") for i in range(10)]
-        baseline_ids = frozenset(f"p{i}" for i in range(10))
+    def test_exact_set_drop_tracks_raw_but_not_significance(self):
+        """A one-problem drop is recorded in raw counters even if not significant."""
+        problems = [_make_problem(f"p{i}", "yes") for i in range(25)]
+        baseline_ids = frozenset(f"p{i}" for i in range(25))
 
         call_count = [0]
 
         def gen_fn(prompt, max_tokens):
             call_count[0] += 1
-            # Miss exactly one problem
-            if call_count[0] == 5:
+            if call_count[0] == 22:
                 return "no"
             return "yes"
 
@@ -184,9 +222,10 @@ class TestEvaluateCorrectness:
             max_tokens=_TEST_MAX_TOKENS,
         )
 
-        # Even one lost problem = degraded (deterministic, no CI)
-        assert result.degraded is True
         assert result.n_lost == 1
+        assert result.degraded_raw is True
+        assert result.degraded_significant is False
+        assert result.degraded is False
 
 
 class TestOnlineEvalResult:
@@ -203,9 +242,19 @@ class TestOnlineEvalResult:
             n_lost=1,
             n_gained=0,
             degraded=True,
+            degraded_raw=True,
+            degraded_significant=True,
+            alpha=0.2,
+            current_ci_lower=0.3,
+            current_ci_upper=0.7,
+            baseline_ci_lower=0.4,
+            baseline_ci_upper=0.8,
         )
         d = result.to_dict()
         assert d["epoch"] == 1
         assert d["accuracy"] == 0.5
         assert d["degraded"] is True
+        assert d["degraded_raw"] is True
+        assert d["degraded_significant"] is True
+        assert d["alpha"] == pytest.approx(0.2)
         assert d["n_lost"] == 1

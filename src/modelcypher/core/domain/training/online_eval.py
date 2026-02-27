@@ -17,15 +17,14 @@
 
 """Online correctness evaluation during training.
 
-Replaces the lying proxies (PPL, CKA, budget) with actual inference
-correctness measurement. Generates greedy completions, verifies them
-via deterministic verifiers, and reports exact counts.
+Replaces proxy metrics with direct inference correctness measurements.
+Generates greedy completions, verifies them via deterministic verifiers,
+and reports count-level outcomes plus Clopper-Pearson uncertainty bounds.
 
-Greedy decoding is deterministic. Same model + same prompt = same output.
-There is no sampling variability. If accuracy drops by even one problem,
-that is a real, measured change — not noise. No statistical tests needed.
-
-This is Layer 1 of the outcome-based training objective.
+Greedy decoding remains deterministic for a fixed model state and prompt.
+The degradation gate is significance-based: a raw count drop is only treated
+as degradation when the current Clopper-Pearson upper bound is strictly below
+the baseline lower bound.
 """
 
 from __future__ import annotations
@@ -33,6 +32,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
+from modelcypher.core.domain.statistics import (
+    binomial_degradation_is_significant,
+    clopper_pearson_interval,
+)
 from modelcypher.core.domain.star.problem_generator import StarProblem
 
 logger = logging.getLogger(__name__)
@@ -40,12 +43,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class OnlineEvalResult:
-    """Result of online correctness evaluation at an epoch boundary.
-
-    Greedy decoding is deterministic: same model state + same prompt =
-    same output. The accuracy measurement is exact, not a sample estimate.
-    Degradation is measured by direct count comparison to baseline.
-    """
+    """Result of online correctness evaluation at an epoch boundary."""
 
     epoch: int
     accuracy: float
@@ -56,13 +54,20 @@ class OnlineEvalResult:
     baseline_accuracy: float
     n_lost: int             # problems correct at baseline, wrong now
     n_gained: int           # problems wrong at baseline, correct now
-    degraded: bool          # n_correct < baseline_n_correct
+    degraded: bool          # significance-based degradation decision
     per_type_accuracy: dict[str, float] = field(default_factory=dict)
     per_type_correct: dict[str, int] = field(default_factory=dict)
     per_type_total: dict[str, int] = field(default_factory=dict)
+    alpha: float | None = None
+    current_ci_lower: float | None = None
+    current_ci_upper: float | None = None
+    baseline_ci_lower: float | None = None
+    baseline_ci_upper: float | None = None
+    degraded_raw: bool = False
+    degraded_significant: bool = False
 
     def to_dict(self) -> dict:
-        return {
+        payload = {
             "epoch": self.epoch,
             "accuracy": self.accuracy,
             "n_correct": self.n_correct,
@@ -72,10 +77,19 @@ class OnlineEvalResult:
             "n_lost": self.n_lost,
             "n_gained": self.n_gained,
             "degraded": self.degraded,
+            "degraded_raw": self.degraded_raw,
+            "degraded_significant": self.degraded_significant,
             "per_type_accuracy": dict(self.per_type_accuracy),
             "per_type_correct": dict(self.per_type_correct),
             "per_type_total": dict(self.per_type_total),
         }
+        if self.alpha is not None:
+            payload["alpha"] = self.alpha
+            payload["current_ci_lower"] = self.current_ci_lower
+            payload["current_ci_upper"] = self.current_ci_upper
+            payload["baseline_ci_lower"] = self.baseline_ci_lower
+            payload["baseline_ci_upper"] = self.baseline_ci_upper
+        return payload
 
 
 def evaluate_correctness(
@@ -88,8 +102,8 @@ def evaluate_correctness(
 ) -> OnlineEvalResult:
     """Evaluate model correctness on a set of problems.
 
-    Greedy decoding is deterministic — the accuracy measurement is exact.
-    Degradation = ``n_correct < len(baseline_correct_ids)``.
+    Greedy decoding is deterministic for fixed model state and prompt.
+    Degradation is significance-based using exact Clopper-Pearson intervals.
 
     For baseline measurement, pass ``baseline_correct_ids=None``.
     The returned ``correct_ids`` can then be used as the baseline for
@@ -156,6 +170,39 @@ def evaluate_correctness(
         gained = frozenset()
 
     baseline_acc = baseline_n / n_total if n_total > 0 else 0.0
+    degraded_raw = (n_correct < baseline_n) if baseline_correct_ids is not None else False
+
+    alpha = (1.0 / float(n_total)) if n_total > 1 else None
+    current_ci_lower = None
+    current_ci_upper = None
+    baseline_ci_lower = None
+    baseline_ci_upper = None
+    degraded_significant = False
+
+    if alpha is not None:
+        if baseline_correct_ids is not None:
+            degraded_significant, current_ci, baseline_ci = (
+                binomial_degradation_is_significant(
+                    baseline_n_correct=baseline_n,
+                    current_n_correct=n_correct,
+                    n_total=n_total,
+                    alpha=alpha,
+                )
+            )
+            current_ci_lower, current_ci_upper = current_ci
+            baseline_ci_lower, baseline_ci_upper = baseline_ci
+        else:
+            current_ci = clopper_pearson_interval(
+                n_correct=n_correct, n_total=n_total, alpha=alpha,
+            )
+            baseline_ci = clopper_pearson_interval(
+                n_correct=baseline_n, n_total=n_total, alpha=alpha,
+            )
+            current_ci_lower, current_ci_upper = current_ci
+            baseline_ci_lower, baseline_ci_upper = baseline_ci
+    elif baseline_correct_ids is not None:
+        # n_total <= 1: CP alpha=1/n is undefined; fall back to exact raw count.
+        degraded_significant = degraded_raw
 
     # Per-type accuracy
     per_type_acc = {}
@@ -173,18 +220,35 @@ def evaluate_correctness(
         baseline_accuracy=baseline_acc,
         n_lost=len(lost),
         n_gained=len(gained),
-        degraded=(n_correct < baseline_n) if baseline_correct_ids is not None else False,
+        degraded=degraded_significant,
         per_type_accuracy=per_type_acc,
         per_type_correct=type_correct,
         per_type_total=type_total,
+        alpha=alpha,
+        current_ci_lower=current_ci_lower,
+        current_ci_upper=current_ci_upper,
+        baseline_ci_lower=baseline_ci_lower,
+        baseline_ci_upper=baseline_ci_upper,
+        degraded_raw=degraded_raw,
+        degraded_significant=degraded_significant,
     )
 
     logger.info(
         "Online eval epoch %d: %d/%d correct (%.1f%%), "
-        "baseline=%d/%d, lost=%d, gained=%d, degraded=%s",
+        "baseline=%d/%d, lost=%d, gained=%d, degraded_raw=%s, degraded_significant=%s",
         epoch, n_correct, n_total, accuracy * 100,
-        baseline_n, n_total, len(lost), len(gained), result.degraded,
+        baseline_n, n_total, len(lost), len(gained),
+        result.degraded_raw, result.degraded_significant,
     )
+    if result.alpha is not None:
+        logger.info(
+            "  CI(alpha=%.6f): current=[%.4f, %.4f], baseline=[%.4f, %.4f]",
+            result.alpha,
+            result.current_ci_lower or 0.0,
+            result.current_ci_upper or 0.0,
+            result.baseline_ci_lower or 0.0,
+            result.baseline_ci_upper or 0.0,
+        )
     for ptype in sorted(per_type_acc):
         logger.info(
             "  %s: %d/%d (%.1f%%)",

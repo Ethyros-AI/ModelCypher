@@ -41,7 +41,6 @@ import gc
 import json
 import logging
 import math
-import random
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -49,6 +48,7 @@ from typing import Any
 
 import mlx.core as mx
 import mlx.nn as nn
+from scipy.stats import spearmanr
 
 logging.basicConfig(
     level=logging.INFO,
@@ -67,6 +67,11 @@ DEFAULT_EVAL = "data/training/benchmark_val.jsonl"
 PROJ_NAMES_ATTN = ("q_proj", "k_proj", "v_proj", "o_proj")
 PROJ_NAMES_MLP = ("up_proj", "down_proj", "gate_proj")
 ALL_PROJ_NAMES = PROJ_NAMES_ATTN + PROJ_NAMES_MLP
+TEST_PROMPTS = [
+    "Explain what a prime number is.",
+    "What causes the seasons on Earth?",
+    "Describe how a binary search works.",
+]
 
 
 # ── Utilities ────────────────────────────────────────────────────────────
@@ -96,6 +101,70 @@ def _load_eval_texts(dataset_path: str, n_samples: int) -> list[str]:
                 except json.JSONDecodeError:
                     continue
     return texts[:n_samples]
+
+
+def _evaluate_ppl_inplace(
+    model: Any, tokenizer: Any, texts: list[str], backend: Any,
+) -> dict[str, float]:
+    """Compute perplexity on an in-memory model (no disk load)."""
+    total_loss = 0.0
+    total_tokens = 0
+    for text in texts:
+        tokens = tokenizer.encode(text)
+        if len(tokens) < 2:
+            continue
+        tokens_arr = backend.array(tokens)
+        input_arr = backend.reshape(tokens_arr, (1, -1))
+        logits = model(input_arr)
+        logits = logits[0, :-1, :]
+        targets = tokens_arr[1:]
+        log_scores = backend.log_softmax(logits, axis=-1)
+        targets_expanded = backend.reshape(targets, (-1, 1))
+        target_log_scores = backend.take_along_axis(
+            log_scores, targets_expanded, axis=-1,
+        )
+        target_log_scores = backend.squeeze(target_log_scores, axis=-1)
+        backend.eval(target_log_scores)
+        mean_arr = backend.mean(target_log_scores)
+        backend.eval(mean_arr)
+        sample_loss = -float(backend.to_scalar(mean_arr))
+        n_targets = int(targets.shape[0])
+        total_loss += sample_loss * n_targets
+        total_tokens += n_targets
+    avg_loss = total_loss / max(total_tokens, 1)
+    ppl_arr = backend.exp(backend.array([avg_loss]))
+    backend.eval(ppl_arr)
+    return {
+        "average_loss": avg_loss,
+        "perplexity": float(backend.to_scalar(ppl_arr)),
+        "n_tokens": total_tokens,
+    }
+
+
+def _fourgram_repetition_rate(text: str) -> float:
+    """Fraction of 4-grams in text that are repeated."""
+    # TODO(jk): derive n-gram window from measured trajectory geometry instead
+    # of fixing n=4.
+    words = text.split()
+    if len(words) < 4:
+        return 0.0
+    ngrams = [tuple(words[i : i + 4]) for i in range(len(words) - 3)]
+    if not ngrams:
+        return 0.0
+    unique = len(set(ngrams))
+    return 1.0 - unique / len(ngrams)
+
+
+def _generate_responses(
+    model: Any, tokenizer: Any, prompts: list[str], backend: Any,
+    max_tokens: int = 256,
+) -> list[str]:
+    """Generate responses from an in-memory model."""
+    responses = []
+    for prompt in prompts:
+        resp = backend.generate(model, tokenizer, prompt, max_tokens)
+        responses.append(resp)
+    return responses
 
 
 # ── CKA measurement (reused pattern from stacked_corrective_recovery) ───
@@ -245,9 +314,13 @@ def _correct_projection(
     E_proj = E @ V_k  # [out, k]
     Delta = E_proj @ V_k.T  # [out, in]
     mx.eval(Delta)
+    E_unused = E - Delta
+    mx.eval(E_unused)
 
     Delta_frob_sq = float(mx.sum(Delta * Delta).item())
+    E_unused_frob_sq = float(mx.sum(E_unused * E_unused).item())
     correction_fraction = Delta_frob_sq / E_frob_sq
+    unused_fraction = E_unused_frob_sq / E_frob_sq
 
     # Apply correction
     corrected = q_w + Delta
@@ -257,16 +330,26 @@ def _correct_projection(
     # Residual after correction
     residual = fp_w_f32 - corrected
     residual_frob = float(mx.sqrt(mx.sum(residual * residual)).item())
+    reconstruction = Delta + E_unused
+    recon_error = E - reconstruction
+    recon_error_frob = float(mx.sqrt(mx.sum(recon_error * recon_error)).item())
 
     result = {
         "layer_key": key,
         "error_frob": math.sqrt(E_frob_sq),
         "delta_frob": math.sqrt(Delta_frob_sq),
+        "E_total_frob": math.sqrt(E_frob_sq),
+        "E_used_frob": math.sqrt(Delta_frob_sq),
+        "E_unused_frob": math.sqrt(E_unused_frob_sq),
         "correction_fraction": correction_fraction,
+        "E_used_fraction": correction_fraction,
+        "E_unused_fraction": unused_fraction,
+        "decomposition_reconstruction_error_frob": recon_error_frob,
         "residual_frob": residual_frob,
     }
 
-    del E, E_proj, Delta, corrected, q_w, fp_w_f32, residual
+    del E, E_proj, Delta, E_unused, corrected, q_w, fp_w_f32, residual
+    del reconstruction, recon_error
     return result
 
 
@@ -277,6 +360,10 @@ def _correct_layer(
     eigvecs: mx.array,
     eigvals: mx.array,
     k: int,
+    *,
+    target_layer_idx: int | None = None,
+    apply_renoise: bool = False,
+    renoise_seed: int = 0,
 ) -> list[dict[str, Any]]:
     """Apply closed-form correction to projections in a layer.
 
@@ -294,6 +381,18 @@ def _correct_layer(
     """
     V_k = eigvecs[:, :k]  # [D, k]
     stats: list[dict[str, Any]] = []
+    if target_layer_idx is not None and layer_idx != target_layer_idx:
+        return stats
+
+    D = int(eigvecs.shape[0])
+    if apply_renoise:
+        mx.random.seed(renoise_seed + layer_idx)
+        eye = mx.eye(D, dtype=mx.float32)
+        proj_used = V_k @ V_k.T
+        proj_unused = eye - proj_used
+        mx.eval(proj_unused)
+    else:
+        proj_unused = None
 
     # Projections whose input is h (or a norm of h — same subspace)
     h_input_projs = {
@@ -317,18 +416,36 @@ def _correct_layer(
             key = f"model.layers.{layer_idx}.{block_name}.{proj_name}.weight"
             result = _correct_projection(proj, key, fp_weights, V_k, k)
             if result is not None:
+                if apply_renoise and proj_unused is not None:
+                    w = proj.weight.astype(mx.float32)
+                    if int(w.shape[1]) == D:
+                        g = mx.random.normal(shape=w.shape).astype(mx.float32)
+                        noise = g @ proj_unused
+                        noise_norm_sq = float(mx.sum(noise * noise).item())
+                        target_norm = float(result.get("E_unused_frob", 0.0))
+                        if noise_norm_sq > 0.0 and target_norm > 0.0:
+                            noise = noise * (target_norm / math.sqrt(noise_norm_sq))
+                            w = w + noise
+                            mx.eval(w)
+                            proj.weight = w.astype(proj.weight.dtype)
+                            result["renoise_frob"] = target_norm
+                        else:
+                            result["renoise_frob"] = 0.0
+                    else:
+                        result["renoise_frob"] = 0.0
                 stats.append(result)
 
     # Log skipped projections
-    for block_name, proj_names in skipped_projs.items():
-        for proj_name in proj_names:
-            key = f"model.layers.{layer_idx}.{block_name}.{proj_name}.weight"
-            if key in fp_weights:
-                stats.append({
-                    "layer_key": key,
-                    "skipped": True,
-                    "reason": "input_space_mismatch",
-                })
+    if target_layer_idx is None:
+        for block_name, proj_names in skipped_projs.items():
+            for proj_name in proj_names:
+                key = f"model.layers.{layer_idx}.{block_name}.{proj_name}.weight"
+                if key in fp_weights:
+                    stats.append({
+                        "layer_key": key,
+                        "skipped": True,
+                        "reason": "input_space_mismatch",
+                    })
 
     return stats
 
@@ -341,6 +458,10 @@ def _run_sequential_correction(
     rank_multiplier: float,
     n_samples: int,
     max_len: int,
+    *,
+    target_layer_idx: int | None = None,
+    apply_renoise: bool = False,
+    renoise_seed: int = 0,
 ) -> dict[str, Any]:
     """Run closed-form sequential correction at a given rank multiplier.
 
@@ -381,6 +502,10 @@ def _run_sequential_correction(
 
     per_layer_results: list[dict[str, Any]] = []
     total_corrected = 0
+    total_e_sq = 0.0
+    total_used_sq = 0.0
+    total_unused_sq = 0.0
+    total_recon_error_sq = 0.0
 
     for layer_idx, layer in enumerate(base.layers):
         layer_start = time.monotonic()
@@ -423,6 +548,9 @@ def _run_sequential_correction(
         # Apply correction
         proj_stats = _correct_layer(
             layer, layer_idx, fp_weights, eigvecs, eigvals, k,
+            target_layer_idx=target_layer_idx,
+            apply_renoise=apply_renoise,
+            renoise_seed=renoise_seed,
         )
         total_corrected += sum(1 for s in proj_stats if not s.get("skipped"))
 
@@ -434,6 +562,17 @@ def _run_sequential_correction(
 
         corrected_stats = [s for s in proj_stats if not s.get("skipped")]
         skipped_stats = [s for s in proj_stats if s.get("skipped")]
+        layer_e_sq = sum(float(s.get("E_total_frob", 0.0)) ** 2 for s in corrected_stats)
+        layer_used_sq = sum(float(s.get("E_used_frob", 0.0)) ** 2 for s in corrected_stats)
+        layer_unused_sq = sum(float(s.get("E_unused_frob", 0.0)) ** 2 for s in corrected_stats)
+        layer_recon_error_sq = sum(
+            float(s.get("decomposition_reconstruction_error_frob", 0.0)) ** 2
+            for s in corrected_stats
+        )
+        total_e_sq += layer_e_sq
+        total_used_sq += layer_used_sq
+        total_unused_sq += layer_unused_sq
+        total_recon_error_sq += layer_recon_error_sq
 
         per_layer_results.append({
             "layer_idx": layer_idx,
@@ -449,6 +588,14 @@ def _run_sequential_correction(
                 / len(corrected_stats)
                 if corrected_stats else 0.0
             ),
+            "E_total_frob": math.sqrt(layer_e_sq),
+            "E_used_frob": math.sqrt(layer_used_sq),
+            "E_unused_frob": math.sqrt(layer_unused_sq),
+            "E_used_fraction": (layer_used_sq / layer_e_sq) if layer_e_sq > 0.0 else 0.0,
+            "E_unused_fraction": (
+                (layer_unused_sq / layer_e_sq) if layer_e_sq > 0.0 else 0.0
+            ),
+            "decomposition_reconstruction_error_frob": math.sqrt(layer_recon_error_sq),
             "time_seconds": layer_time,
         })
 
@@ -470,8 +617,91 @@ def _run_sequential_correction(
     return {
         "rank_multiplier": rank_multiplier,
         "n_layers": n_layers,
+        "target_layer_idx": target_layer_idx,
+        "apply_renoise": apply_renoise,
         "n_projections_corrected": total_corrected,
+        "decomposition": {
+            "E_total_frob": math.sqrt(total_e_sq),
+            "E_used_frob": math.sqrt(total_used_sq),
+            "E_unused_frob": math.sqrt(total_unused_sq),
+            "E_used_fraction": (total_used_sq / total_e_sq) if total_e_sq > 0.0 else 0.0,
+            "E_unused_fraction": (
+                (total_unused_sq / total_e_sq) if total_e_sq > 0.0 else 0.0
+            ),
+            "decomposition_reconstruction_error_frob": math.sqrt(total_recon_error_sq),
+        },
         "per_layer": per_layer_results,
+    }
+
+
+def _measure_eval_bundle(
+    *,
+    model: Any,
+    tokenizer: Any,
+    backend: Any,
+    eval_texts: list[str],
+    fp_acts: dict[int, list],
+    n_cka_samples: int,
+) -> dict[str, Any]:
+    acts = _collect_activations(
+        model,
+        tokenizer,
+        eval_texts,
+        backend,
+        n_samples=n_cka_samples,
+    )
+    cka = _compute_cka(fp_acts, acts, backend)
+    del acts
+    ppl = _evaluate_ppl_inplace(model, tokenizer, eval_texts, backend)
+    responses = _generate_responses(model, tokenizer, TEST_PROMPTS, backend, max_tokens=256)
+    repeat_rates = [_fourgram_repetition_rate(r) for r in responses]
+    max_repeat = max(repeat_rates) if repeat_rates else 0.0
+    mean_repeat = sum(repeat_rates) / len(repeat_rates) if repeat_rates else 0.0
+    return {
+        "cka": cka,
+        "ppl": ppl,
+        "degeneration": {
+            "max_4gram_repeat": max_repeat,
+            "mean_4gram_repeat": mean_repeat,
+            "responses": responses,
+        },
+    }
+
+
+def _compute_layer_repeat_correlation(
+    *,
+    decomposition_layers: list[dict[str, Any]],
+    interventions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    intervention_by_layer = {
+        int(item["layer_idx"]): item for item in interventions
+    }
+    x_vals: list[float] = []
+    y_vals: list[float] = []
+    used_layers: list[int] = []
+    for layer in decomposition_layers:
+        layer_idx = int(layer["layer_idx"])
+        intervention = intervention_by_layer.get(layer_idx)
+        if intervention is None:
+            continue
+        x_vals.append(float(layer.get("E_unused_frob", 0.0)))
+        y_vals.append(float(intervention.get("delta_max_4gram_repeat", 0.0)))
+        used_layers.append(layer_idx)
+    if len(x_vals) < 2:
+        return {
+            "n_layers": len(x_vals),
+            "spearman_rho": None,
+            "p_value": None,
+            "layers": used_layers,
+        }
+    rho, p_value = spearmanr(x_vals, y_vals)
+    rho_val = float(rho) if rho == rho else None
+    p_val = float(p_value) if p_value == p_value else None
+    return {
+        "n_layers": len(x_vals),
+        "spearman_rho": rho_val,
+        "p_value": p_val,
+        "layers": used_layers,
     }
 
 
@@ -613,17 +843,22 @@ def main():
         logger.info("Loading quantized model (fresh copy)...")
         q_model, q_tokenizer = backend.load_model(args.quantized_model)
 
-        # Collect quantized activations for CKA baseline
-        logger.info("Collecting quantized baseline activations...")
-        q_acts_before = _collect_activations(
-            q_model, q_tokenizer, eval_texts, backend, n_samples=args.n_cka_samples,
+        logger.info("Measuring quantized baseline metrics...")
+        baseline_bundle = _measure_eval_bundle(
+            model=q_model,
+            tokenizer=q_tokenizer,
+            backend=backend,
+            eval_texts=eval_texts,
+            fp_acts=fp_acts,
+            n_cka_samples=args.n_cka_samples,
         )
-        baseline_cka = _compute_cka(fp_acts, q_acts_before, backend)
+        baseline_cka = baseline_bundle["cka"]
+        baseline_ppl = baseline_bundle["ppl"]
+        baseline_degeneration = baseline_bundle["degeneration"]
         logger.info(
             "Baseline CKA: mean=%.4f, min=%.4f",
             baseline_cka["mean_cka"], baseline_cka["min_cka"],
         )
-        del q_acts_before
 
         # Dequantize model weights (so we can modify them)
         from modelcypher.backends.mlx_training_adapter import MLXTrainingAdapter
@@ -643,17 +878,115 @@ def main():
             max_len=args.max_seq_len,
         )
 
-        # Measure post-correction CKA
-        logger.info("Collecting post-correction activations...")
-        q_acts_after = _collect_activations(
-            q_model, q_tokenizer, eval_texts, backend, n_samples=args.n_cka_samples,
+        logger.info("Measuring post-correction metrics...")
+        post_bundle = _measure_eval_bundle(
+            model=q_model,
+            tokenizer=q_tokenizer,
+            backend=backend,
+            eval_texts=eval_texts,
+            fp_acts=fp_acts,
+            n_cka_samples=args.n_cka_samples,
         )
-        post_cka = _compute_cka(fp_acts, q_acts_after, backend)
+        post_cka = post_bundle["cka"]
+        post_ppl = post_bundle["ppl"]
+        post_degeneration = post_bundle["degeneration"]
         logger.info(
             "Post-correction CKA: mean=%.4f, min=%.4f",
             post_cka["mean_cka"], post_cka["min_cka"],
         )
-        del q_acts_after
+        logger.info("Post-correction PPL: %.4f", post_ppl["perplexity"])
+        logger.info(
+            "4-gram repetition: max=%.4f, mean=%.4f",
+            post_degeneration["max_4gram_repeat"],
+            post_degeneration["mean_4gram_repeat"],
+        )
+
+        # Controlled re-noise in unused subspace.
+        logger.info("Running controlled re-noise pass...")
+        renoise_model, renoise_tokenizer = backend.load_model(args.quantized_model)
+        renoise_adapter = MLXTrainingAdapter(backend)
+        _dequantize_model(renoise_model, renoise_adapter)
+        renoise_correction = _run_sequential_correction(
+            renoise_model,
+            fp_weights,
+            renoise_tokenizer,
+            eval_texts,
+            rank_multiplier=multiplier,
+            n_samples=args.n_calibration,
+            max_len=args.max_seq_len,
+            apply_renoise=True,
+            renoise_seed=1337 + mult_idx,
+        )
+        renoise_bundle = _measure_eval_bundle(
+            model=renoise_model,
+            tokenizer=renoise_tokenizer,
+            backend=backend,
+            eval_texts=eval_texts,
+            fp_acts=fp_acts,
+            n_cka_samples=args.n_cka_samples,
+        )
+        del renoise_model, renoise_tokenizer, renoise_adapter
+        gc.collect()
+        _clear_gpu_cache()
+
+        # Single-layer interventions (one corrected layer at a time).
+        logger.info("Running single-layer intervention sweep...")
+        single_layer_interventions: list[dict[str, Any]] = []
+        for layer_idx in range(int(correction_result["n_layers"])):
+            il_model, il_tokenizer = backend.load_model(args.quantized_model)
+            il_adapter = MLXTrainingAdapter(backend)
+            _dequantize_model(il_model, il_adapter)
+            intervention_correction = _run_sequential_correction(
+                il_model,
+                fp_weights,
+                il_tokenizer,
+                eval_texts,
+                rank_multiplier=multiplier,
+                n_samples=args.n_calibration,
+                max_len=args.max_seq_len,
+                target_layer_idx=layer_idx,
+            )
+            intervention_bundle = _measure_eval_bundle(
+                model=il_model,
+                tokenizer=il_tokenizer,
+                backend=backend,
+                eval_texts=eval_texts,
+                fp_acts=fp_acts,
+                n_cka_samples=args.n_cka_samples,
+            )
+            single_layer_interventions.append(
+                {
+                    "layer_idx": layer_idx,
+                    "correction": intervention_correction,
+                    "metrics": intervention_bundle,
+                    "delta_mean_cka": (
+                        intervention_bundle["cka"]["mean_cka"]
+                        - baseline_cka["mean_cka"]
+                    ),
+                    "delta_min_cka": (
+                        intervention_bundle["cka"]["min_cka"]
+                        - baseline_cka["min_cka"]
+                    ),
+                    "delta_ppl": (
+                        intervention_bundle["ppl"]["perplexity"]
+                        - baseline_ppl["perplexity"]
+                    ),
+                    "delta_max_4gram_repeat": (
+                        intervention_bundle["degeneration"]["max_4gram_repeat"]
+                        - baseline_degeneration["max_4gram_repeat"]
+                    ),
+                }
+            )
+            del il_model, il_tokenizer, il_adapter
+            gc.collect()
+            _clear_gpu_cache()
+
+        correlations = {
+            "unused_vs_repeat_delta": _compute_layer_repeat_correlation(
+                decomposition_layers=correction_result["per_layer"],
+                interventions=single_layer_interventions,
+            ),
+        }
 
         sweep_time = time.monotonic() - sweep_start
 
@@ -663,7 +996,31 @@ def main():
             "post_cka": post_cka,
             "cka_delta_mean": post_cka["mean_cka"] - baseline_cka["mean_cka"],
             "cka_delta_min": post_cka["min_cka"] - baseline_cka["min_cka"],
+            "post_ppl": post_ppl,
+            "baseline_ppl": baseline_ppl,
+            "degeneration": post_degeneration,
+            "baseline_degeneration": baseline_degeneration,
             "correction": correction_result,
+            "decomposition": correction_result["decomposition"],
+            "single_layer_interventions": single_layer_interventions,
+            "correlations": correlations,
+            "renoise": {
+                "correction": renoise_correction,
+                "metrics": renoise_bundle,
+                "delta_mean_cka": (
+                    renoise_bundle["cka"]["mean_cka"] - baseline_cka["mean_cka"]
+                ),
+                "delta_min_cka": (
+                    renoise_bundle["cka"]["min_cka"] - baseline_cka["min_cka"]
+                ),
+                "delta_ppl": (
+                    renoise_bundle["ppl"]["perplexity"] - baseline_ppl["perplexity"]
+                ),
+                "delta_max_4gram_repeat": (
+                    renoise_bundle["degeneration"]["max_4gram_repeat"]
+                    - baseline_degeneration["max_4gram_repeat"]
+                ),
+            },
             "wall_time_seconds": sweep_time,
         }
         sweep_results.append(sweep_entry)
@@ -685,32 +1042,92 @@ def main():
         _clear_gpu_cache()
 
     results["sweep"] = sweep_results
+    results["decomposition"] = {
+        str(entry["rank_multiplier"]): entry["decomposition"]
+        for entry in sweep_results
+    }
+    results["single_layer_interventions"] = {
+        str(entry["rank_multiplier"]): entry["single_layer_interventions"]
+        for entry in sweep_results
+    }
+    results["correlations"] = {
+        str(entry["rank_multiplier"]): entry["correlations"]
+        for entry in sweep_results
+    }
+    results["renoise"] = {
+        str(entry["rank_multiplier"]): entry["renoise"]
+        for entry in sweep_results
+    }
 
     # ── Summary ──
     logger.info("\n" + "=" * 72)
     logger.info("CLOSED-FORM SEQUENTIAL CORRECTION — SUMMARY")
     logger.info("=" * 72)
 
-    print("\n" + "=" * 72)
-    print("CLOSED-FORM SEQUENTIAL CORRECTION — CKA vs RANK")
-    print("=" * 72)
-    print(f"{'Multiplier':>12} {'k (avg)':>10} {'Baseline CKA':>14} "
-          f"{'Post CKA':>10} {'Delta':>10} {'Time':>8}")
-    print("-" * 72)
+    # Also compute FP and baseline-quantized PPL for reference
+    logger.info("Computing FP and baseline-quantized PPL for reference...")
+    fp_model_ref, fp_tok_ref = backend.load_model(args.fp_model)
+    fp_ppl = _evaluate_ppl_inplace(fp_model_ref, fp_tok_ref, eval_texts, backend)
+    fp_responses = _generate_responses(
+        fp_model_ref, fp_tok_ref,
+        TEST_PROMPTS,
+        backend, max_tokens=256,
+    )
+    fp_max_repeat = max(_fourgram_repetition_rate(r) for r in fp_responses)
+    del fp_model_ref, fp_tok_ref
+    gc.collect()
+    _clear_gpu_cache()
+
+    q_model_ref, q_tok_ref = backend.load_model(args.quantized_model)
+    q_base_ppl = _evaluate_ppl_inplace(q_model_ref, q_tok_ref, eval_texts, backend)
+    q_responses = _generate_responses(
+        q_model_ref, q_tok_ref,
+        TEST_PROMPTS,
+        backend, max_tokens=256,
+    )
+    q_max_repeat = max(_fourgram_repetition_rate(r) for r in q_responses)
+    del q_model_ref, q_tok_ref
+    gc.collect()
+    _clear_gpu_cache()
+
+    results["reference_ppl"] = {
+        "fp": fp_ppl,
+        "quantized_baseline": q_base_ppl,
+        "fp_max_4gram_repeat": fp_max_repeat,
+        "quantized_max_4gram_repeat": q_max_repeat,
+    }
+
+    print("\n" + "=" * 90)
+    print("CLOSED-FORM SEQUENTIAL CORRECTION — GATE TABLE")
+    print("=" * 90)
+    print(f"{'Mult':>6} {'k(avg)':>8} {'CKA mean':>10} {'CKA min':>10} "
+          f"{'PPL':>8} {'4g-rep':>8} {'CKA Δ':>8} {'Time':>7}")
+    print("-" * 90)
+    print(f"{'FP ref':>6} {'':>8} {'1.0000':>10} {'1.0000':>10} "
+          f"{fp_ppl['perplexity']:>8.2f} {fp_max_repeat:>8.4f} "
+          f"{'':>8} {'':>7}")
+    print(f"{'Q base':>6} {'':>8} "
+          f"{sweep_results[0]['baseline_cka']['mean_cka']:>10.4f} "
+          f"{sweep_results[0]['baseline_cka']['min_cka']:>10.4f} "
+          f"{q_base_ppl['perplexity']:>8.2f} {q_max_repeat:>8.4f} "
+          f"{'':>8} {'':>7}")
+    print("-" * 90)
 
     for entry in sweep_results:
         layers = entry["correction"]["per_layer"]
         avg_k = sum(l["k"] for l in layers) / len(layers) if layers else 0
         print(
-            f"{entry['rank_multiplier']:>12.1f} "
-            f"{avg_k:>10.1f} "
-            f"{entry['baseline_cka']['mean_cka']:>14.4f} "
+            f"{entry['rank_multiplier']:>6.1f} "
+            f"{avg_k:>8.1f} "
             f"{entry['post_cka']['mean_cka']:>10.4f} "
-            f"{entry['cka_delta_mean']:>+10.4f} "
-            f"{entry['wall_time_seconds']:>7.1f}s"
+            f"{entry['post_cka']['min_cka']:>10.4f} "
+            f"{entry['post_ppl']['perplexity']:>8.2f} "
+            f"{entry['degeneration']['max_4gram_repeat']:>8.4f} "
+            f"{entry['cka_delta_mean']:>+8.4f} "
+            f"{entry['wall_time_seconds']:>6.1f}s"
         )
 
-    print("=" * 72)
+    print("=" * 90)
     # Source: results/stacked_corrective_recovery/20260226T134604Z/stacked_recovery.json
     print("\nReference: 5-round stacked corrective recovery CKA delta +0.023 (measured)")
     print()

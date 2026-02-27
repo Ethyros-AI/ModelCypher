@@ -626,6 +626,12 @@ def test_train_from_dataset_auto_regime_adds_regime_metadata(monkeypatch, tmp_pa
         use_entropy_regularization=False,
         confidence_level=0.8,
         n_total=5,
+        baseline_ci_lower=0.0,
+        baseline_ci_upper=0.6,
+        headroom_upper=0.6,
+        headroom_resolution=0.2,
+        ceiling_bound=False,
+        ceiling_rationale="test",
         derivation_log=("test",),
     )
 
@@ -655,6 +661,7 @@ def test_train_from_dataset_auto_regime_adds_regime_metadata(monkeypatch, tmp_pa
     payload = result.to_dict()
     assert payload["regime_global"] == "ce"
     assert payload["regime_per_type"]["syllogistic_chain"]["regime"] == "ce"
+    assert payload["regime_headroom"]["ceiling_bound"] is False
 
 
 def test_auto_regime_preserves_explicit_entropy_regularization(monkeypatch, tmp_path: Path):
@@ -695,6 +702,12 @@ def test_auto_regime_preserves_explicit_entropy_regularization(monkeypatch, tmp_
         use_entropy_regularization=False,
         confidence_level=0.8,
         n_total=5,
+        baseline_ci_lower=0.0,
+        baseline_ci_upper=0.6,
+        headroom_upper=0.6,
+        headroom_resolution=0.2,
+        ceiling_bound=False,
+        ceiling_rationale="test",
         derivation_log=("test",),
     )
 
@@ -728,6 +741,173 @@ def test_auto_regime_preserves_explicit_entropy_regularization(monkeypatch, tmp_
     )
 
     assert captured_train_loop_kwargs["entropy_regularization"] is True
+
+
+def test_auto_regime_ceiling_bound_forces_ce_only_behavior(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from modelcypher.core.domain.training.online_eval import OnlineEvalResult
+    from modelcypher.core.domain.training.regime_selection import TrainingRegime
+
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(train_path, [{"text": "train 1"}])
+    _write_jsonl(eval_path, [{"text": "eval 1"}])
+
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
+    _patch_lightweight_training(monkeypatch, service)
+    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
+
+    baseline_result = OnlineEvalResult(
+        epoch=0,
+        accuracy=1.0,
+        n_correct=5,
+        n_total=5,
+        correct_ids=frozenset(),
+        baseline_n_correct=5,
+        baseline_accuracy=1.0,
+        n_lost=0,
+        n_gained=0,
+        degraded=False,
+        per_type_accuracy={"syllogistic_chain": 1.0},
+        per_type_correct={"syllogistic_chain": 5},
+        per_type_total={"syllogistic_chain": 5},
+    )
+    regime_result = TrainingRegime(
+        global_regime="reinforce",
+        per_type={},
+        use_ce=True,
+        use_outcome_training=True,
+        use_entropy_regularization=True,
+        confidence_level=0.8,
+        n_total=5,
+        baseline_ci_lower=0.8,
+        baseline_ci_upper=1.0,
+        headroom_upper=0.0,
+        headroom_resolution=0.2,
+        ceiling_bound=True,
+        ceiling_rationale="ceiling",
+        derivation_log=("test",),
+    )
+
+    monkeypatch.setattr(
+        "modelcypher.core.domain.training.online_eval.create_eval_problem_set",
+        lambda **_kwargs: [object()],
+    )
+    monkeypatch.setattr(
+        "modelcypher.core.domain.training.online_eval.evaluate_correctness",
+        lambda **_kwargs: baseline_result,
+    )
+    monkeypatch.setattr(
+        "modelcypher.core.domain.training.regime_selection.select_training_regime",
+        lambda _baseline_result: regime_result,
+    )
+
+    captured_train_loop_kwargs: dict[str, object] = {}
+
+    def _capture_train_loop(**kwargs):
+        captured_train_loop_kwargs.update(kwargs)
+        return [(1, 1.0, 1.0)], "max_iters", []
+
+    monkeypatch.setattr(service._adapter, "train_loop", _capture_train_loop)
+
+    service.train_from_dataset(
+        model_path=model_dir,
+        dataset_path=train_path,
+        eval_dataset_path=eval_path,
+        outcome_training=True,
+        entropy_regularization=True,
+        no_save=True,
+    )
+
+    assert captured_train_loop_kwargs["outcome_training"] is False
+    assert captured_train_loop_kwargs["entropy_regularization"] is False
+
+
+def test_quantization_precheck_crossing_fails_closed_without_override(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    ref_model_dir = tmp_path / "model_fp"
+    ref_model_dir.mkdir()
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(train_path, [{"text": "train 1"}])
+    _write_jsonl(eval_path, [{"text": "eval 1"}])
+
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
+    _patch_lightweight_training(monkeypatch, service)
+    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        dataset_training_service_module,
+        "run_quantization_weyl_precheck",
+        lambda **_kwargs: {
+            "n_layers": 1,
+            "n_crossing": 1,
+            "all_non_crossing": False,
+            "crossing_layers": ["model.layers.0.self_attn.q_proj.weight"],
+            "per_layer": [],
+        },
+    )
+
+    with pytest.raises(TrainingDerivationError) as excinfo:
+        service.train_from_dataset(
+            model_path=model_dir,
+            dataset_path=train_path,
+            eval_dataset_path=eval_path,
+            auto_regime=False,
+            quantization_reference_model_path=ref_model_dir,
+            no_save=True,
+        )
+    assert excinfo.value.failure_class == "quantization_crossing_detected"
+
+
+def test_quantization_precheck_crossing_allows_explicit_research_override(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    ref_model_dir = tmp_path / "model_fp"
+    ref_model_dir.mkdir()
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(train_path, [{"text": "train 1"}])
+    _write_jsonl(eval_path, [{"text": "eval 1"}])
+
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
+    _patch_lightweight_training(monkeypatch, service)
+    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        dataset_training_service_module,
+        "run_quantization_weyl_precheck",
+        lambda **_kwargs: {
+            "n_layers": 1,
+            "n_crossing": 1,
+            "all_non_crossing": False,
+            "crossing_layers": ["model.layers.0.self_attn.q_proj.weight"],
+            "per_layer": [],
+        },
+    )
+
+    result = service.train_from_dataset(
+        model_path=model_dir,
+        dataset_path=train_path,
+        eval_dataset_path=eval_path,
+        auto_regime=False,
+        quantization_reference_model_path=ref_model_dir,
+        research_allow_quantization_crossing=True,
+        no_save=True,
+    )
+
+    payload = result.to_dict()
+    assert payload["quantization_precheck"]["all_non_crossing"] is False
+    assert payload["quantization_precheck"]["n_crossing"] == 1
 
 
 def test_auto_regime_selection_failure_raises_training_derivation_error(

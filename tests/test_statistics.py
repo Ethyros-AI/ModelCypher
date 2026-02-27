@@ -24,8 +24,10 @@ import math
 import pytest
 
 from modelcypher.core.domain.statistics import (
+    binomial_degradation_is_significant,
     cohens_d_bootstrap_ci,
     cohens_d_two_groups,
+    confidence_intervals_overlap,
     fit_exponential,
     fit_inverse,
     fit_linear,
@@ -36,6 +38,43 @@ from modelcypher.core.domain.statistics import (
     safe_std,
     spearman_correlation,
 )
+
+# ---------------------------------------------------------------------------
+# confidence_intervals_overlap / binomial_degradation_is_significant
+# ---------------------------------------------------------------------------
+
+
+class TestBinomialDegradationSignificance:
+    def test_confidence_intervals_overlap_true(self):
+        assert confidence_intervals_overlap((0.6, 0.9), (0.8, 0.95)) is True
+
+    def test_confidence_intervals_overlap_false(self):
+        assert confidence_intervals_overlap((0.1, 0.2), (0.3, 0.4)) is False
+
+    def test_confidence_intervals_overlap_invalid_interval(self):
+        with pytest.raises(ValueError, match="interval_a"):
+            confidence_intervals_overlap((0.4, 0.3), (0.1, 0.2))
+
+    def test_degradation_not_significant_for_24_to_21_of_25(self):
+        significant, current_ci, baseline_ci = binomial_degradation_is_significant(
+            baseline_n_correct=24,
+            current_n_correct=21,
+            n_total=25,
+            alpha=1.0 / 25.0,
+        )
+        assert significant is False
+        assert confidence_intervals_overlap(current_ci, baseline_ci) is True
+
+    def test_degradation_significant_for_24_to_10_of_25(self):
+        significant, current_ci, baseline_ci = binomial_degradation_is_significant(
+            baseline_n_correct=24,
+            current_n_correct=10,
+            n_total=25,
+            alpha=1.0 / 25.0,
+        )
+        assert significant is True
+        assert confidence_intervals_overlap(current_ci, baseline_ci) is False
+
 
 # ---------------------------------------------------------------------------
 # safe_mean / safe_std

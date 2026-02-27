@@ -237,6 +237,8 @@ def test_rollback_event_emits_correct_epoch_metrics(monkeypatch):
                 n_lost=0,
                 n_gained=0,
                 degraded=False,
+                degraded_raw=False,
+                degraded_significant=False,
             )
         else:
             # Post-REINFORCE: 3/5 (degraded)
@@ -251,6 +253,8 @@ def test_rollback_event_emits_correct_epoch_metrics(monkeypatch):
                 n_lost=2,
                 n_gained=0,
                 degraded=True,
+                degraded_raw=True,
+                degraded_significant=True,
             )
 
     monkeypatch.setattr(
@@ -420,6 +424,8 @@ def test_post_outcome_stop_basis_uses_post_eval(monkeypatch):
                 n_lost=1,
                 n_gained=0,
                 degraded=True,
+                degraded_raw=True,
+                degraded_significant=True,
             )
         return OnlineEvalResult(
             epoch=kwargs.get("epoch", 0),
@@ -432,6 +438,8 @@ def test_post_outcome_stop_basis_uses_post_eval(monkeypatch):
             n_lost=0,
             n_gained=0,
             degraded=False,
+            degraded_raw=False,
+            degraded_significant=False,
         )
 
     monkeypatch.setattr(
@@ -500,9 +508,15 @@ def test_post_outcome_stop_basis_uses_post_eval(monkeypatch):
     assert epoch_metrics
     em = epoch_metrics[-1]
     assert em.online_eval_pre_degraded is True
+    assert em.online_eval_pre_degraded_raw is True
+    assert em.online_eval_pre_degraded_significant is True
     assert em.online_eval_post_degraded is False
+    assert em.online_eval_post_degraded_raw is False
+    assert em.online_eval_post_degraded_significant is False
     assert em.online_eval_stop_basis_stage == "post_outcome"
     assert em.online_eval_stop_basis_degraded is False
+    assert em.online_eval_stop_basis_degraded_raw is False
+    assert em.online_eval_stop_basis_degraded_significant is False
     assert em.gate_confound_event is True
     assert eval_call_count[0] == 2
 
@@ -561,6 +575,8 @@ def test_lost_only_selector_uses_pre_eval_lost_problem_ids(monkeypatch):
             n_lost=2,
             n_gained=0,
             degraded=True,
+            degraded_raw=True,
+            degraded_significant=True,
         )
 
     monkeypatch.setattr(

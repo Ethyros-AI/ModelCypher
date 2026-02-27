@@ -74,7 +74,7 @@ def test_all_zero_baseline_selects_ce_only():
     assert all(entry.regime == "ce" for entry in decision.per_type.values())
 
 
-def test_all_perfect_baseline_selects_outcome_regime():
+def test_all_perfect_baseline_triggers_ceiling_override_to_ce_only():
     per_type_total = {
         "syllogistic_chain": 20,
         "contrapositive": 20,
@@ -91,8 +91,14 @@ def test_all_perfect_baseline_selects_outcome_regime():
     decision = select_training_regime(baseline)
 
     assert decision.global_regime in {"reinforce", "reinforce_entropy"}
-    assert decision.use_outcome_training is True
-    assert all(entry.regime in {"reinforce", "reinforce_entropy"} for entry in decision.per_type.values())
+    assert decision.ceiling_bound is True
+    assert decision.use_outcome_training is False
+    assert decision.use_entropy_regularization is False
+    assert decision.headroom_upper <= decision.headroom_resolution
+    assert all(
+        entry.regime in {"reinforce", "reinforce_entropy"}
+        for entry in decision.per_type.values()
+    )
 
 
 def test_mixed_baseline_selects_hybrid():
@@ -116,6 +122,7 @@ def test_mixed_baseline_selects_hybrid():
     decision = select_training_regime(baseline)
 
     assert decision.global_regime == "hybrid"
+    assert decision.ceiling_bound is False
     assert decision.use_outcome_training is True
     assert decision.per_type["syllogistic_chain"].regime == "ce"
     assert decision.per_type["compositional_binding"].regime == "ce"
@@ -142,7 +149,9 @@ def test_small_n_is_conservative_for_binary_types():
     decision_small = select_training_regime(baseline_small)
 
     assert decision_small.global_regime == "reinforce_entropy"
-    assert decision_small.use_entropy_regularization is True
+    assert decision_small.ceiling_bound is True
+    assert decision_small.use_entropy_regularization is False
+    assert decision_small.use_outcome_training is False
     assert decision_small.per_type["syllogistic_chain"].regime == "reinforce_entropy"
     assert decision_small.per_type["contrapositive"].regime == "reinforce_entropy"
     assert decision_small.per_type["set_exception"].regime == "reinforce_entropy"
@@ -218,8 +227,24 @@ def test_derivation_log_contains_inputs_and_decision():
 
     assert len(decision.derivation_log) >= 3
     assert any("confidence derivation" in line for line in decision.derivation_log)
+    assert any("headroom derivation" in line for line in decision.derivation_log)
     assert any("contrapositive: k=12, n=20" in line for line in decision.derivation_log)
     assert any("global decision:" in line for line in decision.derivation_log)
+
+
+def test_headroom_fields_are_serialized_on_decision() -> None:
+    baseline = _make_baseline_result(
+        per_type_correct={"contrapositive": 12},
+        per_type_total={"contrapositive": 20},
+    )
+
+    decision = select_training_regime(baseline)
+
+    assert 0.0 <= decision.baseline_ci_lower <= decision.baseline_ci_upper <= 1.0
+    assert decision.headroom_upper >= 0.0
+    assert decision.headroom_resolution == pytest.approx(1.0 / decision.n_total)
+    assert isinstance(decision.ceiling_rationale, str)
+    assert decision.ceiling_rationale
 
 
 def test_unknown_problem_type_defaults_to_zero_chance():

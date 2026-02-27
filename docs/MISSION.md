@@ -181,17 +181,21 @@ Three independent stopping criteria (any one triggers):
 
 The adapter must not degrade what the model already knows. Measured, not hoped.
 
-- **Null-space projection**: Delta is projected into directions with low activation variance (GNSP/PNSP)
+Three independent preservation signals — ALL must hold:
+
 - **CKA alignment**: After merge, CKA between original and merged model on atlas probes >= 1.0 - sqrt(eps)
 - **Mode connectivity barrier**: Interpolation path from base to adapted has barrier <= 1.0 + sqrt(eps)
+- **Behavioral coherence (degeneration)**: Adapted model's n-gram repetition rate on a fixed probe set must not exceed the base model's measured rate plus sqrt(eps). Threshold is the base model's own repetition envelope, not a constant.
 
-**Test**: Run the verification suite on the merged model. All metrics within bounds.
+CKA and PPL recovery alone are insufficient. Closed-form quantization correction (2026-02-27) demonstrated that CKA and PPL can improve while degeneration worsens — removing quantization error from low-usage activation directions eliminates noise that acts as implicit regularization against repetitive loops. Degeneration is therefore an independent preservation dimension, not implied by representational similarity.
+
+**Test**: Run the verification suite on the merged model. CKA, mode connectivity, AND degeneration all within bounds. A model that passes CKA but fails degeneration is not preserved.
 
 ### G5: Reproducible Across Models and Datasets
 
 The system works on ANY model architecture and ANY dataset. Not just the ones we tested on.
 
-- **Tested model scales**: 350M, 700M, 1.2B (validated), 8B (geometry + injection + training validated, full run in progress)
+- **Tested model scales**: 350M, 700M, 1.2B (validated), 8B (mechanically validated: geometry, injection, spectral bounds, stopping — see below for efficacy status)
 - **Tested data types**: Logical rules, behavioral patterns, domain knowledge, compositional reasoning
 - **Architecture requirement**: Must have extractable weight matrices (attention + MLP projections)
 - **No model-specific code in the training loop**: All adaptation flows through the Backend protocol
@@ -286,22 +290,27 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 - CKA verification — post-training capability preservation check against base model activations (Kornblith et al. 2019)
 - Per-layer geometric optimizer config — ε, decay, spectral_gap from SVD
 - Zero magic numbers in training codepath (all thresholds from SVD or IEEE 754)
-- Training validated on 3 model scales (350M, 700M, 1.2B)
+- Training validated on 3 model scales (350M, 700M, 1.2B); 8B mechanically validated (spectral ratio 0.062, stopping catches degradation, geometry analysis + injection confirmed)
 - Ablation-validated on 350M (2026-02-17): pure CE + Cayley-Stiefel is optimal; constrained training (invariance, separation, geodesic) monotonically hurts — disabled; available via service API for experiments only
 - Backend abstraction (MLX, JAX, CUDA) — framework imports only in backend files
+- bf16 SVD guard in `compute_per_layer_signal_ranks` (2026-02-27): activations cast to float32 before SVD; required for 8B bf16 models
 - 82%+ test coverage, 6051 tests passing
 
 ### Remaining Gaps
 
-| Gap | What's Missing | Impact |
-|-----|---------------|--------|
-| **Large-scale validation** | 8B full training run not yet complete (geometry + injection + training start confirmed on Qwen3-8B; resumable G5 gate runner implemented) | Guardrail G5 nearly closed |
-| **Multi-LoRA stacking** | No verification for sequential/stacked adapters | Unknown interference effects |
+| Gap | What's Known | What's Missing | Impact |
+|-----|-------------|---------------|--------|
+| **8B training efficacy** | Mechanical validation passes (no crash, spectral ratio 0.062, stopping catches degradation). 96% baseline → REINFORCE orthogonal to CE (cosine ≈ -0.02). | Training efficacy at high-baseline regimes. Seed 41 on benchmark_val: 3/5 gates fail (CKA, accuracy, degeneration). Need a run where baseline < 80% to separate pipeline soundness from regime boundary. | G5 mechanically closed, efficacy open |
+| **CKA vs degeneration independence** | Closed-form correction (2026-02-27) improves CKA (+0.023) and PPL (11.37 → 11.04) while worsening degeneration (4g-repeat 0.86 → 0.93). Quantization residuals in low-usage directions act as anti-degeneration noise. | Decomposition of quantization error into activation-used vs activation-unused subspaces. Controlled re-noising in unused directions with variance from measured residual covariance. | G4 requires all three signals (CKA, mode connectivity, degeneration) |
+| **Scale bound tradeoff** | Scale A/B (2026-02-27): standard (1.0) → PPL 3.47, min_CKA 0.65; geometric (sigma_k-derived) → PPL 4.01, min_CKA 0.88. Both preserve spectral bounds. | Neither scale satisfies G4 CKA threshold (0.9997) on 4-bit models. Need to determine if this is a fundamental quantization limitation or a derivation gap. | G4 not achievable on 4-bit without further research |
+| **Stopping oscillation sensitivity** | 8B online_eval caught a valley at iter 20 (21/25), but model recovered to 25/25 by iter 25. Single-point degradation check locked in a transient dip. | Significance-based degradation checks using data variance / CI instead of single-point comparison. | G3 mechanism works but resolution is too coarse |
 
 ### What Closes the Gaps
 
-1. **8B full run**: Execute seeded runs via `scripts/g5_8b_validation.py` and verify all 5 gates: no crashes, CKA >= 1-sqrt(eps), spectral bounds hold, accuracy >= baseline, 0 degenerate. Geometry analysis, NB-LoRA injection, and training entry are confirmed; remaining work is full-seed artifact closure.
-2. **1.2B REINFORCE frontier**: Execute CE-control / auto-regime / force-REINFORCE matrix via `scripts/reinforce_revalidation.py` and publish paired bootstrap CI + TOST-equivalence verdicts under `results/reinforce_frontier_1p2b/`.
+1. **8B efficacy separation**: Run `g5_8b_validation.py` on a dataset where baseline accuracy is 60-70% (not 96%). This separates "pipeline works at 8B" from "baseline too high to improve." The pipeline's mechanical validation (spectral bounds, stopping, CKA measurement) is confirmed.
+2. **Degeneration decomposition**: Decompose per-layer quantization error `E_l = W_fp - W_q` into `E_used = (E @ V_k) @ V_k^T` and `E_unused = E - E_used` using the activation covariance eigenbasis. Correlate `||E_unused||` with repetition rate per layer. If anti-correlation holds, the noise structure is functional and correction strategies must preserve it.
+3. **Controlled re-noising**: After closed-form correction, inject noise in the unused subspace with covariance matched to the measured residual `E_unused^T @ E_unused`. If this recovers degeneration resistance without losing CKA/PPL gains, the correction + re-noise pipeline satisfies all three G4 signals.
+4. **Significance-based stopping**: Replace single-point online_eval degradation with CI-based check: flag degradation only when `accuracy < baseline_lower_CI` (Clopper-Pearson at the measured sample size). This prevents transient valleys from triggering early stop while still catching real degradation.
 
 ---
 

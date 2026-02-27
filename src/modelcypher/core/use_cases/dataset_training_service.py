@@ -54,6 +54,9 @@ from modelcypher.core.domain.training.geometric_lora import (
     estimate_nb_lora_parameter_count,
     select_target_modules,
 )
+from modelcypher.core.domain.training.quantization_weyl_precheck import (
+    run_quantization_weyl_precheck,
+)
 from modelcypher.core.domain.training.geometric_optimizer import (
     derive_optimizer_geometry_config,
 )
@@ -119,6 +122,8 @@ class DatasetTrainResult:
     # Auto-regime selection metadata (when auto_regime=True)
     regime_global: str | None = None
     regime_per_type: dict[str, Any] | None = None
+    regime_headroom: dict[str, Any] | None = None
+    quantization_precheck: dict[str, Any] | None = None
     # Derived validation split diagnostics (when eval split is auto-derived)
     validation_split: dict[str, Any] | None = None
     # Number of retention samples auto-collected from training prompts.
@@ -194,6 +199,10 @@ class DatasetTrainResult:
             result["regime_global"] = self.regime_global
         if self.regime_per_type is not None:
             result["regime_per_type"] = self.regime_per_type
+        if self.regime_headroom is not None:
+            result["regime_headroom"] = self.regime_headroom
+        if self.quantization_precheck is not None:
+            result["quantization_precheck"] = self.quantization_precheck
         if self.validation_split is not None:
             result["validation_split"] = self.validation_split
         if self.max_effective_gain_ratio is not None:
@@ -308,6 +317,8 @@ class DatasetTrainingService:
         outcome_rollback_on_degradation: bool = True,
         research_online_eval_stop_stage: str = "pre_outcome",
         research_outcome_selector: str = "all",
+        quantization_reference_model_path: str | Path | None = None,
+        research_allow_quantization_crossing: bool = False,
         no_save: bool = False,
         max_iters_cap: int | None = None,
     ) -> DatasetTrainResult:
@@ -355,6 +366,53 @@ class DatasetTrainingService:
         # 1. Load model + tokenizer
         logger.info("Loading model from %s", model_path)
         model, tokenizer = self._backend.load_model(str(model_path))
+
+        quantization_precheck_result: dict[str, Any] | None = None
+        if quantization_reference_model_path is not None:
+            fp_reference_path = Path(quantization_reference_model_path).expanduser().resolve()
+            if not fp_reference_path.exists():
+                raise FileNotFoundError(
+                    f"quantization_reference_model_path does not exist: {fp_reference_path}",
+                )
+            logger.info(
+                "Running quantization Weyl precheck: reference=%s, candidate=%s",
+                fp_reference_path,
+                model_path,
+            )
+            fp_model, _ = self._backend.load_model(str(fp_reference_path))
+            fp_weights = self._adapter.extract_weight_matrices(fp_model)
+            candidate_weights = self._adapter.extract_weight_matrices(model)
+            quantization_precheck_result = run_quantization_weyl_precheck(
+                fp_weights=fp_weights,
+                quantized_weights=candidate_weights,
+                backend=self._backend,
+            )
+            crossing_detected = not bool(
+                quantization_precheck_result.get("all_non_crossing", False),
+            )
+            logger.info(
+                "Quantization precheck: layers=%d, crossing=%d, max(error/(gap/2))=%.6f",
+                int(quantization_precheck_result.get("n_layers", 0)),
+                int(quantization_precheck_result.get("n_crossing", 0)),
+                float(quantization_precheck_result.get("max_error_over_gap_half", 0.0)),
+            )
+            if crossing_detected and not research_allow_quantization_crossing:
+                raise TrainingDerivationError(
+                    failure_class="quantization_crossing_detected",
+                    detail=(
+                        "Quantization Weyl precheck measured spectral-gap crossing; "
+                        "training is blocked unless research_allow_quantization_crossing=True."
+                    ),
+                    diagnostics={
+                        "reference_model_path": str(fp_reference_path),
+                        "candidate_model_path": str(model_path),
+                        "n_layers": int(quantization_precheck_result.get("n_layers", 0)),
+                        "n_crossing": int(quantization_precheck_result.get("n_crossing", 0)),
+                        "crossing_layers": list(
+                            quantization_precheck_result.get("crossing_layers", []),
+                        ),
+                    },
+                )
 
         if init_adapter is not None:
             if not hasattr(self._adapter, "apply_standard_lora_adapter"):
@@ -968,6 +1026,10 @@ class DatasetTrainingService:
                     regime_result.use_entropy_regularization
                 )
 
+            if regime_result.ceiling_bound:
+                effective_outcome_training = False
+                effective_entropy_regularization = False
+
             logger.info(
                 "Auto regime decision: global=%s confidence=%.4f "
                 "(use_ce=%s, use_outcome_training=%s, "
@@ -978,6 +1040,20 @@ class DatasetTrainingService:
                 regime_result.use_outcome_training,
                 regime_result.use_entropy_regularization,
             )
+            logger.info(
+                "Auto regime headroom: baseline_ci=[%.6f, %.6f], "
+                "headroom_upper=%.6f, resolution=%.6f, ceiling_bound=%s",
+                regime_result.baseline_ci_lower,
+                regime_result.baseline_ci_upper,
+                regime_result.headroom_upper,
+                regime_result.headroom_resolution,
+                regime_result.ceiling_bound,
+            )
+            if regime_result.ceiling_bound:
+                logger.info(
+                    "Auto regime ceiling override active: %s",
+                    regime_result.ceiling_rationale,
+                )
             for problem_type in sorted(regime_result.per_type):
                 per_type = regime_result.per_type[problem_type]
                 logger.info(
@@ -1241,6 +1317,7 @@ class DatasetTrainingService:
 
         regime_global = None
         regime_per_type = None
+        regime_headroom = None
         if regime_result is not None:
             regime_global = regime_result.global_regime
             regime_per_type = {
@@ -1256,6 +1333,16 @@ class DatasetTrainingService:
                     "rationale": per_type.rationale,
                 }
                 for problem_type, per_type in regime_result.per_type.items()
+            }
+            regime_headroom = {
+                "baseline_ci_lower": regime_result.baseline_ci_lower,
+                "baseline_ci_upper": regime_result.baseline_ci_upper,
+                "headroom_upper": regime_result.headroom_upper,
+                "headroom_resolution": regime_result.headroom_resolution,
+                "ceiling_bound": regime_result.ceiling_bound,
+                "ceiling_rationale": regime_result.ceiling_rationale,
+                "confidence_level": regime_result.confidence_level,
+                "n_total": regime_result.n_total,
             }
 
         # Extract max gain ratio across all epochs for stability certificate
@@ -1313,6 +1400,8 @@ class DatasetTrainingService:
             rss_final_top1=rss_final_top1,
             regime_global=regime_global,
             regime_per_type=regime_per_type,
+            regime_headroom=regime_headroom,
+            quantization_precheck=quantization_precheck_result,
             validation_split=validation_split_info,
             auto_retention_samples_collected=auto_retention_samples_collected,
             max_effective_gain_ratio=max_gain_ratio,

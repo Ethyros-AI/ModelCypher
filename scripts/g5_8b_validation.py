@@ -27,6 +27,9 @@ import psutil
 
 from modelcypher.backends import initialize_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.training.quantization_weyl_precheck import (
+    run_quantization_weyl_precheck,
+)
 
 MODEL_PATH_DEFAULT = "/Volumes/CodeCypher/models/mlx-community/Qwen3-8B-bf16"
 TRAIN_DATA_DEFAULT = "data/training/benchmark_train.jsonl"
@@ -40,6 +43,14 @@ def _parse_args() -> argparse.Namespace:
         description="Run G5 8B validation or aggregate seed gate artifacts.",
     )
     parser.add_argument("--model-path", default=MODEL_PATH_DEFAULT)
+    parser.add_argument(
+        "--fp-reference-model",
+        default=None,
+        help=(
+            "Optional full-precision reference model path used for quantization "
+            "Weyl precheck; when provided, adds quantization_precheck_ok gate."
+        ),
+    )
     parser.add_argument("--train-data", default=TRAIN_DATA_DEFAULT)
     parser.add_argument("--eval-data", default=EVAL_DATA_DEFAULT)
     parser.add_argument(
@@ -196,6 +207,13 @@ def _final_online_eval(epoch_metrics: list[dict[str, Any]]) -> dict[str, Any] | 
             "n_correct": em.get("online_eval_n_correct"),
             "n_total": em.get("online_eval_n_total"),
             "degraded": em.get("online_eval_degraded"),
+            "degraded_raw": em.get("online_eval_degraded_raw"),
+            "degraded_significant": em.get("online_eval_degraded_significant"),
+            "alpha": em.get("online_eval_alpha"),
+            "current_ci_lower": em.get("online_eval_current_ci_lower"),
+            "current_ci_upper": em.get("online_eval_current_ci_upper"),
+            "baseline_ci_lower": em.get("online_eval_baseline_ci_lower"),
+            "baseline_ci_upper": em.get("online_eval_baseline_ci_upper"),
         }
         for em in epoch_metrics
         if em.get("online_eval_accuracy") is not None
@@ -205,6 +223,11 @@ def _final_online_eval(epoch_metrics: list[dict[str, Any]]) -> dict[str, Any] | 
 
 def _run_seed(args: argparse.Namespace) -> None:
     model_path = Path(args.model_path).expanduser().resolve()
+    fp_reference_model = (
+        Path(args.fp_reference_model).expanduser().resolve()
+        if args.fp_reference_model
+        else None
+    )
     train_data = Path(args.train_data).expanduser().resolve()
     eval_data = Path(args.eval_data).expanduser().resolve()
     retention_data = (
@@ -214,6 +237,10 @@ def _run_seed(args: argparse.Namespace) -> None:
     )
     if not model_path.exists():
         raise FileNotFoundError(f"Model path does not exist: {model_path}")
+    if fp_reference_model is not None and not fp_reference_model.exists():
+        raise FileNotFoundError(
+            f"FP reference model path does not exist: {fp_reference_model}",
+        )
     if not train_data.exists():
         raise FileNotFoundError(f"Train data does not exist: {train_data}")
     if not eval_data.exists():
@@ -229,6 +256,10 @@ def _run_seed(args: argparse.Namespace) -> None:
     run_log.info("=" * 72)
     run_log.info("G5 8B Validation | seed=%d", args.seed)
     run_log.info("Model=%s", model_path)
+    run_log.info(
+        "FP reference model=%s",
+        fp_reference_model if fp_reference_model is not None else "<disabled>",
+    )
     run_log.info("Train data=%s", train_data)
     run_log.info("Eval data=%s", eval_data)
     run_log.info(
@@ -260,6 +291,7 @@ def _run_seed(args: argparse.Namespace) -> None:
         )
 
     _record_memory("start")
+    dataset_service = get_dataset_training_service()
 
     # ------------------------------------------------------------------
     # 1) Capacity profiling with checkpoint/resume
@@ -323,6 +355,30 @@ def _run_seed(args: argparse.Namespace) -> None:
     )
     baseline_repetition = [_fourgram_repetition_rate(resp) for resp in baseline_responses]
     baseline_max_4gram_repeat = max(baseline_repetition) if baseline_repetition else 0.0
+
+    quantization_precheck = None
+    if fp_reference_model is not None:
+        fp_model, _ = backend.load_model(str(fp_reference_model))
+        fp_weights = dataset_service._adapter.extract_weight_matrices(fp_model)
+        quantized_weights = dataset_service._adapter.extract_weight_matrices(baseline_model)
+        quantization_precheck = run_quantization_weyl_precheck(
+            fp_weights=fp_weights,
+            quantized_weights=quantized_weights,
+            backend=backend,
+        )
+        run_log.info(
+            "Quantization precheck | layers=%d crossing=%d all_non_crossing=%s "
+            "max(error/(gap/2))=%.6f",
+            int(quantization_precheck.get("n_layers", 0)),
+            int(quantization_precheck.get("n_crossing", 0)),
+            bool(quantization_precheck.get("all_non_crossing", False)),
+            float(quantization_precheck.get("max_error_over_gap_half", 0.0)),
+        )
+        _record_memory("after_quantization_precheck")
+        del fp_model
+        gc.collect()
+        _safe_clear_backend_cache(backend)
+
     _record_memory("after_baseline_eval")
 
     del baseline_model
@@ -334,7 +390,6 @@ def _run_seed(args: argparse.Namespace) -> None:
     # ------------------------------------------------------------------
     # 3) Full training run
     # ------------------------------------------------------------------
-    dataset_service = get_dataset_training_service()
     adapter_path = seed_dir / "adapter"
     result = dataset_service.train_from_dataset(
         model_path=str(model_path),
@@ -405,6 +460,30 @@ def _run_seed(args: argparse.Namespace) -> None:
     )
     accuracy_ok = final_correct is not None and final_correct >= baseline_eval.n_correct
     degenerate_ok = adapted_max_4gram_repeat <= (baseline_max_4gram_repeat + sqrt_eps_f32)
+    quantization_precheck_ok = (
+        bool(quantization_precheck.get("all_non_crossing", False))
+        if quantization_precheck is not None
+        else None
+    )
+
+    gates_section = {
+        "no_crash": no_crash,
+        "cka_ok": cka_ok,
+        "spectral_ok": spectral_ok,
+        "accuracy_ok": accuracy_ok,
+        "degenerate_ok": degenerate_ok,
+    }
+    if quantization_precheck_ok is not None:
+        gates_section["quantization_precheck_ok"] = quantization_precheck_ok
+
+    all_gates_pass = bool(
+        no_crash
+        and cka_ok
+        and spectral_ok
+        and accuracy_ok
+        and degenerate_ok
+        and (quantization_precheck_ok if quantization_precheck_ok is not None else True)
+    )
 
     gates = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -433,26 +512,19 @@ def _run_seed(args: argparse.Namespace) -> None:
             "eps_f32": eps_f32,
             "sqrt_eps_f32": sqrt_eps_f32,
         },
-        "gates": {
-            "no_crash": no_crash,
-            "cka_ok": cka_ok,
-            "spectral_ok": spectral_ok,
-            "accuracy_ok": accuracy_ok,
-            "degenerate_ok": degenerate_ok,
-        },
+        "gates": gates_section,
         "diagnostics": {
             "min_cka": min_cka,
             "max_spectral_ratio": result.max_spectral_ratio,
             "spectral_bounds_ok": result.spectral_bounds_ok,
             "adapter_path": adapted_adapter_path,
+            "quantization_precheck": quantization_precheck,
             "memory_note": (
                 "process_vms_gb is virtual address reservation and can exceed "
                 "physical RAM; use process_rss_gb, system_used_gb, and backend_* "
                 "for resident/allocator pressure."
             ),
-            "all_gates_pass": bool(
-                no_crash and cka_ok and spectral_ok and accuracy_ok and degenerate_ok
-            ),
+            "all_gates_pass": all_gates_pass,
         },
     }
 
@@ -469,12 +541,14 @@ def _run_seed(args: argparse.Namespace) -> None:
         encoding="utf-8",
     )
     run_log.info(
-        "Gate status | no_crash=%s cka_ok=%s spectral_ok=%s accuracy_ok=%s degenerate_ok=%s",
+        "Gate status | no_crash=%s cka_ok=%s spectral_ok=%s accuracy_ok=%s "
+        "degenerate_ok=%s quantization_precheck_ok=%s",
         no_crash,
         cka_ok,
         spectral_ok,
         accuracy_ok,
         degenerate_ok,
+        quantization_precheck_ok,
     )
 
 
@@ -495,6 +569,12 @@ def _aggregate(aggregate_root: Path) -> None:
         raise ValueError(f"No seed gates found under {root}")
 
     gate_names = ["no_crash", "cka_ok", "spectral_ok", "accuracy_ok", "degenerate_ok"]
+    any_quantization_gate = any(
+        "quantization_precheck_ok" in payload.get("gates", {})
+        for payload in seed_payloads.values()
+    )
+    if any_quantization_gate:
+        gate_names.append("quantization_precheck_ok")
     aggregate = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "aggregate_root": str(root),
@@ -536,13 +616,21 @@ def _aggregate(aggregate_root: Path) -> None:
         "",
         "## Gate Summary",
         "",
-        "| Seed | no_crash | cka_ok | spectral_ok | accuracy_ok | degenerate_ok | all_gates_pass |",
-        "|------|----------|--------|-------------|-------------|---------------|----------------|",
+        (
+            "| Seed | no_crash | cka_ok | spectral_ok | accuracy_ok | degenerate_ok | "
+            + ("quantization_precheck_ok | " if any_quantization_gate else "")
+            + "all_gates_pass |"
+        ),
+        (
+            "|------|----------|--------|-------------|-------------|---------------|"
+            + ("--------------------------|" if any_quantization_gate else "")
+            + "----------------|"
+        ),
     ]
 
     for seed_name, payload in sorted(aggregate["per_seed"].items()):
         gates = payload["gates"]
-        report_lines.append(
+        row = (
             "| "
             f"{seed_name} | "
             f"{gates['no_crash']} | "
@@ -550,8 +638,11 @@ def _aggregate(aggregate_root: Path) -> None:
             f"{gates['spectral_ok']} | "
             f"{gates['accuracy_ok']} | "
             f"{gates['degenerate_ok']} | "
-            f"{payload['all_gates_pass']} |"
         )
+        if any_quantization_gate:
+            row += f"{gates.get('quantization_precheck_ok', False)} | "
+        row += f"{payload['all_gates_pass']} |"
+        report_lines.append(row)
 
     report_lines.extend(
         [

@@ -235,10 +235,26 @@ def _build_epoch_telemetry(epoch_metrics: list[dict[str, Any]]) -> list[dict[str
             "online_eval_n_correct": em.get("online_eval_n_correct"),
             "online_eval_n_total": em.get("online_eval_n_total"),
             "online_eval_degraded": em.get("online_eval_degraded"),
+            "online_eval_degraded_raw": em.get("online_eval_degraded_raw"),
+            "online_eval_degraded_significant": em.get("online_eval_degraded_significant"),
+            "online_eval_alpha": em.get("online_eval_alpha"),
+            "online_eval_current_ci_lower": em.get("online_eval_current_ci_lower"),
+            "online_eval_current_ci_upper": em.get("online_eval_current_ci_upper"),
+            "online_eval_baseline_ci_lower": em.get("online_eval_baseline_ci_lower"),
+            "online_eval_baseline_ci_upper": em.get("online_eval_baseline_ci_upper"),
             "online_eval_pre_accuracy": em.get("online_eval_pre_accuracy"),
             "online_eval_pre_n_correct": em.get("online_eval_pre_n_correct"),
             "online_eval_pre_n_total": em.get("online_eval_pre_n_total"),
             "online_eval_pre_degraded": em.get("online_eval_pre_degraded"),
+            "online_eval_pre_degraded_raw": em.get("online_eval_pre_degraded_raw"),
+            "online_eval_pre_degraded_significant": em.get(
+                "online_eval_pre_degraded_significant",
+            ),
+            "online_eval_pre_alpha": em.get("online_eval_pre_alpha"),
+            "online_eval_pre_current_ci_lower": em.get("online_eval_pre_current_ci_lower"),
+            "online_eval_pre_current_ci_upper": em.get("online_eval_pre_current_ci_upper"),
+            "online_eval_pre_baseline_ci_lower": em.get("online_eval_pre_baseline_ci_lower"),
+            "online_eval_pre_baseline_ci_upper": em.get("online_eval_pre_baseline_ci_upper"),
             "online_eval_pre_n_lost": em.get("online_eval_pre_n_lost"),
             "online_eval_pre_n_gained": em.get("online_eval_pre_n_gained"),
             "online_eval_pre_per_type_correct": em.get(
@@ -251,6 +267,15 @@ def _build_epoch_telemetry(epoch_metrics: list[dict[str, Any]]) -> list[dict[str
             "online_eval_post_n_correct": em.get("online_eval_post_n_correct"),
             "online_eval_post_n_total": em.get("online_eval_post_n_total"),
             "online_eval_post_degraded": em.get("online_eval_post_degraded"),
+            "online_eval_post_degraded_raw": em.get("online_eval_post_degraded_raw"),
+            "online_eval_post_degraded_significant": em.get(
+                "online_eval_post_degraded_significant",
+            ),
+            "online_eval_post_alpha": em.get("online_eval_post_alpha"),
+            "online_eval_post_current_ci_lower": em.get("online_eval_post_current_ci_lower"),
+            "online_eval_post_current_ci_upper": em.get("online_eval_post_current_ci_upper"),
+            "online_eval_post_baseline_ci_lower": em.get("online_eval_post_baseline_ci_lower"),
+            "online_eval_post_baseline_ci_upper": em.get("online_eval_post_baseline_ci_upper"),
             "online_eval_post_n_lost": em.get("online_eval_post_n_lost"),
             "online_eval_post_n_gained": em.get("online_eval_post_n_gained"),
             "online_eval_post_per_type_correct": em.get(
@@ -266,6 +291,25 @@ def _build_epoch_telemetry(epoch_metrics: list[dict[str, Any]]) -> list[dict[str
             "online_eval_stop_basis_n_total": em.get("online_eval_stop_basis_n_total"),
             "online_eval_stop_basis_degraded": em.get(
                 "online_eval_stop_basis_degraded",
+            ),
+            "online_eval_stop_basis_degraded_raw": em.get(
+                "online_eval_stop_basis_degraded_raw",
+            ),
+            "online_eval_stop_basis_degraded_significant": em.get(
+                "online_eval_stop_basis_degraded_significant",
+            ),
+            "online_eval_stop_basis_alpha": em.get("online_eval_stop_basis_alpha"),
+            "online_eval_stop_basis_current_ci_lower": em.get(
+                "online_eval_stop_basis_current_ci_lower",
+            ),
+            "online_eval_stop_basis_current_ci_upper": em.get(
+                "online_eval_stop_basis_current_ci_upper",
+            ),
+            "online_eval_stop_basis_baseline_ci_lower": em.get(
+                "online_eval_stop_basis_baseline_ci_lower",
+            ),
+            "online_eval_stop_basis_baseline_ci_upper": em.get(
+                "online_eval_stop_basis_baseline_ci_upper",
             ),
             "online_eval_stop_basis_stage": em.get("online_eval_stop_basis_stage"),
             "gate_confound_event": em.get("gate_confound_event"),
@@ -350,6 +394,8 @@ def _build_eval_history(
     n_correct_key: str,
     n_total_key: str,
     degraded_key: str,
+    degraded_raw_key: str | None = None,
+    degraded_significant_key: str | None = None,
 ) -> list[dict[str, Any]]:
     history: list[dict[str, Any]] = []
     for em in epoch_metrics:
@@ -362,6 +408,14 @@ def _build_eval_history(
             "n_correct": em.get(n_correct_key),
             "n_total": em.get(n_total_key),
             "degraded": em.get(degraded_key),
+            "degraded_raw": (
+                em.get(degraded_raw_key) if degraded_raw_key is not None else em.get(degraded_key)
+            ),
+            "degraded_significant": (
+                em.get(degraded_significant_key)
+                if degraded_significant_key is not None
+                else em.get(degraded_key)
+            ),
         })
     return history
 
@@ -451,6 +505,8 @@ def _run_single(args: argparse.Namespace) -> None:
         n_correct_key="online_eval_pre_n_correct",
         n_total_key="online_eval_pre_n_total",
         degraded_key="online_eval_pre_degraded",
+        degraded_raw_key="online_eval_pre_degraded_raw",
+        degraded_significant_key="online_eval_pre_degraded_significant",
     )
     if not online_eval_pre_history:
         online_eval_pre_history = _build_eval_history(
@@ -459,6 +515,8 @@ def _run_single(args: argparse.Namespace) -> None:
             n_correct_key="online_eval_n_correct",
             n_total_key="online_eval_n_total",
             degraded_key="online_eval_degraded",
+            degraded_raw_key="online_eval_degraded_raw",
+            degraded_significant_key="online_eval_degraded_significant",
         )
 
     online_eval_post_history = _build_eval_history(
@@ -467,6 +525,8 @@ def _run_single(args: argparse.Namespace) -> None:
         n_correct_key="online_eval_post_n_correct",
         n_total_key="online_eval_post_n_total",
         degraded_key="online_eval_post_degraded",
+        degraded_raw_key="online_eval_post_degraded_raw",
+        degraded_significant_key="online_eval_post_degraded_significant",
     )
     online_eval_stop_basis_history = _build_eval_history(
         epoch_metrics,
@@ -474,6 +534,8 @@ def _run_single(args: argparse.Namespace) -> None:
         n_correct_key="online_eval_stop_basis_n_correct",
         n_total_key="online_eval_stop_basis_n_total",
         degraded_key="online_eval_stop_basis_degraded",
+        degraded_raw_key="online_eval_stop_basis_degraded_raw",
+        degraded_significant_key="online_eval_stop_basis_degraded_significant",
     )
     if not online_eval_stop_basis_history:
         online_eval_stop_basis_history = list(online_eval_pre_history)

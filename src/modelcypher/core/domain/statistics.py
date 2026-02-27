@@ -92,6 +92,51 @@ def clopper_pearson_interval(
     return lower, upper
 
 
+def confidence_intervals_overlap(
+    interval_a: tuple[float, float],
+    interval_b: tuple[float, float],
+) -> bool:
+    """Return True when two closed intervals overlap."""
+    lower_a, upper_a = interval_a
+    lower_b, upper_b = interval_b
+    if lower_a > upper_a:
+        raise ValueError(
+            f"interval_a must satisfy lower <= upper, got {interval_a}",
+        )
+    if lower_b > upper_b:
+        raise ValueError(
+            f"interval_b must satisfy lower <= upper, got {interval_b}",
+        )
+    return (upper_a >= lower_b) and (upper_b >= lower_a)
+
+
+def binomial_degradation_is_significant(
+    *,
+    baseline_n_correct: int,
+    current_n_correct: int,
+    n_total: int,
+    alpha: float,
+) -> tuple[bool, tuple[float, float], tuple[float, float]]:
+    """Significance test for online-eval degradation via CP non-overlap.
+
+    Uses exact Clopper-Pearson intervals for both baseline and current
+    correctness counts. Degradation is significant iff the current upper bound
+    is strictly below the baseline lower bound.
+    """
+    baseline_ci = clopper_pearson_interval(
+        n_correct=baseline_n_correct,
+        n_total=n_total,
+        alpha=alpha,
+    )
+    current_ci = clopper_pearson_interval(
+        n_correct=current_n_correct,
+        n_total=n_total,
+        alpha=alpha,
+    )
+    significant = current_ci[1] < baseline_ci[0]
+    return significant, current_ci, baseline_ci
+
+
 # ---------------------------------------------------------------------------
 # Descriptive statistics
 # ---------------------------------------------------------------------------
