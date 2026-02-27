@@ -1283,6 +1283,9 @@ class DatasetTrainingService:
         inference_per_layer_cka = None
         inference_per_layer_gram_epsilon = None
         inference_min_cka_layer = None
+        mode_connectivity_barrier = None
+        mode_connectivity_normalized_barrier = None
+        mode_connectivity_method = None
         if base_activations:
             logger.info("Starting CKA verification...")
             cka_result = self._verify_capability_preservation(
@@ -1315,6 +1318,10 @@ class DatasetTrainingService:
                 "inference_per_layer_gram_epsilon",
             )
             inference_min_cka_layer = cka_result.get("inference_min_cka_layer")
+            # Mode connectivity
+            mode_connectivity_barrier = cka_result.get("mode_connectivity_barrier")
+            mode_connectivity_normalized_barrier = cka_result.get("mode_connectivity_normalized_barrier")
+            mode_connectivity_method = cka_result.get("mode_connectivity_method")
 
         if rp is not None:
             rp.training_verification_complete(
@@ -1351,6 +1358,43 @@ class DatasetTrainingService:
                 rss_final_spearman = last.rss_spearman
             if hasattr(last, "rss_top1_agreement") and last.rss_top1_agreement is not None:
                 rss_final_top1 = last.rss_top1_agreement
+
+        # 11.7. Degeneration diagnostic — NOT a gate until n-gram window derived (TODO: G1)
+        # Generates short responses on eval prompts and measures 4-gram repetition.
+        degeneration_max_4gram_repeat = None
+        degeneration_mean_4gram_repeat = None
+        if eval_problems:
+            try:
+                from modelcypher.core.domain.training.degeneration import (
+                    fourgram_repetition_rate,
+                )
+
+                # Use up to 5 prompts: SE ≤ 0.224 at worst-case σ, sufficient
+                # to distinguish pathological (>0.9) from normal (<0.3) rates.
+                degen_prompts = eval_problems[:5]
+                degen_rates: list[float] = []
+                for problem in degen_prompts:
+                    prompt_text = problem.prompt if hasattr(problem, "prompt") else str(problem)
+                    try:
+                        response = self._backend.generate(
+                            model, tokenizer, prompt_text, max_tokens=200,
+                        )
+                        rate = fourgram_repetition_rate(response)
+                        degen_rates.append(rate)
+                    except Exception:
+                        logger.debug("Degeneration generation failed for prompt", exc_info=True)
+
+                if degen_rates:
+                    degeneration_max_4gram_repeat = max(degen_rates)
+                    degeneration_mean_4gram_repeat = sum(degen_rates) / len(degen_rates)
+                    logger.info(
+                        "Degeneration diagnostic: max_4gram=%.3f, mean_4gram=%.3f (%d prompts)",
+                        degeneration_max_4gram_repeat,
+                        degeneration_mean_4gram_repeat,
+                        len(degen_rates),
+                    )
+            except Exception:
+                logger.debug("Degeneration diagnostic unavailable", exc_info=True)
 
         # 12. Save if requested
         saved_adapter_path: str | None = None
@@ -1486,6 +1530,11 @@ class DatasetTrainingService:
                 }
                 for layer_idx, sr in signal_rank_results.items()
             } if signal_rank_results else None,
+            mode_connectivity_barrier=mode_connectivity_barrier,
+            mode_connectivity_normalized_barrier=mode_connectivity_normalized_barrier,
+            mode_connectivity_method=mode_connectivity_method,
+            degeneration_max_4gram_repeat=degeneration_max_4gram_repeat,
+            degeneration_mean_4gram_repeat=degeneration_mean_4gram_repeat,
         )
 
     def _derive_strict_seed(self, model_path: Path, dataset_path: Path) -> int:
@@ -1887,6 +1936,7 @@ class DatasetTrainingService:
             gram_epsilons: dict[int, float] = {}
             cka_bounds: dict[int, float] = {}
             base_stacks: dict[int, Any] = {}
+            adapted_stacks: dict[int, Any] = {}
             for layer_idx in base_activations:
                 if layer_idx not in adapted_acts:
                     continue
@@ -1899,6 +1949,7 @@ class DatasetTrainingService:
                 adapted_stack = self._backend.stack(adapted_list)
                 self._backend.eval(base_stack, adapted_stack)
                 base_stacks[layer_idx] = base_stack
+                adapted_stacks[layer_idx] = adapted_stack
 
                 cka = compute_linear_cka_from_activations(
                     base_stack, adapted_stack, self._backend,
@@ -1982,6 +2033,49 @@ class DatasetTrainingService:
                 "per_module_null_accessibility": per_module_null_accessibility,
                 "n_probes": len(probe_texts),
             }
+
+            # Mode connectivity: barrier along linear interpolation path between
+            # base and adapted activations.  Weight space is Euclidean (proven
+            # cross-family 2026-02-23), so linear activation interpolation is the
+            # correct geodesic.  n_steps=5 gives endpoints + 3 interior points —
+            # minimum for barrier detection.
+            try:
+                from modelcypher.core.domain.geometry.mode_connectivity import (
+                    analyze_mode_connectivity,
+                )
+
+                mc_barriers: dict[int, float] = {}
+                mc_normalized: dict[int, float] = {}
+                for layer_idx, b_stack in base_stacks.items():
+                    a_stack = adapted_stacks.get(layer_idx)
+                    if a_stack is None:
+                        continue
+
+                    # Closure: CKA divergence from base at interpolated activations
+                    _b_ref = b_stack
+                    _backend_ref = self._backend
+
+                    def _mc_loss(interpolated: Any, _br: Any = _b_ref, _be: Any = _backend_ref) -> float:
+                        return 1.0 - compute_linear_cka_from_activations(_br, interpolated, _be)
+
+                    mc_result = analyze_mode_connectivity(
+                        b_stack, a_stack, _mc_loss, n_steps=5, backend=self._backend,
+                    )
+                    mc_barriers[layer_idx] = mc_result.barrier_height
+                    mc_normalized[layer_idx] = mc_result.normalized_barrier
+
+                if mc_barriers:
+                    result_dict["mode_connectivity_barrier"] = max(mc_barriers.values())
+                    result_dict["mode_connectivity_normalized_barrier"] = max(mc_normalized.values())
+                    result_dict["mode_connectivity_method"] = "linear"
+                    logger.info(
+                        "Mode connectivity: max_barrier=%.4f, max_normalized=%.4f (%d layers)",
+                        result_dict["mode_connectivity_barrier"],
+                        result_dict["mode_connectivity_normalized_barrier"],
+                        len(mc_barriers),
+                    )
+            except Exception:
+                logger.debug("Mode connectivity analysis failed", exc_info=True)
 
             # Inference-manifold CKA (diagnostic): separate CKA on StarProblem
             # prompts to measure geometry that eval probes may not span.
