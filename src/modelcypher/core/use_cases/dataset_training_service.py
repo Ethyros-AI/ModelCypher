@@ -317,6 +317,7 @@ class DatasetTrainingService:
         outcome_rollback_on_degradation: bool = True,
         research_online_eval_stop_stage: str = "pre_outcome",
         research_outcome_selector: str = "all",
+        research_online_eval_problem_set_path: str | Path | None = None,
         quantization_reference_model_path: str | Path | None = None,
         research_allow_quantization_crossing: bool = False,
         no_save: bool = False,
@@ -911,7 +912,10 @@ class DatasetTrainingService:
                 )
             if not online_eval:
                 effective_online_eval = True
-            if online_eval_n_problems is None:
+            if (
+                online_eval_n_problems is None
+                and research_online_eval_problem_set_path is None
+            ):
                 from modelcypher.core.domain.star.problem_generator import (
                     StarProblemGenerator,
                 )
@@ -931,25 +935,71 @@ class DatasetTrainingService:
         baseline_result = None
         regime_result = None
         if effective_online_eval:
-            if effective_online_eval_n_problems is None:
-                raise ValueError(
-                    "--online-eval requires --online-eval-n <N> "
-                    "(number of eval problems is a compute budget choice, not derivable)"
-                )
             from modelcypher.core.domain.training.online_eval import (
                 create_eval_problem_set,
                 evaluate_correctness,
             )
+            from modelcypher.core.domain.star.problem_generator import StarProblem
 
-            eval_seed = seed + _EVAL_SEED_OFFSET
-            eval_problems = create_eval_problem_set(
-                n_problems=effective_online_eval_n_problems,
-                seed=eval_seed,
-            )
-            logger.info(
-                "Created %d online eval problems (seed=%d, derived from training seed+1)",
-                len(eval_problems), eval_seed,
-            )
+            if research_online_eval_problem_set_path is not None:
+                eval_problem_path = Path(
+                    research_online_eval_problem_set_path,
+                ).expanduser().resolve()
+                if not eval_problem_path.exists():
+                    raise FileNotFoundError(
+                        f"research_online_eval_problem_set_path does not exist: {eval_problem_path}",
+                    )
+                raw_payload = json.loads(eval_problem_path.read_text(encoding="utf-8"))
+                if isinstance(raw_payload, dict):
+                    records = raw_payload.get("problems", [])
+                elif isinstance(raw_payload, list):
+                    records = raw_payload
+                else:
+                    raise ValueError(
+                        "research_online_eval_problem_set_path must contain a JSON list "
+                        "or an object with a 'problems' list.",
+                    )
+                if not isinstance(records, list):
+                    raise ValueError(
+                        "research_online_eval_problem_set_path: 'problems' must be a list",
+                    )
+                eval_problems = [
+                    StarProblem.from_problem_record(record)
+                    for record in records
+                ]
+                if not eval_problems:
+                    raise ValueError(
+                        "research_online_eval_problem_set_path contains no problems",
+                    )
+                if (
+                    effective_online_eval_n_problems is not None
+                    and effective_online_eval_n_problems != len(eval_problems)
+                ):
+                    raise ValueError(
+                        "online_eval_n_problems does not match the loaded research "
+                        "online eval problem set length",
+                    )
+                effective_online_eval_n_problems = len(eval_problems)
+                logger.info(
+                    "Loaded %d online eval problems from %s",
+                    len(eval_problems),
+                    eval_problem_path,
+                )
+            else:
+                if effective_online_eval_n_problems is None:
+                    raise ValueError(
+                        "--online-eval requires --online-eval-n <N> "
+                        "(number of eval problems is a compute budget choice, not derivable)"
+                    )
+                eval_seed = seed + _EVAL_SEED_OFFSET
+                eval_problems = create_eval_problem_set(
+                    n_problems=effective_online_eval_n_problems,
+                    seed=eval_seed,
+                )
+                logger.info(
+                    "Created %d online eval problems (seed=%d, derived from training seed+1)",
+                    len(eval_problems), eval_seed,
+                )
 
             # Measure baseline: greedy decoding is deterministic,
             # so this is an exact measurement, not a sample estimate

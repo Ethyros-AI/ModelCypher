@@ -17,7 +17,10 @@
 
 from __future__ import annotations
 
-from modelcypher.core.domain.star.problem_generator import StarProblemGenerator
+from modelcypher.core.domain.star.problem_generator import (
+    StarProblem,
+    StarProblemGenerator,
+)
 
 
 def test_generates_unique_required_problem_fields() -> None:
@@ -52,3 +55,17 @@ def test_verifies_programmatically_computed_answers() -> None:
 
     for problem in problems:
         assert problem.verify_response(f"Final answer: {problem.correct_answer}")
+
+
+def test_problem_record_round_trip_reconstructs_verifier() -> None:
+    generator = StarProblemGenerator(seed=7)
+    problems = generator.generate(15)
+
+    for problem in problems:
+        rebuilt = StarProblem.from_problem_record(problem.to_problem_record())
+        assert rebuilt.problem_id == problem.problem_id
+        assert rebuilt.prompt == problem.prompt
+        assert rebuilt.problem_type == problem.problem_type
+        assert rebuilt.correct_answer == problem.correct_answer
+        assert rebuilt.verification_fn == problem.verification_fn
+        assert rebuilt.verify_response(f"Final answer: {problem.correct_answer}")

@@ -294,7 +294,10 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 - Ablation-validated on 350M (2026-02-17): pure CE + Cayley-Stiefel is optimal; constrained training (invariance, separation, geodesic) monotonically hurts — disabled; available via service API for experiments only
 - Backend abstraction (MLX, JAX, CUDA) — framework imports only in backend files
 - bf16 SVD guard in `compute_per_layer_signal_ranks` (2026-02-27): activations cast to float32 before SVD; required for 8B bf16 models
-- 82%+ test coverage, 6051 tests passing
+- CI-based online eval degradation (2026-02-27): `degraded = degraded_significant` via Clopper-Pearson non-overlap at `alpha = 1/N`. Raw count and significance tracked independently. Replaces single-point comparison that locked in transient valleys.
+- Quantization Weyl precheck (2026-02-27): per-layer `||E_q||_spectral >= gap/2` crossing detection before training. Blocks training on quantized models unless `research_allow_quantization_crossing=True`.
+- Headroom CI preflight + ceiling override (2026-02-27): when `headroom_upper <= 1/n_total` (baseline at CI ceiling), forces CE-only regime — no REINFORCE, no entropy regularization. Prevents wasted compute at saturated baselines.
+- 82%+ test coverage, 6707 tests passing
 
 ### Remaining Gaps
 
@@ -303,14 +306,15 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 | **8B training efficacy** | Mechanical validation passes (no crash, spectral ratio 0.062, stopping catches degradation). 96% baseline → REINFORCE orthogonal to CE (cosine ≈ -0.02). | Training efficacy at high-baseline regimes. Seed 41 on benchmark_val: 3/5 gates fail (CKA, accuracy, degeneration). Need a run where baseline < 80% to separate pipeline soundness from regime boundary. | G5 mechanically closed, efficacy open |
 | **CKA vs degeneration independence** | Closed-form correction (2026-02-27) improves CKA (+0.023) and PPL (11.37 → 11.04) while worsening degeneration (4g-repeat 0.86 → 0.93). Quantization residuals in low-usage directions act as anti-degeneration noise. | Decomposition of quantization error into activation-used vs activation-unused subspaces. Controlled re-noising in unused directions with variance from measured residual covariance. | G4 requires all three signals (CKA, mode connectivity, degeneration) |
 | **Scale bound tradeoff** | Scale A/B (2026-02-27): standard (1.0) → PPL 3.47, min_CKA 0.65; geometric (sigma_k-derived) → PPL 4.01, min_CKA 0.88. Both preserve spectral bounds. | Neither scale satisfies G4 CKA threshold (0.9997) on 4-bit models. Need to determine if this is a fundamental quantization limitation or a derivation gap. | G4 not achievable on 4-bit without further research |
-| **Stopping oscillation sensitivity** | 8B online_eval caught a valley at iter 20 (21/25), but model recovered to 25/25 by iter 25. Single-point degradation check locked in a transient dip. | Significance-based degradation checks using data variance / CI instead of single-point comparison. | G3 mechanism works but resolution is too coarse |
+| **Stopping oscillation sensitivity** | CI-based degradation gate is implemented end-to-end (`degraded = degraded_significant`) with Clopper-Pearson non-overlap at `alpha = 1/N`; raw-vs-significant telemetry is propagated in training + research artifacts. | Multi-seed confirmation that false stop/rollback events are eliminated under transient valleys in 8B non-ceiling runs. | G3 mechanism closed in code, empirical closure pending |
 
 ### What Closes the Gaps
 
-1. **8B efficacy separation**: Run `g5_8b_validation.py` on a dataset where baseline accuracy is 60-70% (not 96%). This separates "pipeline works at 8B" from "baseline too high to improve." The pipeline's mechanical validation (spectral bounds, stopping, CKA measurement) is confirmed.
-2. **Degeneration decomposition**: Decompose per-layer quantization error `E_l = W_fp - W_q` into `E_used = (E @ V_k) @ V_k^T` and `E_unused = E - E_used` using the activation covariance eigenbasis. Correlate `||E_unused||` with repetition rate per layer. If anti-correlation holds, the noise structure is functional and correction strategies must preserve it.
-3. **Controlled re-noising**: After closed-form correction, inject noise in the unused subspace with covariance matched to the measured residual `E_unused^T @ E_unused`. If this recovers degeneration resistance without losing CKA/PPL gains, the correction + re-noise pipeline satisfies all three G4 signals.
-4. **Significance-based stopping**: Replace single-point online_eval degradation with CI-based check: flag degradation only when `accuracy < baseline_lower_CI` (Clopper-Pearson at the measured sample size). This prevents transient valleys from triggering early stop while still catching real degradation.
+1. **8B efficacy separation**: Build a fixed non-ceiling online-eval set (`scripts/g5_build_non_ceiling_eval_set.py`), then run 3 seeded validations with FP reference required (`scripts/g5_8b_multiseed_closure.py`). Current artifact: `results/g5_8b_validation/non_ceiling_eval_set_8b.json` (`13/20 = 65%`, generated 2026-02-27).
+2. **Degeneration decomposition**: Decompose per-layer quantization error `E_l = W_fp - W_q` into `E_used = (E @ V_k) @ V_k^T` and `E_unused = E - E_used` using the activation covariance eigenbasis. Correlate `||E_unused||` with repetition rate per layer.
+3. **Controlled re-noising**: Compare isotropic vs covariance-matched unused-subspace re-noise (`scripts/closedform_sequential_correction.py --renoise-modes isotropic,covariance_matched`) and require reconstruction sanity `E_used + E_unused ≈ E_total`.
+4. **Quantization frontier mapping**: Join Weyl crossing severity with observed CKA floors (`scripts/weyl_quantization_validation.py --cka-artifacts ...`) using non-crossing fraction, `max(error/(gap/2))`, and `min_cka`.
+5. **Significance-based stopping**: Implemented. Remaining work is empirical closure in multi-seed 8B non-ceiling runs.
 
 ---
 

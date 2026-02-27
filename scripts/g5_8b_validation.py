@@ -8,6 +8,10 @@ Usage:
     # Single seed
     poetry run python scripts/g5_8b_validation.py --seed 41
 
+    # Single seed with fixed non-ceiling online-eval set
+    poetry run python scripts/g5_8b_validation.py --seed 41 \
+        --online-eval-problems-json results/g5_8b_validation/non_ceiling_eval_set.json
+
     # Aggregate completed seeds
     poetry run python scripts/g5_8b_validation.py --aggregate-root results/g5_8b_validation
 """
@@ -64,6 +68,16 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--online-eval-n", type=int, default=25)
     parser.add_argument("--eval-interval", type=int, default=10)
+    parser.add_argument(
+        "--online-eval-problems-json",
+        type=Path,
+        default=None,
+        help=(
+            "Optional JSON file containing a fixed StarProblem set "
+            "(either a list of problem records or {'problems': [...]}). "
+            "When provided, this overrides generated online-eval problems."
+        ),
+    )
     parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT_DEFAULT)
     parser.add_argument(
         "--capacity-checkpoint",
@@ -83,6 +97,27 @@ def _parse_args() -> argparse.Namespace:
         help="If set, aggregate existing seed artifacts and exit.",
     )
     return parser.parse_args()
+
+
+def _load_online_eval_problems(problem_path: Path) -> list[Any]:
+    from modelcypher.core.domain.star.problem_generator import StarProblem
+
+    payload = json.loads(problem_path.read_text(encoding="utf-8"))
+    if isinstance(payload, dict):
+        records = payload.get("problems", [])
+    elif isinstance(payload, list):
+        records = payload
+    else:
+        raise ValueError(
+            "online_eval_problems_json must contain a JSON list or "
+            "an object with a 'problems' list.",
+        )
+    if not isinstance(records, list):
+        raise ValueError("online_eval_problems_json 'problems' must be a list")
+    problems = [StarProblem.from_problem_record(record) for record in records]
+    if not problems:
+        raise ValueError("online_eval_problems_json contains no problems")
+    return problems
 
 
 def _configure_logging(log_path: Path) -> logging.Logger:
@@ -235,6 +270,11 @@ def _run_seed(args: argparse.Namespace) -> None:
         if args.retention_data
         else None
     )
+    online_eval_problems_json = (
+        args.online_eval_problems_json.expanduser().resolve()
+        if args.online_eval_problems_json is not None
+        else None
+    )
     if not model_path.exists():
         raise FileNotFoundError(f"Model path does not exist: {model_path}")
     if fp_reference_model is not None and not fp_reference_model.exists():
@@ -247,6 +287,10 @@ def _run_seed(args: argparse.Namespace) -> None:
         raise FileNotFoundError(f"Eval data does not exist: {eval_data}")
     if retention_data is not None and not retention_data.exists():
         raise FileNotFoundError(f"Retention data does not exist: {retention_data}")
+    if online_eval_problems_json is not None and not online_eval_problems_json.exists():
+        raise FileNotFoundError(
+            f"online_eval_problems_json does not exist: {online_eval_problems_json}",
+        )
 
     output_root = args.output_root.expanduser().resolve()
     seed_dir = output_root / f"seed{args.seed}"
@@ -262,6 +306,10 @@ def _run_seed(args: argparse.Namespace) -> None:
     )
     run_log.info("Train data=%s", train_data)
     run_log.info("Eval data=%s", eval_data)
+    run_log.info(
+        "Online eval problems json=%s",
+        online_eval_problems_json if online_eval_problems_json is not None else "<generated>",
+    )
     run_log.info(
         "Retention data=%s",
         retention_data if retention_data is not None else "<disabled>",
@@ -322,10 +370,19 @@ def _run_seed(args: argparse.Namespace) -> None:
     # ------------------------------------------------------------------
     # 2) Baseline accuracy + repetition envelope on fixed probe set
     # ------------------------------------------------------------------
-    probe_problems = create_eval_problem_set(
-        n_problems=args.online_eval_n,
-        seed=args.seed + 1,
-    )
+    if online_eval_problems_json is not None:
+        probe_problems = _load_online_eval_problems(online_eval_problems_json)
+        if args.online_eval_n != len(probe_problems):
+            raise ValueError(
+                f"--online-eval-n={args.online_eval_n} does not match "
+                f"problem-set size={len(probe_problems)} from "
+                f"{online_eval_problems_json}",
+            )
+    else:
+        probe_problems = create_eval_problem_set(
+            n_problems=args.online_eval_n,
+            seed=args.seed + 1,
+        )
     probe_prompts = _build_probe_prompts(probe_problems)
 
     baseline_model, baseline_tokenizer = backend.load_model(str(model_path))
@@ -403,6 +460,11 @@ def _run_seed(args: argparse.Namespace) -> None:
         online_eval=True,
         online_eval_n_problems=args.online_eval_n,
         eval_interval=args.eval_interval,
+        research_online_eval_problem_set_path=(
+            str(online_eval_problems_json)
+            if online_eval_problems_json is not None
+            else None
+        ),
     )
 
     result_dict = result.to_dict()
@@ -498,6 +560,11 @@ def _run_seed(args: argparse.Namespace) -> None:
             "analyzed_parameters": capacity_report.analyzed_parameters,
         },
         "baseline_probe": {
+            "source": (
+                f"json:{online_eval_problems_json}"
+                if online_eval_problems_json is not None
+                else f"generated:seed={args.seed + 1}"
+            ),
             "online_eval_n": args.online_eval_n,
             "baseline_correct": baseline_eval.n_correct,
             "baseline_total": baseline_eval.n_total,
@@ -582,18 +649,32 @@ def _aggregate(aggregate_root: Path) -> None:
         "per_seed": {},
         "gate_pass_counts": {gate: 0 for gate in gate_names},
         "all_gates_all_seeds": True,
+        "n_seeds_final_eval_raw_degraded": 0,
+        "n_seeds_final_eval_significant_degraded": 0,
     }
 
     for seed_name, payload in sorted(seed_payloads.items()):
         gates = payload.get("gates", {})
         diagnostics = payload.get("diagnostics", {})
+        final_online_eval = (
+            payload.get("adapted_probe", {}).get("final_online_eval")
+            if isinstance(payload.get("adapted_probe"), dict)
+            else None
+        )
         per_seed_summary = {
             "gates": {gate: bool(gates.get(gate, False)) for gate in gate_names},
             "min_cka": diagnostics.get("min_cka"),
             "max_spectral_ratio": diagnostics.get("max_spectral_ratio"),
             "all_gates_pass": bool(diagnostics.get("all_gates_pass", False)),
+            "final_online_eval": final_online_eval,
         }
         aggregate["per_seed"][seed_name] = per_seed_summary
+
+        if isinstance(final_online_eval, dict):
+            if bool(final_online_eval.get("degraded_raw", False)):
+                aggregate["n_seeds_final_eval_raw_degraded"] += 1
+            if bool(final_online_eval.get("degraded_significant", False)):
+                aggregate["n_seeds_final_eval_significant_degraded"] += 1
 
         for gate in gate_names:
             if per_seed_summary["gates"][gate]:
@@ -619,12 +700,12 @@ def _aggregate(aggregate_root: Path) -> None:
         (
             "| Seed | no_crash | cka_ok | spectral_ok | accuracy_ok | degenerate_ok | "
             + ("quantization_precheck_ok | " if any_quantization_gate else "")
-            + "all_gates_pass |"
+            + "final_raw_degraded | final_significant_degraded | all_gates_pass |"
         ),
         (
             "|------|----------|--------|-------------|-------------|---------------|"
             + ("--------------------------|" if any_quantization_gate else "")
-            + "----------------|"
+            + "--------------------|----------------------------|----------------|"
         ),
     ]
 
@@ -641,7 +722,22 @@ def _aggregate(aggregate_root: Path) -> None:
         )
         if any_quantization_gate:
             row += f"{gates.get('quantization_precheck_ok', False)} | "
-        row += f"{payload['all_gates_pass']} |"
+        final_online_eval = payload.get("final_online_eval")
+        raw_degraded = (
+            bool(final_online_eval.get("degraded_raw", False))
+            if isinstance(final_online_eval, dict)
+            else False
+        )
+        significant_degraded = (
+            bool(final_online_eval.get("degraded_significant", False))
+            if isinstance(final_online_eval, dict)
+            else False
+        )
+        row += (
+            f"{raw_degraded} | "
+            f"{significant_degraded} | "
+            f"{payload['all_gates_pass']} |"
+        )
         report_lines.append(row)
 
     report_lines.extend(
@@ -650,6 +746,16 @@ def _aggregate(aggregate_root: Path) -> None:
             "## Aggregate Verdict",
             "",
             f"- all_gates_all_seeds: `{aggregate['all_gates_all_seeds']}`",
+            (
+                "- final_eval_raw_degraded: "
+                f"`{aggregate['n_seeds_final_eval_raw_degraded']}` / "
+                f"`{aggregate['n_seeds']}` seeds"
+            ),
+            (
+                "- final_eval_significant_degraded: "
+                f"`{aggregate['n_seeds_final_eval_significant_degraded']}` / "
+                f"`{aggregate['n_seeds']}` seeds"
+            ),
         ],
     )
 

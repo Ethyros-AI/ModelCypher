@@ -17,6 +17,7 @@ from modelcypher.cli.app import app
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 from modelcypher.core.domain.training.regime_selection import PerTypeRegime
+from modelcypher.core.domain.star.problem_generator import StarProblemGenerator
 from modelcypher.core.use_cases.dataset_training_service import (
     DatasetTrainResult,
     DatasetTrainingService,
@@ -908,6 +909,88 @@ def test_quantization_precheck_crossing_allows_explicit_research_override(
     payload = result.to_dict()
     assert payload["quantization_precheck"]["all_non_crossing"] is False
     assert payload["quantization_precheck"]["n_crossing"] == 1
+
+
+def test_research_online_eval_problem_set_path_overrides_generated_eval_problems(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from modelcypher.core.domain.training.online_eval import OnlineEvalResult
+
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(train_path, [{"text": "train 1"}])
+    _write_jsonl(eval_path, [{"text": "eval 1"}])
+
+    problem = StarProblemGenerator(seed=11).generate(1)[0]
+    problem_set_path = tmp_path / "online_eval_problems.json"
+    problem_set_path.write_text(
+        json.dumps([problem.to_problem_record()], indent=2),
+        encoding="utf-8",
+    )
+
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
+    _patch_lightweight_training(monkeypatch, service)
+    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
+
+    baseline_result = OnlineEvalResult(
+        epoch=0,
+        accuracy=1.0,
+        n_correct=1,
+        n_total=1,
+        correct_ids=frozenset({problem.problem_id}),
+        baseline_n_correct=1,
+        baseline_accuracy=1.0,
+        n_lost=0,
+        n_gained=0,
+        degraded=False,
+        per_type_accuracy={problem.problem_type: 1.0},
+        per_type_correct={problem.problem_type: 1},
+        per_type_total={problem.problem_type: 1},
+    )
+
+    def _unexpected_create_eval_problem_set(**_kwargs):
+        raise AssertionError("create_eval_problem_set should not be called")
+
+    captured_eval: dict[str, object] = {}
+
+    def _capture_eval_correctness(**kwargs):
+        captured_eval["problems"] = kwargs["problems"]
+        return baseline_result
+
+    captured_train_loop_kwargs: dict[str, object] = {}
+
+    def _capture_train_loop(**kwargs):
+        captured_train_loop_kwargs.update(kwargs)
+        return [(1, 1.0, 1.0)], "max_iters", []
+
+    monkeypatch.setattr(
+        "modelcypher.core.domain.training.online_eval.create_eval_problem_set",
+        _unexpected_create_eval_problem_set,
+    )
+    monkeypatch.setattr(
+        "modelcypher.core.domain.training.online_eval.evaluate_correctness",
+        _capture_eval_correctness,
+    )
+    monkeypatch.setattr(service._adapter, "train_loop", _capture_train_loop)
+
+    service.train_from_dataset(
+        model_path=model_dir,
+        dataset_path=train_path,
+        eval_dataset_path=eval_path,
+        auto_regime=False,
+        online_eval=True,
+        research_online_eval_problem_set_path=problem_set_path,
+        no_save=True,
+    )
+
+    problems = captured_eval["problems"]
+    assert isinstance(problems, list)
+    assert len(problems) == 1
+    assert problems[0].problem_id == problem.problem_id
+    assert len(captured_train_loop_kwargs["online_eval_problems"]) == 1
 
 
 def test_auto_regime_selection_failure_raises_training_derivation_error(

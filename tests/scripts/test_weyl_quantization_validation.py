@@ -166,6 +166,7 @@ def test_main_emits_analysis_config_and_aggregate(monkeypatch, tmp_path):
         output_dir=output_dir,
         geometry_mode="exact",
         geometry_seed=123,
+        cka_artifacts=None,
     )
 
     fake_result = _sample_result(

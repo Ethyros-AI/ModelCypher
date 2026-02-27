@@ -160,6 +160,47 @@ class StarProblem:
             "verification_fn": self.verification_fn,
         }
 
+    @classmethod
+    def from_problem_record(cls, record: dict[str, object]) -> "StarProblem":
+        """Rebuild a StarProblem from ``to_problem_record`` output."""
+        required = (
+            "problem_id",
+            "prompt",
+            "correct_answer",
+            "problem_type",
+            "difficulty",
+            "verification_fn",
+        )
+        missing = [key for key in required if key not in record]
+        if missing:
+            raise ValueError(
+                "Problem record missing required fields: "
+                + ", ".join(sorted(missing)),
+            )
+
+        verification_fn = str(record["verification_fn"])
+        correct_answer = str(record["correct_answer"])
+        if verification_fn == "verify_yes_no":
+            verifier = make_yes_no_verifier(correct_answer)
+        elif verification_fn == "verify_exact_token":
+            verifier = make_exact_token_verifier(correct_answer)
+        elif verification_fn == "verify_integer":
+            verifier = make_integer_verifier(correct_answer)
+        else:
+            raise ValueError(
+                f"Unsupported verification_fn in problem record: {verification_fn}",
+            )
+
+        return cls(
+            problem_id=str(record["problem_id"]),
+            prompt=str(record["prompt"]),
+            correct_answer=correct_answer,
+            problem_type=str(record["problem_type"]),
+            difficulty=int(record["difficulty"]),
+            verification_fn=verification_fn,
+            _verifier=verifier,
+        )
+
 
 class StarProblemGenerator:
     """Programmatic STaR problem generator.

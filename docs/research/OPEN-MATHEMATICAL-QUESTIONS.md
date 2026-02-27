@@ -4,6 +4,32 @@
 
 ---
 
+## Mission-Closure Questions (2026-02-27) `[OPEN]`
+
+These are the active gate-closure questions for G3/G4/G5:
+
+1. **8B efficacy under non-ceiling baseline** `[EMPIRICAL]`
+   - Mechanical gates are stable at 8B.
+   - Open: does training efficacy recover when baseline headroom is measurable?
+   - Fixed non-ceiling eval-set artifact: `results/g5_8b_validation/non_ceiling_eval_set_8b.json` (`13/20 = 65%`, 2026-02-27).
+   - Artifact path: `results/g5_8b_validation_*/*/gates.json`, `train_result.json`, `memory_trace.json`.
+
+2. **Unused-subspace residuals vs degeneration** `[EMPIRICAL]`
+   - Open mechanism: whether `||E_unused||` is causally anti-degeneration.
+   - Closure experiment: per-layer intervention + Spearman(`E_unused_frob`, `delta_max_4gram_repeat`) + covariance-matched re-noise.
+   - Artifact path: `results/closedform_sequential_correction/*/closedform_correction.json`.
+
+3. **Quantization crossing frontier vs CKA floor** `[EMPIRICAL]`
+   - Open: are 4-bit CKA limits explained by measured Weyl crossing severity?
+   - Closure experiment: map non-crossing layer fraction and `max(error/(gap/2))` to achieved `min_cka`.
+   - Artifact path: `results/weyl_quantization_validation/*/weyl_quantization_validation.json`.
+
+4. **Online degradation significance semantics** `[VALIDATED]`
+   - `degraded` is significance-based (CP non-overlap, `alpha=1/N`), with raw/significant telemetry preserved.
+   - Remaining work is run-level confirmation in 8B non-ceiling multi-seed closures.
+
+---
+
 ## 1. Layer Jacobian Structure — CORRECTED (2026-02-03) `[EMPIRICAL]`
 
 **Previous claim (WRONG):** Jacobians are rank-1 in trained transformers.

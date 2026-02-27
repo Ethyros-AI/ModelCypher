@@ -17,6 +17,11 @@ Usage:
     # Custom model pairs
     poetry run python scripts/weyl_quantization_validation.py \\
         --pairs /path/to/fp16 /path/to/quantized /path/to/fp16_2 /path/to/quant_2
+
+    # Attach CKA artifacts (same order as --pairs)
+    poetry run python scripts/weyl_quantization_validation.py \\
+        --pairs /path/to/fp /path/to/q /path/to/fp2 /path/to/q2 \\
+        --cka-artifacts /path/to/gates.json /path/to/closedform_correction.json
 """
 
 from __future__ import annotations
@@ -29,6 +34,8 @@ import math
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from scipy.stats import spearmanr
 
 from modelcypher.backends import initialize_default_backend
 from modelcypher.backends.mlx_training_adapter import MLXTrainingAdapter
@@ -415,6 +422,81 @@ def _compute_aggregate(results: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _extract_min_cka_from_artifact(path: Path) -> float | None:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    if isinstance(payload, dict):
+        diagnostics = payload.get("diagnostics")
+        if isinstance(diagnostics, dict) and diagnostics.get("min_cka") is not None:
+            return float(diagnostics["min_cka"])
+
+        if payload.get("min_cka") is not None:
+            return float(payload["min_cka"])
+
+        sweep = payload.get("sweep")
+        if isinstance(sweep, list) and sweep:
+            first = sweep[0]
+            if isinstance(first, dict):
+                baseline_cka = first.get("baseline_cka")
+                if isinstance(baseline_cka, dict) and baseline_cka.get("min_cka") is not None:
+                    return float(baseline_cka["min_cka"])
+                post_cka = first.get("post_cka")
+                if isinstance(post_cka, dict) and post_cka.get("min_cka") is not None:
+                    return float(post_cka["min_cka"])
+
+    return None
+
+
+def _build_crossing_to_cka_map(results: list[dict[str, Any]]) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    for result in results:
+        min_cka = result.get("min_cka_artifact")
+        if min_cka is None:
+            continue
+        n_layers = int(result.get("n_layers", 0))
+        n_safe = int(result.get("n_weyl_safe", 0))
+        non_crossing_fraction = (
+            float(n_safe) / float(n_layers) if n_layers > 0 else 0.0
+        )
+        rows.append(
+            {
+                "fp_model_id": result.get("fp_model_id"),
+                "q_model_id": result.get("q_model_id"),
+                "non_crossing_layer_fraction": non_crossing_fraction,
+                "max_error_over_gap_half": float(result.get("max_error_over_gap_ratio", 0.0)),
+                "min_cka": float(min_cka),
+                "cka_artifact": result.get("cka_artifact"),
+            }
+        )
+
+    if len(rows) < 2:
+        return {
+            "n_rows": len(rows),
+            "rows": rows,
+            "spearman_non_crossing_fraction_vs_min_cka": None,
+            "spearman_max_error_over_gap_half_vs_min_cka": None,
+        }
+
+    x_non_cross = [row["non_crossing_layer_fraction"] for row in rows]
+    x_error = [row["max_error_over_gap_half"] for row in rows]
+    y_cka = [row["min_cka"] for row in rows]
+    rho_non_cross, p_non_cross = spearmanr(x_non_cross, y_cka)
+    rho_error, p_error = spearmanr(x_error, y_cka)
+
+    return {
+        "n_rows": len(rows),
+        "rows": rows,
+        "spearman_non_crossing_fraction_vs_min_cka": {
+            "rho": float(rho_non_cross) if rho_non_cross == rho_non_cross else None,
+            "p_value": float(p_non_cross) if p_non_cross == p_non_cross else None,
+        },
+        "spearman_max_error_over_gap_half_vs_min_cka": {
+            "rho": float(rho_error) if rho_error == rho_error else None,
+            "p_value": float(p_error) if p_error == p_error else None,
+        },
+    }
+
+
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Weyl quantization validation on real model pairs.",
@@ -447,6 +529,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=DEFAULT_GEOMETRY_SEED,
         help="Seed used when --geometry-mode=randomized.",
     )
+    parser.add_argument(
+        "--cka-artifacts",
+        nargs="+",
+        default=None,
+        help=(
+            "Optional CKA artifact JSON paths aligned to --pairs order. "
+            "Use '-' for a pair without artifact."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -463,6 +554,23 @@ def main() -> None:
     else:
         pairs = DEFAULT_PAIRS
 
+    cka_artifact_paths: list[Path | None] | None = None
+    if args.cka_artifacts is not None:
+        if len(args.cka_artifacts) != len(pairs):
+            raise ValueError(
+                "--cka-artifacts must have the same length as model pairs "
+                f"(got {len(args.cka_artifacts)} artifacts for {len(pairs)} pairs)",
+            )
+        cka_artifact_paths = []
+        for raw_path in args.cka_artifacts:
+            if raw_path.strip() == "-":
+                cka_artifact_paths.append(None)
+                continue
+            artifact_path = Path(raw_path).expanduser().resolve()
+            if not artifact_path.exists():
+                raise FileNotFoundError(f"CKA artifact not found: {artifact_path}")
+            cka_artifact_paths.append(artifact_path)
+
     # Validate paths
     for fp_path, q_path in pairs:
         if not Path(fp_path).exists():
@@ -474,7 +582,7 @@ def main() -> None:
     adapter = MLXTrainingAdapter(backend)
 
     results: list[dict[str, Any]] = []
-    for fp_path, q_path in pairs:
+    for pair_idx, (fp_path, q_path) in enumerate(pairs):
         result = _validate_pair(
             fp_path,
             q_path,
@@ -483,6 +591,14 @@ def main() -> None:
             geometry_mode=args.geometry_mode,
             geometry_seed=args.geometry_seed,
         )
+        if cka_artifact_paths is not None:
+            cka_artifact = cka_artifact_paths[pair_idx]
+            result["cka_artifact"] = str(cka_artifact) if cka_artifact is not None else None
+            result["min_cka_artifact"] = (
+                _extract_min_cka_from_artifact(cka_artifact)
+                if cka_artifact is not None
+                else None
+            )
         results.append(result)
 
     # Write output
@@ -501,6 +617,7 @@ def main() -> None:
             "error_norm_mode": "exact_svd",
         },
         "aggregate": _compute_aggregate(results),
+        "crossing_to_cka_map": _build_crossing_to_cka_map(results),
         "pairs": results,
     }
 
