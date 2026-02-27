@@ -2,8 +2,14 @@
 """Build a fixed online-eval problem set with non-ceiling baseline accuracy.
 
 This script evaluates a candidate StarProblem pool on a reference model and
-extracts a deterministic subset whose baseline accuracy falls inside a target
-band (default: 60-70%).
+extracts a deterministic subset whose baseline is non-ceiling.
+
+Default targeting is derived from binomial geometry:
+- confidence level uses alpha = 1/N (same as regime selection)
+- ceiling criterion uses headroom_upper = ci_upper - observed_accuracy
+- non-ceiling requires headroom_upper > 1/N
+- among non-ceiling counts, choose p=k/N nearest 0.5 because binomial variance
+  p(1-p) is maximized at p=0.5 (maximum measurement sensitivity)
 
 Output format is directly consumable by:
   scripts/g5_8b_validation.py --online-eval-problems-json <output>
@@ -20,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from modelcypher.backends import initialize_default_backend
+from modelcypher.core.domain.statistics import clopper_pearson_interval
 from modelcypher.core.domain.training.online_eval import (
     create_eval_problem_set,
     evaluate_correctness,
@@ -56,14 +63,20 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--band-low",
         type=float,
-        default=0.60,
-        help="Lower bound of baseline accuracy band.",
+        default=None,
+        help=(
+            "Optional lower bound of baseline accuracy band. "
+            "Only valid when --band-high is also set."
+        ),
     )
     parser.add_argument(
         "--band-high",
         type=float,
-        default=0.70,
-        help="Upper bound of baseline accuracy band.",
+        default=None,
+        help=(
+            "Optional upper bound of baseline accuracy band. "
+            "Only valid when --band-low is also set."
+        ),
     )
     parser.add_argument(
         "--candidate-seed",
@@ -92,38 +105,92 @@ def _parse_args() -> argparse.Namespace:
 def _choose_target_correct_count(
     *,
     n_total: int,
-    band_low: float,
-    band_high: float,
+    band_low: float | None,
+    band_high: float | None,
     n_correct_available: int,
     n_incorrect_available: int,
-) -> int:
-    if not (0.0 <= band_low <= band_high <= 1.0):
-        raise ValueError(
-            f"band must satisfy 0 <= low <= high <= 1, got low={band_low}, high={band_high}",
-        )
+) -> tuple[int, dict[str, Any]]:
+    if (band_low is None) != (band_high is None):
+        raise ValueError("--band-low and --band-high must be provided together")
 
-    low_count = int(math.ceil(band_low * n_total))
-    high_count = int(math.floor(band_high * n_total))
-    if low_count > high_count:
-        raise ValueError(
-            f"Requested band [{band_low}, {band_high}] has no integer support for N={n_total}",
-        )
+    alpha = 1.0 / float(n_total)
+    low_count = 0
+    high_count = n_total
+    selection_mode = "auto_non_ceiling_max_variance"
+    if band_low is not None and band_high is not None:
+        if not (0.0 <= band_low <= band_high <= 1.0):
+            raise ValueError(
+                "band must satisfy 0 <= low <= high <= 1, "
+                f"got low={band_low}, high={band_high}",
+            )
+        low_count = int(math.ceil(band_low * n_total))
+        high_count = int(math.floor(band_high * n_total))
+        if low_count > high_count:
+            raise ValueError(
+                f"Requested band [{band_low}, {band_high}] has no integer support for N={n_total}",
+            )
+        selection_mode = "user_band"
 
     feasible: list[int] = []
+    feasible_non_ceiling: list[tuple[int, float]] = []
     for k in range(low_count, high_count + 1):
         need_incorrect = n_total - k
-        if n_correct_available >= k and n_incorrect_available >= need_incorrect:
-            feasible.append(k)
+        if n_correct_available < k or n_incorrect_available < need_incorrect:
+            continue
+        feasible.append(k)
+
+        acc = float(k) / float(n_total)
+        _ci_lower, ci_upper = clopper_pearson_interval(
+            n_correct=k,
+            n_total=n_total,
+            alpha=alpha,
+        )
+        headroom_upper = ci_upper - acc
+        if headroom_upper > alpha:
+            feasible_non_ceiling.append((k, acc))
 
     if not feasible:
         raise ValueError(
-            "No feasible target accuracy in requested band with current candidate pool. "
+            "No feasible target accuracy in the requested count range with current candidate pool. "
             f"Need counts in [{low_count}, {high_count}] correct out of N={n_total}, "
             f"but only have correct={n_correct_available}, incorrect={n_incorrect_available}.",
         )
 
-    midpoint = (low_count + high_count) / 2.0
-    return min(feasible, key=lambda k: (abs(k - midpoint), k))
+    if not feasible_non_ceiling:
+        raise ValueError(
+            "No feasible non-ceiling target in requested range under "
+            "headroom_upper > 1/N criterion.",
+        )
+
+    if selection_mode == "user_band":
+        midpoint = (low_count + high_count) / 2.0
+        target_k = min(
+            [k for (k, _acc) in feasible_non_ceiling],
+            key=lambda k: (abs(k - midpoint), k),
+        )
+    else:
+        # Binomial variance theorem: Var[X/N] = p(1-p)/N is maximal at p=0.5.
+        target_k = min(
+            feasible_non_ceiling,
+            key=lambda item: (abs(item[1] - 0.5), item[0]),
+        )[0]
+
+    target_acc = float(target_k) / float(n_total)
+    _target_ci_lower, target_ci_upper = clopper_pearson_interval(
+        n_correct=target_k,
+        n_total=n_total,
+        alpha=alpha,
+    )
+    return target_k, {
+        "mode": selection_mode,
+        "alpha": alpha,
+        "headroom_resolution": alpha,
+        "target_accuracy": target_acc,
+        "target_headroom_upper": target_ci_upper - target_acc,
+        "feasible_count_range": [low_count, high_count],
+        "n_feasible_total": len(feasible),
+        "n_feasible_non_ceiling": len(feasible_non_ceiling),
+    }
 
 
 def main() -> None:
@@ -170,7 +237,7 @@ def main() -> None:
         else:
             incorrect_problems.append(problem)
 
-    target_correct = _choose_target_correct_count(
+    target_correct, selection_meta = _choose_target_correct_count(
         n_total=args.n_problems,
         band_low=args.band_low,
         band_high=args.band_high,
@@ -206,6 +273,7 @@ def main() -> None:
             "candidate_pool_size": args.candidate_pool_size,
             "target_correct": target_correct,
             "target_incorrect": target_incorrect,
+            "derived": selection_meta,
         },
         "candidate_baseline": candidate_eval.to_dict(),
         "selected_baseline": selected_eval.to_dict(),
