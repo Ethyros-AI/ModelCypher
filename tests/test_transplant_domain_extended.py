@@ -492,8 +492,12 @@ class TestTransplantMathematicalProperties:
         n_samples=st.integers(min_value=4, max_value=16),
     )
     @settings(max_examples=10, deadline=None)
-    def test_null_space_constraint(self, out_dim, in_dim, n_samples):
-        """Projected delta should preserve boundary: A @ delta.T ≈ 0."""
+    def test_null_space_soft_constraint(self, out_dim, in_dim, n_samples):
+        """Projected delta should reduce activation residual (soft constraint).
+
+        With MP-weighted Tikhonov shrinkage, the constraint is soft:
+        ||A @ delta_proj^T|| < ||A @ delta_raw^T|| (reduced, not zero).
+        """
         backend = get_default_backend()
         source_aligned = backend.random_normal((out_dim, in_dim))
         target_weight = backend.random_normal((out_dim, in_dim))
@@ -507,22 +511,21 @@ class TestTransplantMathematicalProperties:
             backend=backend,
         )
 
+        delta_raw = source_aligned - target_weight
         delta_proj = result.merged_weight - target_weight
-        residual = backend.matmul(input_activations, backend.transpose(delta_proj))
-        res_norm = backend.mean(geodesic_norms(residual, backend))
-        act_norm = backend.mean(geodesic_norms(input_activations, backend))
-        delta_norm = backend.mean(geodesic_norms(delta_proj, backend))
-        backend.eval(res_norm, act_norm, delta_norm)
 
-        # Null-space projection residual is bounded by condition_number × eps × scale.
-        # Random matrices have condition numbers ~10-100×. Use sqrt(eps) as base
-        # (accounts for accumulated float ops) with 100× factor for conditioning.
-        eps = machine_epsilon(backend, input_activations)
-        sqrt_eps = float(eps ** 0.5)
-        scale = float(backend.to_scalar(act_norm)) * float(backend.to_scalar(delta_norm))
-        tol = sqrt_eps * max(1.0, scale) * 100.0  # 100× for random matrix conditioning
+        # Residual before and after projection
+        res_before = backend.matmul(input_activations, backend.transpose(delta_raw))
+        res_after = backend.matmul(input_activations, backend.transpose(delta_proj))
+        backend.eval(res_before, res_after)
 
-        assert float(backend.to_scalar(res_norm)) <= tol
+        norm_before = float(backend.to_scalar(backend.sum(res_before * res_before)))
+        norm_after = float(backend.to_scalar(backend.sum(res_after * res_after)))
+
+        # Soft constraint: projection reduces activation residual
+        assert norm_after <= norm_before + 1e-6, (
+            f"Projection increased activation residual: {norm_after} > {norm_before}"
+        )
 
     @given(
         n_probes=st.integers(min_value=5, max_value=20),

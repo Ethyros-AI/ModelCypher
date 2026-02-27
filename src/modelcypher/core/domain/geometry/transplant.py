@@ -30,6 +30,9 @@ from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.behavioral_norm import behavioral_norm
+from modelcypher.core.domain.geometry.marchenko_pastur import (
+    marchenko_pastur_noise_edge,
+)
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     geodesic_svd,
@@ -1209,50 +1212,51 @@ def compute_null_space_projector(
         )
 
     # =========================================================================
-    # COMPUTE NUMERICAL RANK AND NULL-SPACE DIMENSION
+    # MARCHENKO-PASTUR NOISE EDGE AND TIKHONOV WEIGHTS
     # =========================================================================
-    eps_rank = machine_epsilon(b, eigvals_pos)
-    max_eig_arr = b.max(eigvals_pos)
-    b.eval(max_eig_arr)
-    max_eig = float(b.to_scalar(max_eig_arr))
-    max_eig_safe = max(max_eig, eps_rank)
+    # The MP noise edge separates signal eigenvalues (population structure)
+    # from noise eigenvalues (finite-sample artifact). With N << D, this is
+    # orders of magnitude above the IEEE √ε threshold.
+    #
+    # Tikhonov weights w_i = λ_i / (λ_i + α) give continuous [0,1] per
+    # direction: λ >> α → w ≈ 1 (occupied), λ << α → w ≈ 0 (noise/available).
+    # No integer rank. No cliff.
+    #
+    # Citation: Marchenko & Pastur (1967), Tikhonov (1963).
+    # =========================================================================
+    mp_edge = marchenko_pastur_noise_edge(total_var_val, gram_size, n_samples)
+    tikhonov_w = eigvals_pos / (eigvals_pos + mp_edge)
+    b.eval(tikhonov_w)
 
-    rank_scale = svd_rank_threshold(b, eigvals_pos, in_dim)
-    rank_threshold = max_eig_safe * rank_scale
-    rank_mask = eigvals_pos > rank_threshold
-    rank_mask = b.astype(rank_mask, compute_dtype)
-
-    activation_rank_arr = b.sum(rank_mask)
-    b.eval(activation_rank_arr)
-    activation_rank = int(round(float(b.to_scalar(activation_rank_arr))))
+    # Effective rank = sum of Tikhonov weights (continuous, not integer)
+    eff_rank_arr = b.sum(tikhonov_w)
+    b.eval(eff_rank_arr)
+    activation_rank = int(round(float(b.to_scalar(eff_rank_arr))))
     activation_rank = max(0, min(activation_rank, gram_size))
     null_rank = max(0, in_dim - activation_rank)
 
+    max_eig_arr = b.max(eigvals_pos)
+    b.eval(max_eig_arr)
+    max_eig = float(b.to_scalar(max_eig_arr))
+
     logger.info(
-        "NULL-SPACE: numeric_rank=%d/%d, null_rank=%d, max_eig=%.3e",
-        activation_rank, gram_size, null_rank, max_eig,
+        "NULL-SPACE: eff_rank=%.1f/%d, null_rank=%d, max_eig=%.3e, "
+        "mp_edge=%.3e, sigma_sq=%.3e",
+        float(b.to_scalar(eff_rank_arr)), gram_size, null_rank, max_eig,
+        mp_edge, total_var_val / gram_size,
     )
 
     if use_feature_space:
         # =====================================================================
-        # FEATURE SPACE: Build explicit d×d projector
+        # FEATURE SPACE: Build explicit d×d projector (MP-weighted)
         # =====================================================================
-        # For A.T @ A = V @ diag(λ) @ V.T, the null-space projector is:
-        # P = I - V_r @ V_r.T  (where V_r = columns with λ > threshold)
-        # This projects into directions NOT spanned by activation covariance.
+        # Row-space projector: V @ diag(w) @ V.T
+        # w_i = λ_i / (λ_i + α) from Tikhonov/MP (continuous, derived)
+        # Null-space projector: P = I - V @ diag(w) @ V.T
         # =====================================================================
-        eps_pinv = division_epsilon(b, eigvals_pos)
-        pinv_threshold = eps_rank * n_eigs * max_eig_safe
-
-        # Build row-space projector V_r @ V_r.T (occupied directions)
-        pinv_mask = eigvals_pos > pinv_threshold
-        pinv_mask_float = b.astype(pinv_mask, compute_dtype)
-
-        # V_r = eigenvectors with significant eigenvalues
-        # Row-space projector: V_r @ V_r.T = V @ diag(mask) @ V.T
-        V_masked = eigvecs * b.reshape(pinv_mask_float, (1, -1))
-        b.eval(V_masked)
-        row_space_proj = b.matmul(V_masked, b.transpose(eigvecs))
+        V_weighted = eigvecs * b.reshape(tikhonov_w, (1, -1))
+        b.eval(V_weighted)
+        row_space_proj = b.matmul(V_weighted, b.transpose(eigvecs))
         b.eval(row_space_proj)
 
         # Null-space projector: P = I - row_space_proj
@@ -1269,15 +1273,16 @@ def compute_null_space_projector(
         )
     else:
         # =====================================================================
-        # SAMPLE SPACE: Original behavior (n×n pseudoinverse)
+        # SAMPLE SPACE: Tikhonov-regularized pseudoinverse
         # =====================================================================
-        eps_pinv = division_epsilon(b, eigvals_pos)
-        pinv_threshold = eps_rank * n_eigs * max_eig_safe
-        pinv_mask = eigvals_pos > pinv_threshold
-        eigvals_inv = b.where(pinv_mask, 1.0 / (eigvals_pos + eps_pinv), b.zeros_like(eigvals_pos))
+        # Instead of hard cutoff 1/λ for λ > threshold, 0 otherwise:
+        # Use 1/(λ + α) which is Tikhonov regularization of the pseudoinverse.
+        # α = MP noise edge (derived, not guessed).
+        # =====================================================================
+        eigvals_inv = 1.0 / (eigvals_pos + mp_edge)
         b.eval(eigvals_inv)
 
-        # AAt_inv = V @ diag(1/λ) @ V.T
+        # AAt_inv = V @ diag(1/(λ+α)) @ V.T
         V_scaled = eigvecs * b.reshape(eigvals_inv, (1, -1))
         b.eval(V_scaled)
         AAt_inv = b.matmul(V_scaled, b.transpose(eigvecs))

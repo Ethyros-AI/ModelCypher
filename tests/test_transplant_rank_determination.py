@@ -260,8 +260,12 @@ class TestNullSpaceProjectorProperties:
         d_features=st.integers(min_value=5, max_value=50),
     )
     @settings(max_examples=10, deadline=None)
-    def test_projection_satisfies_null_constraint(self, n_samples, d_features):
-        """Projected deltas should satisfy A @ delta^T = 0."""
+    def test_projection_reduces_activation_residual(self, n_samples, d_features):
+        """Projected deltas should have smaller activation residual than unprojected.
+
+        With MP-weighted Tikhonov shrinkage, the constraint is soft:
+        ||A @ delta_proj^T|| < ||A @ delta^T|| (reduced, not zero).
+        """
         backend = get_default_backend()
         backend.random_seed(42)
 
@@ -278,12 +282,10 @@ class TestNullSpaceProjectorProperties:
         delta_W = backend.random_normal((out_dim, d_features))
         backend.eval(A, delta_W)
 
-        # Apply projection using the correct method based on projector type
+        # Apply projection
         if projector.projector is not None:
-            # Feature-space mode: projector is explicit d×d null-space projector
             delta_proj = backend.matmul(delta_W, projector.projector)
         else:
-            # Sample-space mode: use gram_inv for projection
             gram_inv = projector.gram_inv
             backend.eval(gram_inv)
             delta_row = backend.matmul(delta_W, backend.transpose(A))
@@ -292,24 +294,16 @@ class TestNullSpaceProjectorProperties:
             delta_proj = delta_W - correction
         backend.eval(delta_proj)
 
-        residual = backend.matmul(A, backend.transpose(delta_proj))
-        backend.eval(residual)
+        # Residual after projection should be smaller than before
+        res_before = backend.matmul(A, backend.transpose(delta_W))
+        res_after = backend.matmul(A, backend.transpose(delta_proj))
+        backend.eval(res_before, res_after)
 
-        res_norm = backend.mean(geodesic_norms(residual, backend))
-        act_norm = backend.mean(geodesic_norms(A, backend))
-        delta_norm = backend.mean(geodesic_norms(delta_proj, backend))
-        backend.eval(res_norm, act_norm, delta_norm)
+        norm_before = float(backend.to_scalar(backend.sum(res_before * res_before)))
+        norm_after = float(backend.to_scalar(backend.sum(res_after * res_after)))
 
-        # Null-space projection residual is bounded by condition_number × eps × scale.
-        # Random matrices have condition numbers ~10-100×. Use sqrt(eps) as base
-        # (accounts for accumulated float ops) with 100× factor for conditioning.
-        eps = machine_epsilon(backend, residual)
-        sqrt_eps = float(eps ** 0.5)
-        scale = float(backend.to_scalar(act_norm)) * float(backend.to_scalar(delta_norm))
-        tolerance = sqrt_eps * max(1.0, scale) * 100.0
-
-        assert float(backend.to_scalar(res_norm)) <= tolerance, (
-            f"Projection violates null constraint: ||A @ delta^T|| = {float(backend.to_scalar(res_norm))}"
+        assert norm_after <= norm_before + 1e-6, (
+            f"Projection increased activation residual: {norm_after} > {norm_before}"
         )
 
     @given(
@@ -317,8 +311,13 @@ class TestNullSpaceProjectorProperties:
         d_features=st.integers(min_value=5, max_value=50),
     )
     @settings(max_examples=10, deadline=None)
-    def test_projection_is_idempotent(self, n_samples, d_features):
-        """Applying the projection twice should be a no-op."""
+    def test_projection_is_monotone_shrinkage(self, n_samples, d_features):
+        """Applying the projection twice shrinks further (monotone).
+
+        With Tikhonov weights w_i ∈ (0,1), the operator P = I - V@diag(w)@V^T
+        has eigenvalues (1-w_i) ∈ (0,1). P² has eigenvalues (1-w_i)² < (1-w_i).
+        So ||delta @ P²|| ≤ ||delta @ P|| ≤ ||delta||.
+        """
         backend = get_default_backend()
         backend.random_seed(42)
 
@@ -337,10 +336,8 @@ class TestNullSpaceProjectorProperties:
 
         def _project(delta):
             if projector.projector is not None:
-                # Feature-space mode: projector is explicit d×d null-space projector
                 projected = backend.matmul(delta, projector.projector)
             else:
-                # Sample-space mode: use gram_inv for projection
                 gram_inv = projector.gram_inv
                 delta_row = backend.matmul(delta, backend.transpose(A))
                 correction = backend.matmul(delta_row, gram_inv)
@@ -352,15 +349,14 @@ class TestNullSpaceProjectorProperties:
         delta_once = _project(delta_W)
         delta_twice = _project(delta_once)
 
-        diff = backend.sum(backend.abs(delta_twice - delta_once))
-        backend.eval(diff)
-        diff_val = float(backend.to_scalar(diff))
+        norm_original = float(backend.to_scalar(backend.sum(delta_W * delta_W)))
+        norm_once = float(backend.to_scalar(backend.sum(delta_once * delta_once)))
+        norm_twice = float(backend.to_scalar(backend.sum(delta_twice * delta_twice)))
 
-        # Idempotency error accumulates with each matmul in the projection.
-        # Random matrices have condition numbers ~10-100×.
-        eps = sqrt_scalar(machine_epsilon(backend, delta_once), backend)
-        tolerance = eps * float(d_features) * float(out_dim) * 100.0
-
-        assert diff_val < tolerance, (
-            f"Projection not idempotent: ||P(P(delta)) - P(delta)|| = {diff_val}"
+        # Monotone shrinkage: ||P²(delta)|| ≤ ||P(delta)|| ≤ ||delta||
+        assert norm_once <= norm_original + 1e-6, (
+            f"Single projection increased norm: {norm_once} > {norm_original}"
+        )
+        assert norm_twice <= norm_once + 1e-6, (
+            f"Double projection increased norm: {norm_twice} > {norm_once}"
         )

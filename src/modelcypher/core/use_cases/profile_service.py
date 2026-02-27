@@ -45,7 +45,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain.profile import (
-    ConvergenceMetrics,
+    ProfileConvergenceMetrics,
     GeometricProfile,
     GeometricProfileStore,
     LayerGeometricProfile,
@@ -208,7 +208,7 @@ class ProfileService:
         logger.info("PROFILE: Computing trajectory-based manifold map for %s", model_path)
 
         # Load model and tokenizer
-        model, tokenizer = self._model_loader.load_model_for_training(str(model_path))
+        model, tokenizer = self._model_loader.load_model(str(model_path))
 
         # Load atlas probes for domain-stratified sampling
         from modelcypher.core.domain.atlas.unified_atlas import UnifiedAtlasInventory
@@ -371,7 +371,7 @@ class ProfileService:
                 hidden_dim = mp.hidden_dim
 
         # Build convergence metrics
-        convergence = ConvergenceMetrics(
+        convergence = ProfileConvergenceMetrics(
             probes_processed=map_result.total_probes_processed,
             probes_failed=0,
             total_batches=map_result.total_batches,
@@ -617,7 +617,7 @@ class ProfileService:
 
         # Compute per-layer geometry
         layer_profiles: dict[int, LayerGeometricProfile] = {}
-        convergence = ConvergenceMetrics(
+        convergence = ProfileConvergenceMetrics(
             probes_processed=probes_processed,
             probes_failed=probes_failed,
         )

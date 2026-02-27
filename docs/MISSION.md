@@ -187,7 +187,7 @@ Three independent preservation signals — ALL must hold:
 - **Mode connectivity barrier**: Interpolation path from base to adapted has barrier <= 1.0 + sqrt(eps)
 - **Behavioral coherence (degeneration)**: Adapted model's n-gram repetition rate on a fixed probe set must not exceed the base model's measured rate plus sqrt(eps). Threshold is the base model's own repetition envelope, not a constant.
 
-CKA and PPL recovery alone are insufficient. Hard-cutoff quantization correction demonstrated that CKA and PPL can improve while degeneration worsens — removing quantization error with a step-function projection eliminates noise in low-usage directions that acts as implicit regularization. Tikhonov-weighted correction (Marchenko-Pastur noise edge, 2026-02-27) improved all three simultaneously by using continuous eigenvalue weighting instead of a hard cutoff — but degeneration must still be tracked independently because the improvement magnitudes differ (+0.014 CKA mean vs -0.047 degeneration).
+CKA and PPL recovery alone are insufficient. Hard-cutoff quantization correction demonstrated that CKA and PPL can improve while degeneration worsens — removing quantization error with a step-function projection eliminates noise in low-usage directions that acts as implicit regularization. Tikhonov-weighted correction (Marchenko-Pastur noise edge, 2026-02-27) improved all three simultaneously by using continuous eigenvalue weighting instead of a hard cutoff — but degeneration must still be tracked independently because the improvement magnitudes differ (+0.014 CKA mean vs -0.047 degeneration on Qwen3-1.7B). Cross-scale validation on Qwen3-8B confirmed larger gains at scale (+0.033 CKA mean, +0.181 CKA min, -0.04 PPL, -0.016 degeneration). Cross-architecture validation on Llama-3.2-3B confirmed PPL and degeneration improvement (-0.08 PPL, -0.056 degeneration) even when quantization damage is already minimal (baseline CKA 0.992).
 
 **Test**: Run the verification suite on the merged model. CKA, mode connectivity, AND degeneration all within bounds. A model that passes CKA but fails degeneration is not preserved.
 
@@ -275,6 +275,7 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 | `cayley_lora.py` | NB-LoRA parameterization | `cayley_transform_full()`, `NBLoRALayer` |
 | `cka.py` | Capability preservation verification | `compute_linear_cka_from_activations()` |
 | `activation_provider.py` | Activation collection for CKA | `collect_hidden_activations()` |
+| `marchenko_pastur.py` | Random-matrix noise edge for eigenvalue thresholding | `marchenko_pastur_noise_edge()`, `effective_dimension()` |
 
 ---
 
@@ -297,6 +298,8 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 - CI-based online eval degradation (2026-02-27): `degraded = degraded_significant` via Clopper-Pearson non-overlap at `alpha = 1/N`. Raw count and significance tracked independently. Replaces single-point comparison that locked in transient valleys.
 - Quantization Weyl precheck (2026-02-27): per-layer `||E_q||_spectral >= gap/2` crossing detection before training. Blocks training on quantized models unless `research_allow_quantization_crossing=True`.
 - Headroom CI preflight + ceiling override (2026-02-27): when `headroom_upper <= 1/n_total` (baseline at CI ceiling), forces CE-only regime — no REINFORCE, no entropy regularization. Prevents wasted compute at saturated baselines.
+- Marchenko-Pastur domain module (2026-02-27): `marchenko_pastur.py` — noise-edge derivation from eigenvalue spectrum + sample ratio. Used by Tikhonov correction and MP-weighted null-space projector. 23 unit tests.
+- MP-weighted null-space projector (2026-02-27): `compute_null_space_projector()` in `transplant.py` uses Tikhonov shrinkage weights `w_i = λ_i/(λ_i + α)` with α = MP noise edge, replacing binary eigenvalue mask. Diagnostic on real LFM2-350M activations: 60-67% of eigenvalues fall between IEEE threshold and MP edge in non-bottleneck layers. Shrinkage operator has eigenvalues in [0,1] (monotone, not idempotent). 146 null-space/transplant tests passing.
 - 82%+ test coverage, 6707 tests passing
 
 ### Remaining Gaps
@@ -304,14 +307,14 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 | Gap | What's Known | What's Missing | Impact |
 |-----|-------------|---------------|--------|
 | **8B training efficacy** | Mechanical validation passes (no crash, spectral ratio 0.062, stopping catches degradation). 96% baseline → REINFORCE orthogonal to CE (cosine ≈ -0.02). | Training efficacy at high-baseline regimes. Seed 41 on benchmark_val: 3/5 gates fail (CKA, accuracy, degeneration). Need a run where baseline < 80% to separate pipeline soundness from regime boundary. | G5 mechanically closed, efficacy open |
-| **Quantization correction ceiling** | Tikhonov closed-form correction (2026-02-27) improves CKA (+0.014 mean, +0.18 min), PPL (11.37 → 11.31), AND degeneration (4g-repeat 0.86 → 0.81) simultaneously. Eigenvalue-weighted projection with Marchenko-Pastur noise edge (one formula, no sweep). Soft weighting automatically preserves quantization residual in low-usage directions — no re-noising needed. | CKA mean 0.909 is still far from 0.9997 guardrail. Need to determine if this is a fundamental 4-bit information-loss ceiling or if more aggressive correction (larger calibration set, multi-pass) can close the gap. Validate on 8B to check cross-scale consistency. | G4 CKA guardrail not met on 4-bit; may be intrinsic |
+| **Quantization correction ceiling** | Tikhonov closed-form correction validated cross-scale and cross-architecture (2026-02-27). **Qwen3-1.7B**: CKA +0.014/+0.18, PPL -0.06, degen -0.05. **Qwen3-8B**: CKA +0.033/+0.181, PPL -0.04, degen -0.016. **Llama-3.2-3B**: PPL -0.08, degen -0.056, CKA near-flat (baseline already 0.992). Gains scale with quantization damage magnitude. Marchenko-Pastur noise edge (one formula, no sweep). | CKA mean 0.909 (Qwen3-1.7B) still far from 0.9997 guardrail. 8B shows CKA 0.877 post-correction. Llama-3.2-3B shows CKA 0.992 baseline — 4-bit g64 affine causes minimal damage on this architecture. The CKA floor is architecture- and quantization-scheme dependent, not a universal constant. | G4 CKA guardrail not met on 4-bit; ceiling is architecture-dependent |
 | **Scale bound tradeoff** | Scale A/B (2026-02-27): standard (1.0) → PPL 3.47, min_CKA 0.65; geometric (sigma_k-derived) → PPL 4.01, min_CKA 0.88. Both preserve spectral bounds. | Neither scale satisfies G4 CKA threshold (0.9997) on 4-bit models. Need to determine if this is a fundamental quantization limitation or a derivation gap. | G4 not achievable on 4-bit without further research |
 | **Stopping oscillation sensitivity** | CI-based degradation gate is implemented end-to-end (`degraded = degraded_significant`) with Clopper-Pearson non-overlap at `alpha = 1/N`; raw-vs-significant telemetry is propagated in training + research artifacts. | Multi-seed confirmation that false stop/rollback events are eliminated under transient valleys in 8B non-ceiling runs. | G3 mechanism closed in code, empirical closure pending |
 
 ### What Closes the Gaps
 
 1. **8B efficacy separation**: Build a fixed non-ceiling online-eval set (`scripts/g5_build_non_ceiling_eval_set.py`), then run 3 seeded validations with FP reference required (`scripts/g5_8b_multiseed_closure.py`). Current artifact: `results/g5_8b_validation/non_ceiling_eval_set_8b.json` (`13/20 = 65%`, generated 2026-02-27).
-2. **Quantization correction cross-scale validation**: Run Tikhonov correction (`scripts/closedform_sequential_correction.py`) on Qwen3-8B 4-bit to confirm the 1.7B result (CKA +0.014, PPL -0.06, degeneration -0.05) holds at scale. If CKA ceiling persists, this establishes 4-bit as an intrinsic information-loss boundary for G4.
+2. **Quantization correction cross-scale validation [CLOSED 2026-02-27]**: Validated on Qwen3-8B (CKA +0.033/+0.181, PPL -0.04, degen -0.016) and cross-architecture on Llama-3.2-3B (PPL -0.08, degen -0.056). Gains are proportional to quantization damage: 8B (larger damage → larger correction), Llama (minimal damage → minimal CKA change but PPL/degen still improve). CKA ceiling confirmed architecture-dependent.
 3. **Quantization frontier mapping**: Join Weyl crossing severity with observed CKA floors and Tikhonov correction ceilings across bit-depths (4-bit, 8-bit) to map where G4 CKA guardrail is achievable.
 4. **Quantization frontier mapping**: Join Weyl crossing severity with observed CKA floors (`scripts/weyl_quantization_validation.py --cka-artifacts ...`) using non-crossing fraction, `max(error/(gap/2))`, and `min_cka`.
 5. **Significance-based stopping**: Implemented. Remaining work is empirical closure in multi-seed 8B non-ceiling runs.
@@ -344,3 +347,5 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 | de Silva & Tenenbaum (2004) | Landmark MDS for cross-manifold projection |
 | Eckart-Young (1936) | Optimal low-rank approximation via SVD |
 | Kornblith et al. (2019) | CKA: Centered Kernel Alignment for representation similarity |
+| Marchenko & Pastur (1967) | Limiting spectral distribution of random matrices; noise edge `σ²(1+√(D/N))²` for eigenvalue thresholding |
+| Loizou et al. (2020) | Stochastic Polyak Step-size (SPS): `η = f(x_t) / ||g_t||²` |
