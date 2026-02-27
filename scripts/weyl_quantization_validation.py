@@ -8,8 +8,8 @@ If the bound holds, Weyl's theorem (1912) guarantees no singular value
 crossing — the quantized model's geometry is topologically identical
 to full precision.  Training on quantized weights is geometrically safe.
 
-Uses power iteration on E = W_fp - W_q to compute ||E_q||_2, consistent
-with spectral norm computation in spectral_budget.py.
+Error norm ||E_q||_2 is computed via exact SVD in the shared domain module
+(quantization_weyl_precheck).
 
 Usage:
     poetry run python scripts/weyl_quantization_validation.py
@@ -77,77 +77,6 @@ def _clear_gpu_cache() -> None:
             mx.metal.clear_cache()
     except Exception:
         pass
-
-
-def _spectral_norm_power_iter(
-    matrix: Any,
-    backend: Any,
-    n_iters: int = 20,
-) -> float:
-    """Compute ||M||_2 via power iteration on M^T M.
-
-    Power method on M^T M: dominant-direction error decays as
-    (sigma_2/sigma_1)^(2 * n_iters).  20 iterations gives high accuracy
-    even for modest spectral gaps.
-
-    Args:
-        matrix: 2D array [m, n].
-        backend: Backend for matmul/norm.
-        n_iters: Power iteration steps.
-
-    Returns:
-        Estimated spectral norm (float).
-    """
-    _, n = int(matrix.shape[0]), int(matrix.shape[1])
-    # Deterministic initialization for reproducibility.
-    v = backend.linspace(1.0, float(n), n, dtype="float32")
-    v = backend.reshape(v, (n, 1))
-    backend.eval(v)
-    v_norm = float(backend.to_scalar(backend.norm(v)))
-    if v_norm > 0.0:
-        v = v / v_norm
-
-    M = backend.astype(matrix, "float32")
-    backend.eval(M)
-
-    _norm_floor = float(backend.finfo().tiny)
-    sigma = 0.0
-
-    for _ in range(n_iters):
-        # u = M @ v
-        u = backend.matmul(M, v)
-        backend.eval(u)
-        u_norm = float(backend.to_scalar(backend.norm(u)))
-        if u_norm < _norm_floor:
-            break
-        u = u / u_norm
-
-        # v = M^T @ u
-        v = backend.matmul(backend.transpose(M), u)
-        backend.eval(v)
-        v_norm = float(backend.to_scalar(backend.norm(v)))
-        if v_norm < _norm_floor:
-            break
-        sigma = v_norm
-        v = v / v_norm
-
-    del M
-    return sigma
-
-
-def _spectral_norm_exact(matrix: Any, backend: Any) -> float:
-    """Compute ||M||_2 exactly from SVD."""
-    M = backend.astype(matrix, "float32")
-    backend.eval(M)
-    svd_out = backend.svd(M, compute_uv=False)
-    if isinstance(svd_out, tuple):
-        S = svd_out[0] if len(svd_out) == 1 else svd_out[1] if len(svd_out) == 2 else svd_out[1]
-    else:
-        S = svd_out
-    backend.eval(S)
-    sigma = float(backend.to_scalar(S[0])) if int(S.shape[0]) > 0 else 0.0
-    del M
-    return sigma
 
 
 def _extract_layer_weights_streaming(

@@ -45,7 +45,12 @@ from typing import Any
 import mlx.core as mx
 import mlx.nn as nn
 
-
+from modelcypher.backends import initialize_default_backend
+from modelcypher.core.domain.training.tikhonov_correction import (
+    compute_mp_noise_edge,
+    compute_tikhonov_weights,
+    correct_projection_tikhonov,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -139,17 +144,10 @@ def _evaluate_ppl_inplace(
 
 
 def _fourgram_repetition_rate(text: str) -> float:
-    """Fraction of 4-grams in text that are repeated."""
-    # TODO(jk): derive n-gram window from measured trajectory geometry instead
-    # of fixing n=4.
-    words = text.split()
-    if len(words) < 4:
-        return 0.0
-    ngrams = [tuple(words[i : i + 4]) for i in range(len(words) - 3)]
-    if not ngrams:
-        return 0.0
-    unique = len(set(ngrams))
-    return 1.0 - unique / len(ngrams)
+    """Delegates to domain module. See degeneration.py for derivation status."""
+    from modelcypher.core.domain.training.degeneration import fourgram_repetition_rate
+
+    return fourgram_repetition_rate(text)
 
 
 def _generate_responses(
@@ -282,16 +280,13 @@ def _correct_projection(
     key: str,
     fp_weights: dict[str, mx.array],
     eigvecs: mx.array,
-    tikhonov_weights: mx.array,
+    tikhonov_weights_arr: mx.array,
+    backend: Any,
 ) -> dict[str, Any] | None:
     """Apply eigenvalue-weighted Tikhonov correction to a single projection.
 
-    E = W_fp - W_q (weight error)
-    Delta = E @ V @ diag(w) @ V^T  (Tikhonov-weighted projection)
-    W_corrected = W_q + Delta
-
-    Directions with large eigenvalues (w_i → 1) are fully corrected.
-    Directions with small eigenvalues (w_i → 0) preserve quantization residual.
+    Delegates core math to domain module (tikhonov_correction.py).
+    Handles MLX-specific weight mutation and memory cleanup.
 
     Returns diagnostics dict or None if skipped.
     """
@@ -299,52 +294,30 @@ def _correct_projection(
     if fp_w is None:
         return None
 
-    q_w = proj.weight.astype(mx.float32)
-    fp_w_f32 = fp_w.astype(mx.float32)
-    E = fp_w_f32 - q_w  # [out, in]
-    mx.eval(E)
-
-    E_frob_sq = float(mx.sum(E * E).item())
-    if E_frob_sq <= 0:
-        del E, q_w, fp_w_f32
+    corrected, layer_result = correct_projection_tikhonov(
+        quantized_weight=proj.weight,
+        fp_weight=fp_w,
+        eigenvectors=eigvecs,
+        tikhonov_weights=tikhonov_weights_arr,
+        backend=backend,
+        layer_key=key,
+    )
+    if layer_result is None:
         return None
 
-    # Tikhonov-weighted projection: Delta = E @ V @ diag(w) @ V^T
-    # Computed as (E @ V) * w @ V^T to avoid constructing diag matrix
-    # E is [out, in], eigvecs is [in, D], tikhonov_weights is [D]
-    E_V = E @ eigvecs  # [out, D]
-    E_V_weighted = E_V * tikhonov_weights  # [out, D] (broadcast)
-    Delta = E_V_weighted @ eigvecs.T  # [out, in]
-    mx.eval(Delta)
-
-    E_residual = E - Delta
-    mx.eval(E_residual)
-
-    Delta_frob_sq = float(mx.sum(Delta * Delta).item())
-    E_residual_frob_sq = float(mx.sum(E_residual * E_residual).item())
-    correction_fraction = Delta_frob_sq / E_frob_sq
-    preserved_fraction = E_residual_frob_sq / E_frob_sq
-
-    # Apply correction
-    corrected = q_w + Delta
+    # Apply correction to model weight (MLX-specific mutation)
     mx.eval(corrected)
     proj.weight = corrected.astype(proj.weight.dtype)
 
-    # Residual after correction (should equal E_residual)
-    residual = fp_w_f32 - corrected
-    residual_frob = float(mx.sqrt(mx.sum(residual * residual)).item())
-
     result = {
         "layer_key": key,
-        "E_total_frob": math.sqrt(E_frob_sq),
-        "delta_frob": math.sqrt(Delta_frob_sq),
-        "E_residual_frob": math.sqrt(E_residual_frob_sq),
-        "correction_fraction": correction_fraction,
-        "preserved_fraction": preserved_fraction,
-        "residual_frob": residual_frob,
+        "E_total_frob": layer_result.E_total_frob,
+        "delta_frob": layer_result.delta_frob,
+        "E_residual_frob": layer_result.E_residual_frob,
+        "correction_fraction": layer_result.correction_fraction,
+        "preserved_fraction": layer_result.preserved_fraction,
     }
 
-    del E, E_V, E_V_weighted, Delta, E_residual, corrected, q_w, fp_w_f32, residual
     return result
 
 
@@ -354,6 +327,7 @@ def _correct_layer(
     fp_weights: dict[str, mx.array],
     eigvecs: mx.array,
     tikhonov_weights: mx.array,
+    backend: Any,
 ) -> list[dict[str, Any]]:
     """Apply Tikhonov-weighted correction to projections in a layer.
 
@@ -396,6 +370,7 @@ def _correct_layer(
                 fp_weights,
                 eigvecs,
                 tikhonov_weights,
+                backend,
             )
             if result is not None:
                 stats.append(result)
@@ -432,6 +407,8 @@ def _run_sequential_correction(
 
     Returns per-layer correction stats including eigenspectrum and MP edge.
     """
+    _backend = initialize_default_backend()
+
     base = getattr(q_model, "model", q_model)
     if not hasattr(base, "layers"):
         raise ValueError("Model has no .layers attribute")
@@ -505,18 +482,13 @@ def _run_sequential_correction(
         sum_sq = float(mx.sum(eigvals * eigvals).item())
         D_eff = total_var ** 2 / sum_sq if sum_sq > 0 else float(D)
 
-        # Marchenko-Pastur noise edge (Marchenko & Pastur, 1967)
-        # σ² = average eigenvalue (trace(C)/D)
-        # aspect ratio γ = D / N_tok (activation matrix columns vs rows)
-        # noise edge = σ² × (1 + √γ)²
+        # Marchenko-Pastur noise edge + Tikhonov weights (domain module)
+        mp_edge = compute_mp_noise_edge(
+            eigvals, n_tokens=N_tok, dimensionality=D, backend=_backend,
+        )
         sigma_sq = total_var / D
         aspect = D / N_tok
-        mp_edge = sigma_sq * (1.0 + math.sqrt(aspect)) ** 2
-
-        # Tikhonov weights: w_i = λ_i / (λ_i + α) where α = mp_edge
-        # Continuous. No integer rank. Every number from data or MP theorem.
-        tikhonov_weights = eigvals / (eigvals + mp_edge)
-        mx.eval(tikhonov_weights)
+        tikhonov_weights = compute_tikhonov_weights(eigvals, mp_edge, backend=_backend)
 
         # Effective rank from Tikhonov (sum of weights — diagnostic)
         effective_rank = float(mx.sum(tikhonov_weights).item())
@@ -528,7 +500,7 @@ def _run_sequential_correction(
 
         # Apply correction
         proj_stats = _correct_layer(
-            layer, layer_idx, fp_weights, eigvecs, tikhonov_weights,
+            layer, layer_idx, fp_weights, eigvecs, tikhonov_weights, _backend,
         )
         total_corrected += sum(1 for s in proj_stats if not s.get("skipped"))
 

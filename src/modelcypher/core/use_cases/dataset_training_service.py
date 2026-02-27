@@ -138,6 +138,13 @@ class DatasetTrainResult:
     inference_min_cka_layer: int | None = None
     # RMT signal-rank ceiling diagnostics (per-layer intrinsic signal dimensionality)
     per_layer_signal_ranks: dict[int, dict[str, float | int]] | None = None
+    # G4: Mode connectivity (barrier between base and adapted activation spaces)
+    mode_connectivity_barrier: float | None = None
+    mode_connectivity_normalized_barrier: float | None = None
+    mode_connectivity_method: str | None = None
+    # G4 diagnostic: Degeneration measurement (not a gate until n derived — TODO: G1)
+    degeneration_max_4gram_repeat: float | None = None
+    degeneration_mean_4gram_repeat: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert result to a JSON-serializable dictionary."""
@@ -219,6 +226,16 @@ class DatasetTrainResult:
             result["inference_min_cka_layer"] = self.inference_min_cka_layer
         if self.per_layer_signal_ranks is not None:
             result["per_layer_signal_ranks"] = self.per_layer_signal_ranks
+        if self.mode_connectivity_barrier is not None:
+            result["mode_connectivity_barrier"] = self.mode_connectivity_barrier
+        if self.mode_connectivity_normalized_barrier is not None:
+            result["mode_connectivity_normalized_barrier"] = self.mode_connectivity_normalized_barrier
+        if self.mode_connectivity_method is not None:
+            result["mode_connectivity_method"] = self.mode_connectivity_method
+        if self.degeneration_max_4gram_repeat is not None:
+            result["degeneration_max_4gram_repeat"] = self.degeneration_max_4gram_repeat
+        if self.degeneration_mean_4gram_repeat is not None:
+            result["degeneration_mean_4gram_repeat"] = self.degeneration_mean_4gram_repeat
         return result
 
 

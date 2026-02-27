@@ -183,18 +183,18 @@ Both modes converge to the same ~1.6D semantic bottleneck.
 
 ## Open Questions
 
-### Mission-Gate Closure Cycle (G3/G4/G5)
+### Mission-Gate Closure Cycle (G4/G5) [EMPIRICAL]
 
 Pre-registered closure workflow (current priority order):
 
-1. **G5 8B efficacy separation**
+1. **G5 8B efficacy separation** `[EMPIRICAL]`
    - Build fixed non-ceiling eval set (`scripts/g5_build_non_ceiling_eval_set.py`).
    - Run 3 seeds with FP-reference precheck required (`scripts/g5_8b_multiseed_closure.py`).
    - Initial set artifact: `results/g5_8b_validation/non_ceiling_eval_set_8b.json` (`13/20 = 65%`, 2026-02-27).
-2. **G4 mechanism closure (CKA vs degeneration)**
-   - Run closed-form decomposition/intervention sweeps with both re-noise modes
-     (`scripts/closedform_sequential_correction.py --renoise-modes isotropic,covariance_matched`).
-3. **G4/G2 boundary closure (quantization frontier)**
+2. **G4 mechanism closure (Tikhonov eigenvalue-weighted correction)** `[EMPIRICAL]`
+   - Tikhonov correction on 1.7B 4-bit: CKA +0.014, PPL -0.06, degeneration -0.047 — all three improved simultaneously (2026-02-27).
+   - Pending: generalization to 8B (`scripts/closedform_sequential_correction.py`).
+3. **G4/G2 boundary closure (quantization frontier)** `[EMPIRICAL]`
    - Run Weyl precheck across FP↔quant pairs and attach CKA artifacts
      (`scripts/weyl_quantization_validation.py --cka-artifacts ...`).
 4. **Documentation promotion/falsification**

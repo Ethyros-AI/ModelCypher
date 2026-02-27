@@ -137,14 +137,10 @@ def _configure_logging(log_path: Path) -> logging.Logger:
 
 
 def _fourgram_repetition_rate(text: str) -> float:
-    words = text.lower().split()
-    if len(words) < 4:
-        return 0.0
-    ngrams = [tuple(words[i:i + 4]) for i in range(len(words) - 3)]
-    if not ngrams:
-        return 0.0
-    unique = len(set(ngrams))
-    return 1.0 - (unique / len(ngrams))
+    """Delegates to domain module. See degeneration.py for derivation status."""
+    from modelcypher.core.domain.training.degeneration import fourgram_repetition_rate
+
+    return fourgram_repetition_rate(text)
 
 
 def _safe_clear_backend_cache(backend: Any) -> None:

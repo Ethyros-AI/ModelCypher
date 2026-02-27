@@ -18,8 +18,6 @@ from pathlib import Path
 
 import pytest
 
-from modelcypher.core.domain._backend import get_default_backend
-
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
@@ -219,23 +217,3 @@ def test_main_emits_analysis_config_and_aggregate(monkeypatch, tmp_path):
     assert payload["aggregate"]["tail_match_pct"] == 100.0
 
 
-def test_spectral_norm_power_iter_is_deterministic():
-    backend = get_default_backend()
-    matrix = backend.array([[3.0, 0.0], [0.0, 1.0]], dtype="float32")
-    backend.eval(matrix)
-
-    sigma_1 = weyl_validation._spectral_norm_power_iter(matrix, backend, n_iters=20)
-    sigma_2 = weyl_validation._spectral_norm_power_iter(matrix, backend, n_iters=20)
-    assert sigma_1 == pytest.approx(sigma_2, rel=0.0, abs=1e-8)
-
-
-def test_spectral_norm_exact_matches_svd():
-    backend = get_default_backend()
-    matrix = backend.array([[2.0, 0.0], [0.0, 0.5]], dtype="float32")
-    backend.eval(matrix)
-
-    sigma_exact = weyl_validation._spectral_norm_exact(matrix, backend)
-    _, s, _ = backend.svd(backend.astype(matrix, "float32"), compute_uv=True)
-    backend.eval(s)
-    sigma_svd = float(backend.to_scalar(s[0]))
-    assert sigma_exact == pytest.approx(sigma_svd, rel=0.0, abs=1e-8)
