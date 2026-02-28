@@ -538,15 +538,15 @@ def stage_transplant(
                 weights_processed += len(weights_by_layer.get(layer_idx, []))
                 continue
 
-        # Log measured geometry if available (ID and Gram rank from probe stage)
+        # Log measured geometry if available (effective rank and Gram rank from probe stage)
         if layer_profile is not None:
-            id_val = layer_profile.get_intrinsic_dimension(layer_idx)
+            eff_rank = layer_profile.effective_ranks.get(layer_idx)
             gram_rank = layer_profile.get_gram_rank(layer_idx)
-            if id_val is not None or gram_rank is not None:
+            if eff_rank is not None or gram_rank is not None:
                 logger.info(
-                    "TRANSPLANT: Layer %d geometry: ID=%.2f, Gram_rank=%s",
+                    "TRANSPLANT: Layer %d geometry: eff_rank=%.1f, Gram_rank=%s",
                     layer_idx,
-                    id_val if id_val is not None else float('nan'),
+                    eff_rank if eff_rank is not None else float('nan'),
                     gram_rank if gram_rank is not None else "unmeasured"
                 )
 
@@ -674,13 +674,13 @@ def stage_transplant(
         # - Blending: dilute source into target (loses information)
         # - Injection: add source to null space (preserves target exactly)
         # =======================================================================
-        layer_id: float | None = None
+        layer_eff_rank: float | None = None
         is_highway = layer_idx in highway_layers
         is_ramp = layer_idx in ramp_layers
         is_bottleneck = (bottleneck_layer is not None and layer_idx == bottleneck_layer)
 
         if layer_profile is not None:
-            layer_id = layer_profile.get_intrinsic_dimension(layer_idx)
+            layer_eff_rank = layer_profile.effective_ranks.get(layer_idx)
 
         # TRANSMISSION INJECTION: Full delta_scale for transmission layers.
         # The null-space projection handles preservation; we want maximum transfer.
@@ -696,7 +696,7 @@ def stage_transplant(
             min_intrinsic_dimension = layer_profile.get_min_intrinsic_dimension()
 
         layer_geometry = {
-            "layer_intrinsic_dimension": layer_id,
+            "layer_effective_rank": layer_eff_rank,
             "min_intrinsic_dimension": min_intrinsic_dimension,
             "layer_delta_scale": layer_delta_scale,
             "is_highway": is_highway,
@@ -709,10 +709,10 @@ def stage_transplant(
         # Log the classification and scaling
         layer_type = "TRANSMISSION" if is_transmission else ("BOTTLENECK" if is_bottleneck else ("HIGHWAY" if is_highway else ("RAMP" if is_ramp else "NEUTRAL")))
         logger.info(
-            "TRANSPLANT: Layer %d [%s] - ID=%.2f, delta_scale=%.3f (%s)",
+            "TRANSPLANT: Layer %d [%s] - eff_rank=%.1f, delta_scale=%.3f (%s)",
             layer_idx,
             layer_type,
-            layer_id if layer_id is not None else float('nan'),
+            layer_eff_rank if layer_eff_rank is not None else float('nan'),
             layer_delta_scale,
             transfer_mode,
         )

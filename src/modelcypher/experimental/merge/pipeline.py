@@ -604,10 +604,20 @@ def run_merge(
                 # MLP output: [n_samples, hidden_dim]
                 if layer_idx in down_proj_weights:
                     W = down_proj_weights[layer_idx]
-                    # W @ intermediate.T gives [hidden_dim, n_samples]
-                    # Transpose to get [n_samples, hidden_dim]
-                    mlp_output = backend.matmul(stacked, backend.transpose(W))
-                    backend.eval(mlp_output)
+                    # W shape: [hidden_dim, intermediate_dim]
+                    # stacked shape: [n_samples, activation_dim]
+                    # Only apply w2 if activation_dim matches intermediate_dim
+                    if stacked.shape[-1] == W.shape[-1]:
+                        mlp_output = backend.matmul(stacked, backend.transpose(W))
+                        backend.eval(mlp_output)
+                    else:
+                        # Profile stored hidden-dim activations as "intermediate"
+                        # (e.g., ActivationProviderAdapter fallback). Already at output dim.
+                        logger.debug(
+                            "Intermediate dim %d != w2 input dim %d for layer %d, using as-is",
+                            stacked.shape[-1], W.shape[-1], layer_idx,
+                        )
+                        mlp_output = stacked
                 else:
                     # Fallback: use intermediate directly if no weight found
                     logger.debug("No down_proj found for layer %d, using intermediate", layer_idx)
