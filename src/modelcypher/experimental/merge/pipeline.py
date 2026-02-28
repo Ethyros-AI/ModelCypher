@@ -112,7 +112,6 @@ def run_merge(
     inference_engine: "InferenceEngine | None" = None,
     prior_occupancy_by_layer: dict[int, list[float]] | None = None,
     behavior_jacobian: bool = False,
-    projector_mode: str = "tikhonov",
     progress_reporter: Any | None = None,
 ) -> UnifiedMergeResult:
     """
@@ -1149,7 +1148,6 @@ def run_merge(
         target_layers=target_layers,
         injection_layer=injection_layer,  # Single-point injection
         behavior_jacobian_ctx=jacobian_ctx,
-        projector_mode=projector_mode,
     )
     logger.info("STAGE 3: TRANSPLANT completed")
 

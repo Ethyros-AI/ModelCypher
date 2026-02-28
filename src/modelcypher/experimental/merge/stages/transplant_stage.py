@@ -139,8 +139,6 @@ def stage_transplant(
     skip_embedding_transplant: bool = False,
     # Behavior Jacobian null-space projection (replaces activation-covariance projector)
     behavior_jacobian_ctx: BehaviorJacobianContext | None = None,
-    # Projector mode for A/B testing: "tikhonov" (MP-weighted) or "binary" (hard mask)
-    projector_mode: str = "tikhonov",
 ) -> TransplantStageResult:
     """Stage 3: Null-space constrained transplant using probe activations.
 
@@ -1071,7 +1069,6 @@ def stage_transplant(
             source_layers=source_layers,
             target_layers=target_layers,
             behavior_jacobian_ctx=behavior_jacobian_ctx,
-            projector_mode=projector_mode,
         )
         weights_processed = weight_result.weights_processed
         layer_transplanted = weight_result.layer_transplanted

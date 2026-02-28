@@ -149,26 +149,9 @@ def _dequantize_model(model: Any, backend: Any) -> int:
                 key = f"model.layers.{layer_idx}.{block_name}.{proj_name}.weight"
                 dequantized = dequantize_if_needed(w, key, all_params, backend)
                 if dequantized is not w:
-                    # Replace the quantized module with a plain linear
-                    # This is framework-specific but uses duck typing
-                    try:
-                        import mlx.nn as nn
-
-                        in_features = int(dequantized.shape[1])
-                        out_features = int(dequantized.shape[0])
-                        new_linear = nn.Linear(
-                            in_features, out_features, bias=False
-                        )
-                        new_linear.weight = dequantized
-                        backend.eval(new_linear.weight)
-                        if hasattr(proj, "bias") and proj.bias is not None:
-                            new_linear.bias = proj.bias
-                        setattr(block, proj_name, new_linear)
-                        n_deq += 1
-                    except ImportError:
-                        # Non-MLX backend — set weight directly
-                        proj.weight = dequantized
-                        n_deq += 1
+                    proj.weight = dequantized
+                    backend.eval(proj.weight)
+                    n_deq += 1
 
     gc.collect()
     return n_deq

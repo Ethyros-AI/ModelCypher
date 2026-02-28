@@ -200,6 +200,7 @@ def compute_alignment_from_profiles(
     # the bottleneck layer (highest variance concentration = most compressed).
     # =========================================================================
     bottleneck_layer: int | None = None
+    injection_layer: int | None = None
     layer_filter: list[int] | None = None
 
     if target_acts.intermediate:

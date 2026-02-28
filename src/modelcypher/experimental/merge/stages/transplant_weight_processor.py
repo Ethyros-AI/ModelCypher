@@ -318,7 +318,6 @@ def process_layer_weights(
     source_layers: list[int] | None = None,
     target_layers: list[int] | None = None,
     behavior_jacobian_ctx: BehaviorJacobianContext | None = None,
-    projector_mode: str = "tikhonov",
 ) -> LayerWeightResult:
     b = backend
     hidden_stitch_output = stitches.hidden_output
@@ -1816,7 +1815,6 @@ def process_layer_weights(
                 target_activations_for_density=tgt_density_acts,
                 density_weights=density_weights_override,
                 coupling_weight=coupling_weight_for_layer,
-                projector_mode=projector_mode,
                 backend=b,
             )
 
