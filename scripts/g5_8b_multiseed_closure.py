@@ -82,6 +82,22 @@ def _run_command(cmd: list[str], cwd: Path) -> None:
     subprocess.run(cmd, cwd=str(cwd), check=True)
 
 
+def _online_eval_problem_count(problem_set_path: Path) -> int:
+    payload = json.loads(problem_set_path.read_text(encoding="utf-8"))
+    if isinstance(payload, dict):
+        records = payload.get("problems", [])
+    elif isinstance(payload, list):
+        records = payload
+    else:
+        raise ValueError(
+            "online_eval_problems_json must contain a JSON list or "
+            "an object with a 'problems' list.",
+        )
+    if not isinstance(records, list) or not records:
+        raise ValueError("online_eval_problems_json contains no problems")
+    return len(records)
+
+
 def main() -> None:
     args = _parse_args()
     root = Path(__file__).resolve().parents[1]
@@ -98,8 +114,18 @@ def main() -> None:
             raise FileNotFoundError(
                 f"online_eval_problems_json does not exist: {online_eval_set}",
             )
+        problem_count = _online_eval_problem_count(online_eval_set)
+        effective_online_eval_n = problem_count
+        if args.online_eval_n != problem_count:
+            logger.info(
+                "online_eval_n=%d does not match fixed set size=%d; "
+                "using fixed set size.",
+                args.online_eval_n,
+                problem_count,
+            )
     else:
         online_eval_set = None
+        effective_online_eval_n = int(args.online_eval_n)
 
     for seed in seeds:
         cmd = [
@@ -116,7 +142,7 @@ def main() -> None:
             "--seed",
             str(seed),
             "--online-eval-n",
-            str(args.online_eval_n),
+            str(effective_online_eval_n),
             "--eval-interval",
             str(args.eval_interval),
             "--output-root",

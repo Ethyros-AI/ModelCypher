@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""ModelCypher CLI - 7 commands, no bullshit.
+"""ModelCypher CLI - 8 commands, no bullshit.
 
 mc train    - Train LoRA adapters
 mc merge    - Geometric model merging
@@ -52,11 +52,12 @@ from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_in
 
 register_default_atlas_inventories()
 
-# The 5 commands
+# The 8 commands
 from modelcypher.cli.commands import adapter as adapter_commands
 from modelcypher.cli.commands import infer as infer_commands
 from modelcypher.cli.commands import merge as merge_commands
 from modelcypher.cli.commands import model as model_commands
+from modelcypher.cli.commands import quantize as quantize_commands
 from modelcypher.cli.commands import safety as analyze_commands  # safety.py IS the analyze command
 from modelcypher.cli.commands import system as system_commands
 from modelcypher.cli.commands import train as train_commands
@@ -158,6 +159,7 @@ app.add_typer(analyze_commands.app, name="analyze", help="Model analysis (geomet
 app.add_typer(model_commands.app, name="model", help="Model registry")
 app.add_typer(system_commands.app, name="system", help="System status")
 app.add_typer(adapter_commands.app, name="adapter", help="LoRA adapter analysis")
+app.add_typer(quantize_commands.quantize_app, name="quantize", help="Quantization correction")
 
 
 def _context(ctx: typer.Context) -> CLIContext:

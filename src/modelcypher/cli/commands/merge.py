@@ -92,6 +92,11 @@ def merge_run(
         "--behavior-jacobian",
         help="Use behavior Jacobian null-space projector (per-probe CE gradients) instead of activation-covariance",
     ),
+    projector_mode: str = typer.Option(
+        "tikhonov",
+        "--projector-mode",
+        help="Null-space projector mode: 'tikhonov' (MP-weighted, default) or 'binary' (hard eigenvalue mask)",
+    ),
 ) -> None:
     """Merge source model into target using null-space geometric transplant.
 
@@ -142,6 +147,7 @@ def merge_run(
         target_path=str(target_path),
         output_dir=output,
         behavior_jacobian=behavior_jacobian,
+        projector_mode=projector_mode,
     )
 
     write_output(_result_to_dict(result), context.output_format, context.pretty)
