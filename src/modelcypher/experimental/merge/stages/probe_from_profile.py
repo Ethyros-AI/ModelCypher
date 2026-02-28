@@ -157,6 +157,28 @@ def compute_alignment_from_profiles(
     logger.info("PROFILE ALIGNMENT: Loading target activations...")
     target_acts = load_activations(target_profile_dir, backend)
 
+    # =========================================================================
+    # DIMENSION VALIDATION: Drop intermediate/gate activations at wrong dim
+    # =========================================================================
+    # Some profiles store hidden-dim activations as "intermediate" due to
+    # ActivationProviderAdapter fallback. Detect and drop to prevent shape
+    # mismatches downstream (transforms, stitches, weight reconstruction).
+    # intermediate_dim is always > hidden_dim, so if they match, it's wrong.
+    for label, acts in [("source", source_acts), ("target", target_acts)]:
+        if acts.intermediate and acts.hidden:
+            sample_hidden = next(iter(acts.hidden.values()))
+            sample_inter = next(iter(acts.intermediate.values()))
+            h_dim = sample_hidden.shape[-1]
+            i_dim = sample_inter.shape[-1]
+            if i_dim == h_dim:
+                logger.warning(
+                    "PROFILE ALIGNMENT: %s intermediate dim (%d) == hidden dim (%d) — "
+                    "profile has hidden-dim fallback data. Dropping intermediate/gate.",
+                    label, i_dim, h_dim,
+                )
+                acts.intermediate = {}
+                acts.gate = {}
+
     logger.info(
         "PROFILE ALIGNMENT: Loaded source (hidden=%d, intermediate=%d, gate=%d), "
         "target (hidden=%d, intermediate=%d, gate=%d)",
