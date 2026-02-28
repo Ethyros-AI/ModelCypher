@@ -3,10 +3,9 @@
 
 Step 0 experiment for the G2/G4 composition bound hypothesis.
 
-Tests whether per-head QK spectral product change correlates with
+Tests whether per-head QK spectral product change tracks
 degeneration (4-gram repetition rate) across model modifications.
-If Spearman > 0.3 → QK product explains degeneration, proceed to integration.
-If Spearman < 0.3 → QK product is NOT the mechanism, stop.
+Significance is derived from IEEE 754 via sqrt(eps) in relative-change space.
 
 The experiment compares three model states:
   1. Full-precision (FP) base model (ground truth)
@@ -147,52 +146,6 @@ def apply_correction(
         result.n_projections_corrected,
         result.aggregate_correction_fraction,
     )
-
-
-def compute_spearman(x: list[float], y: list[float]) -> tuple[float, float]:
-    """Spearman rank correlation (pure Python, no scipy dependency).
-
-    Returns (rho, p_approx). p is approximated via t-distribution for n > 10.
-    """
-    n = len(x)
-    if n < 3:
-        return 0.0, 1.0
-
-    def _rank(vals: list[float]) -> list[float]:
-        indexed = sorted(range(n), key=lambda i: vals[i])
-        ranks = [0.0] * n
-        for rank_val, idx in enumerate(indexed):
-            ranks[idx] = float(rank_val)
-        return ranks
-
-    rx = _rank(x)
-    ry = _rank(y)
-
-    mean_rx = sum(rx) / n
-    mean_ry = sum(ry) / n
-
-    cov = sum((rx[i] - mean_rx) * (ry[i] - mean_ry) for i in range(n))
-    var_x = sum((rx[i] - mean_rx) ** 2 for i in range(n))
-    var_y = sum((ry[i] - mean_ry) ** 2 for i in range(n))
-
-    denom = math.sqrt(var_x * var_y)
-    if denom < 1e-15:
-        return 0.0, 1.0
-
-    rho = cov / denom
-
-    # t-approximation for p-value
-    if abs(rho) >= 1.0 - 1e-15:
-        p = 0.0
-    else:
-        t_stat = rho * math.sqrt((n - 2) / (1.0 - rho * rho))
-        # Rough p-value from t-distribution (two-tailed), df = n-2
-        # Using the approximation: p ≈ 2 * exp(-0.717 * t^2 - 0.416 * t^2 / (n-2))
-        # This is crude but sufficient for our pass/fail threshold of p < 0.05
-        df = n - 2
-        p = 2.0 * math.exp(-0.5 * t_stat * t_stat * df / (df + t_stat * t_stat))
-
-    return rho, p
 
 
 def main() -> None:
