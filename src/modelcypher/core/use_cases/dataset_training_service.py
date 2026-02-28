@@ -145,6 +145,9 @@ class DatasetTrainResult:
     # G4 diagnostic: Degeneration measurement (not a gate until n derived — TODO: G1)
     degeneration_max_4gram_repeat: float | None = None
     degeneration_mean_4gram_repeat: float | None = None
+    # Standard benchmark eval (pre/post training, optional via --benchmark)
+    benchmark_baseline: dict[str, float] | None = None
+    benchmark_post: dict[str, float] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert result to a JSON-serializable dictionary."""
@@ -236,6 +239,15 @@ class DatasetTrainResult:
             result["degeneration_max_4gram_repeat"] = self.degeneration_max_4gram_repeat
         if self.degeneration_mean_4gram_repeat is not None:
             result["degeneration_mean_4gram_repeat"] = self.degeneration_mean_4gram_repeat
+        if self.benchmark_baseline is not None:
+            result["benchmark_baseline"] = self.benchmark_baseline
+        if self.benchmark_post is not None:
+            result["benchmark_post"] = self.benchmark_post
+        if self.benchmark_baseline is not None and self.benchmark_post is not None:
+            result["benchmark_delta"] = {
+                k: self.benchmark_post[k] - self.benchmark_baseline.get(k, 0.0)
+                for k in self.benchmark_post
+            }
         return result
 
 
@@ -257,6 +269,7 @@ class DatasetTrainingService:
         dataset_path: str | Path,
         output_path: str | Path | None = None,
         eval_dataset_path: str | Path | None = None,
+        benchmark_suite: str | None = None,
     ) -> DatasetTrainResult:
         """Strict training entrypoint: model+dataset only."""
         resolved_model_path = Path(model_path).expanduser().resolve()
@@ -276,6 +289,7 @@ class DatasetTrainingService:
             eval_dataset_path=eval_dataset_path,
             seed=derived_seed,
             auto_regime=True,
+            benchmark_suite=benchmark_suite,
         )
 
     def train_from_dataset_research(
@@ -339,6 +353,7 @@ class DatasetTrainingService:
         research_allow_quantization_crossing: bool = False,
         no_save: bool = False,
         max_iters_cap: int | None = None,
+        benchmark_suite: str | None = None,
     ) -> DatasetTrainResult:
         """Train an NB-LoRA adapter from a JSONL dataset.
 
@@ -443,6 +458,45 @@ class DatasetTrainingService:
                 init_adapter,
                 merged_layers,
             )
+
+        # 1.5. Pre-training benchmark (optional, when --benchmark is set)
+        benchmark_baseline_scores: dict[str, float] | None = None
+        _benchmark_service = None
+        _benchmark_generate_fn = None
+        if benchmark_suite is not None:
+            from modelcypher.core.use_cases.benchmark_service import BenchmarkService
+
+            logger.info("Running pre-training benchmark suite: %s", benchmark_suite)
+            _benchmark_service = BenchmarkService()
+            _backend_ref = self._backend
+
+            def _benchmark_generate_fn(m, t, prompt, max_tokens, verbose=False):
+                return _backend_ref.generate(m, t, prompt, max_tokens=max_tokens)
+
+            try:
+                baseline_suite = _benchmark_service.run_suite(
+                    model=model,
+                    tokenizer=tokenizer,
+                    suite_name=benchmark_suite,
+                    generate_fn=_benchmark_generate_fn,
+                    limit_per_benchmark=10,
+                    max_failures=5,
+                )
+                benchmark_baseline_scores = {
+                    r.benchmark: r.accuracy for r in baseline_suite.benchmarks
+                }
+                benchmark_baseline_scores["overall"] = baseline_suite.overall_accuracy
+                logger.info(
+                    "Pre-training benchmark: %s",
+                    ", ".join(
+                        f"{k}={v:.1%}" for k, v in benchmark_baseline_scores.items()
+                    ),
+                )
+            except Exception:
+                logger.warning(
+                    "Pre-training benchmark failed — continuing without",
+                    exc_info=True,
+                )
 
         # 2. Load + split dataset
         logger.info("Loading dataset from %s", dataset_path)
@@ -1038,7 +1092,53 @@ class DatasetTrainingService:
                 baseline_result.accuracy * 100,
             )
 
-        # 8.10.1. Collect inference probe activations for dual-manifold CKA
+        # 8.10.1. Baseline degeneration measurement: few-shot prompted generation.
+        # Uses same prompt format and token budget as G5 validation and the
+        # post-training diagnostic. Measured here so train_loop can compare
+        # per-epoch and stop if degeneration exceeds baseline + sqrt(eps).
+        degen_baseline_max: float | None = None
+        degen_prompts_for_training: list[str] | None = None
+        if eval_problems:
+            try:
+                from modelcypher.core.domain.training.degeneration import (
+                    fourgram_repetition_rate,
+                )
+                from modelcypher.core.domain.star.prompting import (
+                    build_forward_prompt,
+                    default_few_shot_examples,
+                )
+
+                n_demos = len(default_few_shot_examples())
+                _DEGEN_N_PROMPTS = 20
+                degen_subset = eval_problems[:_DEGEN_N_PROMPTS]
+                degen_prompts_for_training = [
+                    build_forward_prompt(p, demonstrations=n_demos)
+                    for p in degen_subset
+                ]
+                baseline_degen_rates: list[float] = []
+                for prompt_text in degen_prompts_for_training:
+                    try:
+                        response = self._backend.generate(
+                            model, tokenizer, prompt_text, max_tokens=512,
+                        )
+                        rate = fourgram_repetition_rate(response)
+                        baseline_degen_rates.append(rate)
+                    except Exception:
+                        logger.debug(
+                            "Baseline degeneration generation failed", exc_info=True,
+                        )
+                if baseline_degen_rates:
+                    degen_baseline_max = max(baseline_degen_rates)
+                    logger.info(
+                        "Baseline degeneration: max_4gram=%.3f, mean_4gram=%.3f (%d prompts)",
+                        degen_baseline_max,
+                        sum(baseline_degen_rates) / len(baseline_degen_rates),
+                        len(baseline_degen_rates),
+                    )
+            except Exception:
+                logger.debug("Baseline degeneration unavailable", exc_info=True)
+
+        # 8.10.2. Collect inference probe activations for dual-manifold CKA
         # (diagnostic-only). Model is post-injection but NB-LoRA starts at
         # identity, so activations are mathematically equivalent to base.
         inference_base_activations: dict[int, list] | None = None
@@ -1232,6 +1332,8 @@ class DatasetTrainingService:
             outcome_rollback_on_degradation=outcome_rollback_on_degradation,
             research_online_eval_stop_stage=research_online_eval_stop_stage,
             research_outcome_selector=research_outcome_selector,
+            degen_prompts=degen_prompts_for_training,
+            degen_baseline_max=degen_baseline_max,
         )
         training_time_seconds = time.time() - train_start
 
@@ -1359,8 +1461,10 @@ class DatasetTrainingService:
             if hasattr(last, "rss_top1_agreement") and last.rss_top1_agreement is not None:
                 rss_final_top1 = last.rss_top1_agreement
 
-        # 11.7. Degeneration diagnostic — NOT a gate until n-gram window derived (TODO: G1)
-        # Generates short responses on eval prompts and measures 4-gram repetition.
+        # 11.7. Degeneration diagnostic — measures 4-gram repetition on few-shot
+        # prompted generation. Uses same prompt format and token budget as G5
+        # validation (build_forward_prompt + 512 max_tokens) to ensure the
+        # measurement matches what validation will check.
         degeneration_max_4gram_repeat = None
         degeneration_mean_4gram_repeat = None
         if eval_problems:
@@ -1368,16 +1472,25 @@ class DatasetTrainingService:
                 from modelcypher.core.domain.training.degeneration import (
                     fourgram_repetition_rate,
                 )
+                from modelcypher.core.domain.star.prompting import (
+                    build_forward_prompt,
+                    default_few_shot_examples,
+                )
 
-                # Use up to 5 prompts: SE ≤ 0.224 at worst-case σ, sufficient
-                # to distinguish pathological (>0.9) from normal (<0.3) rates.
-                degen_prompts = eval_problems[:5]
+                n_demos = len(default_few_shot_examples())
+                # 20 prompts matches G5 validation protocol. SE ≤ 0.112 at
+                # worst-case σ=0.5, sufficient to detect moderate degeneration
+                # (0.3-0.4 range) that 5 prompts missed on seed 42.
+                _DEGEN_N_PROMPTS = 20
+                degen_prompts = eval_problems[:_DEGEN_N_PROMPTS]
                 degen_rates: list[float] = []
                 for problem in degen_prompts:
-                    prompt_text = problem.prompt if hasattr(problem, "prompt") else str(problem)
                     try:
+                        prompt_text = build_forward_prompt(
+                            problem, demonstrations=n_demos,
+                        )
                         response = self._backend.generate(
-                            model, tokenizer, prompt_text, max_tokens=200,
+                            model, tokenizer, prompt_text, max_tokens=512,
                         )
                         rate = fourgram_repetition_rate(response)
                         degen_rates.append(rate)
@@ -1395,6 +1508,42 @@ class DatasetTrainingService:
                     )
             except Exception:
                 logger.debug("Degeneration diagnostic unavailable", exc_info=True)
+
+        # 11.8. Post-training benchmark (optional, when --benchmark is set)
+        benchmark_post_scores: dict[str, float] | None = None
+        if (
+            benchmark_suite is not None
+            and _benchmark_service is not None
+            and _benchmark_generate_fn is not None
+        ):
+            logger.info("Running post-training benchmark suite: %s", benchmark_suite)
+            try:
+                post_suite = _benchmark_service.run_suite(
+                    model=model,
+                    tokenizer=tokenizer,
+                    suite_name=benchmark_suite,
+                    generate_fn=_benchmark_generate_fn,
+                    limit_per_benchmark=10,
+                    max_failures=5,
+                )
+                benchmark_post_scores = {
+                    r.benchmark: r.accuracy for r in post_suite.benchmarks
+                }
+                benchmark_post_scores["overall"] = post_suite.overall_accuracy
+                logger.info(
+                    "Post-training benchmark: %s",
+                    ", ".join(
+                        f"{k}={v:.1%}" for k, v in benchmark_post_scores.items()
+                    ),
+                )
+                if benchmark_baseline_scores is not None:
+                    for k in benchmark_post_scores:
+                        delta = benchmark_post_scores[k] - benchmark_baseline_scores.get(k, 0.0)
+                        logger.info("  %s delta: %+.1f%%", k, delta * 100)
+            except Exception:
+                logger.warning(
+                    "Post-training benchmark failed", exc_info=True,
+                )
 
         # 12. Save if requested
         saved_adapter_path: str | None = None
@@ -1535,6 +1684,8 @@ class DatasetTrainingService:
             mode_connectivity_method=mode_connectivity_method,
             degeneration_max_4gram_repeat=degeneration_max_4gram_repeat,
             degeneration_mean_4gram_repeat=degeneration_mean_4gram_repeat,
+            benchmark_baseline=benchmark_baseline_scores,
+            benchmark_post=benchmark_post_scores,
         )
 
     def _derive_strict_seed(self, model_path: Path, dataset_path: Path) -> int:

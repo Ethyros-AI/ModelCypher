@@ -362,6 +362,7 @@ def test_train_run_strict_hides_research_flags(monkeypatch, tmp_path: Path):
         "dataset_path",
         "output_path",
         "eval_dataset_path",
+        "benchmark_suite",
     }
 
 

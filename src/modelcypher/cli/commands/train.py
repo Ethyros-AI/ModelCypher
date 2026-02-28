@@ -100,6 +100,11 @@ def train_run(
         "--eval-data",
         help="Held-out eval JSONL (default: pilot-variance-derived split)",
     ),
+    benchmark: str = typer.Option(
+        None,
+        "--benchmark",
+        help="Run benchmark suite before/after training (quick, reasoning, factual, comprehensive)",
+    ),
 ) -> None:
     """Strict model+dataset-only training path.
 
@@ -115,10 +120,13 @@ def train_run(
         adapterPath: Path to saved adapter weights
         regime: Training objective used (ce, reinforce, or hybrid)
         derivedHyperparameters: All geometry-derived settings (learning rate, rank, etc.)
+        benchmarkBaseline: Pre-training benchmark scores (with --benchmark)
+        benchmarkPost: Post-training benchmark scores (with --benchmark)
+        benchmarkDelta: Score deltas (with --benchmark)
 
     Example:
         mc train run --model /path/to/model --data /path/to/data.jsonl
-        mc train run -m /path/to/model -d /path/to/data.jsonl -o /path/to/adapter
+        mc train run -m /path/to/model -d /path/to/data.jsonl --benchmark quick
     """
     context = _context(ctx)
     model_path = Path(model)
@@ -142,6 +150,7 @@ def train_run(
             dataset_path=data,
             output_path=output,
             eval_dataset_path=eval_data,
+            benchmark_suite=benchmark,
         )
     except TrainingDerivationError as exc:
         _write_training_derivation_error(exc, context)
@@ -184,6 +193,11 @@ def train_run_research(
         "--auto-regime/--no-auto-regime",
         help="Derive training objective (CE/REINFORCE/hybrid) from baseline eval (default: on)",
     ),
+    benchmark: str = typer.Option(
+        None,
+        "--benchmark",
+        help="Run benchmark suite before/after training (quick, reasoning, factual, comprehensive)",
+    ),
 ) -> None:
     """Research path with explicit training controls.
 
@@ -201,10 +215,13 @@ def train_run_research(
         derivedHyperparameters: All geometry-derived settings
         topoMetrics: Betti numbers and Ricci curvature per epoch (with --topo-monitor)
         dimMetrics: Dimensional expansion/contraction per epoch (with --dim-monitor)
+        benchmarkBaseline: Pre-training benchmark scores (with --benchmark)
+        benchmarkPost: Post-training benchmark scores (with --benchmark)
+        benchmarkDelta: Score deltas (with --benchmark)
 
     Example:
         mc train run-research -m /path/to/model -d /path/to/data.jsonl --no-save
-        mc train run-research -m /path/to/model -d /path/to/data.jsonl --topo-monitor --dim-monitor
+        mc train run-research -m /path/to/model -d /path/to/data.jsonl --benchmark quick
     """
     context = _context(ctx)
     model_path = Path(model)
@@ -235,6 +252,7 @@ def train_run_research(
             dim_monitor=dim_monitor,
             auto_regime=auto_regime,
             no_save=no_save,
+            benchmark_suite=benchmark,
         )
     except TrainingDerivationError as exc:
         _write_training_derivation_error(exc, context)

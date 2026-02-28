@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
@@ -109,6 +110,11 @@ class _MLXTrainingAdapterTrainMixin:
         research_online_eval_stop_stage: str = "pre_outcome",
         # Research controls: choose REINFORCE outcome problem selector.
         research_outcome_selector: str = "all",
+        # Per-epoch degeneration gate: few-shot prompts + baseline max_4gram.
+        # When provided, generates responses at epoch boundaries and stops
+        # if max_4gram exceeds baseline + sqrt(eps_f32).
+        degen_prompts: list[str] | None = None,
+        degen_baseline_max: float | None = None,
     ) -> tuple[list[tuple[int, float, float]], str, list[EpochMetrics]]:
         """Train with Cayley-Stiefel retraction, Weyl adapter-saturation monitoring,
         and geometric stopping.
@@ -1795,7 +1801,49 @@ class _MLXTrainingAdapterTrainMixin:
                     )
                     break
 
-                elif not use_val_stopping and it >= (
+                # 7d. Degeneration gate: 4-gram repetition on few-shot prompts
+                if (degen_prompts
+                        and degen_baseline_max is not None
+                        and tokenizer is not None):
+                    from modelcypher.core.domain.training.degeneration import (
+                        fourgram_repetition_rate,
+                    )
+                    _sqrt_eps = math.sqrt(
+                        float(self.mx.finfo(self.mx.float32).eps)
+                    )
+                    _degen_rates: list[float] = []
+                    for _dp in degen_prompts:
+                        try:
+                            _resp = self._backend.generate(
+                                model, tokenizer, _dp, max_tokens=512,
+                            )
+                            _degen_rates.append(fourgram_repetition_rate(_resp))
+                        except Exception:
+                            pass
+                    if _degen_rates:
+                        _degen_max = max(_degen_rates)
+                        _degen_mean = sum(_degen_rates) / len(_degen_rates)
+                        logger.info(
+                            "Degeneration check (epoch %d): max_4gram=%.3f, "
+                            "mean_4gram=%.3f, baseline_max=%.3f (%d prompts)",
+                            epoch_num, _degen_max, _degen_mean,
+                            degen_baseline_max, len(_degen_rates),
+                        )
+                        if _degen_max > degen_baseline_max + _sqrt_eps:
+                            stop_reason = (
+                                f"degeneration_exceeded ("
+                                f"max_4gram={_degen_max:.3f} > "
+                                f"baseline={degen_baseline_max:.3f}+eps, "
+                                f"epoch={epoch_num})"
+                            )
+                            logger.info(
+                                "Degeneration stop at iter %d: %s",
+                                it + 1, stop_reason,
+                            )
+                            break
+
+                # 7e. Loss stability stop (fallback when no val dataset)
+                if not use_val_stopping and it >= (
                     2 * loss_stability_window_epochs * n_batches_per_epoch
                 ):
                     stable, threshold = check_loss_stable(
