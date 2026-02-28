@@ -158,9 +158,9 @@ class ActivationProviderAdapter:
         token_ids: list[int] | None = None,
     ) -> dict[int, Any]:
         """Collect per-layer MLP intermediate activations."""
-        # This requires hooking into MLP intermediate outputs
-        # For now, return hidden activations as a fallback
-        return self.collect_hidden_activations(model, tokenizer, text, token_ids)
+        return self._backend.collect_intermediate_activations(
+            model, tokenizer, text, token_ids
+        )
 
     def collect_attention_activations(
         self,
@@ -319,26 +319,8 @@ class ActivationProviderAdapter:
         texts: list[str],
     ):
         """Collect activations for multiple texts."""
-        from modelcypher.ports.activation_provider import ProbeActivationBatch
-
-        hidden_list = []
-        intermediate_list = []
-        gate_list = []
-        embedding_list = []
-
-        for text in texts:
-            hidden = self.collect_hidden_activations(model, tokenizer, text)
-            embedding = self.collect_embedding_activations(model, tokenizer, text)
-            hidden_list.append(hidden)
-            intermediate_list.append(hidden)  # Fallback
-            gate_list.append(hidden)  # Fallback
-            embedding_list.append(embedding)
-
-        return ProbeActivationBatch(
-            hidden=hidden_list,
-            intermediate=intermediate_list,
-            gate=gate_list,
-            embedding=embedding_list,
+        return self._backend.collect_probe_activations_batch(
+            model, tokenizer, texts
         )
 
     def collect_hidden_activations_batch(
@@ -357,7 +339,9 @@ class ActivationProviderAdapter:
         texts: list[str],
     ) -> list[dict[int, Any]]:
         """Collect intermediate activations for multiple texts."""
-        return [self.collect_intermediate_activations(model, tokenizer, text) for text in texts]
+        return self._backend.collect_intermediate_activations_batch(
+            model, tokenizer, texts
+        )
 
     def collect_gate_activations_batch(
         self,
@@ -366,8 +350,9 @@ class ActivationProviderAdapter:
         texts: list[str],
     ) -> list[dict[int, Any]]:
         """Collect gate activations for multiple texts."""
-        # Fallback to hidden activations
-        return [self.collect_hidden_activations(model, tokenizer, text) for text in texts]
+        return self._backend.collect_gate_activations_batch(
+            model, tokenizer, texts
+        )
 
     def collect_attention_activations_batch(
         self,
