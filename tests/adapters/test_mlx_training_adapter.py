@@ -317,6 +317,79 @@ def test_streaming_geometry_randomized(backend_name) -> None:
         assert isinstance(geom.tail_dims, int)
 
 
+@pytest.mark.mlx
+def test_memory_safe_micro_batch_probes_safe_side_first(monkeypatch) -> None:
+    import mlx.core as mx
+    import mlx_lm.tuner.trainer as trainer
+    import modelcypher.backends._mlx_training_adapter_diagnostics_mixin as diag_mixin
+
+    backend = _get_backend_or_fail("mlx")
+    adapter = MLXTrainingAdapter(backend)
+
+    probe_history: list[int] = []
+
+    def _fake_iterate_batches(_dataset, batch_size, _seq_length, loop=False, seed=0):
+        del loop, seed
+        probe_history.append(int(batch_size))
+        if int(batch_size) >= 5:
+            raise RuntimeError("out of memory")
+        yield mx.zeros((int(batch_size), 8), dtype=mx.int32), [8] * int(batch_size)
+
+    def _fake_value_and_grad(_model, _loss_fn):
+        def _loss_vg(model, batch, lengths):  # noqa: ANN001
+            del model, batch, lengths
+            return (mx.array(0.0), None), {}
+
+        return _loss_vg
+
+    monkeypatch.setattr(trainer, "iterate_batches", _fake_iterate_batches)
+    monkeypatch.setattr(diag_mixin.nn, "value_and_grad", _fake_value_and_grad)
+
+    model = _ToyModel(n_layers=1, hidden_dim=16)
+    train_dataset = [([1, 2, 3, 4], 0)] * 32
+    safe_bs = adapter.derive_memory_safe_micro_batch_size(
+        model=model,
+        train_dataset=train_dataset,
+        seq_length=8,
+        logical_batch_size=8,
+    )
+
+    assert safe_bs == 4
+    assert probe_history[0] == 1
+    assert 8 not in probe_history
+
+
+@pytest.mark.mlx
+def test_memory_safe_micro_batch_raises_when_one_oom(monkeypatch) -> None:
+    import mlx_lm.tuner.trainer as trainer
+
+    backend = _get_backend_or_fail("mlx")
+    adapter = MLXTrainingAdapter(backend)
+
+    probe_history: list[int] = []
+
+    def _always_oom(_dataset, batch_size, _seq_length, loop=False, seed=0):
+        del loop, seed
+        probe_history.append(int(batch_size))
+        raise RuntimeError("metal out of memory")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(trainer, "iterate_batches", _always_oom)
+
+    model = _ToyModel(n_layers=1, hidden_dim=16)
+    train_dataset = [([1, 2, 3, 4], 0)] * 8
+
+    with pytest.raises(RuntimeError, match="micro_batch=1"):
+        adapter.derive_memory_safe_micro_batch_size(
+            model=model,
+            train_dataset=train_dataset,
+            seq_length=8,
+            logical_batch_size=8,
+        )
+
+    assert probe_history == [1]
+
+
 class _QuantizedToyAttention(nn.Module):
     """Attention block with QuantizedLinear projections."""
 

@@ -27,6 +27,9 @@ from modelcypher.backends._mlx_training_adapter_core_mixin import _MLXTrainingAd
 from modelcypher.backends._mlx_training_adapter_diagnostics_mixin import (
     _MLXTrainingAdapterDiagnosticsMixin,
 )
+from modelcypher.backends._mlx_training_adapter_adapter_io_mixin import (
+    _MLXTrainingAdapterAdapterIOMixin,
+)
 from modelcypher.backends._mlx_training_adapter_train_mixin import _MLXTrainingAdapterTrainMixin
 from modelcypher.backends.mlx_training_adapter_core import (
     EpochMetrics,
@@ -43,6 +46,7 @@ from modelcypher.backends.mlx_training_adapter_core import (
 class MLXTrainingAdapter(
     _MLXTrainingAdapterCoreMixin,
     _MLXTrainingAdapterTrainMixin,
+    _MLXTrainingAdapterAdapterIOMixin,
     _MLXTrainingAdapterDiagnosticsMixin,
 ):
     """Composed MLX training adapter implementation."""

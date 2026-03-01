@@ -159,9 +159,73 @@ class SemanticPrimeMultilingualInventoryLoader:
         return cls._global_diverse
 
 
+_INVENTORY_SHARDS: dict[str, tuple[str, ...]] = {
+    "coreEuropean": (
+        "semantic_prime_multilingual_core_european.json",
+    ),
+    "globalDiverse": (
+        "semantic_prime_multilingual_global_diverse_part1.json",
+        "semantic_prime_multilingual_global_diverse_part2.json",
+    ),
+}
+
+
+def _load_inventory_payload(shard_names: tuple[str, ...]) -> dict:
+    base_payload: dict | None = None
+    merged_primes: list[dict] = []
+
+    for shard_name in shard_names:
+        payload = load_json(shard_name)
+        if not isinstance(payload, dict):
+            raise MultilingualInventoryError(
+                f"Shard '{shard_name}' did not decode to an object payload.",
+            )
+
+        if base_payload is None:
+            base_payload = {
+                "version": payload.get("version", 1),
+                "inventoryID": payload.get("inventoryID") or payload.get("inventoryId"),
+                "source": payload.get("source"),
+                "notes": payload.get("notes"),
+            }
+        else:
+            shard_identity = (
+                payload.get("version", 1),
+                payload.get("inventoryID") or payload.get("inventoryId"),
+                payload.get("source"),
+                payload.get("notes"),
+            )
+            base_identity = (
+                base_payload["version"],
+                base_payload["inventoryID"],
+                base_payload["source"],
+                base_payload["notes"],
+            )
+            if shard_identity != base_identity:
+                raise MultilingualInventoryError(
+                    f"Shard '{shard_name}' metadata does not match earlier shards.",
+                )
+
+        shard_primes = payload.get("primes", [])
+        if not isinstance(shard_primes, list):
+            raise MultilingualInventoryError(
+                f"Shard '{shard_name}' has non-list 'primes' payload.",
+            )
+        merged_primes.extend(shard_primes)
+
+    if base_payload is None:
+        raise MultilingualInventoryError("Inventory payload is empty.")
+
+    merged_payload = dict(base_payload)
+    merged_payload["primes"] = merged_primes
+    return merged_payload
+
+
 def _load_inventory(key: str) -> SemanticPrimeMultilingualInventory:
-    raw = load_json("semantic_prime_multilingual.json")
-    payload = raw[key]
+    shard_names = _INVENTORY_SHARDS.get(key)
+    if shard_names is None:
+        raise KeyError(key)
+    payload = _load_inventory_payload(shard_names)
     primes: list[MultilingualPrime] = []
     for prime in payload.get("primes", []):
         languages: list[LanguageTexts] = []

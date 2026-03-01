@@ -726,24 +726,15 @@ class _MLXTrainingAdapterDiagnosticsMixin:
                 if hasattr(self._backend, "clear_cache"):
                     self._backend.clear_cache()
 
-        ok, peak = _probe(max_candidate)
-        if ok:
-            if peak is not None:
-                logger.info(
-                    "Memory-safe micro batch size=%d (peak=%.2f GB)",
-                    max_candidate,
-                    peak,
-                )
-            return max_candidate
-
         ok1, peak1 = _probe(1)
         if not ok1:
             raise RuntimeError(
                 "Training OOM at micro_batch=1; model/data do not fit device memory."
             )
 
+        # Probe from the safe side first to avoid catastrophic max-size probes.
         low = 1
-        high = max_candidate
+        high = max_candidate + 1
         low_peak = peak1
         while low + 1 < high:
             mid = (low + high) // 2

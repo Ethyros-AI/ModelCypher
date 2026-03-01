@@ -87,6 +87,70 @@ ModelCypher operates on empirical proof. These pre-registered pass/fail hypothes
 
 ---
 
+## Part 6: Preliminary Empirical Results — Cross-Scale Capacity Profiles
+
+### LFM2 Architecture (350M vs 1.2B)
+
+Exp2 capacity profiling on the LFM2 architecture reveals a structurally invariant null-space distribution across scales.
+
+#### Capacity Utilization (Scale Invariance)
+
+| Layer Type | 350M util | 1.2B util | Δ |
+| :--- | :---: | :---: | :---: |
+| q_proj | 0.467 | 0.486 | 0.019 |
+| attn_out_proj | 0.632 | 0.628 | 0.004 |
+| conv_out_proj | 0.648 | 0.649 | 0.001 |
+| FFN (w1/w2/w3) | 0.877–0.914 | 0.874–0.918 | < 0.01 |
+| k_proj | 0.627 | 0.713 | 0.086 |
+| v_proj | 0.783 | 0.883 | 0.100 |
+
+#### Null-Space Capacity (Linear Scaling with Hidden Dimension)
+
+| Layer Type | 350M null dims (d=1024) | 1.2B null dims (d=2048) | Ratio |
+| :--- | :---: | :---: | :---: |
+| q_proj | 4.00 | 7.83 | 1.96× |
+| attn_out_proj | 1.83 | 3.50 | 1.91× |
+| conv_out_proj | 1.70 | 3.70 | 2.18× |
+| FFN, k_proj, v_proj | 0 | 0 | — |
+
+#### Key Findings
+
+1. **H4 supported:** Capacity utilization is structurally constant across scales (q_proj invariance factor = 1.04). Null-space dimension scales linearly with hidden dimension — the *fraction* of available null-space is architecturally determined.
+2. **Bottleneck identified:** q_proj layers carry the majority of available null-space budget. FFN layers are saturated (85–95% utilization, zero null dims). This means sequential task injection will deplete attention projections first at any scale.
+3. **H1 prediction narrowed:** Monotonic depletion (H1) reduces to tracking q_proj null-space consumption during sequential NB-LoRA training.
+
+### Cross-Architecture Capacity Profiles
+
+Exp2 profiling was extended across 4 distinct architectures to test whether the q_proj bottleneck is architecture-specific or universal.
+
+#### Attention Projection Capacity (q_proj + o_proj)
+
+| Architecture | Params | q_proj util | q_proj null | o_proj util | o_proj null | FFN util |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| LFM2-350M | 354M | 0.467 | 4.0 | 0.632 | 1.8 | 0.88–0.91 |
+| LFM2-1.2B | 1.17B | 0.486 | 7.8 | 0.628 | 3.5 | 0.87–0.92 |
+| Qwen2.5-3B | 3.09B | 0.532 | 5.3 | 0.589 | 3.5 | 0.88–0.91 |
+| Llama-3.2-3B | 3.21B | 0.530 | 32.3 | 0.625 | 5.6 | 0.85–0.89 |
+| Qwen3-8B | 8.19B | 0.580 | 17.8 | 0.632 | 6.3 | 0.83–0.87 |
+
+> [!WARNING]
+> Mistral-7B-4bit was profiled but excluded: 4-bit quantization produces numerically invalid spectral decompositions. Capacity utilization values overflow to $10^{15}$. Spectral capacity analysis requires at minimum bf16 precision.
+
+#### Universal Structural Invariants
+
+Across all bf16 architectures tested (LFM2, Qwen, Llama — 3 architecture families, 5 models, 354M to 8.2B parameters):
+
+1. **q_proj is universally the capacity bottleneck.** It has the lowest utilization (0.47–0.58) and highest null-space dim across all architectures. This is not coincidental — the query projection creates the attention pattern, so it must maintain the largest representational diversity.
+2. **o_proj is the secondary reservoir.** Consistent utilization around 0.59–0.63 with meaningful null-space dims.
+3. **FFN layers are universally saturated** (0.83–0.92 utilization, zero null dims). No architecture provides trainable null-space capacity in the feed-forward network.
+4. **k_proj and v_proj have near-zero null-space** in all architectures tested (exception: Llama-3.2-3B k_proj shows 0.6 mean null dims). These projections are tightly utilized.
+
+#### Implications for Continual Learning
+
+The universal q_proj bottleneck means the geometric continual learning cycle's capacity arithmetic is **architecture-independent**: at any scale, the number of sequential tasks that can be absorbed before consolidation is bounded by $\sum_l \text{null\_rank}(W^l_{q\_proj})$.
+
+---
+
 ## References
 
 1. **Chaudhry, A., et al. (2018).** *Riemannian Walk for Incremental Learning: Understanding Forgetting and Intransigence.* (Forgetting Measure Definitions)
