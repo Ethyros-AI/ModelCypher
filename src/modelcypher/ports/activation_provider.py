@@ -49,7 +49,7 @@ Usage:
     def my_function(provider: ActivationProvider, model, tokenizer, text):
         hidden_acts = provider.collect_hidden_activations(model, tokenizer, text)
         intermediate_acts = provider.collect_intermediate_activations(model, tokenizer, text)
-        q_acts, kv_acts = provider.collect_attention_activations(model, tokenizer, text)
+        q_acts, k_acts, v_acts = provider.collect_attention_activations(model, tokenizer, text)
 """
 
 from __future__ import annotations
@@ -222,21 +222,13 @@ class ActivationProvider(Protocol):
         tokenizer: Any,
         text: str,
         token_ids: list[int] | None = None,
-    ) -> tuple[dict[int, Array], dict[int, Array]]:
-        """
-        Collect per-layer attention Q and KV activations for a text input.
+    ) -> tuple[dict[int, Array], dict[int, Array], dict[int, Array]]:
+        """Collect per-layer attention Q, K, V activations for a text input.
 
-        Returns TWO dicts:
-        1. Q activations: [num_heads * head_dim] (e.g., 960 for SmolLM, 896 for Qwen)
-        2. KV activations: [num_kv_heads * head_dim] (e.g., 320 for SmolLM, 128 for Qwen)
-
-        For Grouped Query Attention (GQA) models, Q and KV have different dimensions:
-        - SmolLM: Q = 15 heads × 64 = 960, KV = 5 heads × 64 = 320
-        - Qwen: Q = 14 heads × 64 = 896, KV = 2 heads × 64 = 128
-
-        Separate transforms are needed for each space:
-        - Q activations: For q_proj and o_proj weight stitching
-        - KV activations: For k_proj and v_proj weight stitching
+        Returns three dicts of per-layer projections. For GQA models, Q has
+        different dimension than K/V:
+        - Q: [num_heads * head_dim] (e.g., 960 for SmolLM, 896 for Qwen)
+        - K, V: [num_kv_heads * head_dim] (e.g., 320 for SmolLM, 128 for Qwen)
 
         Args:
             model: The loaded model.
@@ -245,8 +237,8 @@ class ActivationProvider(Protocol):
             token_ids: Optional pre-tokenized input.
 
         Returns:
-            Tuple of (q_activations, kv_activations), each a dict mapping
-            layer_idx -> activation array.
+            Tuple of (q_activations, k_activations, v_activations), each a dict
+            mapping layer_idx -> activation array.
         """
         ...
 
@@ -401,9 +393,8 @@ class ActivationProvider(Protocol):
         model: Any,
         tokenizer: Any,
         texts: list[str],
-    ) -> tuple[list[dict[int, Array]], list[dict[int, Array]]]:
-        """
-        Collect per-layer attention Q and KV activations for multiple texts in one pass.
+    ) -> tuple[list[dict[int, Array]], list[dict[int, Array]], list[dict[int, Array]]]:
+        """Collect per-layer attention Q, K, V activations for multiple texts.
 
         Args:
             model: The loaded model.
@@ -411,7 +402,7 @@ class ActivationProvider(Protocol):
             texts: List of text inputs to process.
 
         Returns:
-            Tuple of (q_activations_list, kv_activations_list), each a list of dicts
+            Tuple of (q_list, k_list, v_list), each a list of dicts
             mapping layer_idx -> activation array.
 
         Raises:

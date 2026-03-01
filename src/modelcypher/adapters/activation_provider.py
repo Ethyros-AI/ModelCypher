@@ -168,12 +168,11 @@ class ActivationProviderAdapter:
         tokenizer: Any,
         text: str,
         token_ids: list[int] | None = None,
-    ) -> tuple[dict[int, Any], dict[int, Any]]:
-        """Collect per-layer attention Q and KV activations."""
-        # This requires hooking into attention outputs
-        # For now, return hidden activations as a fallback
-        hidden = self.collect_hidden_activations(model, tokenizer, text, token_ids)
-        return hidden, hidden
+    ) -> tuple[dict[int, Any], dict[int, Any], dict[int, Any]]:
+        """Collect per-layer attention Q, K, V activations."""
+        return self._backend.collect_attention_activations(
+            model, tokenizer, text, token_ids
+        )
 
     def collect_attention_matrices(
         self,
@@ -359,15 +358,17 @@ class ActivationProviderAdapter:
         model: Any,
         tokenizer: Any,
         texts: list[str],
-    ) -> tuple[list[dict[int, Any]], list[dict[int, Any]]]:
+    ) -> tuple[list[dict[int, Any]], list[dict[int, Any]], list[dict[int, Any]]]:
         """Collect attention activations for multiple texts."""
-        q_list = []
-        kv_list = []
+        q_list: list[dict[int, Any]] = []
+        k_list: list[dict[int, Any]] = []
+        v_list: list[dict[int, Any]] = []
         for text in texts:
-            q, kv = self.collect_attention_activations(model, tokenizer, text)
+            q, k, v = self.collect_attention_activations(model, tokenizer, text)
             q_list.append(q)
-            kv_list.append(kv)
-        return q_list, kv_list
+            k_list.append(k)
+            v_list.append(v)
+        return q_list, k_list, v_list
 
     def collect_trajectory_batch(
         self,
