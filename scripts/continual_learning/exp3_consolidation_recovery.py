@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from modelcypher.backends import initialize_default_backend
-from modelcypher.cli.composition import get_capacity_analysis_service, get_model_loader
+from modelcypher.cli.composition import get_capacity_analysis_service, get_merge_service
 
 MODEL_PATH_DEFAULT = "/Volumes/CodeCypher/models/mlx-community/Qwen3-8B-bf16"
 OUTPUT_ROOT_DEFAULT = Path("results/continual_learning/exp3")
@@ -42,11 +42,11 @@ def main() -> None:
     print(f"Consolidating adapter {args.adapter_path} into {args.model_path} ...")
     merged_model_path = seed_dir / "merged_model"
     
-    loader = get_model_loader()
-    loader.merge_adapter_to_base(
-        base_model_path=str(args.model_path),
-        adapter_path=str(args.adapter_path),
-        output_path=str(merged_model_path)
+    merger = get_merge_service()
+    merger.merge(
+        source_path=str(args.adapter_path),
+        target_path=str(args.model_path),
+        output_dir=str(merged_model_path),
     )
     
     # 3. Measure Post-Consolidation Capacity

@@ -38,13 +38,14 @@ def run_scale_experiment(model_info: dict, capacity_service) -> dict:
     except Exception as e:
         print(f"Failed to analyze true model, using fallback. Error: {e}")
         hidden_dim = 1024 if model_info["name"] == "350M" else 2048
-        mean_capacity = 0.15
+        mean_capacity = None  # Explicitly null — no real measurement available
 
     return {
         "scale": model_info["name"],
         "hidden_dim": hidden_dim,
         "mean_capacity_utilization": mean_capacity,
-        "normalized_depletion_rate": mean_capacity # Directly uses measured state
+        "normalized_depletion_rate": mean_capacity,  # null when simulation mode
+        "simulation_mode": mean_capacity is None,
     }
 
 def main() -> None:
@@ -66,21 +67,20 @@ def main() -> None:
             print(f"Failed to run scale {model['name']}: {e}")
             
     if len(results) == 2:
-        # H4 Check: Ratio invariance
         ratio_350m = results[0]["normalized_depletion_rate"]
         ratio_1_2b = results[1]["normalized_depletion_rate"]
         
-        invariance_factor = max(ratio_350m, ratio_1_2b) / max(1e-9, min(ratio_350m, ratio_1_2b))
+        if ratio_350m is not None and ratio_1_2b is not None and min(ratio_350m, ratio_1_2b) > 0:
+            invariance_factor = max(ratio_350m, ratio_1_2b) / min(ratio_350m, ratio_1_2b)
+        else:
+            invariance_factor = None
         
-        # We compute the p-value proxy (invariance factor) instead of arbitrary bound
-        # A true statistical significance requires variance across seeds, which would be 
-        # orchestrated at the CI level.
-        h4_passed = invariance_factor > 0.0
-        
+        # H4 judgment is deferred: statistical significance requires variance
+        # across seeds.  We record the invariance factor for downstream analysis.
         summary = {
             "scale_results": results,
             "invariance_factor": invariance_factor,
-            "h4_passed": h4_passed
+            "h4_judgment": "deferred — requires multi-seed variance for significance",
         }
     else:
         summary = {"scale_results": results, "error": "Could not compare scales."}

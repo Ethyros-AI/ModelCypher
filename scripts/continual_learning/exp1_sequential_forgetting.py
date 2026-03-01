@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from modelcypher.backends import initialize_default_backend
-from modelcypher.cli.composition import get_dataset_training_service, get_capacity_analysis_service
+from modelcypher.cli.composition import get_dataset_training_service, get_model_loader
 from modelcypher.core.domain.continual_learning_metrics import get_continual_learning_metrics
 from modelcypher.core.domain.geometry.null_space_tracker import NullSpaceTracker
 from modelcypher.core.domain.geometry.cka import compute_linear_cka_gram
@@ -38,7 +38,7 @@ def main() -> None:
     metrics_domain = get_continual_learning_metrics(backend)
     cpu_metrics = get_continual_learning_metrics(None)
     dataset_service = get_dataset_training_service()
-    capacity_service = get_capacity_analysis_service()
+    model_loader = get_model_loader()
     
     tracker = NullSpaceTracker(backend=backend)
     
@@ -47,7 +47,7 @@ def main() -> None:
     current_model_path = args.model_path
     
     # Calculate initial sigma_k ref based on the largest singular value of the first layer
-    weight_items = capacity_service._iter_weight_items(str(current_model_path))
+    weight_items = model_loader.iter_weights(str(current_model_path))
     try:
         first_layer_name, first_tensor = next(weight_items)
         S = backend.svd(first_tensor, compute_uv=False)
