@@ -1,0 +1,87 @@
+# Vision: Geometry as the Identity Layer
+
+## The Trajectory
+
+ModelCypher's training engine derives every decision from geometry. That engine is not the end product. It is the foundation for something larger:
+
+**Personal, portable, sovereign AI identity — carried as geometry, not data.**
+
+A user's LoRA adapter is not a conversation log. It is a compressed geometric representation of how that person thinks, communicates, reasons, and relates. It captures invariant relational structure — the shapes, not the words. Because it is geometric rather than lexical, it is architecture-agnostic. It sits on top of any model at inference.
+
+## The Architecture
+
+```
+User's day of interactions
+        |
+        v
+  Nightly LoRA consolidation (continual learning)
+        |
+        v
+  Personal adapter (geometric cognitive fingerprint)
+        |
+        +---> stored on user's device (sovereignty)
+        +---> mirrored in data center (availability)
+        |
+        v
+  Stacked at inference on ANY model
+        |
+        +---> Today's Claude
+        +---> Tomorrow's successor
+        +---> A different provider's model
+        +---> An on-device model
+        +---> A humanoid's onboard model
+```
+
+The adapter IS the identity. The base model is the substrate. The substrate is the variable. The geometry is the constant.
+
+## What Already Exists
+
+Each piece of this architecture has a foundation in ModelCypher today:
+
+| Capability | Current State | Module |
+|-----------|--------------|--------|
+| Geometry-derived training | Validated, CLI-promoted | `dataset_training_service.py`, `mc train run` |
+| Cross-architecture adapter portability | Demonstrated via merge pipeline | `experimental/merge/`, CKA alignment |
+| Nightly consolidation | Experimental, architecture sound | `experimental/continual/`, `experimental/use_cases/consolidation_service.py` |
+| Adapter stacking at inference | Theoretical, infrastructure partial | `experimental/self_improve/lora_stacker.py` |
+| Adapter sovereignty | Not yet built | Requires adapter serialization + access control |
+
+## Why Geometry Makes This Possible
+
+Standard LoRA adapters are tied to a specific model's weight dimensions. Moving an adapter between architectures requires understanding the geometric mapping between their activation spaces — which is exactly what CKA alignment and null-space projection do.
+
+The merge pipeline already proves adapters can cross architecture boundaries when the geometric correspondence is established. Extending this to personal adapter portability is infrastructure work, not research.
+
+## Nightly Consolidation Mirrors Biology
+
+Human memory consolidation happens during sleep. The hippocampus replays the day's experiences and integrates them into cortical structures overnight. The architecture does the same thing:
+
+- Day's interactions = raw signal
+- Nightly LoRA update = consolidation
+- By morning, the adapter has integrated new geometric information into the existing relational structure
+
+This is what the continual learning modules (`curiosity_policy.py`, `consolidation_service.py`, `memory_benchmark.py`) are building toward. The daemon explores sparse manifold regions. The consolidation service fills gaps via null-space completion. The benchmark measures geometric before/after to prove consolidation worked.
+
+## Adapter Sovereignty Inverts the Power Dynamic
+
+Today, AI companies hold conversation history on their servers. The user is locked into the ecosystem.
+
+When the identity layer is a personal adapter:
+- The user owns their cognitive fingerprint
+- They grant access to any model at runtime and revoke it
+- The AI company never owns the relationship
+- Switching providers means pointing the adapter at a different base model
+
+The base model is commodity infrastructure. The adapter is the relationship. The user holds the adapter.
+
+## The Separation That Matters
+
+Intelligence converges on invariant structures regardless of the architecture it runs on. ModelCypher's cross-family validation (LFM2 + Qwen) already demonstrates this — weight space is Euclidean, the geometry transfers. Hardware is the variable. Geometry is the constant.
+
+This means the identity layer — the personal adapter — is not tied to any specific model, company, or device. It is a geometric object that persists across substrates.
+
+## From Training Engine to Identity Infrastructure
+
+ModelCypher's mission is to train models using only geometry. The vision is what that enables: a world where AI identity is personal, portable, and sovereign — and the geometry guarantees it works across any model on any device.
+
+The training engine is step one. The identity layer is what we are building toward.
