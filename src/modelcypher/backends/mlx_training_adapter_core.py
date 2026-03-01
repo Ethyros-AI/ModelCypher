@@ -67,6 +67,9 @@ class EpochMetrics:
     spectral_ratio_growth_per_iter: float | None = None
     eta_ceiling: float | None = None
     adapter_saturation_median_ratio: float | None = None
+    expert_saturation_map: dict[str, float] | None = None
+    n_saturated_experts: int | None = None
+    n_total_target_experts: int | None = None
     # MASS (Measured-Adaptive Step Size) diagnostics
     # Preconditioner P removed (falsification 2026-02-23: P ≈ I).
     # Cayley constraint preserved in NBLoRALinear.

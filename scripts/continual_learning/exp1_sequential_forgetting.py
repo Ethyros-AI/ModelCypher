@@ -6,9 +6,10 @@ import json
 from pathlib import Path
 
 from modelcypher.backends import initialize_default_backend
-from modelcypher.cli.composition import get_dataset_training_service
+from modelcypher.cli.composition import get_dataset_training_service, get_capacity_analysis_service
 from modelcypher.core.domain.continual_learning_metrics import get_continual_learning_metrics
 from modelcypher.core.domain.geometry.null_space_tracker import NullSpaceTracker
+from modelcypher.core.domain.geometry.cka import compute_linear_cka_gram
 
 MODEL_PATH_DEFAULT = "/Volumes/CodeCypher/models/mlx-community/Qwen3-8B-bf16"
 OUTPUT_ROOT_DEFAULT = Path("results/continual_learning/exp1")
@@ -35,7 +36,9 @@ def main() -> None:
 
     backend = initialize_default_backend()
     metrics_domain = get_continual_learning_metrics(backend)
+    cpu_metrics = get_continual_learning_metrics(None)
     dataset_service = get_dataset_training_service()
+    capacity_service = get_capacity_analysis_service()
     
     tracker = NullSpaceTracker(backend=backend)
     
@@ -43,20 +46,17 @@ def main() -> None:
     
     current_model_path = args.model_path
     
-    model, _ = backend.load_model(str(current_model_path))
-    fp_weights = dataset_service._adapter.extract_weight_matrices(model)
-    
     # Calculate initial sigma_k ref based on the largest singular value of the first layer
-    first_layer_name = list(fp_weights.keys())[0] if fp_weights else "0"
-    if fp_weights:
-        S = backend.svd(fp_weights[first_layer_name], compute_uv=False)
+    weight_items = capacity_service._iter_weight_items(str(current_model_path))
+    try:
+        first_layer_name, first_tensor = next(weight_items)
+        S = backend.svd(first_tensor, compute_uv=False)
         sigma_k_ref = float(metrics_domain._to_scalar(backend.max(S)))
-    else:
+    except StopIteration:
+        first_layer_name = "unknown"
         sigma_k_ref = 1.0 # fallback
         
     print(f"Calculated base sigma_k_ref from layer {first_layer_name}: {sigma_k_ref}")
-    del model
-    backend.clear_cache()
     
     task_ranks = []
     delta_history = []
@@ -79,24 +79,41 @@ def main() -> None:
         except Exception as e:
             print(f"Training failed (or datasets missing) for {dataset_path}: {e}")
         
-        # 2. Extract Geometry 
-        if fp_weights:
-            target_shape = fp_weights[first_layer_name].shape
-            mock_delta = backend.zeros(target_shape)
-        else:
-            mock_delta = backend.zeros((10, 10))
-        delta_history.append(mock_delta)
+        # 2. Extract Geometry Delta
+        adapter_weights = backend.load_safetensors(str(adapter_path / "adapters.safetensors"))
+        current_delta = None
+        for k in adapter_weights:
+            if "lora_a" in k.lower():
+                a = adapter_weights[k]
+                b_key = k.replace(".lora_a", ".lora_b").replace(".lora_A", ".lora_B")
+                if b_key in adapter_weights:
+                    b = adapter_weights[b_key]
+                    delta = backend.transpose(backend.matmul(a, b))
+                    current_delta = delta
+                    break
+                    
+        if current_delta is None:
+            current_delta = backend.zeros((10, 10))
+            
+        delta_history.append(current_delta)
         
         # Get rank from tracker if active, else simulate decay for CI/testing
-        current_null_rank = metrics_domain.rank_from_tracker(tracker, "0") or (1024 - i * 150)
+        current_null_rank = cpu_metrics.rank_from_tracker(tracker, 0) or (1024 - i * 150)
         task_ranks.append(current_null_rank)
         
-        # 3. Telemetry Collection
-        eval_cka_row = [1.0 - (i - j) * 0.05 for j in range(i + 1)]
+        # 3. Telemetry Collection (Linear CKA Gram of deltas as representational proxy)
+        eval_cka_row = []
+        for past_delta in delta_history:
+            # We treat the weight delta directly as a Gram proxy for geometric divergence
+            gram1 = backend.matmul(current_delta, backend.transpose(current_delta))
+            gram2 = backend.matmul(past_delta, backend.transpose(past_delta))
+            cka_val = float(metrics_domain._to_scalar(compute_linear_cka_gram(gram1, gram2, backend)))
+            eval_cka_row.append(cka_val)
+            
         cka_matrix.append(eval_cka_row)
         
     print(f"\n=== Final Telemetry Summary ===")
-    depletion_rate = metrics_domain.null_space_depletion_rate(task_ranks)
+    depletion_rate = cpu_metrics.null_space_depletion_rate(task_ranks)
     trajectory = metrics_domain.spectral_budget_trajectory(delta_history, sigma_k_ref)
     cpu_metrics = get_continual_learning_metrics(None)
     cka_stability = cpu_metrics.cka_stability(cka_matrix)

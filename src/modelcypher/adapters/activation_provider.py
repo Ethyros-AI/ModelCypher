@@ -322,6 +322,19 @@ class ActivationProviderAdapter:
             model, tokenizer, texts
         )
 
+    def collect_routing_decisions(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> dict[int, Any]:
+        """Collect selected expert IDs per token for MoE routing layers."""
+        if not hasattr(self._backend, "collect_routing_decisions"):
+            raise NotImplementedError(
+                "Backend does not implement collect_routing_decisions().",
+            )
+        return self._backend.collect_routing_decisions(model, tokenizer, texts)
+
     def collect_hidden_activations_batch(
         self,
         model: Any,

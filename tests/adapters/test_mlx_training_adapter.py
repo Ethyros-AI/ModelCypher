@@ -53,11 +53,35 @@ class _ToyMLP(nn.Module):
         self.gate_proj = nn.Linear(hidden_dim, hidden_dim * 2, bias=False)
 
 
+class _ToyMoEExpert(nn.Module):
+    def __init__(self, hidden_dim: int):
+        super().__init__()
+        self.gate_proj = nn.Linear(hidden_dim, hidden_dim * 2, bias=False)
+        self.up_proj = nn.Linear(hidden_dim, hidden_dim * 2, bias=False)
+        self.down_proj = nn.Linear(hidden_dim * 2, hidden_dim, bias=False)
+
+
+class _ToyMoEMLP(nn.Module):
+    def __init__(self, hidden_dim: int, n_experts: int = 4):
+        super().__init__()
+        self.gate = nn.Linear(hidden_dim, n_experts, bias=False)
+        self.experts = [_ToyMoEExpert(hidden_dim) for _ in range(n_experts)]
+        self.shared_expert = _ToyMoEExpert(hidden_dim)
+        self.shared_expert_gate = nn.Linear(hidden_dim, 1, bias=False)
+
+
 class _ToyLayer(nn.Module):
     def __init__(self, hidden_dim: int):
         super().__init__()
         self.self_attn = _ToyAttention(hidden_dim)
         self.mlp = _ToyMLP(hidden_dim)
+
+
+class _ToyMoELayer(nn.Module):
+    def __init__(self, hidden_dim: int, n_experts: int = 4):
+        super().__init__()
+        self.self_attn = _ToyAttention(hidden_dim)
+        self.mlp = _ToyMoEMLP(hidden_dim, n_experts=n_experts)
 
 
 class _ToyBaseModel(nn.Module):
@@ -70,6 +94,22 @@ class _ToyModel(nn.Module):
     def __init__(self, n_layers: int = 2, hidden_dim: int = 16):
         super().__init__()
         self.model = _ToyBaseModel(n_layers=n_layers, hidden_dim=hidden_dim)
+
+
+class _ToyMoEBaseModel(nn.Module):
+    def __init__(self, n_layers: int = 2, hidden_dim: int = 16, n_experts: int = 4):
+        super().__init__()
+        self.layers = [
+            _ToyMoELayer(hidden_dim, n_experts=n_experts) for _ in range(n_layers)
+        ]
+
+
+class _ToyMoEModel(nn.Module):
+    def __init__(self, n_layers: int = 2, hidden_dim: int = 16, n_experts: int = 4):
+        super().__init__()
+        self.model = _ToyMoEBaseModel(
+            n_layers=n_layers, hidden_dim=hidden_dim, n_experts=n_experts,
+        )
 
 
 def _load_model_and_tokenizer(backend_name: str) -> tuple[object, object, object]:
@@ -97,6 +137,38 @@ def test_extract_weight_matrices(backend_name) -> None:
     for key in weights:
         assert key.startswith("model.layers.")
         assert key.endswith(".weight")
+
+
+@pytest.mark.parametrize("backend_name", ["mlx"])
+@pytest.mark.mlx
+def test_extract_weight_matrices_includes_moe_experts(backend_name) -> None:
+    backend = _get_backend_or_fail(backend_name)
+    model = _ToyMoEModel(n_layers=1, hidden_dim=16, n_experts=4)
+    adapter = MLXTrainingAdapter(backend)
+
+    weights = adapter.extract_weight_matrices(model)
+
+    assert "model.layers.0.mlp.gate.weight" in weights
+    assert "model.layers.0.mlp.experts.0.gate_proj.weight" in weights
+    assert "model.layers.0.mlp.experts.0.up_proj.weight" in weights
+    assert "model.layers.0.mlp.experts.0.down_proj.weight" in weights
+    assert "model.layers.0.mlp.shared_expert.gate_proj.weight" in weights
+    assert "model.layers.0.mlp.shared_expert.up_proj.weight" in weights
+    assert "model.layers.0.mlp.shared_expert.down_proj.weight" in weights
+    assert "model.layers.0.mlp.shared_expert_gate.weight" in weights
+
+
+@pytest.mark.parametrize("backend_name", ["mlx"])
+@pytest.mark.mlx
+def test_resolve_parent_and_attr_for_moe_expert_key(backend_name) -> None:
+    backend = _get_backend_or_fail(backend_name)
+    model = _ToyMoEModel(n_layers=1, hidden_dim=16, n_experts=4)
+    adapter = MLXTrainingAdapter(backend)
+
+    key = "model.layers.0.mlp.experts.2.up_proj.weight"
+    parent, attr = adapter._resolve_parent_and_attr(model, key)
+    assert attr == "up_proj"
+    assert hasattr(parent, "up_proj")
 
 
 @pytest.mark.parametrize("backend_name", ["mlx"])

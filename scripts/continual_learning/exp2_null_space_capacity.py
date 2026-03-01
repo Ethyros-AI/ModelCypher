@@ -39,11 +39,17 @@ def main() -> None:
     )
     
     # Exposing the rank dictionary to verify SOTA hypotheses
+    mean_rank = (
+        sum(report.null_space_dim_f32 for report in capacity_report.layer_metrics.values()) 
+        / max(1, len(capacity_report.layer_metrics)) 
+        if capacity_report.layer_metrics else 0.0
+    )
+    
     saturation_summary = {
         "analyzed_layers": capacity_report.analyzed_layers,
         "analyzed_parameters": capacity_report.analyzed_parameters,
-        "mean_null_rank": sum(capacity_report.layer_metrics.values()) / max(1, len(capacity_report.layer_metrics)) if capacity_report.layer_metrics else 0.0,
-        "layers": capacity_report.layer_metrics
+        "mean_null_rank": mean_rank,
+        "layers": {k: v.to_dict() for k, v in capacity_report.layer_metrics.items()}
     }
     
     output = {

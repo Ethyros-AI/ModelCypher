@@ -23,8 +23,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.domain._backend import get_default_backend
-
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend, Array
     from modelcypher.core.domain.geometry.null_space_tracker import NullSpaceTracker

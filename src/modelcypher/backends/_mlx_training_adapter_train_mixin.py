@@ -729,8 +729,13 @@ class _MLXTrainingAdapterTrainMixin:
                 budget_exhausted_flag = False
                 median_budget_ratio = None
                 projected_residual_max = None
+                expert_saturation_map: dict[str, float] | None = None
+                n_saturated_experts: int | None = None
+                n_total_target_experts: int | None = None
+                all_target_experts_saturated = False
                 try:
                     lora_products = []
+                    lora_module_names: list[str] = []
                     for name, nb_lora in self._iter_nb_lora_modules(model):
                         A, B = nb_lora._cayley_transform()
                         S = mx.clip(nb_lora.S_raw, 0.0, nb_lora._scale_bound)
@@ -742,6 +747,7 @@ class _MLXTrainingAdapterTrainMixin:
                             B,                    # [r, out]
                             nb_lora._scale_bound,
                         ))
+                        lora_module_names.append(name)
                         mx.eval(A, B, S)
 
                     ratios = compute_budget_ratios(
@@ -754,6 +760,34 @@ class _MLXTrainingAdapterTrainMixin:
                             threshold=DTYPE_THRESHOLD_F32,
                         )
                         max_ratio = max(ratios)
+
+                        if len(ratios) == len(lora_module_names):
+                            per_expert: dict[str, float] = {}
+                            for module_name, ratio in zip(lora_module_names, ratios):
+                                expert_key = self._expert_key_from_layer_key(module_name)
+                                if expert_key is None:
+                                    continue
+                                existing = per_expert.get(expert_key)
+                                if existing is None or ratio > existing:
+                                    per_expert[expert_key] = float(ratio)
+                            if per_expert:
+                                expert_saturation_map = dict(sorted(per_expert.items()))
+                                n_total_target_experts = len(expert_saturation_map)
+                                n_saturated_experts = sum(
+                                    1
+                                    for ratio in expert_saturation_map.values()
+                                    if ratio >= DTYPE_THRESHOLD_F32
+                                )
+                                all_target_experts_saturated = (
+                                    n_total_target_experts > 0
+                                    and n_saturated_experts == n_total_target_experts
+                                )
+                                logger.info(
+                                    "Expert capacity: saturated=%d/%d, headroom=%d",
+                                    n_saturated_experts,
+                                    n_total_target_experts,
+                                    n_total_target_experts - n_saturated_experts,
+                                )
 
                     # Update conformal margin from fresh spectral measurement
                     if max_ratio is not None:
@@ -1434,6 +1468,9 @@ class _MLXTrainingAdapterTrainMixin:
                     elapsed_seconds=epoch_elapsed,
                     eta_ceiling=eta_ceiling if adaptive_lr else None,
                     adapter_saturation_median_ratio=median_budget_ratio,
+                    expert_saturation_map=expert_saturation_map,
+                    n_saturated_experts=n_saturated_experts,
+                    n_total_target_experts=n_total_target_experts,
                     displacement=mass_metrics.get("displacement"),
                     eta_sps=mass_metrics.get("eta_sps"),
                     eta_weyl=mass_metrics.get("eta_weyl"),
@@ -1742,6 +1779,17 @@ class _MLXTrainingAdapterTrainMixin:
                     )
                     logger.info(
                         "Adapter saturation stop at iter %d: %s", it + 1, stop_reason,
+                    )
+                    break
+
+                if all_target_experts_saturated:
+                    stop_reason = (
+                        "moe_expert_saturation_exhausted "
+                        f"(saturated={n_saturated_experts}/{n_total_target_experts}, "
+                        f"epoch={epoch_num})"
+                    )
+                    logger.info(
+                        "MoE expert saturation stop at iter %d: %s", it + 1, stop_reason,
                     )
                     break
 

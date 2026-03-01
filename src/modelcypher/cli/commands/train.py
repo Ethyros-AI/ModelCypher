@@ -198,6 +198,11 @@ def train_run_research(
         "--benchmark",
         help="Run benchmark suite before/after training (quick, reasoning, factual, comprehensive)",
     ),
+    target_experts: list[str] | None = typer.Option(
+        None,
+        "--target-experts",
+        help='MoE expert selectors (repeatable or comma-separated), e.g. "L5.E42".',
+    ),
 ) -> None:
     """Research path with explicit training controls.
 
@@ -253,6 +258,7 @@ def train_run_research(
             auto_regime=auto_regime,
             no_save=no_save,
             benchmark_suite=benchmark,
+            target_experts=target_experts,
         )
     except TrainingDerivationError as exc:
         _write_training_derivation_error(exc, context)

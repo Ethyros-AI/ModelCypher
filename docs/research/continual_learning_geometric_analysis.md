@@ -83,7 +83,7 @@ ModelCypher operates on empirical proof. These pre-registered pass/fail hypothes
 *   **H3: Consolidation Restores Capacity.**
     An adapter merge (consolidation phase) into the base weights will safely re-entangle representations and restore capacity to the point where $\text{null\_rank} > 0$ for all layers, without catastrophic loss of CKA on early tasks.
 *   **H4: Scale Invariance of Geometric Ratios.**
-    The geometric relationships observed (e.g., null-space depletion rate per $10^6$ parameters) will transfer across structural scales. We evaluate scale invariance by measuring whether the ratio of depletion rates across scales (350M vs 1.2B) remains within a $2\times$ tolerance.
+    The geometric relationships observed (e.g., null-space depletion rate per $10^6$ parameters) will transfer across structural scales. We evaluate scale invariance by measuring whether the ratio of depletion rates across scales (350M vs 1.2B) remains stable. We will pre-register the measurement, report the invariance factor, and evaluate whether the structural proportionality holds with statistical significance ($p$-value derived from measured data variance across seeds) rather than relying on an arbitrary tolerance.
 
 ---
 

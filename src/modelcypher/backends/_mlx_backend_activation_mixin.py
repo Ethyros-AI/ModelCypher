@@ -465,6 +465,128 @@ class _MLXBackendActivationMixin:
             embedding=embedding_results,
         )
 
+    def collect_routing_decisions(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> dict[int, Any]:
+        """Collect selected expert IDs per token for MoE router layers."""
+        if not texts:
+            return {}
+
+        all_token_ids = [tokenizer.encode(t) for t in texts]
+        if not all_token_ids:
+            return {}
+
+        max_len = max(len(ids) for ids in all_token_ids)
+        if max_len <= 0:
+            return {}
+
+        pad_id = getattr(tokenizer, "pad_token_id", 0) or 0
+        padded = [ids + [pad_id] * (max_len - len(ids)) for ids in all_token_ids]
+        input_ids = self.mx.array(padded)
+        text_lengths = [len(ids) for ids in all_token_ids]
+
+        base = getattr(model, "model", model)
+        h = base.embed_tokens(input_ids)
+
+        lengths = self.mx.array(text_lengths, dtype=h.dtype)
+        pos = self.mx.arange(max_len)
+        pad_mask = pos[None, :] < lengths[:, None]
+
+        # LFM2-style attention mask when needed.
+        causal = pos[:, None] >= pos[None, :]
+        attn_mask = pad_mask[:, :, None] & pad_mask[:, None, :] & causal[None, :, :]
+        attn_mask = attn_mask[:, None, :, :]
+
+        routing: dict[int, Any] = {}
+        eval_tensors: list[Any] = []
+
+        for layer_idx, layer in enumerate(base.layers):
+            is_lfm2 = (
+                hasattr(layer, "operator_norm")
+                and hasattr(layer, "ffn_norm")
+                and hasattr(layer, "feed_forward")
+            )
+
+            if is_lfm2:
+                h_norm = layer.operator_norm(h)
+                if hasattr(layer, "self_attn"):
+                    attn_out = layer.self_attn(h_norm, mask=attn_mask, cache=None)
+                elif hasattr(layer, "conv"):
+                    attn_out = layer.conv(h_norm, mask=pad_mask, cache=None)
+                else:
+                    attn_out = self.mx.zeros_like(h)
+                h = h + attn_out
+                h_post = layer.ffn_norm(h)
+                ff_module = layer.feed_forward
+            else:
+                if hasattr(layer, "input_layernorm"):
+                    h_norm = layer.input_layernorm(h)
+                elif hasattr(layer, "ln_1"):
+                    h_norm = layer.ln_1(h)
+                elif hasattr(layer, "operator_norm"):
+                    h_norm = layer.operator_norm(h)
+                else:
+                    h_norm = h
+
+                attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
+                if attn is not None:
+                    attn_out = attn(h_norm)
+                    if isinstance(attn_out, tuple):
+                        attn_out = attn_out[0]
+                else:
+                    attn_out = self.mx.zeros_like(h)
+                h = h + attn_out
+
+                if hasattr(layer, "post_attention_layernorm"):
+                    h_post = layer.post_attention_layernorm(h)
+                elif hasattr(layer, "ln_2"):
+                    h_post = layer.ln_2(h)
+                elif hasattr(layer, "ffn_norm"):
+                    h_post = layer.ffn_norm(h)
+                else:
+                    h_post = h
+
+                ff_module = getattr(layer, "mlp", None) or getattr(layer, "feed_forward", None)
+
+            if (
+                ff_module is not None
+                and hasattr(ff_module, "experts")
+                and hasattr(ff_module, "gate")
+            ):
+                gate_logits = ff_module.gate(h_post)
+                num_experts = int(gate_logits.shape[-1])
+                top_k_raw = (
+                    getattr(ff_module, "num_experts_per_tok", None)
+                    or getattr(ff_module, "top_k", None)
+                    or 1
+                )
+                top_k = max(1, min(int(top_k_raw), num_experts))
+
+                sorted_idx = self.mx.argsort(gate_logits, axis=-1)
+                top_idx = sorted_idx[:, :, -top_k:]
+                per_text = [
+                    top_idx[i, : text_lengths[i], :]
+                    for i in range(len(text_lengths))
+                ]
+                if per_text:
+                    layer_selected = self.mx.concatenate(per_text, axis=0)
+                else:
+                    layer_selected = self.mx.zeros((0, top_k), dtype=self.mx.int32)
+                routing[layer_idx] = layer_selected
+                eval_tensors.append(layer_selected)
+
+            if ff_module is not None:
+                mlp_out = ff_module(h_post)
+                h = h + mlp_out
+
+        if eval_tensors:
+            self.mx.eval(*eval_tensors)
+
+        return routing
+
     def collect_hidden_activations_batch(
         self,
         model: Any,

@@ -23,6 +23,7 @@ Commands:
     mc model delete   - Delete a model
     mc model info     - Inspect a model
     mc model capacity - Analyze per-layer spectral capacity
+    mc model moe-profile - Analyze MoE routing + expert capacity
 """
 
 from __future__ import annotations
@@ -563,6 +564,213 @@ def model_capacity(
     if lora_config_path is not None:
         payload["loraConfigPath"] = lora_config_path
     write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("moe-profile")
+def model_moe_profile(
+    ctx: typer.Context,
+    model_path: str = typer.Argument(..., help="Path to model directory"),
+    dataset: str = typer.Option(..., "--dataset", "-d", help="Path to JSONL dataset"),
+) -> None:
+    """Profile MoE routing and expert capacity for a dataset."""
+    context = _context(ctx)
+    resolved_model = Path(model_path).expanduser().resolve()
+    resolved_dataset = Path(dataset).expanduser().resolve()
+
+    if not resolved_model.exists():
+        error = ErrorDetail(
+            code="MC-1001",
+            title="Model not found",
+            detail=f"Path does not exist: {resolved_model}",
+            hint="Provide a valid local model path.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    if not resolved_dataset.exists():
+        error = ErrorDetail(
+            code="MC-1001",
+            title="Dataset not found",
+            detail=f"Path does not exist: {resolved_dataset}",
+            hint="Provide a valid JSONL dataset path.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    from modelcypher.adapters.model_architecture import load_config
+    from modelcypher.backends.mlx_training_adapter import MLXTrainingAdapter
+    from modelcypher.cli.composition import get_activation_provider, get_backend
+    from modelcypher.core.domain.dataset_loading import load_jsonl_dataset
+    from modelcypher.core.domain.moe.routing_analysis import RoutingProfile
+    from modelcypher.core.domain.moe.topology import MoETopology
+    from modelcypher.core.domain.training.geometric_lora import analyze_weight_geometries
+
+    try:
+        config = load_config(resolved_model)
+        topology = MoETopology.from_config(config)
+        if topology is None:
+            raise ValueError("Model config does not expose MoE fields.")
+
+        samples = load_jsonl_dataset(resolved_dataset)
+        texts = [sample["text"] for sample in samples if isinstance(sample.get("text"), str)]
+        if not texts:
+            raise ValueError("Dataset does not contain any valid 'text' entries.")
+
+        backend = get_backend()
+        activation_provider = get_activation_provider()
+        model, tokenizer = backend.load_model(str(resolved_model))
+        routing_decisions = activation_provider.collect_routing_decisions(
+            model, tokenizer, texts,
+        )
+        routing_profile = RoutingProfile.from_routing_decisions(routing_decisions, topology)
+
+        task_relevant = routing_profile.task_relevant_experts()
+        task_set = set(task_relevant)
+        candidate_experts: set[tuple[int, int]] = set(task_relevant)
+        for layer_idx, _expert_idx in task_relevant:
+            candidate_experts.update(routing_profile.underutilized_experts(layer_idx))
+
+        adapter = MLXTrainingAdapter(backend)
+        candidate_weights: dict[str, Any] = {}
+        for layer_idx, expert_idx in sorted(candidate_experts):
+            for proj_name in ("gate_proj", "up_proj", "down_proj"):
+                key = (
+                    f"model.layers.{layer_idx}.mlp.experts.{expert_idx}."
+                    f"{proj_name}.weight"
+                )
+                try:
+                    parent, attr_name = adapter._resolve_parent_and_attr(model, key)
+                    proj = getattr(parent, attr_name)
+                    if hasattr(proj, "weight"):
+                        candidate_weights[key] = adapter._dequantize_weight(proj)
+                except Exception:
+                    continue
+
+        geometries = (
+            analyze_weight_geometries(candidate_weights, backend)
+            if candidate_weights
+            else {}
+        )
+
+        expert_rows: list[dict[str, Any]] = []
+        for layer_idx, expert_idx in sorted(candidate_experts):
+            stats = routing_profile.stats.get((layer_idx, expert_idx))
+            gate_key = (
+                f"model.layers.{layer_idx}.mlp.experts.{expert_idx}.gate_proj.weight"
+            )
+            gate_geom = geometries.get(gate_key)
+            tail_dims = gate_geom.tail_dims if gate_geom is not None else None
+            if tail_dims is None:
+                capacity_status = "unprofiled"
+            elif tail_dims > 0:
+                capacity_status = "available"
+            else:
+                capacity_status = "saturated"
+            expert_rows.append({
+                "layer": layer_idx,
+                "expert": expert_idx,
+                "category": "primary" if (layer_idx, expert_idx) in task_set else "expansion",
+                "routingFrequency": stats.frequency if stats is not None else 0.0,
+                "tokenCount": stats.token_count if stats is not None else 0,
+                "tailDims": tail_dims,
+                "effectiveRank": (
+                    gate_geom.shannon_effective_rank if gate_geom is not None else None
+                ),
+                "capacityStatus": capacity_status,
+            })
+
+        payload: dict[str, Any] = {
+            "modelPath": str(resolved_model),
+            "datasetPath": str(resolved_dataset),
+            "topology": {
+                "numExperts": topology.num_experts,
+                "numExpertsPerTok": topology.num_experts_per_tok,
+                "moeIntermediateSize": topology.moe_intermediate_size,
+                "numLayers": topology.num_layers,
+                "moeLayerIndices": topology.moe_layer_indices,
+                "hasSharedExpert": topology.has_shared_expert,
+                "sharedExpertIntermediateSize": topology.shared_expert_intermediate_size,
+            },
+            "routing": {
+                "totalTokens": routing_profile.total_tokens,
+                "uniformFrequency": topology.uniform_routing_frequency,
+                "nTaskRelevantExperts": len(task_relevant),
+            },
+            "experts": expert_rows,
+        }
+
+        if context.output_format == "text":
+            lines = [
+                "MOE PROFILE",
+                f"Model: {resolved_model}",
+                f"Dataset: {resolved_dataset}",
+                (
+                    "Topology: "
+                    f"layers={len(topology.moe_layer_indices)}/{topology.num_layers}, "
+                    f"experts/layer={topology.num_experts}, "
+                    f"top_k={topology.num_experts_per_tok}"
+                ),
+                (
+                    "Routing: "
+                    f"total_tokens={routing_profile.total_tokens}, "
+                    f"uniform_frequency={topology.uniform_routing_frequency:.6f}, "
+                    f"task_relevant={len(task_relevant)}"
+                ),
+                "",
+                "Experts:",
+            ]
+            for row in sorted(
+                expert_rows,
+                key=lambda item: (float(item["routingFrequency"]), int(item["layer"])),
+                reverse=True,
+            ):
+                lines.append(
+                    "  "
+                    f"L{row['layer']}.E{row['expert']} "
+                    f"{row['category']} "
+                    f"freq={row['routingFrequency']:.6f} "
+                    f"tokens={row['tokenCount']} "
+                    f"tail={row['tailDims']} "
+                    f"status={row['capacityStatus']}"
+                )
+            write_output("\n".join(lines), context.output_format, context.pretty)
+            return
+
+        write_output(payload, context.output_format, context.pretty)
+    except FileNotFoundError as exc:
+        error = ErrorDetail(
+            code="MC-1001",
+            title="MoE profile failed",
+            detail=str(exc),
+            hint="Check model and dataset paths.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1002",
+            title="MoE profile failed",
+            detail=str(exc),
+            hint="Ensure the model is MoE and dataset is valid JSONL with text.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+    except Exception as exc:
+        from modelcypher.cli.exit_codes import EXIT_RUNTIME
+
+        error = ErrorDetail(
+            code="MC-1002",
+            title="MoE profile failed",
+            detail=str(exc),
+            hint="Check backend runtime status (mc system status).",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
 
 
 

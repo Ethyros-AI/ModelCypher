@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from modelcypher.backends import initialize_default_backend
+from modelcypher.cli.composition import get_capacity_analysis_service, get_model_loader
 
 MODEL_PATH_DEFAULT = "/Volumes/CodeCypher/models/mlx-community/Qwen3-8B-bf16"
 OUTPUT_ROOT_DEFAULT = Path("results/continual_learning/exp3")
@@ -25,26 +26,41 @@ def main() -> None:
     seed_dir.mkdir(parents=True, exist_ok=True)
 
     backend = initialize_default_backend()
+    capacity_service = get_capacity_analysis_service()
     
     print(f"=== Starting Experiment 3 (Consolidation Recovery) | Seed: {args.seed} ===")
     
     # 1. Measure Pre-Consolidation Capacity
-    # pre_merge_capacity = get_capacity(model, adapter)
-    pre_merge_capacity = 100 # Simulated capacity for structure
+    print(f"Measuring capacity of base model pre-merge: {args.model_path}")
+    pre_report = capacity_service.analyze(model_path=str(args.model_path))
+    pre_merge_capacity = (
+        sum(r.null_space_dim_f32 for r in pre_report.layer_metrics.values()) 
+        / max(1, len(pre_report.layer_metrics)) if pre_report.layer_metrics else 0
+    )
     
     # 2. Consolidate (Merge) Adapter into Base Weights
-    # modelcypher.cli.merge ...
-    # This simulates the "Dream/Sleep" phase where sub-spaces are re-entangled symmetrically
     print(f"Consolidating adapter {args.adapter_path} into {args.model_path} ...")
     merged_model_path = seed_dir / "merged_model"
-    # Actually call a merge function if available, else simulate output structure
+    
+    loader = get_model_loader()
+    loader.merge_adapter_to_base(
+        base_model_path=str(args.model_path),
+        adapter_path=str(args.adapter_path),
+        output_path=str(merged_model_path)
+    )
     
     # 3. Measure Post-Consolidation Capacity
-    # post_merge_capacity = get_capacity(merged_model)
-    post_merge_capacity = 850 # Simulated recovery
+    print(f"Measuring capacity of consolidated model: {merged_model_path}")
+    post_report = capacity_service.analyze(model_path=str(merged_model_path))
+    post_merge_capacity = (
+        sum(r.null_space_dim_f32 for r in post_report.layer_metrics.values()) 
+        / max(1, len(post_report.layer_metrics)) if post_report.layer_metrics else 0
+    )
     
     # H3 Threshold Validation
-    recovery_ratio = post_merge_capacity / 1024.0 # Assuming 1024 max rank (proxy)
+    # We use min_dim as the proxy for max rank (e.g. 1024)
+    first_layer_dim = list(post_report.layer_metrics.values())[0].weight_shape[0] if post_report.layer_metrics else 1024
+    recovery_ratio = post_merge_capacity / float(first_layer_dim)
     
     output = {
         "seed": args.seed,

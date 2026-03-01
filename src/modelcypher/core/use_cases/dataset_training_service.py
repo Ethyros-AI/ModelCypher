@@ -35,6 +35,7 @@ import json
 import logging
 import math
 import random
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -62,6 +63,7 @@ from modelcypher.core.domain.training.geometric_optimizer import (
 )
 
 if TYPE_CHECKING:
+    from modelcypher.core.domain.moe.expert_selection import ExpertTargetSelection
     from modelcypher.core.domain.training.constraint_config import ConstraintState
     from modelcypher.ports.backend import Backend
 
@@ -148,6 +150,10 @@ class DatasetTrainResult:
     # Standard benchmark eval (pre/post training, optional via --benchmark)
     benchmark_baseline: dict[str, float] | None = None
     benchmark_post: dict[str, float] | None = None
+    # MoE expert-targeting diagnostics (optional)
+    moe_targets: "ExpertTargetSelection | None" = None
+    moe_saturated_during_training: list[str] | None = None
+    moe_router_stability: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert result to a JSON-serializable dictionary."""
@@ -243,6 +249,18 @@ class DatasetTrainResult:
             result["benchmark_baseline"] = self.benchmark_baseline
         if self.benchmark_post is not None:
             result["benchmark_post"] = self.benchmark_post
+        if self.moe_targets is not None:
+            result["moe_targets"] = {
+                "n_targets": self.moe_targets.n_trainable_experts,
+                "target_module_keys": self.moe_targets.target_module_keys,
+                "estimated_params": self.moe_targets.estimated_params,
+                "saturated": list(self.moe_targets.saturated),
+                "skipped": list(self.moe_targets.skipped),
+            }
+        if self.moe_saturated_during_training is not None:
+            result["moe_saturated_during_training"] = self.moe_saturated_during_training
+        if self.moe_router_stability is not None:
+            result["moe_router_stability"] = self.moe_router_stability
         if self.benchmark_baseline is not None and self.benchmark_post is not None:
             result["benchmark_delta"] = {
                 k: self.benchmark_post[k] - self.benchmark_baseline.get(k, 0.0)
@@ -354,6 +372,7 @@ class DatasetTrainingService:
         no_save: bool = False,
         max_iters_cap: int | None = None,
         benchmark_suite: str | None = None,
+        target_experts: list[str] | str | None = None,
     ) -> DatasetTrainResult:
         """Train an NB-LoRA adapter from a JSONL dataset.
 
@@ -808,6 +827,21 @@ class DatasetTrainingService:
 
         # 5. Select targets (geometry decides: layers with tail_dims > 0)
         target_modules = select_target_modules(geometries)
+        manual_target_expert_keys = self._parse_target_expert_keys(target_experts)
+        if manual_target_expert_keys:
+            filtered = [key for key in target_modules if key in manual_target_expert_keys]
+            if not filtered:
+                raise ValueError(
+                    "No manually targeted experts were geometrically targetable "
+                    "(tail_dims > 0).",
+                )
+            target_modules = filtered
+            logger.info(
+                "Manual MoE expert targeting applied: %d target modules "
+                "(requested=%d)",
+                len(target_modules),
+                len(manual_target_expert_keys),
+            )
         if not target_modules:
             raise ValueError("No targetable layers found from geometric analysis")
 
@@ -1653,6 +1687,23 @@ class DatasetTrainingService:
             if gain_ratios:
                 max_gain_ratio = max(gain_ratios)
 
+        moe_saturated_during_training: list[str] | None = None
+        moe_saturation_threshold = max(
+            0.0,
+            1.0 - math.sqrt(float(self._backend.finfo().eps)),
+        )
+        if epoch_metrics:
+            saturated_keys: set[str] = set()
+            for metric in epoch_metrics:
+                saturation_map = metric.expert_saturation_map
+                if not saturation_map:
+                    continue
+                for expert_key, ratio in saturation_map.items():
+                    if ratio >= moe_saturation_threshold:
+                        saturated_keys.add(expert_key)
+            if saturated_keys:
+                moe_saturated_during_training = sorted(saturated_keys)
+
         if rp is not None:
             rp.training_complete(
                 adapter_path=saved_adapter_path,
@@ -1723,6 +1774,9 @@ class DatasetTrainingService:
             degeneration_mean_4gram_repeat=degeneration_mean_4gram_repeat,
             benchmark_baseline=benchmark_baseline_scores,
             benchmark_post=benchmark_post_scores,
+            moe_targets=None,
+            moe_saturated_during_training=moe_saturated_during_training,
+            moe_router_stability=None,
         )
 
     def _derive_strict_seed(self, model_path: Path, dataset_path: Path) -> int:
@@ -2558,6 +2612,43 @@ class DatasetTrainingService:
             "target_se": final_target_se,
             "sqrt_eps": sqrt_eps,
         }
+
+    def _parse_target_expert_keys(
+        self,
+        target_experts: list[str] | str | None,
+    ) -> set[str]:
+        """Parse `Lx.Ey` selectors into MoE projection weight keys."""
+        if target_experts is None:
+            return set()
+
+        tokens: list[str] = []
+        if isinstance(target_experts, str):
+            tokens.extend(part.strip() for part in target_experts.split(","))
+        else:
+            for item in target_experts:
+                tokens.extend(part.strip() for part in str(item).split(","))
+
+        parsed: set[str] = set()
+        for token in tokens:
+            if not token:
+                continue
+            if token.startswith("model.layers.") and token.endswith(".weight"):
+                parsed.add(token)
+                continue
+
+            match = re.fullmatch(r"[Ll](\d+)\.[Ee](\d+)", token)
+            if match is None:
+                continue
+
+            layer_idx = int(match.group(1))
+            expert_idx = int(match.group(2))
+            prefix = f"model.layers.{layer_idx}.mlp.experts.{expert_idx}"
+            parsed.update({
+                f"{prefix}.gate_proj.weight",
+                f"{prefix}.up_proj.weight",
+                f"{prefix}.down_proj.weight",
+            })
+        return parsed
 
     def _write_geometry_manifest(
         self,

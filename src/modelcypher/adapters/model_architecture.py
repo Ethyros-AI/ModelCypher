@@ -387,10 +387,35 @@ class LlamaArchitecture:
     def num_layers(self) -> int:
         return len(self._base.layers)
 
+    @property
+    def is_moe(self) -> bool:
+        if not self._base.layers:
+            return False
+        mlp = getattr(self._base.layers[0], "mlp", None)
+        return bool(mlp is not None and hasattr(mlp, "experts") and hasattr(mlp, "gate"))
+
+    @property
+    def num_experts(self) -> int | None:
+        if not self.is_moe or not self._base.layers:
+            return None
+        mlp = getattr(self._base.layers[0], "mlp", None)
+        experts = getattr(mlp, "experts", None)
+        if experts is None:
+            return None
+        try:
+            return int(len(experts))
+        except Exception:
+            return None
+
     def output_projection_key(self) -> str | None:
         if self._has_lm_head:
             return "lm_head.weight"
         return None
+
+    def router_gate_key(self, layer_idx: int) -> str | None:
+        if not self.is_moe:
+            return None
+        return f"model.layers.{layer_idx}.mlp.gate.weight"
 
     def layer_attention_keys(self, layer_idx: int) -> list[str]:
         prefix = f"model.layers.{layer_idx}.self_attn"
@@ -403,6 +428,22 @@ class LlamaArchitecture:
 
     def layer_mlp_keys(self, layer_idx: int) -> list[str]:
         prefix = f"model.layers.{layer_idx}.mlp"
+        return [
+            f"{prefix}.gate_proj.weight",
+            f"{prefix}.up_proj.weight",
+            f"{prefix}.down_proj.weight",
+        ]
+
+    def layer_expert_keys(self, layer_idx: int, expert_idx: int) -> list[str]:
+        prefix = f"model.layers.{layer_idx}.mlp.experts.{expert_idx}"
+        return [
+            f"{prefix}.gate_proj.weight",
+            f"{prefix}.up_proj.weight",
+            f"{prefix}.down_proj.weight",
+        ]
+
+    def layer_shared_expert_keys(self, layer_idx: int) -> list[str]:
+        prefix = f"model.layers.{layer_idx}.mlp.shared_expert"
         return [
             f"{prefix}.gate_proj.weight",
             f"{prefix}.up_proj.weight",
@@ -471,10 +512,39 @@ class LFMArchitecture:
     def num_layers(self) -> int:
         return len(self._base.layers)
 
+    @property
+    def is_moe(self) -> bool:
+        if not self._base.layers:
+            return False
+        mlp = getattr(self._base.layers[0], "mlp", None) or getattr(
+            self._base.layers[0], "feed_forward", None,
+        )
+        return bool(mlp is not None and hasattr(mlp, "experts") and hasattr(mlp, "gate"))
+
+    @property
+    def num_experts(self) -> int | None:
+        if not self.is_moe or not self._base.layers:
+            return None
+        mlp = getattr(self._base.layers[0], "mlp", None) or getattr(
+            self._base.layers[0], "feed_forward", None,
+        )
+        experts = getattr(mlp, "experts", None)
+        if experts is None:
+            return None
+        try:
+            return int(len(experts))
+        except Exception:
+            return None
+
     def output_projection_key(self) -> str | None:
         if self._has_lm_head:
             return "lm_head.weight"
         return None
+
+    def router_gate_key(self, layer_idx: int) -> str | None:
+        if not self.is_moe:
+            return None
+        return f"model.layers.{layer_idx}.mlp.gate.weight"
 
     def layer_attention_keys(self, layer_idx: int) -> list[str]:
         # LFM may use different attention naming
@@ -496,6 +566,22 @@ class LFMArchitecture:
             f"{prefix}.w1.weight",  # gate_proj
             f"{prefix}.w3.weight",  # up_proj
             f"{prefix}.w2.weight",  # down_proj
+        ]
+
+    def layer_expert_keys(self, layer_idx: int, expert_idx: int) -> list[str]:
+        prefix = f"model.layers.{layer_idx}.mlp.experts.{expert_idx}"
+        return [
+            f"{prefix}.gate_proj.weight",
+            f"{prefix}.up_proj.weight",
+            f"{prefix}.down_proj.weight",
+        ]
+
+    def layer_shared_expert_keys(self, layer_idx: int) -> list[str]:
+        prefix = f"model.layers.{layer_idx}.mlp.shared_expert"
+        return [
+            f"{prefix}.gate_proj.weight",
+            f"{prefix}.up_proj.weight",
+            f"{prefix}.down_proj.weight",
         ]
 
     def layer_accessor(self, layer_idx: int) -> "LayerAccessorPort":
@@ -565,9 +651,21 @@ class GPT2Architecture:
     def num_layers(self) -> int:
         return len(self._base.h)
 
+    @property
+    def is_moe(self) -> bool:
+        return False
+
+    @property
+    def num_experts(self) -> int | None:
+        return None
+
     def output_projection_key(self) -> str | None:
         if self._has_lm_head:
             return "lm_head.weight"
+        return None
+
+    def router_gate_key(self, layer_idx: int) -> str | None:
+        del layer_idx
         return None
 
     def layer_attention_keys(self, layer_idx: int) -> list[str]:
@@ -584,6 +682,14 @@ class GPT2Architecture:
             f"{prefix}.c_fc.weight",
             f"{prefix}.c_proj.weight",
         ]
+
+    def layer_expert_keys(self, layer_idx: int, expert_idx: int) -> list[str]:
+        del layer_idx, expert_idx
+        return []
+
+    def layer_shared_expert_keys(self, layer_idx: int) -> list[str]:
+        del layer_idx
+        return []
 
     def layer_accessor(self, layer_idx: int) -> "LayerAccessorPort":
         """Get normalized accessor for layer components."""
@@ -644,9 +750,21 @@ class GPTNeoXArchitecture:
     def num_layers(self) -> int:
         return len(self._base.layers)
 
+    @property
+    def is_moe(self) -> bool:
+        return False
+
+    @property
+    def num_experts(self) -> int | None:
+        return None
+
     def output_projection_key(self) -> str | None:
         if self._has_lm_head:
             return "embed_out.weight"
+        return None
+
+    def router_gate_key(self, layer_idx: int) -> str | None:
+        del layer_idx
         return None
 
     def layer_attention_keys(self, layer_idx: int) -> list[str]:
@@ -662,6 +780,14 @@ class GPTNeoXArchitecture:
             f"{prefix}.dense_h_to_4h.weight",
             f"{prefix}.dense_4h_to_h.weight",
         ]
+
+    def layer_expert_keys(self, layer_idx: int, expert_idx: int) -> list[str]:
+        del layer_idx, expert_idx
+        return []
+
+    def layer_shared_expert_keys(self, layer_idx: int) -> list[str]:
+        del layer_idx
+        return []
 
     def layer_accessor(self, layer_idx: int) -> "LayerAccessorPort":
         """Get normalized accessor for layer components."""
@@ -719,9 +845,21 @@ class BERTArchitecture:
     def num_layers(self) -> int:
         return len(self._base.encoder.layer)
 
+    @property
+    def is_moe(self) -> bool:
+        return False
+
+    @property
+    def num_experts(self) -> int | None:
+        return None
+
     def output_projection_key(self) -> str | None:
         if self.output_projection is not None:
             return "cls.predictions.decoder.weight"
+        return None
+
+    def router_gate_key(self, layer_idx: int) -> str | None:
+        del layer_idx
         return None
 
     def layer_attention_keys(self, layer_idx: int) -> list[str]:
@@ -739,6 +877,14 @@ class BERTArchitecture:
             f"{prefix}.intermediate.dense.weight",
             f"{prefix}.output.dense.weight",
         ]
+
+    def layer_expert_keys(self, layer_idx: int, expert_idx: int) -> list[str]:
+        del layer_idx, expert_idx
+        return []
+
+    def layer_shared_expert_keys(self, layer_idx: int) -> list[str]:
+        del layer_idx
+        return []
 
     def layer_accessor(self, layer_idx: int) -> "LayerAccessorPort":
         """Get normalized accessor for layer components."""

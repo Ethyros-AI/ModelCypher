@@ -310,6 +310,24 @@ class ActivationProvider(Protocol):
         """
         ...
 
+    def collect_routing_decisions(
+        self,
+        model: Any,
+        tokenizer: Any,
+        texts: list[str],
+    ) -> dict[int, Array]:
+        """Collect selected expert IDs per MoE layer for a text batch.
+
+        Returns:
+            Dict[layer_idx, expert_indices] where each value is an array shaped
+            [total_tokens, num_experts_per_tok] containing top-k selected expert
+            indices for every token position across ``texts``.
+
+        Raises:
+            NotImplementedError: If routing collection is unavailable.
+        """
+        ...
+
     # ==========================================================================
     # BATCHED METHODS - Process multiple texts in a single forward pass
     # ==========================================================================

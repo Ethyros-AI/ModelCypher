@@ -107,11 +107,25 @@ class ModelArchitecturePort(Protocol):
         """Number of transformer layers."""
         ...
 
+    @property
+    def is_moe(self) -> bool:
+        """True when the architecture exposes routed MoE experts."""
+        ...
+
+    @property
+    def num_experts(self) -> int | None:
+        """Number of experts per MoE layer, if available."""
+        ...
+
     def output_projection_key(self) -> str | None:
         """Weight key for output projection (e.g., 'lm_head.weight').
 
         Returns None if model has no output projection.
         """
+        ...
+
+    def router_gate_key(self, layer_idx: int) -> str | None:
+        """Weight key for MoE router gate in this layer, if present."""
         ...
 
     def layer_attention_keys(self, layer_idx: int) -> list[str]:
@@ -130,6 +144,14 @@ class ModelArchitecturePort(Protocol):
         - LLaMA: ['model.layers.0.mlp.gate_proj.weight', ...]
         - GPT-2: ['h.0.mlp.c_fc.weight', 'h.0.mlp.c_proj.weight']
         """
+        ...
+
+    def layer_expert_keys(self, layer_idx: int, expert_idx: int) -> list[str]:
+        """Weight keys for one routed MoE expert in this layer."""
+        ...
+
+    def layer_shared_expert_keys(self, layer_idx: int) -> list[str]:
+        """Weight keys for shared expert projections in this layer."""
         ...
 
     def layer_accessor(self, layer_idx: int) -> "LayerAccessorPort":

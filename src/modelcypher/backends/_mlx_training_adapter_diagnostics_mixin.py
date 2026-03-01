@@ -187,6 +187,36 @@ class _MLXTrainingAdapterDiagnosticsMixin:
                         key = f"model.layers.{layer_idx}.mlp.{proj_name}.weight"
                         yield key, proj
 
+                experts = getattr(mlp, "experts", None)
+                if experts is not None:
+                    if isinstance(experts, dict):
+                        expert_items = list(experts.items())
+                    else:
+                        expert_items = list(enumerate(experts))
+                    for raw_expert_idx, expert in expert_items:
+                        if expert is None:
+                            continue
+                        expert_idx = int(raw_expert_idx)
+                        for proj_name in ("gate_proj", "up_proj", "down_proj"):
+                            proj = getattr(expert, proj_name, None)
+                            if isinstance(proj, NBLoRALinear):
+                                key = (
+                                    f"model.layers.{layer_idx}.mlp.experts.{expert_idx}."
+                                    f"{proj_name}.weight"
+                                )
+                                yield key, proj
+
+                shared_expert = getattr(mlp, "shared_expert", None)
+                if shared_expert is not None:
+                    for proj_name in ("gate_proj", "up_proj", "down_proj"):
+                        proj = getattr(shared_expert, proj_name, None)
+                        if isinstance(proj, NBLoRALinear):
+                            key = (
+                                f"model.layers.{layer_idx}.mlp.shared_expert."
+                                f"{proj_name}.weight"
+                            )
+                            yield key, proj
+
     def _compute_topological_metrics(
         self,
         model,
@@ -751,3 +781,16 @@ class _MLXTrainingAdapterDiagnosticsMixin:
         if len(parts) >= 2:
             return ".".join(parts[-2:])
         return layer_key.replace(".weight", "")
+
+    def _expert_key_from_layer_key(self, layer_key: str) -> str | None:
+        """Return canonical expert identifier for expert projection keys."""
+        parts = layer_key.replace(".weight", "").split(".")
+        if (
+            len(parts) >= 7
+            and parts[0] == "model"
+            and parts[1] == "layers"
+            and parts[3] == "mlp"
+            and parts[4] == "experts"
+        ):
+            return f"L{parts[2]}.E{parts[5]}"
+        return None

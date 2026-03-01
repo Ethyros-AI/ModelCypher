@@ -221,6 +221,48 @@ class _MLXTrainingAdapterCoreMixin:
                         key = f"model.layers.{layer_idx}.mlp.{proj_name}.weight"
                         weights[key] = self._dequantize_weight(proj)
 
+                router_gate = getattr(mlp, "gate", None)
+                if router_gate is not None and hasattr(router_gate, "weight"):
+                    key = f"model.layers.{layer_idx}.mlp.gate.weight"
+                    weights[key] = self._dequantize_weight(router_gate)
+
+                experts = getattr(mlp, "experts", None)
+                if experts is not None:
+                    if isinstance(experts, dict):
+                        expert_items = list(experts.items())
+                    else:
+                        expert_items = list(enumerate(experts))
+                    for raw_expert_idx, expert in expert_items:
+                        if expert is None:
+                            continue
+                        expert_idx = int(raw_expert_idx)
+                        for proj_name in ("gate_proj", "up_proj", "down_proj"):
+                            proj = getattr(expert, proj_name, None)
+                            if proj is None or not hasattr(proj, "weight"):
+                                continue
+                            key = (
+                                f"model.layers.{layer_idx}.mlp.experts.{expert_idx}."
+                                f"{proj_name}.weight"
+                            )
+                            weights[key] = self._dequantize_weight(proj)
+
+                shared_expert = getattr(mlp, "shared_expert", None)
+                if shared_expert is not None:
+                    for proj_name in ("gate_proj", "up_proj", "down_proj"):
+                        proj = getattr(shared_expert, proj_name, None)
+                        if proj is None or not hasattr(proj, "weight"):
+                            continue
+                        key = (
+                            f"model.layers.{layer_idx}.mlp.shared_expert."
+                            f"{proj_name}.weight"
+                        )
+                        weights[key] = self._dequantize_weight(proj)
+
+                shared_expert_gate = getattr(mlp, "shared_expert_gate", None)
+                if shared_expert_gate is not None and hasattr(shared_expert_gate, "weight"):
+                    key = f"model.layers.{layer_idx}.mlp.shared_expert_gate.weight"
+                    weights[key] = self._dequantize_weight(shared_expert_gate)
+
         logger.info(
             "Extracted %d weight matrices from %d layers",
             len(weights),
@@ -313,6 +355,99 @@ class _MLXTrainingAdapterCoreMixin:
 
                     # Release the dequantized weight to free memory
                     del weight
+
+            mlp = getattr(layer, "mlp", None)
+            if mlp is not None:
+                router_gate = getattr(mlp, "gate", None)
+                if router_gate is not None and hasattr(router_gate, "weight"):
+                    key = f"model.layers.{layer_idx}.mlp.gate.weight"
+                    weight = self._dequantize_weight(router_gate)
+                    try:
+                        if use_randomized:
+                            seed = rng_kwargs.get("seed")
+                            if seed is not None:
+                                rng_kwargs_copy = dict(rng_kwargs)
+                                rng_kwargs_copy["seed"] = (seed + hash(key)) & 0xFFFFFFFF
+                            else:
+                                rng_kwargs_copy = rng_kwargs
+                            geom = compute_layer_geometry_randomized(
+                                weight, key, self._backend, **rng_kwargs_copy,
+                            )
+                        else:
+                            geom = compute_layer_geometry(weight, key, self._backend)
+                        geometries[key] = geom
+                        analyzed += 1
+                    except Exception as exc:
+                        logger.warning("Failed to analyze %s: %s", key, exc)
+                    del weight
+
+                experts = getattr(mlp, "experts", None)
+                if experts is not None:
+                    if isinstance(experts, dict):
+                        expert_items = list(experts.items())
+                    else:
+                        expert_items = list(enumerate(experts))
+                    for raw_expert_idx, expert in expert_items:
+                        if expert is None:
+                            continue
+                        expert_idx = int(raw_expert_idx)
+                        for proj_name in ("gate_proj", "up_proj", "down_proj"):
+                            proj = getattr(expert, proj_name, None)
+                            if proj is None or not hasattr(proj, "weight"):
+                                continue
+                            key = (
+                                f"model.layers.{layer_idx}.mlp.experts.{expert_idx}."
+                                f"{proj_name}.weight"
+                            )
+                            weight = self._dequantize_weight(proj)
+                            try:
+                                if use_randomized:
+                                    seed = rng_kwargs.get("seed")
+                                    if seed is not None:
+                                        rng_kwargs_copy = dict(rng_kwargs)
+                                        rng_kwargs_copy["seed"] = (seed + hash(key)) & 0xFFFFFFFF
+                                    else:
+                                        rng_kwargs_copy = rng_kwargs
+                                    geom = compute_layer_geometry_randomized(
+                                        weight, key, self._backend, **rng_kwargs_copy,
+                                    )
+                                else:
+                                    geom = compute_layer_geometry(weight, key, self._backend)
+                                geometries[key] = geom
+                                analyzed += 1
+                            except Exception as exc:
+                                logger.warning("Failed to analyze %s: %s", key, exc)
+                            del weight
+
+                shared_expert = getattr(mlp, "shared_expert", None)
+                if shared_expert is not None:
+                    for proj_name in ("gate_proj", "up_proj", "down_proj"):
+                        proj = getattr(shared_expert, proj_name, None)
+                        if proj is None or not hasattr(proj, "weight"):
+                            continue
+                        key = (
+                            f"model.layers.{layer_idx}.mlp.shared_expert."
+                            f"{proj_name}.weight"
+                        )
+                        weight = self._dequantize_weight(proj)
+                        try:
+                            if use_randomized:
+                                seed = rng_kwargs.get("seed")
+                                if seed is not None:
+                                    rng_kwargs_copy = dict(rng_kwargs)
+                                    rng_kwargs_copy["seed"] = (seed + hash(key)) & 0xFFFFFFFF
+                                else:
+                                    rng_kwargs_copy = rng_kwargs
+                                geom = compute_layer_geometry_randomized(
+                                    weight, key, self._backend, **rng_kwargs_copy,
+                                )
+                            else:
+                                geom = compute_layer_geometry(weight, key, self._backend)
+                            geometries[key] = geom
+                            analyzed += 1
+                        except Exception as exc:
+                            logger.warning("Failed to analyze %s: %s", key, exc)
+                        del weight
 
             if (layer_idx + 1) % progress_interval == 0 or layer_idx == n_layers - 1:
                 logger.info(

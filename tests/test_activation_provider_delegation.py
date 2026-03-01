@@ -109,6 +109,9 @@ def _make_mock_backend(call_log: _CallLog) -> MagicMock:
     backend.collect_gate_activations_batch.side_effect = log_and_return(
         "collect_gate_activations_batch", [_make_gate()]
     )
+    backend.collect_routing_decisions.side_effect = log_and_return(
+        "collect_routing_decisions", {0: _ArrayStub((4, 2))}
+    )
 
     # eval is a no-op
     backend.eval.return_value = None
@@ -151,6 +154,13 @@ class TestDelegation:
             sentinel.model, sentinel.tokenizer, ["test text"]
         )
         assert "collect_gate_activations_batch" in self.call_log.calls
+        assert "collect_hidden_activations" not in self.call_log.calls
+
+    def test_collect_routing_decisions_delegates(self):
+        result = self.adapter.collect_routing_decisions(
+            sentinel.model, sentinel.tokenizer, ["test text"]
+        )
+        assert "collect_routing_decisions" in self.call_log.calls
         assert "collect_hidden_activations" not in self.call_log.calls
 
 
