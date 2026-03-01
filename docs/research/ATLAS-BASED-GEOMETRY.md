@@ -172,7 +172,7 @@ mc merge run -s source.json -t target.json -o ghost_anchors.json
 
 **Atlas**: NSM semantic primes (English 2014 inventory)
 **Implementation**: `src/modelcypher/core/domain/agents/semantic_primes.py`
-**Data**: `semantic_primes.json`, `semantic_prime_multilingual.json`, `semantic_prime_frames.json`
+**Data**: `semantic_primes.json`, `semantic_prime_multilingual_core_european.json`, `semantic_prime_multilingual_global_diverse_part{1,2}.json`, `semantic_prime_frames.json`
 
 ### Purpose
 
@@ -181,7 +181,8 @@ Semantic primes are treated as a small, standardized anchor set for cross-model 
 ### Inventory Sources
 
 - `semantic_primes.json` - English 2014 prime list and categories
-- `semantic_prime_multilingual.json` - Multilingual variants (for future analysis)
+- `semantic_prime_multilingual_core_european.json` and
+  `semantic_prime_multilingual_global_diverse_part{1,2}.json` - Multilingual variants (for future analysis)
 - `semantic_prime_frames.json` - Frame-based variants (for future analysis)
 
 ### CLI Commands
