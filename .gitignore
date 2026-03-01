@@ -120,3 +120,4 @@ data/training/phase5_benchmark_failures_p1_4.jsonl
 data/training/phase6_benchmark_failures_p1_5.jsonl
 data/training/phases_1_5_combined_p1_4.jsonl
 data/adapters/phases_1_5_cumulative/
+*.csv
