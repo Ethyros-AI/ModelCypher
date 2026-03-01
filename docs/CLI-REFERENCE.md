@@ -34,10 +34,11 @@ Notes:
 | `model` | Model registry and inspection |
 | `system` | System status, probes, cache benchmarks |
 | `adapter` | Adapter geometry and baseline calibration |
+| `quantize` | Quantization correction |
 
 ## `mc train`
 
-Commands: `run`, `star`, `status`, `merge`, `export`.
+Commands: `run`, `run-research`, `validate-derived`, `star`, `status`, `merge`, `export`.
 
 ```bash
 poetry run mc train run -m /path/to/model -d /path/to/data.jsonl -o /path/to/adapter
@@ -45,6 +46,12 @@ poetry run mc train star -m /path/to/model -d /path/to/base_data.jsonl -o /path/
 poetry run mc train status --agent agent-001 --model /path/to/model
 poetry run mc train merge --agent agent-001 --model /path/to/model --save --output /path/to/merged
 poetry run mc train export --agent agent-001 --model /path/to/model --output /path/to/export
+
+# Research path with explicit training controls
+poetry run mc train run-research -m /path/to/model -d /path/to/data.jsonl -o /path/to/adapter
+
+# Repeated derived-training validation (counterexample search)
+poetry run mc train validate-derived --model /path/to/model --data /path/to/data.jsonl --trials 5
 ```
 
 ## `mc merge`
@@ -100,13 +107,15 @@ poetry run mc model delete my-model --force
 
 ## `mc system`
 
-Commands: `status`, `probe`, `test-cache`, `benchmark cache`.
+Commands: `status`, `probe`, `memory-profile`, `test-cache`, `commands`, `benchmark cache`.
 
 ```bash
 poetry run mc system status
 poetry run mc system status --require-backend mlx
 poetry run mc system probe backends
 poetry run mc system test-cache /path/to/model --pairs 10
+poetry run mc system memory-profile /path/to/model
+poetry run mc system commands
 poetry run mc system benchmark cache
 ```
 
@@ -117,6 +126,14 @@ Commands: `analyze`, `calibrate-baseline`.
 ```bash
 poetry run mc adapter analyze /path/to/adapter --base-model /path/to/model
 poetry run mc adapter calibrate-baseline --output-artifact /tmp/adapter_baseline.json
+```
+
+## `mc quantize`
+
+Commands: `correct`.
+
+```bash
+poetry run mc quantize correct /path/to/quantized_model --reference /path/to/fp_model --output /path/to/corrected
 ```
 
 ## Live Discovery

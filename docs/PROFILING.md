@@ -30,7 +30,7 @@ watch -n 2 poetry run mc system status
 while true; do poetry run mc system status; sleep 2; done
 
 # Backend memory info
-poetry run mc system probe memory
+poetry run mc system memory-profile /path/to/model
 
 # macOS Activity Monitor equivalent
 top -pid $(pgrep -f modelcypher)

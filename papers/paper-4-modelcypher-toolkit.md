@@ -156,7 +156,8 @@ def test_module_imports(module_path):
 ```bash
 poetry run mc analyze concept-volume --model /path/to/qwen
 poetry run mc analyze concept-volume --model /path/to/llama
-poetry run mc analyze reasoning-geometry-validation --model /path/to/qwen --benchmark arithmetic
+poetry run mc analyze crm-build /path/to/qwen --output qwen_crm.json
+poetry run mc analyze crm-compare qwen_crm.json llama_crm.json
 ```
 
 ### 5.2 Entropy-Based Safety Signal

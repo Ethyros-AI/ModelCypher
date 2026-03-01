@@ -224,12 +224,13 @@ For any source model S (world model, VL model, text model) and target model T:
 To validate multi-modal compression:
 
 ```bash
-# 1. Measure per-channel CKA
-mc analyze reasoning-geometry-validation --source world_model --target text_model --probes spatial
-mc analyze reasoning-geometry-validation --source world_model --target text_model --probes temporal
-mc analyze reasoning-geometry-validation --source world_model --target text_model --probes causal
+# 1. Build concept response matrices per modality
+mc analyze crm-build world_model --output world.crm.json
+mc analyze crm-build text_model --output text.crm.json
 
-# 2. Verify all achieve CKA = 1.0 after alignment
+# 2. Compare CKA across modalities
+mc analyze crm-compare world.crm.json text.crm.json
+
 # 3. Apply multi-channel merge
 # 4. Test spatial/temporal/causal reasoning tasks
 ```

@@ -591,6 +591,149 @@ class _MLXTrainingAdapterDiagnosticsMixin:
         )
         return b_crit
 
+    @staticmethod
+    def _is_memory_pressure_exception(exc: Exception) -> bool:
+        """Return True when an exception message indicates memory exhaustion."""
+        msg = str(exc).lower()
+        return any(
+            token in msg
+            for token in (
+                "out of memory",
+                "oom",
+                "failed to allocate",
+                "allocation failure",
+                "memory",
+                "metal",
+                "mps",
+            )
+        )
+
+    def derive_memory_safe_micro_batch_size(
+        self,
+        model,
+        train_dataset,
+        seq_length: int,
+        logical_batch_size: int,
+        seed: int = 0,
+    ) -> int:
+        """Find the largest micro-batch that fits device memory.
+
+        Uses measured forward/backward probes on longest-token samples, then
+        binary-searches the feasible interval [1, logical_batch_size].
+        """
+        if logical_batch_size <= 1:
+            return 1
+        if not train_dataset:
+            return 1
+
+        from mlx.utils import tree_flatten as mlx_flatten
+        from mlx_lm.tuner.trainer import default_loss, iterate_batches
+
+        max_candidate = min(int(logical_batch_size), len(train_dataset))
+        if max_candidate <= 1:
+            return 1
+
+        loss_vg = nn.value_and_grad(model, default_loss)
+
+        def _token_length(sample: Any) -> int:
+            tokens = sample[0]
+            shape = getattr(tokens, "shape", None)
+            if shape is not None and len(shape) > 0:
+                return int(shape[0])
+            try:
+                return int(len(tokens))
+            except Exception:
+                return 0
+
+        longest_first = sorted(
+            train_dataset,
+            key=_token_length,
+            reverse=True,
+        )
+
+        def _probe(candidate_bs: int) -> tuple[bool, float | None]:
+            probe_size = min(candidate_bs, len(longest_first))
+            if probe_size <= 0:
+                return False, None
+
+            probe_dataset = longest_first[:probe_size]
+            peak_gb = None
+            try:
+                if hasattr(self._backend, "clear_cache"):
+                    self._backend.clear_cache()
+                if hasattr(self._backend, "reset_peak_memory"):
+                    self._backend.reset_peak_memory()
+
+                batch, lengths = next(
+                    iterate_batches(
+                        probe_dataset,
+                        probe_size,
+                        seq_length,
+                        loop=False,
+                        seed=seed,
+                    )
+                )
+                (loss, _), grads = loss_vg(model, batch, lengths)
+                flat = dict(mlx_flatten(grads))
+                if flat:
+                    mx.eval(loss, *flat.values())
+                else:
+                    mx.eval(loss)
+
+                if hasattr(self._backend, "get_peak_memory_gb"):
+                    peak_gb = float(self._backend.get_peak_memory_gb())
+                return True, peak_gb
+            except Exception as exc:
+                if not self._is_memory_pressure_exception(exc):
+                    raise
+                logger.info(
+                    "Memory probe rejected micro_batch=%d: %s",
+                    candidate_bs,
+                    exc,
+                )
+                return False, None
+            finally:
+                if hasattr(self._backend, "clear_cache"):
+                    self._backend.clear_cache()
+
+        ok, peak = _probe(max_candidate)
+        if ok:
+            if peak is not None:
+                logger.info(
+                    "Memory-safe micro batch size=%d (peak=%.2f GB)",
+                    max_candidate,
+                    peak,
+                )
+            return max_candidate
+
+        ok1, peak1 = _probe(1)
+        if not ok1:
+            raise RuntimeError(
+                "Training OOM at micro_batch=1; model/data do not fit device memory."
+            )
+
+        low = 1
+        high = max_candidate
+        low_peak = peak1
+        while low + 1 < high:
+            mid = (low + high) // 2
+            mid_ok, _mid_peak = _probe(mid)
+            if mid_ok:
+                low = mid
+                low_peak = _mid_peak
+            else:
+                high = mid
+
+        if low_peak is not None:
+            logger.info(
+                "Memory-safe micro batch size=%d (peak=%.2f GB)",
+                low,
+                low_peak,
+            )
+        else:
+            logger.info("Memory-safe micro batch size=%d", low)
+        return low
+
     def _resolve_parent_and_attr(self, model, layer_key: str) -> tuple[Any, str]:
         path_parts = layer_key.replace(".weight", "").split(".")
         obj = model

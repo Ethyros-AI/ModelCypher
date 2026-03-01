@@ -121,8 +121,8 @@ Core targeted tests:
 - `poetry run pytest tests/cli/commands/test_safety_commands.py`
 
 Safety calibration/eval surface:
-- `poetry run mc safety calibrate-safety --model <model> --prompts <safe_prompts> --output-file <calibration.json>`
-- `poetry run mc safety jailbreak-test --model <model> --prompts <attack_prompts> --calibration <calibration.json>`
+- `poetry run mc analyze calibrate-safety --model <model> --prompts <safe_prompts> --output-file <calibration.json>`
+- `poetry run mc analyze jailbreak-test --model <model> --prompts <attack_prompts> --calibration <calibration.json>`
 
 ## 6) Decision Schema (`decision.json`)
 

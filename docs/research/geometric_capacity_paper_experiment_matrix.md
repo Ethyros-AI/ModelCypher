@@ -22,8 +22,8 @@ Status labels:
 | Capacity utilization | `Aghajanyan_2021_Intrinsic_Dimensionality_Fine_Tuning.pdf` | Task learning uses low-dimensional subspace | `intrinsic_dimension`, `effective_rank`, `support_ratio`, `null_rank` | `poetry run mc analyze dimension-profile --model <model> --prompt "test"` |
 | Capacity utilization | `Denti_2022_GRIDE_Generalized_Ratios_Intrinsic_Dimension.pdf` | Multiscale ID is measurable with uncertainty | TwoNN ID trajectory, per-layer rank/ID gap | `poetry run mc analyze dimension-profile --model <model> --prompt "test"` |
 | Capacity utilization | `Ruppik_2025_Local_Intrinsic_Dimensions_Contextual_LMs.pdf` | Local ID shifts predict gains | local/trajectory ID vs benchmark delta | `poetry run mc analyze dimension-profile --model <model> --prompt "test"` + benchmark run |
-| Small-model parity | `Huh_2024_Platonic_Representation.pdf` | Relational structure aligns across models after coordinate alignment | `train_cka`, `holdout_cka`, `alignment_gain`, `coverage_ratio`, `gram_condition_number` | `poetry run mc analyze reasoning-geometry-validation --models <A> <B> --output <dir>` |
-| Small-model parity | `Cheng_2025_HighDimensional_Abstraction_Phase_LMs.pdf` | Abstraction phase links to cross-model similarity | mid-layer ID profile + held-out CKA | `poetry run mc analyze dimension-profile ...` + `poetry run mc analyze reasoning-geometry-validation ...` |
+| Small-model parity | `Huh_2024_Platonic_Representation.pdf` | Relational structure aligns across models after coordinate alignment | `train_cka`, `holdout_cka`, `alignment_gain`, `coverage_ratio`, `gram_condition_number` | `poetry run mc analyze crm-build <model> --output <dir>` + `poetry run mc analyze crm-compare <A> <B>` |
+| Small-model parity | `Cheng_2025_HighDimensional_Abstraction_Phase_LMs.pdf` | Abstraction phase links to cross-model similarity | mid-layer ID profile + held-out CKA | `poetry run mc analyze dimension-profile ...` + `poetry run mc analyze crm-compare ...` |
 | Training signal geometry (format) | `Li_2023_Inference_Time_Intervention.pdf` | Trajectory steering can alter behavior without base retraining | intervention vs control on same base geometry | `poetry run python scripts/gradient_projection_experiment.py --arm all --output <dir>` |
 | Training signal geometry (format) | `Zhang_2024_Activation_Patching.pdf` | Causal intervention should isolate mechanism | causal arm/reinjection arm deltas | `poetry run python scripts/gradient_projection_experiment.py --arm intervention` and `--arm reinjection` |
 | Spectral optimization | `Hu_2022_LoRA_Low_Rank_Adaptation.pdf` | Low-rank adapters can target useful directions | per-layer `sigma_k`, rank capacity, spectral budget | `poetry run mc model capacity <model> --json` |
@@ -55,11 +55,10 @@ poetry run python scripts/gradient_projection_experiment.py --arm all --output r
 
 2. Alignment generalization on held-out domains:
 ```bash
-poetry run mc analyze reasoning-geometry-validation \
-  --models LFM2-350M LFM2-700M LFM2-1.2B \
-  --benchmark gsm8k arithmetic \
-  --samples 500 \
-  --output results/reasoning_geometry_validation
+poetry run mc analyze crm-build /path/to/LFM2-350M --output results/crm_350m.json
+poetry run mc analyze crm-build /path/to/LFM2-700M --output results/crm_700m.json
+poetry run mc analyze crm-build /path/to/LFM2-1.2B --output results/crm_1200m.json
+poetry run mc analyze crm-compare results/crm_350m.json results/crm_700m.json
 ```
 
 3. Capacity profile per model:

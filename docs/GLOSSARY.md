@@ -70,7 +70,7 @@ A measure of similarity between two neural network layers that is robust to rota
 -   **Bias note**: Finite sampling can bias CKA (inflate or deflate). Use debiased HSIC and
     feature-sampling correction when possible.
 -   **Used in**: [Paper 0](../papers/paper-0-the-shape-of-knowledge.md), [Paper 1](../papers/paper-1-invariant-semantic-structure.md), [Paper 3](../papers/paper-3-cross-architecture-transfer.md), [Paper 4](../papers/paper-4-modelcypher-toolkit.md), [Paper 5](../papers/paper-5-semantic-highway.md)
--   **CLI**: `mc analyze reasoning-geometry-validation`
+-   **CLI**: CKA is computed internally during training and merge verification (no standalone CLI command)
 
 ### Spectral Signature (Graph Laplacian)
 Raw spectral measurements of a geodesic k-NN graph: Laplacian eigenvalues, algebraic connectivity (λ₂), component count (zero-eigenvalue multiplicity), and heat trace $H(t)=\sum_i e^{-t\lambda_i}$.

@@ -78,7 +78,19 @@ Key entry points (see `docs/CLI-REFERENCE.md` for the full catalog):
 
 ### Added
 
-#### Training Pipeline
+#### Training Pipeline (2026-02-25 through 2026-03-01)
+- **Degeneration measurement alignment** — per-epoch degeneration check using few-shot prompts, 512 max_tokens, 20 samples (aligned with G5 validation protocol)
+- **`degeneration_exceeded` stopping criterion** — training stops when max 4-gram repeat exceeds baseline + sqrt(eps)
+- **Gradient accumulation** — memory-safe micro-batching via `derive_memory_safe_micro_batch_size` binary search probe; enables 8B training on Apple Silicon without OOM
+- **Pre/post benchmark evaluation** — `--benchmark quick` flag runs GSM8K + ARC-Easy + BoolQ (10 samples each) before and after training; results in `train_result.json`
+- **Marchenko-Pastur domain module** — spectral noise edge estimation for null-space projector weighting
+- **MP-weighted Tikhonov null-space projector** — replaces binary projector; A/B validation: Tikhonov won all 5 metrics (preserved fraction +35%, degeneration 0.088 vs 0.759)
+- **`mc quantize correct`** — CLI promotion of Tikhonov correction for quantized models
+- **Quantization Weyl precheck** — pre-flight spectral bound check before correction
+- **Headroom CI preflight** — confidence interval check before training
+- **9 delegation contract tests** for ActivationProviderAdapter
+
+#### Training Pipeline (earlier)
 - **Data-rank ceiling** for NB-LoRA ranks — `min(tail_dims, n_train_samples)` prevents underdetermined adaptation at large scale; includes `estimate_nb_lora_parameter_count()` for pre-injection parameter accounting
 - **Cross-projection rank coupling** — caps q_proj rank at k_proj tail_dims per attention layer to prevent query-space overshoot beyond key discriminability
 - **Outer similarity (RSS) monitoring** — cosine, Spearman, top-1 agreement metrics (Kucukahmetler et al. 2026) added to training results; optional via `rss_monitor=True`
@@ -110,7 +122,13 @@ Key entry points (see `docs/CLI-REFERENCE.md` for the full catalog):
 - Qwen3-8B (252 weight matrices, 36 layers) — geometry analysis, NB-LoRA injection, and training entry confirmed working
 - Data-rank ceiling reduces 2.76B → 927M trainable parameters (2.91x reduction) enabling 8B training on Apple Silicon
 
-### Fixed
+### Fixed (2026-02-25 through 2026-03-01)
+- **ActivationProviderAdapter delegation** — 4 methods were silently returning hidden activations instead of delegating to backend; fixed `collect_intermediate_activations`, `collect_probe_activations_batch`, `collect_intermediate_activations_batch`, `collect_gate_activations_batch`
+- **bf16 SVD guard** — `compute_per_layer_signal_ranks` now casts to float32 before SVD (prevents crash on bf16 weights)
+- **Dimension validation** in profile alignment drops incorrect intermediate activations
+- **`import math` scope bug** — local import inside degeneration block shadowed module-level usage
+
+### Fixed (earlier)
 - Missing `logger` in `training_notifications.py` — handler exceptions caused `NameError` instead of being caught and logged
 - Wrong class reference in `TrainingEventBus.emit_progress()` — referenced undefined `TrainingProgress` instead of `TrainingNotificationProgress`
 - Incorrect type annotation on `TrainingEvent.progress` field — was `TrainingProgress`, corrected to `TrainingNotificationProgress`
@@ -127,7 +145,11 @@ Key entry points (see `docs/CLI-REFERENCE.md` for the full catalog):
 - Adapter saturation terminology replaces "Weyl budget" naming (`adapter_saturation_median_ratio`, etc.)
 - Singular value documentation updated to precision-significant terminology
 
-### Removed
+### Removed (2026-02-25 through 2026-03-01)
+- **Binary projector mode** from null-space transplant (Tikhonov won A/B validation)
+- **K-FAC (Kronecker-Factored Curvature)** — gain ≈ 1.03 at typical dimensions; removed 2026-02-25
+
+### Removed (earlier)
 - Rotational merger implementation (superseded by unified merge)
 - Deprecated audit and verification scripts
 - Dataset validation and quality functionality (focus on core geometry mission)

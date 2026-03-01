@@ -565,47 +565,6 @@ def model_capacity(
     write_output(payload, context.output_format, context.pretty)
 
 
-# =============================================================================
-# MODEL SEARCH
-# =============================================================================
-
-
-@app.command("search")
-def model_search(
-    ctx: typer.Context,
-    query: str = typer.Argument(..., help="Search query"),
-    limit: int = typer.Option(10, "--limit", "-n", help="Maximum results"),
-    architecture: str | None = typer.Option(None, "--arch", "-a", help="Filter by architecture"),
-) -> None:
-    """Search for models.
-
-    Examples:
-        mc model search "llama 8b"
-        mc model search "qwen" --arch transformer --limit 5
-    """
-    from modelcypher.core.domain.model_search import ModelSearchFilters
-
-    context = _context(ctx)
-
-    ModelSearchFilters(
-        query=query,
-        limit=limit,
-        architecture=architecture,
-    )
-
-    # Note: Full search requires ModelSearchService with adapter
-    payload = {
-        "query": query,
-        "filters": {
-            "limit": limit,
-            "architecture": architecture,
-        },
-        "status": "search_available",
-        "note": "Full search requires ModelSearchService with HuggingFace adapter.",
-    }
-
-    write_output(payload, context.output_format, context.pretty)
-
 
 # =============================================================================
 # MODEL QUANTIZATION

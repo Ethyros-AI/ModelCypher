@@ -71,8 +71,8 @@ poetry run mc merge run -s ./model-A -t ./model-B -o ./merged
 poetry run mc analyze calibrate-safety --model ./model
 poetry run mc analyze jailbreak-test --model ./model
 
-# Cross-model reasoning geometry validation
-poetry run mc analyze reasoning-geometry-validation --model LFM2-350M --benchmark arithmetic
+# Cross-model analysis
+poetry run mc analyze benchmark --model LFM2-350M
 ```
 
 For formal derivations and extended writeups, see [**Research Papers**](../papers/README.md).

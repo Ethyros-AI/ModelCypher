@@ -24,7 +24,8 @@ One-sentence thesis, scope, and verification command for each paper. Results are
 
 **Verify:**
 ```bash
-poetry run mc analyze reasoning-geometry-validation --model ./model-A --benchmark arithmetic
+poetry run mc analyze crm-build ./model-A --output model_a_crm.json
+poetry run mc analyze crm-compare model_a_crm.json model_b_crm.json
 ```
 
 → [Full Paper](paper-1-invariant-semantic-structure.md)

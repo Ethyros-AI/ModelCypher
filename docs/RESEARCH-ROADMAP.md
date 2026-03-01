@@ -159,7 +159,7 @@ Model size does NOT predict bottleneck dimension.
 
 ### P3: Bottleneck Representations Are Cross-Architecturally Aligned [CONJECTURAL]
 **Prediction**: CKA between bottleneck layers of different architectures > 0.7.
-**Test**: `mc analyze reasoning-geometry-validation` across model pairs
+**Test**: `mc analyze crm-build` + `mc analyze crm-compare` across model pairs
 
 ### P4: Bottleneck Position is Proportionally Consistent [CONJECTURAL]
 **Prediction**: Bottleneck occurs at 40-60% of network depth across architectures.
@@ -241,7 +241,7 @@ Current state: Qualitative family-level predictions work. Quantitative predictio
 
 ## Validated Implementations [VALIDATED]
 
-These moved from research questions to working, tested code.
+> For current engineering state and guardrail status, see [MISSION.md](MISSION.md). The table below captures research-to-code transitions with evidence citations.
 
 | Implementation | Status | Evidence |
 |----------------|--------|----------|
@@ -469,7 +469,7 @@ poetry run mc train run --model /path/to/model --data /path/to/dataset --output 
 poetry run mc train star --model /path/to/model --output /path/to/adapter
 
 # Analysis
-poetry run mc model fingerprint /path/to/model
+poetry run mc analyze expansion-ratio --model /path -t -q
 poetry run mc analyze spectral-trajectory --model /path -t -q
 poetry run mc analyze entropy-trajectory --model /path -t -q
 poetry run mc analyze dimension-profile --model /path -t -q

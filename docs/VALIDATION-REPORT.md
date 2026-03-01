@@ -3,6 +3,8 @@
 > **Purpose**: Rigorous validation of ModelCypher's theoretical claims with statistical evidence.
 > **Last Updated**: 2026-01-30
 > **Status**: Phase 4 Validation Complete
+>
+> **Note:** Point-in-time snapshot. For current project state, see [MISSION.md](MISSION.md).
 
 ---
 

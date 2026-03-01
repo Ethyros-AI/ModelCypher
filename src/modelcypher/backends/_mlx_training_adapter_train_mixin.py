@@ -115,6 +115,10 @@ class _MLXTrainingAdapterTrainMixin:
         # if max_4gram exceeds baseline + sqrt(eps_f32).
         degen_prompts: list[str] | None = None,
         degen_baseline_max: float | None = None,
+        # Gradient accumulation: when > 1, batch_size is the logical batch
+        # and micro_batch_size = ceil(batch_size / grad_accum_steps) is used
+        # for forward/backward passes. Mathematically equivalent.
+        grad_accum_steps: int = 1,
     ) -> tuple[list[tuple[int, float, float]], str, list[EpochMetrics]]:
         """Train with Cayley-Stiefel retraction, Weyl adapter-saturation monitoring,
         and geometric stopping.
@@ -174,7 +178,7 @@ class _MLXTrainingAdapterTrainMixin:
                 eval_batches = max(1, len(train_dataset))
 
         import mlx.optimizers as opt
-        from mlx.utils import tree_flatten as mlx_flatten
+        from mlx.utils import tree_flatten as mlx_flatten, tree_map as mlx_tree_map
         from mlx.utils import tree_unflatten as mlx_unflatten
         from mlx_lm.tuner.trainer import default_loss, iterate_batches
 
@@ -392,9 +396,18 @@ class _MLXTrainingAdapterTrainMixin:
                 loop=False, seed=seed,
             )))
         else:
+            # Gradient accumulation: use smaller micro-batches for forward/backward
+            # to avoid OOM, accumulate grad_accum_steps micro-batches per optimizer step.
+            micro_bs = math.ceil(batch_size / grad_accum_steps) if grad_accum_steps > 1 else batch_size
+            if grad_accum_steps > 1:
+                logger.info(
+                    "Gradient accumulation: logical_batch=%d, micro_batch=%d, accum_steps=%d",
+                    batch_size, micro_bs, grad_accum_steps,
+                )
             batch_iter = iterate_batches(
-                train_dataset, batch_size, seq_length, loop=True, seed=seed,
+                train_dataset, micro_bs, seq_length, loop=True, seed=seed,
             )
+            # Epoch structure uses logical batch_size (optimizer steps per epoch)
             n_batches_per_epoch = len(
                 list(iterate_batches(train_dataset, batch_size, seq_length, loop=False, seed=seed))
             )
@@ -496,8 +509,37 @@ class _MLXTrainingAdapterTrainMixin:
                     model, inputs, targets, masks,
                 )
             else:
-                batch, lengths = next(batch_iter)
-                (loss, ntoks), grad = loss_value_and_grad(model, batch, lengths)
+                if grad_accum_steps <= 1:
+                    batch, lengths = next(batch_iter)
+                    (loss, ntoks), grad = loss_value_and_grad(model, batch, lengths)
+                else:
+                    # Gradient accumulation: sum gradients over micro-batches,
+                    # then divide by number of steps. Mathematically equivalent
+                    # to a single large-batch forward/backward.
+                    accum_grad = None
+                    accum_loss = 0.0
+                    accum_ntoks = 0
+                    for _accum_i in range(grad_accum_steps):
+                        batch, lengths = next(batch_iter)
+                        (mb_loss, mb_ntoks), mb_grad = loss_value_and_grad(
+                            model, batch, lengths,
+                        )
+                        mx.eval(mb_loss)
+                        accum_loss += float(mb_loss) * int(mb_ntoks)
+                        accum_ntoks += int(mb_ntoks)
+                        if accum_grad is None:
+                            accum_grad = mb_grad
+                        else:
+                            accum_grad = mlx_tree_map(
+                                lambda a, b: a + b, accum_grad, mb_grad,
+                            )
+                        mx.eval(*[v for _, v in mlx_flatten(accum_grad)])
+                    # Average accumulated gradient
+                    grad = mlx_tree_map(
+                        lambda g: g / grad_accum_steps, accum_grad,
+                    )
+                    loss = mx.array(accum_loss / max(accum_ntoks, 1))
+                    ntoks = accum_ntoks
 
             # Save gradient for stopping certificate (overwritten each step;
             # at epoch boundary, holds the last step's gradient).

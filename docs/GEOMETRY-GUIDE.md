@@ -22,30 +22,28 @@ Deep dives:
 
 ## Why Geometry Matters [PROVEN]
 
-When you merge two models by averaging their weights, you're assuming knowledge is stored in the same coordinates. Often it isn't: even when models learn similar features, they can be stored in rotated/permuted bases.
+### For Training
 
-```mermaid
-graph LR
-    subgraph Naive["Naive Merge: Average Weights"]
-        A1[Model A Layer 12] -->|0.5| M1[Merged]
-        B1[Model B Layer 12] -->|0.5| M1
-        M1 -->|?| X1[Collision]
-    end
+Standard LoRA training has 15 hyperparameters that practitioners tune by trial and error — learning rate, rank, scale, warmup, clipping, schedule, decay, dropout, batch size, early stopping, target modules, weight init, epsilon, momentum, residual scaling. Every one has a closed-form geometric replacement derived from the weight matrices:
 
-    subgraph Geometric["Geometric Merge: Align First"]
-        A2[Model A Layer 12] --> P[Procrustes Align]
-        B2[Model B Layer 12] --> P
-        P --> M2[Merged]
-        M2 -->|preserved| Y[Both Skills Intact]
-    end
+- **Rank** comes from SVD: `tail_dims = full_rank - floor(shannon_effective_rank)`
+- **Learning rate** is bounded by spectral geometry: `eta = min(eta_ceiling, eta_sps, eta_weyl)`
+- **Stopping** uses 4 geometric criteria (val loss stable, adapter saturation, spectral bounds, degeneration)
+- **CKA verification** confirms the adapter preserves the base model's representation geometry
 
-    style X1 fill:#f99,stroke:#933
-    style Y fill:#9f9,stroke:#393
+```bash
+# Train with geometry-derived hyperparameters
+mc train run --model /path/to/model --data /path/to/data.jsonl --output /path/to/adapter
+
+# Analyze the adapter's spectral properties
+mc analyze lora-svd /path/to/adapter --base /path/to/model
 ```
 
-**Procrustes alignment** estimates an orthogonal transform that best aligns one representation space to another. This preserves geometric relationships while putting both models in a comparable coordinate system.
+### For Merging (Experimental)
 
-### The Rotation Problem
+When you merge two models by averaging their weights, you're assuming knowledge is stored in the same coordinates. Often it isn't: even when models learn similar features, they can be stored in rotated/permuted bases.
+
+**Procrustes alignment** estimates an orthogonal transform that best aligns one representation space to another. This preserves geometric relationships while putting both models in a comparable coordinate system.
 
 Two models trained on the same data can learn identical knowledge in rotated coordinate systems:
 
@@ -54,17 +52,7 @@ Model A: "cat" → [0.8, 0.2, 0.1]
 Model B: "cat" → [0.2, 0.8, 0.1]  ← Same concept, rotated representation
 ```
 
-Averaging these gives `[0.5, 0.5, 0.1]`—which is neither cat. Procrustes finds the rotation matrix that aligns them first.
-
-### The Interference Problem
-
-When concepts overlap in merged weight space, they interfere. ModelCypher predicts this *before* you merge:
-
-```bash
-mc --output text geometry interference predict /path/to/source_model /path/to/target_model
-```
-
-If high interference is predicted, you can use **null-space projection** to merge only in directions that don't collide.
+Averaging these gives `[0.5, 0.5, 0.1]`—which is neither cat. Procrustes finds the rotation matrix that aligns them first. **Null-space projection** then merges only in directions that don't collide with existing knowledge.
 
 ### The Mathematical Foundation
 
@@ -344,11 +332,9 @@ Use the evidence suite to generate raw measurements for alignment generalization
 geodesic/curvature convergence, and causal intervention effects.
 
 ```bash
-# Cross-model reasoning geometry validation
-poetry run mc analyze reasoning-geometry-validation \
-  --model LFM2-350M \
-  --benchmark arithmetic \
-  --samples 20
+# Cross-model alignment validation
+poetry run mc analyze crm-build /path/to/LFM2-350M --output lfm2_crm.json
+poetry run mc analyze crm-compare lfm2_crm.json reference_crm.json
 
 # Per-layer geodesic deviation profile
 poetry run mc analyze geodesic-profile --model /path/to/model --prompt "test"
@@ -442,7 +428,7 @@ mc merge bridge ./model_a ./model_b -o bridge.safetensors --probe-sources semant
 Atlas probes systematically span the semantic manifold. Procrustes alignment achieves CKA = 1.0 on training probes by construction. [PROVEN]
 
 **Validation workflow**:
-- Run `mc analyze reasoning-geometry-validation` for cross-model probe/pivot/topology measurements.
+- Run `mc analyze crm-build` + `mc analyze crm-compare` for cross-model probe/pivot/topology measurements.
 - Review raw outputs in the `analysis/` subdirectory of your specified output path.
 - Review the `VALIDATION_REPORT.md` generated in the output directory.
 

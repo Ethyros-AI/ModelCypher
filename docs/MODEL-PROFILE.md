@@ -1,5 +1,7 @@
 # Unified ModelProfile
 
+> **Note:** The `mc profile` CLI commands described in this document are design intent, not current CLI. For model inspection, use `mc model info`. The schema documentation below remains accurate.
+
 The ModelProfile is the unified schema for capturing everything needed to understand a model's high-dimensional geometry. It provides a one-stop shop for stripping away the black box.
 
 Related docs:

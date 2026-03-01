@@ -13,7 +13,7 @@
 
 Large language models exhibit invariant geometric structure in their representation spaces. Using Centered Kernel Alignment (CKA) on normalized Gram matrices, we demonstrate that:
 
-1. **Alignment invariance is verified**: After Procrustes alignment, CKA = 1.0 exactly (intra-model, layer-wise comparison). Run `poetry run mc analyze reasoning-geometry-validation` to reproduce.
+1. **Alignment invariance is verified**: After Procrustes alignment, CKA = 1.0 exactly (intra-model, layer-wise comparison). Run `poetry run mc analyze crm-build` + `poetry run mc analyze crm-compare` to reproduce.
 
 2. **Cross-model alignment is theoretically grounded**: Prior runs reported high cross-family CKA (0.94 ± 0.01 between Qwen, Llama, and Mistral); formal reproduction pending.
 
@@ -249,8 +249,9 @@ Historical data files are not stored in this repo. If you rerun these experiment
 # Analyze concept volumes
 poetry run mc analyze concept-volume --model /path/to/model
 
-# Cross-model reasoning geometry validation
-poetry run mc analyze reasoning-geometry-validation --model /path/to/model --benchmark arithmetic
+# Cross-model alignment validation
+poetry run mc analyze crm-build /path/to/model --output model_crm.json
+poetry run mc analyze crm-compare model_crm.json reference_crm.json
 
 # Null distribution generation is not yet exposed as a CLI command (tracked as future work).
 ```

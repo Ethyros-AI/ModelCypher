@@ -25,7 +25,7 @@ Status labels indicate experimental validation status as of February 2026.
 | [Paper 4](paper-4-modelcypher-toolkit.md) | ModelCypher Toolkit | **[EMPIRICAL]** | Toolkit overview |
 | [Paper 5](paper-5-semantic-highway.md) | The Semantic Highway | **[EMPIRICAL]** | Layer-wise ID compression verified |
 
-**Key experimental result**: Raw CKA = 0.60 → Aligned CKA = 1.00 (reproduce via `mc analyze reasoning-geometry-validation`)
+**Key experimental result**: Raw CKA = 0.60 → Aligned CKA = 1.00 (reproduce via `mc analyze crm-build` + `mc analyze crm-compare`)
 
 ### Historical Note (2025-12-25)
 
@@ -47,7 +47,7 @@ All papers follow arXiv/NeurIPS conventions:
 
 | Experiment | Result | Status | Reproduce |
 |------------|--------|--------|-----------|
-| Alignment Invariance | Raw CKA = 0.60 → Aligned CKA = 1.0 | [VALIDATED] | `mc analyze reasoning-geometry-validation` |
+| Alignment Invariance | Raw CKA = 0.60 → Aligned CKA = 1.0 | [VALIDATED] | `mc analyze crm-build` + `mc analyze crm-compare` |
 | Layer-wise ID | 15.8 → 1.8 → 9.6 (compression pattern) | [EMPIRICAL] | `mc analyze dimension-profile` |
 | Domain Geometry | Spatial ID=1.5, Moral ID=8.0 | [EMPIRICAL] | `mc analyze concept-volume` |
 | ~~Semantic primes special~~ | Confirmed NOT special (general property) | [DISPROVEN] | See [NEGATIVE-RESULTS.md](NEGATIVE-RESULTS.md) |

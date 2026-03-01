@@ -349,7 +349,7 @@ The finite difference + bf16 combination created an artifact that looked like a 
 
 Raw data available in:
 - This document (inline)
-- CLI commands used: `mc model fingerprint`, `mc analyze dimension-profile --recovery`
+- CLI commands used: `mc analyze expansion-ratio`, `mc analyze dimension-profile --recovery`
 
 ---
 

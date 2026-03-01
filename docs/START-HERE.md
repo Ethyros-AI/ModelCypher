@@ -98,29 +98,40 @@ A toolkit for measuring the geometric structure of LLM representations.
 
 ## Three Pathways
 
-### Path 1: ML Engineer
-**Goal**: Merge models without breaking them.
+### Path 1: Train a Model
+**Goal**: Train a LoRA adapter with geometry-derived hyperparameters.
 
 ```bash
-# Inspect models before merging
-poetry run mc model info ./source-model
-poetry run mc model info ./target-model
+# Train — all 15 hyperparameters derived from the weight matrices
+poetry run mc train run --model /path/to/model --data /path/to/data.jsonl --output /path/to/adapter
 
-# Merge with null-space knowledge addition
+# Validate with repeated trials
+poetry run mc train validate-derived --model /path/to/model --data /path/to/data.jsonl --trials 5
+```
+
+→ [Training Guide](TRAINING-GUIDE.md) · [CLI Reference](CLI-REFERENCE.md) · [Mission](MISSION.md)
+
+### Path 2: Analyze a Model
+**Goal**: Measure representation geometry and test hypotheses.
+
+```bash
+# Intrinsic dimension profile
+poetry run mc analyze dimension-profile --model /path/to/model --samples 50
+
+# LoRA adapter spectral analysis
+poetry run mc analyze lora-svd /path/to/adapter --base /path/to/model
+```
+
+→ [Geometry Guide](GEOMETRY-GUIDE.md) · [Research Papers](../papers/README.md) · [Glossary](GLOSSARY.md)
+
+### Path 3: Merge Models (Experimental)
+**Goal**: Transfer knowledge between models via null-space projection.
+
+```bash
 poetry run mc merge run -s ./source-model -t ./target-model -o ./merged
 ```
 
 → [CLI Reference](CLI-REFERENCE.md) · [Geometry Guide](GEOMETRY-GUIDE.md) · [Verification](VERIFICATION.md)
-
-### Path 2: Researcher
-**Goal**: Test hypotheses about representation geometry.
-
-→ [Geometry Guide](GEOMETRY-GUIDE.md) · [Research Papers](../papers/README.md) · [Glossary](GLOSSARY.md)
-
-### Path 3: Safety Auditor
-**Goal**: Detect drift and enforce boundaries.
-
-→ [Entropy Safety](research/entropy_differential_safety.md)
 
 ---
 

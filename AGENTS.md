@@ -231,35 +231,50 @@ poetry run mc --help              # CLI
 
 ## CLI Quick Reference
 
-### Model Merging (The Main Operation)
+### Training (The Main Operation)
 
-**Single merge (1→1):**
+**Train a LoRA adapter — all hyperparameters derived from geometry:**
 ```bash
+mc train run --model /path/to/model --data /path/to/data.jsonl --output /path/to/adapter
+```
+
+No learning rate, no rank selection, no warmup. Everything is derived from the weight matrices.
+
+**Research path with explicit controls:**
+```bash
+mc train run-research --model /path/to/model --data /path/to/data.jsonl --output /path/to/adapter
+```
+
+### Analysis
+
+```bash
+# Intrinsic dimension profile
+mc analyze dimension-profile --model /path/to/model
+
+# LoRA adapter spectral analysis
+mc analyze lora-svd /path/to/adapter --base /path/to/model
+
+# Spectral entropy trajectory
+mc analyze spectral-trajectory --model /path/to/model
+```
+
+### Model Merging (Experimental)
+
+```bash
+# Single merge (1→1)
 mc merge run -s SOURCE -t TARGET -o OUTPUT
+
+# Batch merge (N→1)
+mc merge batch -s MODEL1 -s MODEL2 -t TARGET -o OUTPUT
 ```
 
-**Full example:**
-```bash
-mc merge run -s /path/to/qwen -t /path/to/smol -o /path/to/merged
-```
+Adds SOURCE knowledge to TARGET via null-space projection. TARGET's capabilities are preserved by construction.
 
-**Batch merge (N→1) - merge multiple sources into one target:**
-```bash
-mc merge batch -s MODEL1 -s MODEL2 -s MODEL3 -t TARGET -o OUTPUT
-```
-
-**What it does:** Takes knowledge from SOURCE(s) and adds it to TARGET via null-space projection. TARGET's capabilities are preserved; SOURCE's knowledge is added. Result is denser than either input.
-
-### Other Common Commands
+### Other Commands
 
 ```bash
-# Inference
 mc infer run --model /path/to/model --prompt "Hello"
-
-# System info
 mc system status --output json
-
-# Model info
 mc model info /path/to/model --output json
 ```
 

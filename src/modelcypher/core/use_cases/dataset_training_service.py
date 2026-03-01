@@ -909,6 +909,42 @@ class DatasetTrainingService:
             batch_size = max(batch_size, min_constrained_batch)
         logger.info("Geometry-derived batch size: %d", batch_size)
 
+        # Derive gradient accumulation from measured memory fit.
+        # Logical batch remains geometry-derived; only micro-batch is reduced.
+        grad_accum_steps = 1
+        if (
+            answer_masked_train is None
+            and not use_constraints
+            and not use_geometric_reshape
+            and hasattr(self._adapter, "derive_memory_safe_micro_batch_size")
+        ):
+            try:
+                safe_micro_batch = self._adapter.derive_memory_safe_micro_batch_size(
+                    model=model,
+                    train_dataset=train_dataset,
+                    seq_length=seq_length,
+                    logical_batch_size=batch_size,
+                    seed=seed,
+                )
+                if safe_micro_batch < batch_size:
+                    grad_accum_steps = math.ceil(batch_size / safe_micro_batch)
+                    logger.info(
+                        "Memory-bound micro batching: logical_batch=%d micro_batch=%d accum_steps=%d",
+                        batch_size,
+                        safe_micro_batch,
+                        grad_accum_steps,
+                    )
+                else:
+                    logger.info(
+                        "Memory-bound micro batching: logical_batch=%d fits without accumulation",
+                        batch_size,
+                    )
+            except Exception:
+                logger.warning(
+                    "Memory-safe micro-batch probe failed; running without accumulation",
+                    exc_info=True,
+                )
+
         if rp is not None:
             rp.training_geometry_complete(
                 n_target_modules=len(target_modules),
@@ -1334,6 +1370,7 @@ class DatasetTrainingService:
             research_outcome_selector=research_outcome_selector,
             degen_prompts=degen_prompts_for_training,
             degen_baseline_max=degen_baseline_max,
+            grad_accum_steps=grad_accum_steps,
         )
         training_time_seconds = time.time() - train_start
 

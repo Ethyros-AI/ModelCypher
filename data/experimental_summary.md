@@ -101,7 +101,7 @@ Target: "Let me understand the question. [core question]\n\nAnswer: [correct]"
 
 | Location | Purpose |
 |----------|---------|
-| `mc train self-reflection` | LoRA training CLI command |
+| `mc train run` | LoRA training CLI command (Note: `mc train self-reflection` referenced in earlier docs does not exist) |
 | `core/domain/training/self_reflection.py` | Training module with data provider |
 | `scripts/geometric_self_awareness.py` | Monitor expansion_ratio during inference |
 | `scripts/measure_reflection_geometry.py` | 75%→100% accuracy |
@@ -144,7 +144,7 @@ Freeze base model, add trainable low-rank adapters.
 
 ### CLI Command
 ```bash
-mc train self-reflection --model /path/to/model --output /path/to/adapters
+mc train run --model /path/to/model --dataset /path/to/data --output /path/to/adapters
 ```
 
 ### Artifacts

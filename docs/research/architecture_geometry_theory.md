@@ -3,7 +3,9 @@
 **Source:** Literature survey compiled 2026-02-22 covering signal propagation theory, random matrix theory (RMT), attention rank saturation, and collapse mode taxonomy.
 **Integration context:** `docs/research/deep_research_integration_2026_02.md`.
 
-**Key conclusion:** Theoretical frameworks exist to predict *qualitative* geometric regimes from architecture parameters, but quantitative prediction remains open. ModelCypher's empirical causal chain (GQA → subspace overlap → QK alignment → highway location) is consistent with these frameworks and adds specificity they lack.
+> **Update 2026-02-26:** Sections 1 and 2 (signal propagation and RMT) describe init-time theories that were experimentally tested and **REFUTED** on trained networks. See `OPEN-MATHEMATICAL-QUESTIONS.md` sections R1-R3. Init-time theories do NOT predict trained-network geometry. The action items in these sections have been completed with negative results.
+
+**Key conclusion:** Theoretical frameworks exist to predict *qualitative* geometric regimes from architecture parameters at initialization, but they do not predict the geometry of trained networks. ModelCypher's empirical causal chain (GQA → subspace overlap → QK alignment → highway location) is the validated alternative.
 
 ---
 
@@ -56,7 +58,7 @@ This is a **measured** quantity, not a theoretical prescription. The signal prop
 
 **Key insight:** The highway (low ID region) may correspond to the ordered phase of signal propagation. Layers in the highway are near-critical — they preserve signal without amplifying or destroying it. The processing layers (high ID) are in the mildly chaotic phase — they increase representational complexity.
 
-**Action item:** Measure `α_l² · χ_l` at each layer for 350M and 8B models. If highway layers have `α²χ ≈ 0` and processing layers have `α²χ > 0`, the signal propagation framework predicts the highway-processing boundary.
+**Action item [COMPLETED — REFUTED]:** Measured `α_l² · χ_l` across models. Spearman correlation with phase boundaries: 0/6 pass. Theory applies to initialized weights, not trained networks. See `OPEN-MATHEMATICAL-QUESTIONS.md` §R1.
 
 ---
 
@@ -91,7 +93,7 @@ For a random matrix W of size (m × n) with i.i.d. entries, the singular value d
 
 **Staats et al. (NeurIPS 2025) warning:** Small singular values carry surprising importance in MLP projections. Simple thresholding (whether MP-based or energy-based) may discard important structure. ModelCypher's tail_dims approach measures null-space *capacity*, not "least important directions" — this distinction matters.
 
-**Action item:** Compute Marchenko-Pastur bulk bounds for the 350M model and compare against tail_dims layer targeting. Do they select the same layers? Where do they disagree, and why?
+**Action item [COMPLETED — REFUTED]:** Computed MP bounds. Spectral gap varies 2200x within a single model (Spearman=0.037). Post-softmax attention is row-stochastic and causal-masked — not a random matrix. MP does not predict layer targeting for trained networks. See `OPEN-MATHEMATICAL-QUESTIONS.md` §R2.
 
 ---
 

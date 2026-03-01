@@ -1,5 +1,7 @@
 # ModelCypher Paper Series v0.1.0
 
+> **Note (2026-03-01):** This is the original v0.1.0 release notes template from early development. For current project state, see [MISSION.md](../docs/MISSION.md).
+
 ## The Geometric Knowledge Thesis
 
 This release collects draft manuscripts and protocols. Empirical validation is pending and must be reproduced with current code and data.
@@ -48,8 +50,9 @@ poetry install
 # Analyze concept volumes
 poetry run mc analyze concept-volume --model /path/to/model
 
-# Cross-model reasoning geometry validation
-poetry run mc analyze reasoning-geometry-validation --model /path/to/model --benchmark arithmetic
+# Cross-model alignment validation
+poetry run mc analyze crm-build /path/to/model --output model_crm.json
+poetry run mc analyze crm-compare model_crm.json reference_crm.json
 
 # Run intrinsic dimension analysis
 poetry run mc analyze dimension-profile --model /path/to/model --prompt "test"

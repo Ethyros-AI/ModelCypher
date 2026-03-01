@@ -1,6 +1,6 @@
 # ModelCypher TODO
 
-**Updated:** 2026-02-20
+**Updated:** 2026-03-01
 
 ---
 
@@ -18,29 +18,34 @@
 ### ModelCypher Core
 
 **Open:**
-- [ ] G5: Complete full 8B training run (Qwen3-8B) — geometry + injection confirmed, training enters at 8.1 tok/sec, full run not yet completed
-- [ ] Validate outcome-based training (REINFORCE) on 1.2B — proven on 350M (14/20 vs 11/20), needs scale validation
-- [ ] Entropy reg + answer-mask mutual exclusivity fix — currently in `else` branch (line ~2092 of `mlx_training_adapter.py`), needs refactor to apply independently
+- [ ] G5: Complete credibility proof (Qwen3-8B) — pre-training benchmark complete (GSM8K 70%, ARC-Easy 100%, BoolQ 100%, overall 90%), training run in progress with gradient accumulation + degeneration stopping
+- [ ] Entropy reg + answer-mask mutual exclusivity fix — currently in `else` branch, needs refactor to apply independently
 
-**Recently completed (2026-02-20):**
+**Recently completed (2026-02-25 through 2026-03-01):**
+- Gradient accumulation for 8B training (OOM fix): memory-safe micro-batch probe + grad accumulation [VALIDATED]
+- Pre/post benchmark evaluation via `--benchmark quick` flag (GSM8K, ARC-Easy, BoolQ)
+- Degeneration measurement alignment: per-epoch check using few-shot prompts, 512 tokens, 20 samples
+- `degeneration_exceeded` stopping criterion
+- MP-weighted Tikhonov null-space projector (A/B validation: won all 5 metrics vs binary projector)
+- Binary projector mode removed from codebase
+- ActivationProviderAdapter delegation fix (4 methods)
+- `mc quantize correct` CLI promotion
+- bf16 SVD guard for `compute_per_layer_signal_ranks`
+- Delegation contract tests (9 new, total 6809 tests)
+- K-FAC removed (gain ≈ 1.03, not worth complexity)
+
+**Previously completed (2026-02-20):**
 - Data-rank ceiling: `min(tail_dims, n_train_samples)` — 8B params 2.76B → 927M (2.91x reduction) [VALIDATED]
 - Duplicate SVD elimination: `derive_optimizer_geometry_config()` accepts precomputed geometries
 - Streaming B_crit estimation: two-pass constant-memory gradient noise estimation
 - SVD `compute_uv=False` optimization: ~3x faster geometry analysis
 - G1 magic numbers resolved: LR backoff floor from `sqrt(eps_f32)`, bootstrap CI from data
-- Outcome-based training validated on 350M: 14/20 (70%) vs 11/20 (55%) baseline [EMPIRICAL]
 - STaR training service + `mc train star` CLI
 - Adapter routing service + benchmarking
-- Composite adapter builder + routed generation service
-- Outer similarity (RSS) monitoring
 - Newton-Schulz orthogonalization for gradient preconditioning
-- Budget cap and max epochs envelope parameters
-- Experimental CLI flags removed per Research vs Production Policy
-- Scripts for cluster-swap ablation and fast attractor testing
 
-**Previously completed (2026-02-13):**
-- Training domain test coverage: 15 new test files (257 training domain tests)
-- Fixed 3 bugs in `training_notifications.py` (missing logger, wrong class references)
+**Closed (no longer pursuing):**
+- ~~Validate REINFORCE on 1.2B~~ — REINFORCE on 350M closed 2026-02-23 (gradient orthogonal to CE, degradation monotonic). 1.2B attempt deferred until CE-based pipeline fully validated.
 
 ### Plasma Subproject
 
@@ -58,9 +63,6 @@ Techniques from research that could become CLI features (per Research vs Product
 | Adapter routing | Implemented + benchmarked | Needs real-model validation for CLI promotion |
 | Composite adapter builder | Implemented | Needs real-model validation for CLI promotion |
 | Routed generation | Implemented | Needs real-model validation for CLI promotion |
-| Concepts as Geometric Clusters | Research design doc | Design ready |
-| Counterfactual Sensitivity | Archived code | Code exists in archive |
-| Generation-Based Evaluation | Archived code | Code exists in archive |
 | LoRA Isometry Ratio | Research design doc | Design ready |
 | Geodesic Merge Quality | Research design doc | Design ready |
 

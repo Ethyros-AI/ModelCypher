@@ -87,11 +87,11 @@ poetry run mc analyze lora-svd /path/to/adapter --base /path/to/model
 | Stable rank predicts adapter rank | Pearson r = -0.51 vs tail_dims; measures different property | [DISPROVEN] |
 | Constrained training (paired) | Constraints monotonically hurt | [DISPROVEN] |
 
-We publish failures because intellectual honesty is not optional. Full details: [CURRENT-STATE.md](docs/CURRENT-STATE.md)
+We publish failures because intellectual honesty is not optional. Full details: [MISSION.md](docs/MISSION.md)
 
 ## Measurement Toolkit
 
-28 analysis subcommands under `mc analyze` across 5 categories:
+31 analysis subcommands under `mc analyze` across 5 categories:
 
 | Category | What It Measures |
 |----------|-----------------|
@@ -101,7 +101,7 @@ We publish failures because intellectual honesty is not optional. Full details: 
 | Benchmark | LoRA SVD, knowledge typing, curriculum profiling, sparse regions |
 | Monitoring | Persona drift, uncertainty modes, entropy baselines |
 
-53 total commands across 7 groups (`train`, `merge`, `infer`, `analyze`, `model`, `system`, `adapter`). Full reference: [CLI-REFERENCE.md](docs/CLI-REFERENCE.md)
+58 subcommands across 8 groups (`train`, `merge`, `infer`, `analyze`, `model`, `system`, `adapter`, `quantize`). Full reference: [CLI-REFERENCE.md](docs/CLI-REFERENCE.md)
 
 ## Architecture
 
@@ -121,7 +121,7 @@ All geometric computations are framework-agnostic. Backend selection is automati
 | [Start Here](docs/START-HERE.md) | Installation, first measurement, reading paths for engineers/researchers/auditors |
 | [Geometry Guide](docs/GEOMETRY-GUIDE.md) | Interpreting CKA, intrinsic dimension, curvature, and entropy measurements |
 | [Training Guide](docs/TRAINING-GUIDE.md) | LoRA training workflows and dataset preparation |
-| [CLI Reference](docs/CLI-REFERENCE.md) | All 53 commands with examples |
+| [CLI Reference](docs/CLI-REFERENCE.md) | All 58 commands with examples |
 | [Mission](docs/MISSION.md) | The 15 hyperparameter replacements and why they work |
 | [Glossary](docs/GLOSSARY.md) | 60+ term definitions |
 | [Architecture](docs/ARCHITECTURE.md) | Hexagonal architecture and domain boundaries |
@@ -140,7 +140,7 @@ All geometric computations are framework-agnostic. Backend selection is automati
 
 ## Test Suite
 
-6,294 tests across 401 test files. Includes Hypothesis property-based tests for numerical invariants (CKA symmetry, spectral bounds, null-space orthogonality).
+6,809 tests. Includes Hypothesis property-based tests for numerical invariants (CKA symmetry, spectral bounds, null-space orthogonality).
 
 ```bash
 poetry run pytest                              # Standard run

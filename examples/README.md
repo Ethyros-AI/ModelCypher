@@ -22,7 +22,18 @@ MODELCYPHER_HOME=.claude/.modelcypher
 HF_HOME=.claude/hf_home
 ```
 
-## Examples
+## Training (CLI)
+
+For training, use the CLI directly — no example script needed:
+
+```bash
+# Train a LoRA adapter with geometry-derived hyperparameters (zero configuration)
+poetry run mc train run --model /path/to/model --data /path/to/data.jsonl --output /path/to/adapter
+```
+
+See [Training Guide](../docs/TRAINING-GUIDE.md) for dataset preparation and workflow details.
+
+## Analysis Examples
 
 ### 01. Basic Geometry Probe
 
@@ -109,13 +120,13 @@ MODELCYPHER_HOME=.claude/.modelcypher HF_HOME=.claude/hf_home poetry run mc mode
 Then profile using the returned `localPath`:
 
 ```bash
-poetry run mc --output json model profile <localPath>
+poetry run mc --output json model info <localPath>
 ```
 
 If you already have local weights, register them instead of downloading:
 
 ```bash
-MODELCYPHER_HOME=.claude/.modelcypher poetry run mc model register my-model --path /path/to/model --architecture <architecture>
+MODELCYPHER_HOME=.claude/.modelcypher poetry run mc model add /path/to/model --alias my-model
 ```
 
 ## Tips

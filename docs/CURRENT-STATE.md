@@ -1,10 +1,9 @@
 # Current State
 
-> **Last Updated:** 2026-02-23
+> **This document is archived.** For current project state, see [MISSION.md](MISSION.md).
+> For the research roadmap, see [RESEARCH-ROADMAP.md](RESEARCH-ROADMAP.md).
 >
-> **Mission:** See `docs/MISSION.md`
-> **Research roadmap:** See `docs/RESEARCH-ROADMAP.md`
-> **Deep-research integration log:** `docs/research/deep_research_integration_2026_02.md`
+> The content below is a point-in-time snapshot from 2026-02-23.
 
 ---
 
@@ -78,7 +77,7 @@ Every parameter derived from geometry. See `docs/MISSION.md` for the 15 hyperpar
 
 ## Test Suite
 
-**6294 tests passing** (2026-02-23)
+**6,809 tests passing** (2026-03-01)
 
 ---
 

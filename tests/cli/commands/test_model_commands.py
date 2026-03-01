@@ -61,12 +61,6 @@ class TestModelCommandHelp:
         result = runner.invoke(app, ["model", "info", "--help"])
         assert result.exit_code == 0
 
-    def test_model_search_help(self):
-        """Test 'mc model search --help' works."""
-        result = runner.invoke(app, ["model", "search", "--help"])
-        assert result.exit_code == 0
-        assert "--limit" in result.stdout or "-n" in result.stdout
-
     def test_model_quantize_help(self):
         """Test 'mc model quantize --help' works."""
         result = runner.invoke(app, ["model", "quantize", "--help"])
@@ -110,15 +104,6 @@ class TestModelInfoValidation:
     def test_model_info_validates_path(self):
         """Test that invalid model paths are rejected."""
         result = runner.invoke(app, ["model", "info", "/nonexistent/path"])
-        assert result.exit_code != 0
-
-
-class TestModelSearchValidation:
-    """Test model search argument validation."""
-
-    def test_model_search_requires_query(self):
-        """Test that search query is required."""
-        result = runner.invoke(app, ["model", "search"])
         assert result.exit_code != 0
 
 

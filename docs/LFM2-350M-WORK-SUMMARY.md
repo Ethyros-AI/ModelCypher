@@ -318,8 +318,8 @@ Before training toward expansion_ratio = 1.0, these questions need answers:
 
 Use the CLI to analyze expansion_ratio distribution across diverse prompt categories:
 ```bash
-# Geometric fingerprint (expansion_ratio variance by task type)
-poetry run mc model fingerprint /path/to/model
+# Expansion ratio analysis by prompt
+poetry run mc analyze expansion-ratio --model /path/to/model
 
 # Or use the exploration script for detailed trajectories
 poetry run python scripts/explore_expansion_trajectories.py --model /path/to/model

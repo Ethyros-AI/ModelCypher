@@ -51,7 +51,6 @@ _SUBPACKAGES = {
 
 _ROOT_MODULES = {
     "chat_template",
-    "model_search",
     "models",
     "settings",
     "storage_usage",

@@ -127,8 +127,6 @@ SYMBOL_CONTRACTS: list[tuple[str, tuple[str, ...]]] = [
             "compare_list_payload",
             "compare_detail_payload",
             "compare_checkpoint_payload",
-            "model_search_payload",
-            "model_search_result_payload",
         ),
     ),
 ]

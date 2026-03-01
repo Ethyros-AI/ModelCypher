@@ -393,7 +393,7 @@ Language is humanity's 1D projection of a high-dimensional conceptual space. Mod
 
 This is the shape of knowledge. We are learning to measure it.
 
-**Reproducibility**: Run `poetry run mc analyze reasoning-geometry-validation` for cross-model validation measurements.
+**Reproducibility**: Run `poetry run mc analyze crm-build` and `poetry run mc analyze crm-compare` for cross-model validation measurements.
 
 ## References
 

@@ -190,8 +190,8 @@ Semantic primes are treated as a small, standardized anchor set for cross-model 
 # Probe a local model directory (writes optional JSON)
 mc analyze concept-volume /path/to/model --output-file primes.json
 
-# Compare two activation JSON files
-mc analyze reasoning-geometry-validation model_a_primes.json model_b_primes.json
+# Compare two concept response matrices
+mc analyze crm-compare model_a_primes.json model_b_primes.json
 ```
 
 ### Implementation Details
