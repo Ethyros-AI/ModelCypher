@@ -36,6 +36,14 @@ Geometric diagnostics for LLM representations. Measures intrinsic dimension, cur
 - **Architecture**: Hexagonal (ports and adapters)
 - **Tests**: Run `poetry run pytest` for current count
 
+## Token Budget For AI Review
+
+The one-shot review budget is **20,000 tokens per file**.
+
+- Audit with: `poetry run python scripts/report_token_budget.py --threshold 20000`
+- Keep `src/` and `docs/` files under budget whenever possible.
+- Large corpus/result assets (`data/`, `plasma/results/`) and `poetry.lock` are allowed to exceed the budget because they are data artifacts, not implementation modules.
+
 ---
 
 ## STOP — Read This Before You Do Anything
