@@ -113,7 +113,7 @@ poetry run mc system status
 poetry run mc system status --require-backend mlx
 poetry run mc system probe backends
 poetry run mc system test-cache /path/to/model --pairs 10
-poetry run mc system memory-profile /path/to/model
+poetry run mc system memory-profile --model /path/to/model
 poetry run mc system commands
 poetry run mc system benchmark cache
 ```
@@ -132,7 +132,7 @@ poetry run mc adapter calibrate-baseline --output-artifact /tmp/adapter_baseline
 Commands: `correct`.
 
 ```bash
-poetry run mc quantize correct /path/to/quantized_model --reference /path/to/fp_model --output /path/to/corrected
+poetry run mc quantize correct -q /path/to/quantized_model -f /path/to/fp_model -o /path/to/corrected
 ```
 
 ## Live Discovery
