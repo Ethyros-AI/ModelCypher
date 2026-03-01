@@ -93,14 +93,13 @@ poetry run mc analyze crm-compare /tmp/source.crm.json /tmp/target.crm.json
 
 ## `mc model`
 
-Commands: `list`, `add`, `delete`, `info`, `capacity`, `search`, `quantize`.
+Commands: `list`, `add`, `delete`, `info`, `capacity`, `quantize`.
 
 ```bash
 poetry run mc model list
 poetry run mc model add /path/to/model --alias my-model
 poetry run mc model info /path/to/model
 poetry run mc model capacity /path/to/model --sort-by recommended-rank --emit-lora-config /tmp/lora_capacity.yaml
-poetry run mc model search "qwen" --limit 5
 poetry run mc model quantize /path/to/model /path/to/output --bits 4
 poetry run mc model delete my-model --force
 ```

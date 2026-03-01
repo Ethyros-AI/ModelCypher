@@ -113,12 +113,6 @@ SYMBOL_CONTRACTS: list[tuple[str, tuple[str, ...]]] = [
         ),
     ),
     (
-        "modelcypher.ports.hub",
-        (
-            "HubAdapterPort",
-        ),
-    ),
-    (
         "modelcypher.cli.presenters",
         (
             "model_payload",
@@ -152,7 +146,6 @@ DRIFT_PRONE_MODULES: tuple[str, ...] = (
     "modelcypher.core.domain.geometry.sparse_region_validator",
     "modelcypher.ports.storage",
     "modelcypher.ports.training",
-    "modelcypher.ports.hub",
 )
 
 

@@ -387,7 +387,6 @@ def mock_registry(tmp_path):
     registry.training_engine = MagicMock()
     registry.inference_engine = MagicMock()
     registry.exporter = MagicMock()
-    registry.hub_adapter = MagicMock()
     registry.model_loader = MagicMock()
 
     # Configure path fields
