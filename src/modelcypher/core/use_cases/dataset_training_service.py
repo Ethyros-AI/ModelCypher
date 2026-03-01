@@ -71,6 +71,9 @@ logger = logging.getLogger(__name__)
 
 # Apple Metal SIMD group width (hardware constant, not a hyperparameter).
 _MLX_SIMD_WIDTH = 32
+_MOE_EXPERT_WEIGHT_RE = re.compile(
+    r"^model\.layers\.(\d+)\.mlp\.experts\.(\d+)\.(gate_proj|up_proj|down_proj)\.weight$",
+)
 
 # PRNG stream offsets: distinct integers → non-overlapping streams.
 # Values are arbitrary-but-fixed for reproducibility (Knuth TAOCP §3.2.1).
@@ -827,6 +830,7 @@ class DatasetTrainingService:
 
         # 5. Select targets (geometry decides: layers with tail_dims > 0)
         target_modules = select_target_modules(geometries)
+        moe_topology = self._load_moe_topology(model_path)
         manual_target_expert_keys = self._parse_target_expert_keys(target_experts)
         if manual_target_expert_keys:
             filtered = [key for key in target_modules if key in manual_target_expert_keys]
@@ -866,6 +870,14 @@ class DatasetTrainingService:
                 coupled_ranks, n_samples=len(train_dataset),
             )
             ceiling_label = "data-rank (fallback)"
+
+        moe_targets = self._build_moe_target_selection(
+            target_modules=target_modules,
+            geometries=geometries,
+            rank_overrides=final_ranks,
+            topology=moe_topology,
+            num_layers=self._backend.get_num_layers(model),
+        )
 
         uncapped_params = estimate_nb_lora_parameter_count(geometries, coupled_ranks)
         capped_params = estimate_nb_lora_parameter_count(geometries, final_ranks)
@@ -1704,6 +1716,10 @@ class DatasetTrainingService:
             if saturated_keys:
                 moe_saturated_during_training = sorted(saturated_keys)
 
+        # TODO(design-component-8): compute routing KL divergence pre/post
+        # training once routing-profile collection is integrated in this service.
+        moe_router_stability: float | None = None
+
         if rp is not None:
             rp.training_complete(
                 adapter_path=saved_adapter_path,
@@ -1774,9 +1790,9 @@ class DatasetTrainingService:
             degeneration_mean_4gram_repeat=degeneration_mean_4gram_repeat,
             benchmark_baseline=benchmark_baseline_scores,
             benchmark_post=benchmark_post_scores,
-            moe_targets=None,
+            moe_targets=moe_targets,
             moe_saturated_during_training=moe_saturated_during_training,
-            moe_router_stability=None,
+            moe_router_stability=moe_router_stability,
         )
 
     def _derive_strict_seed(self, model_path: Path, dataset_path: Path) -> int:
@@ -2649,6 +2665,100 @@ class DatasetTrainingService:
                 f"{prefix}.down_proj.weight",
             })
         return parsed
+
+    def _load_moe_topology(self, model_path: Path):
+        """Load MoE topology from model config, if available."""
+        try:
+            from modelcypher.adapters.model_architecture import load_config
+            from modelcypher.core.domain.moe.topology import MoETopology
+
+            config = load_config(model_path)
+            return MoETopology.from_config(config)
+        except Exception:
+            return None
+
+    def _build_moe_target_selection(
+        self,
+        *,
+        target_modules: list[str],
+        geometries: dict[str, Any],
+        rank_overrides: dict[str, int],
+        topology,
+        num_layers: int,
+    ):
+        """Build ExpertTargetSelection for targeted MoE experts."""
+        try:
+            from modelcypher.core.domain.moe.expert_selection import (
+                ExpertTarget,
+                ExpertTargetSelection,
+            )
+            from modelcypher.core.domain.moe.topology import MoETopology
+        except Exception:
+            return None
+
+        grouped: dict[tuple[int, int], dict[str, Any]] = {}
+        for key in sorted(target_modules):
+            match = _MOE_EXPERT_WEIGHT_RE.match(key)
+            if match is None:
+                continue
+            layer_idx = int(match.group(1))
+            expert_idx = int(match.group(2))
+            proj_name = match.group(3)
+            geom = geometries.get(key)
+            if geom is None:
+                continue
+            group = grouped.setdefault(
+                (layer_idx, expert_idx),
+                {"geometries": {}, "ranks": []},
+            )
+            group["geometries"][proj_name] = geom
+            group["ranks"].append(int(rank_overrides.get(key, geom.tail_dims)))
+
+        if not grouped:
+            return None
+
+        if topology is None:
+            max_expert_idx = max(expert_idx for _layer, expert_idx in grouped)
+            moe_layers = sorted({layer for layer, _expert in grouped})
+            topology = MoETopology(
+                num_experts=max_expert_idx + 1,
+                num_experts_per_tok=1,
+                moe_intermediate_size=0,
+                has_shared_expert=False,
+                shared_expert_intermediate_size=None,
+                moe_layer_indices=moe_layers,
+                num_layers=num_layers,
+            )
+
+        targets = []
+        estimated_params_total = 0
+        for (layer_idx, expert_idx), payload in sorted(grouped.items()):
+            proj_geometries = payload["geometries"]
+            representative = proj_geometries.get("gate_proj")
+            if representative is None:
+                representative = next(iter(proj_geometries.values()))
+            ranks = payload["ranks"] or [representative.tail_dims]
+            rank = max(1, max(int(r) for r in ranks))
+            target = ExpertTarget(
+                layer_idx=layer_idx,
+                expert_idx=expert_idx,
+                category="primary",
+                routing_frequency=0.0,
+                geometry=representative,
+                rank=rank,
+            )
+            targets.append(target)
+            for geom in proj_geometries.values():
+                out_features, in_features = geom.shape
+                estimated_params_total += rank * (int(in_features) + int(out_features) + 1)
+
+        return ExpertTargetSelection(
+            targets=targets,
+            saturated=[],
+            skipped=[],
+            topology=topology,
+            estimated_params_total=estimated_params_total,
+        )
 
     def _write_geometry_manifest(
         self,

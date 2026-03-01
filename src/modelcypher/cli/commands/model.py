@@ -605,7 +605,6 @@ def model_moe_profile(
     from modelcypher.core.domain.dataset_loading import load_jsonl_dataset
     from modelcypher.core.domain.moe.routing_analysis import RoutingProfile
     from modelcypher.core.domain.moe.topology import MoETopology
-    from modelcypher.core.domain.training.geometric_lora import analyze_weight_geometries
 
     try:
         config = load_config(resolved_model)
@@ -633,25 +632,16 @@ def model_moe_profile(
             candidate_experts.update(routing_profile.underutilized_experts(layer_idx))
 
         adapter = MLXTrainingAdapter(backend)
-        candidate_weights: dict[str, Any] = {}
+        candidate_keys: list[str] = []
         for layer_idx, expert_idx in sorted(candidate_experts):
             for proj_name in ("gate_proj", "up_proj", "down_proj"):
-                key = (
+                candidate_keys.append(
                     f"model.layers.{layer_idx}.mlp.experts.{expert_idx}."
                     f"{proj_name}.weight"
                 )
-                try:
-                    parent, attr_name = adapter._resolve_parent_and_attr(model, key)
-                    proj = getattr(parent, attr_name)
-                    if hasattr(proj, "weight"):
-                        candidate_weights[key] = adapter._dequantize_weight(proj)
-                except Exception:
-                    continue
 
-        geometries = (
-            analyze_weight_geometries(candidate_weights, backend)
-            if candidate_weights
-            else {}
+        geometries = adapter.analyze_weight_geometries_for_keys_streaming(
+            model, candidate_keys,
         )
 
         expert_rows: list[dict[str, Any]] = []

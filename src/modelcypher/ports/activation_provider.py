@@ -323,6 +323,13 @@ class ActivationProvider(Protocol):
             [total_tokens, num_experts_per_tok] containing top-k selected expert
             indices for every token position across ``texts``.
 
+        Note:
+            Implementations that reconstruct top-k from router logits may run
+            gate projection once for capture and once in the layer's normal
+            forward path. If the model applies stochastic load-balancing noise
+            inside routing, captured IDs can differ slightly from the IDs used
+            by the internal forward call.
+
         Raises:
             NotImplementedError: If routing collection is unavailable.
         """

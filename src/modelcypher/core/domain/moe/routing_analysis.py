@@ -99,9 +99,10 @@ class RoutingProfile:
                     layer_idx=layer_idx,
                     expert_idx=expert_idx,
                     frequency=frequency,
-                    # Routing probabilities are not captured in indices-only hooks.
-                    # Keep the field populated with measured frequency.
-                    mean_routing_prob=frequency,
+                    # Routing confidence is unavailable in indices-only hooks.
+                    # This is intentionally 0.0 until softmax probabilities are
+                    # captured by a probability-aware routing collector.
+                    mean_routing_prob=0.0,
                     token_count=count,
                 )
 

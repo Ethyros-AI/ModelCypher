@@ -471,7 +471,13 @@ class _MLXBackendActivationMixin:
         tokenizer: Any,
         texts: list[str],
     ) -> dict[int, Any]:
-        """Collect selected expert IDs per token for MoE router layers."""
+        """Collect selected expert IDs per token for MoE router layers.
+
+        The collector computes top-k from gate logits before the layer's MLP
+        call. The MLP then runs normally, which may recompute router logits
+        internally. For deterministic routers this is identical; for noisy
+        load-balancing routers the captured IDs can differ slightly.
+        """
         if not texts:
             return {}
 

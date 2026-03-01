@@ -33,6 +33,7 @@ def test_profile_computes_per_expert_frequency():
     assert profile.stats[(0, 1)].frequency == 0.25
     assert profile.stats[(0, 2)].frequency == 0.0
     assert profile.stats[(0, 0)].token_count == 3
+    assert profile.stats[(0, 0)].mean_routing_prob == 0.0
 
 
 def test_task_relevant_and_underutilized_use_uniform_baseline():

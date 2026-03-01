@@ -16,6 +16,7 @@ import modelcypher.core.use_cases.dataset_training_service as dataset_training_s
 from modelcypher.cli.app import app
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.training.exceptions import TrainingDerivationError
+from modelcypher.core.domain.training.geometric_lora import LayerGeometry
 from modelcypher.core.domain.training.regime_selection import PerTypeRegime
 from modelcypher.core.domain.star.problem_generator import StarProblemGenerator
 from modelcypher.core.use_cases.dataset_training_service import (
@@ -1288,6 +1289,76 @@ def test_train_from_dataset_research_controls_validate_values(tmp_path: Path):
             auto_regime=False,
             research_outcome_selector="invalid_selector",
         )
+
+
+def test_train_from_dataset_populates_moe_targets(monkeypatch, tmp_path: Path):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_text(
+        json.dumps({
+            "model_type": "qwen3",
+            "num_hidden_layers": 1,
+            "num_experts": 4,
+            "num_experts_per_tok": 2,
+            "moe_intermediate_size": 64,
+        }),
+        encoding="utf-8",
+    )
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(train_path, [{"text": "train 1"}])
+    _write_jsonl(eval_path, [{"text": "eval 1"}])
+
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
+    _patch_lightweight_training(monkeypatch, service)
+    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
+
+    def _geom(key: str) -> LayerGeometry:
+        return LayerGeometry(
+            layer_key=key,
+            shape=(64, 16),
+            sigma_max=1.0,
+            sigma_k=0.5,
+            effective_rank=16,
+            full_rank=16,
+            decay_ratio=2.0,
+            tail_dims=4,
+            shannon_effective_rank=12.0,
+            spectral_gap=0.1,
+        )
+
+    moe_keys = [
+        "model.layers.0.mlp.experts.2.gate_proj.weight",
+        "model.layers.0.mlp.experts.2.up_proj.weight",
+        "model.layers.0.mlp.experts.2.down_proj.weight",
+    ]
+    monkeypatch.setattr(
+        dataset_training_service_module,
+        "analyze_weight_geometries",
+        lambda *_args, **_kwargs: {key: _geom(key) for key in moe_keys},
+    )
+    monkeypatch.setattr(
+        dataset_training_service_module,
+        "select_target_modules",
+        lambda _geometries: list(moe_keys),
+    )
+
+    result = service.train_from_dataset(
+        model_path=model_dir,
+        dataset_path=train_path,
+        eval_dataset_path=eval_path,
+        auto_regime=False,
+        no_save=True,
+        target_experts="L0.E2",
+    )
+
+    assert result.moe_targets is not None
+    assert result.moe_targets.n_trainable_experts == 1
+    assert result.moe_targets.topology.num_experts == 4
+    assert result.moe_targets.target_module_keys == sorted(moe_keys)
+    payload = result.to_dict()
+    assert "moe_targets" in payload
+    assert payload["moe_targets"]["n_targets"] == 1
 
 
 def test_dataset_train_result_to_dict_includes_null_space_diagnostics():
