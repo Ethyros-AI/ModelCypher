@@ -61,14 +61,35 @@ def _extract_adapter_deltas(backend, adapter_path: Path) -> list:
     return deltas
 
 
-def _spectral_norm(backend, tensor) -> float:
-    """Compute spectral norm (largest singular value) of a tensor."""
-    # MLX SVD requires float32; model weights are typically bf16
+def _svd_singular_values(backend, tensor):
+    """Return singular values array (float32) for a 2D tensor."""
     tensor_f32 = backend.astype(tensor, "float32")
     S = backend.svd(tensor_f32, compute_uv=False)
-    norm_t = backend.max(S)
-    backend.eval(norm_t)
-    return float(backend.to_scalar(norm_t))
+    backend.eval(S)
+    return S
+
+
+def _spectral_norm(backend, tensor) -> float:
+    """Compute spectral norm (largest singular value) of a tensor."""
+    S = _svd_singular_values(backend, tensor)
+    return float(backend.to_scalar(backend.max(S)))
+
+
+def _effective_rank(backend, tensor, eps: float) -> int:
+    """Count singular values above eps-relative threshold.
+
+    Effective rank = number of singular values σ_i where σ_i > σ_1 * sqrt(eps).
+    This is the IEEE 754-derived threshold: singular values below this are
+    indistinguishable from numerical noise at the working precision.
+    """
+    import math
+
+    S = _svd_singular_values(backend, tensor)
+    s_list = backend.tolist(S)
+    if not s_list:
+        return 0
+    threshold = s_list[0] * math.sqrt(eps)
+    return sum(1 for s in s_list if s > threshold)
 
 
 def _pick_representative_delta(backend, deltas: list):
@@ -121,6 +142,13 @@ def main() -> None:
     ) if base_capacity.layer_reports else 0.0
     print(f"Base mean null-space dim: {base_mean_null_dim:.2f} ({base_capacity.analyzed_layers} layers)")
 
+    # Build per-layer null-space dim lookup from base capacity
+    base_null_dims = {}
+    for r in base_capacity.layer_reports:
+        base_null_dims[r.layer_name] = r.null_space_dim_f32
+    total_base_null = sum(base_null_dims.values())
+    print(f"Total base null-space dims: {total_base_null:.1f} across {len(base_null_dims)} layers")
+
     # Per-task telemetry accumulators
     task_ranks = []
     delta_history = []       # list[list[Array]] — all deltas per task
@@ -128,6 +156,7 @@ def main() -> None:
     cka_matrix = []
     per_task_cka = []
     cumulative_weyl = 0.0
+    cumulative_effective_rank = 0
     eps = float(backend.finfo().eps)
 
     for i, dataset_path in enumerate(args.task_datasets):
@@ -143,7 +172,6 @@ def main() -> None:
                 eval_dataset_path=str(dataset_path),
                 output_path=str(adapter_path),
                 seed=args.seed + i,
-                dim_monitor=True,
             )
             print(f"  Training: {result.train_iters} iters, loss {result.initial_loss:.3f} -> {result.final_loss:.3f}")
         except Exception as e:
@@ -160,14 +188,16 @@ def main() -> None:
         rep_delta = _pick_representative_delta(backend, task_deltas)
         representative_deltas.append(rep_delta)
 
-        # 3. Null-space tracking via training result
-        if result is not None and result.dim_final_null_fraction is not None:
-            current_null_rank = base_mean_null_dim * result.dim_final_null_fraction
-        else:
-            # No measured depletion available — use base capacity (conservative)
-            current_null_rank = base_mean_null_dim
-            print(f"  WARNING: dim_final_null_fraction not available")
-        task_ranks.append(current_null_rank)
+        # 3. Null-space depletion via adapter effective rank (weight-space)
+        #    Each LoRA delta has effective rank ≤ r. Cumulative effective rank
+        #    across tasks measures how many null-space dimensions are consumed.
+        task_eff_rank = 0
+        for d in task_deltas:
+            task_eff_rank += _effective_rank(backend, d, eps)
+        cumulative_effective_rank += task_eff_rank
+        remaining_null = max(0.0, total_base_null - cumulative_effective_rank)
+        task_ranks.append(remaining_null)
+        print(f"  Effective rank: {task_eff_rank} (cumulative: {cumulative_effective_rank}, remaining null: {remaining_null:.1f})")
 
         # 4. Real CKA from training result (activation-space, not weight-space)
         task_min_cka = result.min_cka if result is not None else None
@@ -219,6 +249,7 @@ def main() -> None:
         "base_capacity": {
             "analyzed_layers": base_capacity.analyzed_layers,
             "mean_null_dim": base_mean_null_dim,
+            "total_null_dims": total_base_null,
         },
         "telemetry": {
             "task_ranks": task_ranks,
@@ -228,6 +259,7 @@ def main() -> None:
             "spectral_budget_trajectory": trajectory,
             "cka_stability": cka_stability,
             "weyl_accumulation": cumulative_weyl,
+            "cumulative_effective_rank": cumulative_effective_rank,
             "deltas_per_task": deltas_per_task,
         },
     }

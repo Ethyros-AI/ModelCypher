@@ -732,28 +732,65 @@ class _MLXTrainingAdapterDiagnosticsMixin:
                 "Training OOM at micro_batch=1; model/data do not fit device memory."
             )
 
-        # Probe from the safe side first to avoid catastrophic max-size probes.
-        low = 1
-        high = max_candidate + 1
-        low_peak = peak1
-        while low + 1 < high:
-            mid = (low + high) // 2
-            mid_ok, _mid_peak = _probe(mid)
-            if mid_ok:
-                low = mid
-                low_peak = _mid_peak
+        # Phase 1: Geometric doubling — never more than 2x the last safe size.
+        # 2x growth is optimal for unknown-budget online search (2-competitive).
+        safe = 1
+        safe_peak = peak1
+        failed = None
+        candidate = 2
+        while candidate <= max_candidate:
+            logger.info(
+                "Memory probe: trying micro_batch=%d (last safe=%d)",
+                candidate, safe,
+            )
+            ok, peak = _probe(candidate)
+            if ok:
+                safe = candidate
+                safe_peak = peak
+                candidate *= 2
             else:
-                high = mid
+                failed = candidate
+                break
 
-        if low_peak is not None:
+        # If doubling never failed and we haven't reached max_candidate exactly
+        if failed is None and safe < max_candidate:
+            logger.info(
+                "Memory probe: trying micro_batch=%d (max candidate)",
+                max_candidate,
+            )
+            ok, peak = _probe(max_candidate)
+            if ok:
+                safe = max_candidate
+                safe_peak = peak
+            else:
+                failed = max_candidate
+
+        # Phase 2: Binary refinement between last safe and first failure.
+        # Gap is at most 2x (from doubling), so few extra probes needed.
+        if failed is not None:
+            low, high = safe, failed
+            while low + 1 < high:
+                mid = (low + high) // 2
+                logger.info(
+                    "Memory probe: refining micro_batch=%d in [%d, %d)",
+                    mid, low, high,
+                )
+                mid_ok, mid_peak = _probe(mid)
+                if mid_ok:
+                    low = mid
+                    safe_peak = mid_peak
+                else:
+                    high = mid
+            safe = low
+
+        if safe_peak is not None:
             logger.info(
                 "Memory-safe micro batch size=%d (peak=%.2f GB)",
-                low,
-                low_peak,
+                safe, safe_peak,
             )
         else:
-            logger.info("Memory-safe micro batch size=%d", low)
-        return low
+            logger.info("Memory-safe micro batch size=%d", safe)
+        return safe
 
     def _resolve_parent_and_attr(self, model, layer_key: str) -> tuple[Any, str]:
         path_parts = layer_key.replace(".weight", "").split(".")

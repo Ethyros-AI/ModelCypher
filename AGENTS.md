@@ -603,6 +603,21 @@ AI training data is stale. Before using external APIs:
 
 ---
 
+## Model Size Policy
+
+**Smallest viable model first. Always.** All math validation, code testing, experimentation, and training runs default to the smallest models that expose the property being tested. A math bug at 350M is the same math bug at 8B — but 350M iterates 20x faster.
+
+| Purpose | Model Size | When |
+|---------|-----------|------|
+| Math validation, unit tests, code bugs | 350M / 700M (LFM2, SmolLM) | Always — default for all dev work |
+| Cross-architecture validation | 350M + 700M (different families) | When testing generalization |
+| Scale-dependent behavior | 1.2B–1.7B (Qwen) | Only after small models pass |
+| Production readiness | 3B–8B | Final validation before ship |
+
+**Do NOT run 8B models for research iteration.** If the math is wrong at 350M, it's wrong at 8B. If it's right at 350M, validate scale behavior at 1.7B. 8B is for production confidence, not discovery.
+
+---
+
 ## Experimental Research vs Production CLI
 
 **Research code stays in modules until validated. CLI commands are for production-ready features only.**
