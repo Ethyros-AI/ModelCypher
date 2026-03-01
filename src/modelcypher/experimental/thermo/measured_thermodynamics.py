@@ -652,7 +652,9 @@ class MeasuredThresholds:
             n_bootstrap=n_bootstrap, seed=seed,
         )
 
-        # Adaptive percentiles: only compute as many as data supports
+        # Adaptive percentiles for distribution summary metadata (NOT decision boundaries).
+        # Decision boundaries come from find_distribution_crossing() above.
+        # These are standard statistical summary quantiles for downstream inspection.
         sorted_all = sorted(all_entropies)
         n = len(sorted_all)
         if n >= 10:

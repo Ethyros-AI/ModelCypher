@@ -324,14 +324,14 @@ def find_boundary_radius(
         result = measure_coherence(activation, direction, r, forward_fn, b, metric=metric)
         coherences.append(result.coherence)
 
-    # Need at least 4 points for knee detection
+    # Need at least 4 points for knee detection (discrete second derivative)
     if len(radii) < 4:
         return BoundaryResult(
             direction=direction,
-            boundary_radius=max_radius / 2.0,
+            boundary_radius=max_radius,  # Cannot detect knee; treat as unbounded
             coherence_at_boundary=coherences[-1] if coherences else 0.0,
             max_radius_tested=max_radius,
-            is_bounded=True,
+            is_bounded=False,  # Insufficient data for knee detection
         )
 
     try:
