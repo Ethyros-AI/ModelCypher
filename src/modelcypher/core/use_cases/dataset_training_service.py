@@ -554,15 +554,18 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                     diagnostics={"n_samples": len(all_samples)},
                 )
             max_tokens = max(token_lengths)
+            # +1 for EOS token appended by prepare_dataset() after tokenization.
+            max_tokens_with_eos = max_tokens + 1
             # Round up to SIMD width boundary for Metal kernel alignment.
             seq_length = (
-                (max_tokens + _MLX_SIMD_WIDTH - 1) // _MLX_SIMD_WIDTH
+                (max_tokens_with_eos + _MLX_SIMD_WIDTH - 1) // _MLX_SIMD_WIDTH
             ) * _MLX_SIMD_WIDTH
             logger.info(
-                "Derived seq_length=%d from data (max_tokens=%d, n_primary=%d, "
+                "Derived seq_length=%d from data (max_tokens=%d, +1 EOS=%d, n_primary=%d, "
                 "n_retention=%d, n_eval=%d, SIMD_width=%d)",
                 seq_length,
                 max_tokens,
+                max_tokens_with_eos,
                 len(all_samples),
                 len(explicit_retention_samples) if explicit_retention_samples is not None else 0,
                 len(eval_samples_early) if eval_samples_early is not None else 0,
