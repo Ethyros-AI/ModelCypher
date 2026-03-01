@@ -34,17 +34,7 @@ def _spectral_norm(matrix: Any, backend: "Backend") -> float:
     """Exact spectral norm via top singular value."""
     M = backend.astype(matrix, "float32")
     backend.eval(M)
-    svd_out = backend.svd(M, compute_uv=False)
-    if isinstance(svd_out, tuple):
-        # Backend adapters may return either S or tuple variants.
-        if len(svd_out) == 1:
-            singular_values = svd_out[0]
-        elif len(svd_out) == 2:
-            singular_values = svd_out[1]
-        else:
-            singular_values = svd_out[1]
-    else:
-        singular_values = svd_out
+    singular_values = backend.svd(M, compute_uv=False)
     backend.eval(singular_values)
     if int(singular_values.shape[0]) <= 0:
         return 0.0

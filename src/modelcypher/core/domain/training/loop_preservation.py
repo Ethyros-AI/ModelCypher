@@ -362,21 +362,8 @@ def compute_spectral_entropy(
     if n_samples < 2 or hidden_dim < 2:
         return 0.0
 
-    # Compute singular values via Backend SVD.
-    # Backends may return:
-    # - S only (compute_uv=False)
-    # - (U, S, Vt) tuple
     try:
-        svd_out = b.svd(hidden, compute_uv=False)
-        if isinstance(svd_out, tuple):
-            if len(svd_out) == 3:
-                _, S, _ = svd_out
-            elif len(svd_out) == 1:
-                S = svd_out[0]
-            else:
-                S = svd_out[-1]
-        else:
-            S = svd_out
+        S = b.svd(hidden, compute_uv=False)
         b.eval(S)
     except Exception:
         return 0.0

@@ -143,6 +143,7 @@ def main() -> None:
                 eval_dataset_path=str(dataset_path),
                 output_path=str(adapter_path),
                 seed=args.seed + i,
+                dim_monitor=True,
             )
             print(f"  Training: {result.train_iters} iters, loss {result.initial_loss:.3f} -> {result.final_loss:.3f}")
         except Exception as e:

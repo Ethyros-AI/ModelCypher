@@ -789,7 +789,7 @@ class UnifiedGeometricMerger:
             source_tokenizer = self._load_tokenizer(source_path)
 
             # Run probe stage to get activations and transforms
-            # stage_probe returns an 18-element tuple (see stages/__init__.py)
+            # stage_probe returns a 26-element tuple (see stages/__init__.py)
             from .stages import stage_probe
             probe_tuple = stage_probe(
                 source_weights=source_weights,
@@ -806,11 +806,10 @@ class UnifiedGeometricMerger:
 
             # Extract from tuple: indices per stages/__init__.py
             # [0] = probe_result dict, [1] = metrics, [2] = source_acts, [3] = target_acts
-            # [10] = feature_transforms, [17] = layer_mapping
+            # [10] = feature_transforms, [18] = layer_mapping
             source_acts = probe_tuple[2]
             target_acts = probe_tuple[3]
             feature_transforms = probe_tuple[10]
-            probe_tuple[17]
 
             channel_activations[channel_id] = source_acts or {}
             channel_transforms[channel_id] = feature_transforms or {}
