@@ -27,14 +27,10 @@ def run_scale_experiment(model_info: dict, capacity_service) -> dict:
     
     try:
         report = capacity_service.analyze(model_path=model_info["path"])
-        first_layer = list(report.layer_metrics.values())[0]
-        hidden_dim = first_layer.weight_shape[0] if report.layer_metrics else 1024
-        
-        # Calculate actual metric rather than simulation 
-        mean_capacity = (
-            sum(r.capacity_utilization for r in report.layer_metrics.values())
-            / max(1, len(report.layer_metrics)) if report.layer_metrics else 0.0
-        )
+        hidden_dim = report.layer_reports[0].weight_shape[0] if report.layer_reports else 1024
+
+        # Use pre-computed mean from the report
+        mean_capacity = report.mean_capacity_utilization
     except Exception as e:
         print(f"Failed to analyze true model, using fallback. Error: {e}")
         hidden_dim = 1024 if model_info["name"] == "350M" else 2048

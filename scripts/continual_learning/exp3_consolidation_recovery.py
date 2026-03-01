@@ -34,8 +34,8 @@ def main() -> None:
     print(f"Measuring capacity of base model pre-merge: {args.model_path}")
     pre_report = capacity_service.analyze(model_path=str(args.model_path))
     pre_merge_capacity = (
-        sum(r.null_space_dim_f32 for r in pre_report.layer_metrics.values()) 
-        / max(1, len(pre_report.layer_metrics)) if pre_report.layer_metrics else 0
+        sum(r.null_space_dim_f32 for r in pre_report.layer_reports)
+        / max(1, len(pre_report.layer_reports)) if pre_report.layer_reports else 0
     )
     
     # 2. Consolidate (Merge) Adapter into Base Weights
@@ -53,13 +53,13 @@ def main() -> None:
     print(f"Measuring capacity of consolidated model: {merged_model_path}")
     post_report = capacity_service.analyze(model_path=str(merged_model_path))
     post_merge_capacity = (
-        sum(r.null_space_dim_f32 for r in post_report.layer_metrics.values()) 
-        / max(1, len(post_report.layer_metrics)) if post_report.layer_metrics else 0
+        sum(r.null_space_dim_f32 for r in post_report.layer_reports)
+        / max(1, len(post_report.layer_reports)) if post_report.layer_reports else 0
     )
-    
+
     # H3 Threshold Validation
     # We use min_dim as the proxy for max rank (e.g. 1024)
-    first_layer_dim = list(post_report.layer_metrics.values())[0].weight_shape[0] if post_report.layer_metrics else 1024
+    first_layer_dim = post_report.layer_reports[0].weight_shape[0] if post_report.layer_reports else 1024
     recovery_ratio = post_merge_capacity / float(first_layer_dim)
     
     output = {
