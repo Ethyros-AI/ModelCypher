@@ -57,7 +57,7 @@ def load_gsm8k_raw(split: str) -> list[dict]:
     try:
         from datasets import load_dataset
     except ImportError:
-        print("ERROR: 'datasets' package not installed. Run: pip install datasets")
+        print("ERROR: 'datasets' package not installed. Run: poetry add datasets --group dev")
         sys.exit(1)
 
     print(f"Loading GSM8K ({split} split) from HuggingFace...")

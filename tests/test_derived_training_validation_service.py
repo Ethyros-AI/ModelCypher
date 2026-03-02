@@ -58,6 +58,24 @@ class _FakeTrainResult:
     epoch_metrics: list[dict[str, object]] | None = None
     seq_length_used: int = 64
     moe_router_stability: float | None = None
+    mode_connectivity_barrier: float | None = None
+    mode_connectivity_normalized_barrier: float | None = None
+    mode_connectivity_method: str | None = None
+    degeneration_max_ngram_repeat: float | None = None
+    degeneration_mean_ngram_repeat: float | None = None
+    degeneration_ngram_order: int | None = None
+    rss_final_cosine: float | None = None
+    rss_final_spearman: float | None = None
+    rss_final_top1: float | None = None
+    per_layer_signal_ranks: dict[int, dict[str, float | int]] | None = None
+    inference_per_layer_cka: dict[int, float] | None = None
+    moe_saturated_during_training: list[str] | None = None
+    moe_targets: object | None = None
+    dim_final_used_fraction: float | None = None
+    dim_final_null_fraction: float | None = None
+    dim_null_recruitment_from_baseline: float | None = None
+    benchmark_baseline: dict[str, float] | None = None
+    benchmark_post: dict[str, float] | None = None
     adapter_path: str | None = "adapter-path"
 
 
@@ -441,6 +459,151 @@ def test_moe_router_stability_none_when_absent(tmp_path):
     assert trial.moe_router_stability is None
     d = trial.to_dict()
     assert d["moe_router_stability"] is None
+
+
+@dataclass
+class _FakeMoETargets:
+    n_trainable_experts: int = 4
+    saturated: list = None
+    skipped: list = None
+
+    def __post_init__(self):
+        if self.saturated is None:
+            self.saturated = [(0, 1)]
+        if self.skipped is None:
+            self.skipped = [(0, 2), (0, 3)]
+
+
+def test_all_diagnostic_fields_round_trip(tmp_path):
+    """All 21 new diagnostic fields round-trip through _build_trial → to_dict()."""
+    service, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.4,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+            # Group A: Mode connectivity
+            mode_connectivity_barrier=0.015,
+            mode_connectivity_normalized_barrier=0.003,
+            mode_connectivity_method="linear_interpolation",
+            # Group B: Train-time degeneration
+            degeneration_max_ngram_repeat=0.12,
+            degeneration_mean_ngram_repeat=0.05,
+            degeneration_ngram_order=4,
+            # Group C: RSS similarity
+            rss_final_cosine=0.987,
+            rss_final_spearman=0.945,
+            rss_final_top1=0.92,
+            # Group D: Signal ranks and inference CKA
+            per_layer_signal_ranks={
+                0: {"signal_rank": 12, "noise_rank": 52},
+                1: {"signal_rank": 8, "noise_rank": 56},
+            },
+            inference_per_layer_cka={0: 0.998, 1: 0.995},
+            # Group E: MoE diagnostics
+            moe_saturated_during_training=["layers.0.experts.1"],
+            moe_targets=_FakeMoETargets(),
+            # Group F: Dimensional recruitment and benchmarks
+            dim_final_used_fraction=0.41,
+            dim_final_null_fraction=0.59,
+            dim_null_recruitment_from_baseline=0.03,
+            benchmark_baseline={"overall": 0.72, "math": 0.65},
+            benchmark_post={"overall": 0.78, "math": 0.71},
+        ),
+    ])
+    result = service.validate(
+        model_path=model_dir, dataset_path=data_file,
+        eval_dataset_path=None, trials=1, base_seed=1,
+    )
+    trial = result.trial_results[0]
+    d = trial.to_dict()
+
+    # Group A
+    assert trial.mode_connectivity_barrier == pytest.approx(0.015)
+    assert d["mode_connectivity_barrier"] == pytest.approx(0.015)
+    assert trial.mode_connectivity_normalized_barrier == pytest.approx(0.003)
+    assert d["mode_connectivity_normalized_barrier"] == pytest.approx(0.003)
+    assert trial.mode_connectivity_method == "linear_interpolation"
+    assert d["mode_connectivity_method"] == "linear_interpolation"
+
+    # Group B
+    assert trial.degeneration_max_ngram_repeat == pytest.approx(0.12)
+    assert d["degeneration_max_ngram_repeat"] == pytest.approx(0.12)
+    assert trial.degeneration_mean_ngram_repeat == pytest.approx(0.05)
+    assert d["degeneration_mean_ngram_repeat"] == pytest.approx(0.05)
+    assert trial.degeneration_ngram_order == 4
+    assert d["degeneration_ngram_order"] == 4
+
+    # Group C
+    assert trial.rss_final_cosine == pytest.approx(0.987)
+    assert d["rss_final_cosine"] == pytest.approx(0.987)
+    assert trial.rss_final_spearman == pytest.approx(0.945)
+    assert d["rss_final_spearman"] == pytest.approx(0.945)
+    assert trial.rss_final_top1 == pytest.approx(0.92)
+    assert d["rss_final_top1"] == pytest.approx(0.92)
+
+    # Group D
+    assert trial.per_layer_signal_ranks is not None
+    assert trial.per_layer_signal_ranks[0]["signal_rank"] == 12
+    assert d["per_layer_signal_ranks"][1]["noise_rank"] == 56
+    assert trial.inference_per_layer_cka is not None
+    assert trial.inference_per_layer_cka[0] == pytest.approx(0.998)
+    assert d["inference_per_layer_cka"][1] == pytest.approx(0.995)
+
+    # Group E
+    assert trial.moe_saturated_during_training == ["layers.0.experts.1"]
+    assert d["moe_saturated_during_training"] == ["layers.0.experts.1"]
+    assert trial.moe_n_targets == 4
+    assert d["moe_n_targets"] == 4
+    assert trial.moe_n_saturated == 1
+    assert d["moe_n_saturated"] == 1
+    assert trial.moe_n_skipped == 2
+    assert d["moe_n_skipped"] == 2
+
+    # Group F
+    assert trial.dim_final_used_fraction == pytest.approx(0.41)
+    assert d["dim_final_used_fraction"] == pytest.approx(0.41)
+    assert trial.dim_final_null_fraction == pytest.approx(0.59)
+    assert d["dim_final_null_fraction"] == pytest.approx(0.59)
+    assert trial.dim_null_recruitment_from_baseline == pytest.approx(0.03)
+    assert d["dim_null_recruitment_from_baseline"] == pytest.approx(0.03)
+    assert trial.benchmark_baseline == {"overall": 0.72, "math": 0.65}
+    assert d["benchmark_baseline"] == {"overall": 0.72, "math": 0.65}
+    assert trial.benchmark_post == {"overall": 0.78, "math": 0.71}
+    assert d["benchmark_post"] == {"overall": 0.78, "math": 0.71}
+    # Computed benchmark_delta
+    assert d["benchmark_delta"]["overall"] == pytest.approx(0.06)
+    assert d["benchmark_delta"]["math"] == pytest.approx(0.06)
+
+
+def test_diagnostic_fields_none_when_absent(tmp_path):
+    """All diagnostic fields are None for models that don't produce them."""
+    service, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.4,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+        ),
+    ])
+    result = service.validate(
+        model_path=model_dir, dataset_path=data_file,
+        eval_dataset_path=None, trials=1, base_seed=1,
+    )
+    trial = result.trial_results[0]
+    d = trial.to_dict()
+
+    assert trial.mode_connectivity_barrier is None
+    assert trial.degeneration_max_ngram_repeat is None
+    assert trial.rss_final_cosine is None
+    assert trial.per_layer_signal_ranks is None
+    assert trial.inference_per_layer_cka is None
+    assert trial.moe_saturated_during_training is None
+    assert trial.moe_n_targets is None
+    assert trial.dim_final_used_fraction is None
+    assert trial.benchmark_baseline is None
+    assert trial.benchmark_post is None
+    assert "benchmark_delta" not in d
 
 
 def test_phase5_cka_shift_inference_healthy(tmp_path, monkeypatch):

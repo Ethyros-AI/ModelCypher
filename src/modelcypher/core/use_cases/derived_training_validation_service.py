@@ -139,6 +139,32 @@ class DerivedTrainingTrial:
     argmax_preservation_certified: bool | None
     argmax_n_correct_flipped: int | None
     moe_router_stability: float | None
+    # Mode connectivity (G4 signal)
+    mode_connectivity_barrier: float | None
+    mode_connectivity_normalized_barrier: float | None
+    mode_connectivity_method: str | None
+    # Train-time degeneration (generation during training)
+    degeneration_max_ngram_repeat: float | None
+    degeneration_mean_ngram_repeat: float | None
+    degeneration_ngram_order: int | None
+    # RSS similarity (representation coherence)
+    rss_final_cosine: float | None
+    rss_final_spearman: float | None
+    rss_final_top1: float | None
+    # Signal ranks and inference per-layer CKA
+    per_layer_signal_ranks: dict[int, dict[str, float | int]] | None
+    inference_per_layer_cka: dict[int, float] | None
+    # MoE diagnostics
+    moe_saturated_during_training: list[str] | None
+    moe_n_targets: int | None
+    moe_n_saturated: int | None
+    moe_n_skipped: int | None
+    # Dimensional recruitment and benchmarks
+    dim_final_used_fraction: float | None
+    dim_final_null_fraction: float | None
+    dim_null_recruitment_from_baseline: float | None
+    benchmark_baseline: dict[str, float] | None
+    benchmark_post: dict[str, float] | None
     structural_passed: bool
     inference_passed: bool
     cooccurrence_class: str
@@ -213,6 +239,42 @@ class DerivedTrainingTrial:
             "argmax_preservation_certified": self.argmax_preservation_certified,
             "argmax_n_correct_flipped": self.argmax_n_correct_flipped,
             "moe_router_stability": self.moe_router_stability,
+            "mode_connectivity_barrier": self.mode_connectivity_barrier,
+            "mode_connectivity_normalized_barrier": (
+                self.mode_connectivity_normalized_barrier
+            ),
+            "mode_connectivity_method": self.mode_connectivity_method,
+            "degeneration_max_ngram_repeat": self.degeneration_max_ngram_repeat,
+            "degeneration_mean_ngram_repeat": self.degeneration_mean_ngram_repeat,
+            "degeneration_ngram_order": self.degeneration_ngram_order,
+            "rss_final_cosine": self.rss_final_cosine,
+            "rss_final_spearman": self.rss_final_spearman,
+            "rss_final_top1": self.rss_final_top1,
+            "per_layer_signal_ranks": self.per_layer_signal_ranks,
+            "inference_per_layer_cka": self.inference_per_layer_cka,
+            "moe_saturated_during_training": self.moe_saturated_during_training,
+            "moe_n_targets": self.moe_n_targets,
+            "moe_n_saturated": self.moe_n_saturated,
+            "moe_n_skipped": self.moe_n_skipped,
+            "dim_final_used_fraction": self.dim_final_used_fraction,
+            "dim_final_null_fraction": self.dim_final_null_fraction,
+            "dim_null_recruitment_from_baseline": (
+                self.dim_null_recruitment_from_baseline
+            ),
+            "benchmark_baseline": self.benchmark_baseline,
+            "benchmark_post": self.benchmark_post,
+            **(
+                {
+                    "benchmark_delta": {
+                        k: self.benchmark_post[k]
+                        - self.benchmark_baseline.get(k, 0.0)
+                        for k in self.benchmark_post
+                    },
+                }
+                if self.benchmark_baseline is not None
+                and self.benchmark_post is not None
+                else {}
+            ),
             "structural_passed": self.structural_passed,
             "inference_passed": self.inference_passed,
             "cooccurrence_class": self.cooccurrence_class,
@@ -788,6 +850,89 @@ class DerivedTrainingValidationService:
             else None
         )
 
+        # --- Extract remaining diagnostic fields (visibility-only) ---
+
+        def _opt_float(name: str) -> float | None:
+            v = getattr(train_result, name, None)
+            return float(v) if v is not None else None
+
+        def _opt_int(name: str) -> int | None:
+            v = getattr(train_result, name, None)
+            return int(v) if v is not None else None
+
+        def _opt_str(name: str) -> str | None:
+            v = getattr(train_result, name, None)
+            return str(v) if v is not None else None
+
+        # Group A: Mode connectivity
+        mc_barrier = _opt_float("mode_connectivity_barrier")
+        mc_norm_barrier = _opt_float("mode_connectivity_normalized_barrier")
+        mc_method = _opt_str("mode_connectivity_method")
+
+        # Group B: Train-time degeneration
+        degen_max = _opt_float("degeneration_max_ngram_repeat")
+        degen_mean = _opt_float("degeneration_mean_ngram_repeat")
+        degen_order = _opt_int("degeneration_ngram_order")
+
+        # Group C: RSS similarity
+        rss_cos = _opt_float("rss_final_cosine")
+        rss_spear = _opt_float("rss_final_spearman")
+        rss_top1 = _opt_float("rss_final_top1")
+
+        # Group D: Signal ranks and inference per-layer CKA
+        signal_ranks_raw = getattr(train_result, "per_layer_signal_ranks", None)
+        per_layer_signal_ranks_out: dict[int, dict[str, float | int]] | None = None
+        if signal_ranks_raw is not None:
+            per_layer_signal_ranks_out = {
+                int(layer): {
+                    str(metric): _normalize_metric_value(metric_val)
+                    for metric, metric_val in dict(layer_metrics).items()
+                }
+                for layer, layer_metrics in dict(signal_ranks_raw).items()
+            }
+
+        inference_per_layer_cka_raw = getattr(
+            train_result, "inference_per_layer_cka", None,
+        )
+        inference_per_layer_cka_out: dict[int, float] | None = None
+        if inference_per_layer_cka_raw is not None:
+            inference_per_layer_cka_out = {
+                int(layer): float(score)
+                for layer, score in dict(inference_per_layer_cka_raw).items()
+            }
+
+        # Group E: MoE diagnostics
+        moe_sat_raw = getattr(train_result, "moe_saturated_during_training", None)
+        moe_sat_list: list[str] | None = (
+            [str(s) for s in moe_sat_raw] if moe_sat_raw is not None else None
+        )
+        moe_targets_raw = getattr(train_result, "moe_targets", None)
+        moe_n_targets: int | None = None
+        moe_n_saturated: int | None = None
+        moe_n_skipped: int | None = None
+        if moe_targets_raw is not None:
+            moe_n_targets = int(moe_targets_raw.n_trainable_experts)
+            moe_n_saturated = len(moe_targets_raw.saturated)
+            moe_n_skipped = len(moe_targets_raw.skipped)
+
+        # Group F: Dimensional recruitment and benchmarks
+        dim_used = _opt_float("dim_final_used_fraction")
+        dim_null = _opt_float("dim_final_null_fraction")
+        dim_recruit = _opt_float("dim_null_recruitment_from_baseline")
+
+        bench_base_raw = getattr(train_result, "benchmark_baseline", None)
+        bench_base: dict[str, float] | None = (
+            {str(k): float(v) for k, v in dict(bench_base_raw).items()}
+            if bench_base_raw is not None
+            else None
+        )
+        bench_post_raw = getattr(train_result, "benchmark_post", None)
+        bench_post: dict[str, float] | None = (
+            {str(k): float(v) for k, v in dict(bench_post_raw).items()}
+            if bench_post_raw is not None
+            else None
+        )
+
         return DerivedTrainingTrial(
             trial_index=index,
             seed=seed,
@@ -875,6 +1020,26 @@ class DerivedTrainingValidationService:
                 if getattr(train_result, "moe_router_stability", None) is not None
                 else None
             ),
+            mode_connectivity_barrier=mc_barrier,
+            mode_connectivity_normalized_barrier=mc_norm_barrier,
+            mode_connectivity_method=mc_method,
+            degeneration_max_ngram_repeat=degen_max,
+            degeneration_mean_ngram_repeat=degen_mean,
+            degeneration_ngram_order=degen_order,
+            rss_final_cosine=rss_cos,
+            rss_final_spearman=rss_spear,
+            rss_final_top1=rss_top1,
+            per_layer_signal_ranks=per_layer_signal_ranks_out,
+            inference_per_layer_cka=inference_per_layer_cka_out,
+            moe_saturated_during_training=moe_sat_list,
+            moe_n_targets=moe_n_targets,
+            moe_n_saturated=moe_n_saturated,
+            moe_n_skipped=moe_n_skipped,
+            dim_final_used_fraction=dim_used,
+            dim_final_null_fraction=dim_null,
+            dim_null_recruitment_from_baseline=dim_recruit,
+            benchmark_baseline=bench_base,
+            benchmark_post=bench_post,
             structural_passed=structural_passed,
             inference_passed=inference_passed,
             cooccurrence_class=cooccurrence_class,

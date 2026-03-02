@@ -70,6 +70,14 @@ def test_build_report_includes_dual_verdict_fields():
                     "online_eval_first_pre_degraded_epoch": 2,
                     "online_eval_first_post_degraded_epoch": 3,
                     "moe_router_stability": 0.00456,
+                    "mode_connectivity_barrier": 0.015,
+                    "mode_connectivity_normalized_barrier": 0.003,
+                    "mode_connectivity_method": "linear_interpolation",
+                    "degeneration_max_ngram_repeat": 0.12,
+                    "degeneration_mean_ngram_repeat": 0.05,
+                    "rss_final_cosine": 0.987,
+                    "rss_final_spearman": 0.945,
+                    "dim_null_recruitment_from_baseline": 0.03,
                 },
             ],
         },
@@ -93,3 +101,11 @@ def test_build_report_includes_dual_verdict_fields():
     assert "null_access_min_behavioral_preserved_fraction=0.220000 (layer=7)" in report
     assert "null_observability_max_condition_number=15.500000 (layer=9)" in report
     assert "moe_router_stability=0.004560" in report
+    assert "mode_connectivity_barrier=0.015000" in report
+    assert "mode_connectivity_normalized_barrier=0.003000" in report
+    assert "mode_connectivity_method=linear_interpolation" in report
+    assert "degeneration_max_ngram_repeat=0.120000" in report
+    assert "degeneration_mean_ngram_repeat=0.050000" in report
+    assert "rss_final_cosine=0.987000" in report
+    assert "rss_final_spearman=0.945000" in report
+    assert "dim_null_recruitment_from_baseline=0.030000" in report

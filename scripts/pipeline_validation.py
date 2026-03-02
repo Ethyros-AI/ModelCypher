@@ -274,7 +274,9 @@ def _build_report(
         "online_eval_delta_correct (mean) | max_ngram_repeat_delta (max) | "
         "CKA worst layer | Null-access min preserved | "
         "cka_blindness_ratio (max) | margin_mean_delta (mean) | "
-        "moe_router_stability (mean) |"
+        "moe_router_stability (mean) | "
+        "mode_conn_barrier (max) | rss_cosine (mean) | "
+        "dim_null_recruit (mean) |"
     )
     lines.append(
         "|-------|------------|-----------|-----------|----------------------|"
@@ -283,6 +285,8 @@ def _build_report(
         "----------------|----------------------------|"
         "--------------------------|--------------------------|"
         "-----------------------------|"
+        "------------------------|---------------------|"
+        "------------------------|"
     )
 
     for scale in SCALE_ORDER:
@@ -391,6 +395,36 @@ def _build_report(
             if router_stability_values
             else "n/a"
         )
+        mc_barrier_values = [
+            float(trial["mode_connectivity_barrier"])
+            for trial in trial_results
+            if trial.get("mode_connectivity_barrier") is not None
+        ]
+        mc_barrier_str = (
+            f"{max(mc_barrier_values):.6f}"
+            if mc_barrier_values
+            else "n/a"
+        )
+        rss_cos_values = [
+            float(trial["rss_final_cosine"])
+            for trial in trial_results
+            if trial.get("rss_final_cosine") is not None
+        ]
+        rss_cos_str = (
+            f"{(sum(rss_cos_values) / len(rss_cos_values)):.6f}"
+            if rss_cos_values
+            else "n/a"
+        )
+        dim_recruit_values = [
+            float(trial["dim_null_recruitment_from_baseline"])
+            for trial in trial_results
+            if trial.get("dim_null_recruitment_from_baseline") is not None
+        ]
+        dim_recruit_str = (
+            f"{(sum(dim_recruit_values) / len(dim_recruit_values)):.6f}"
+            if dim_recruit_values
+            else "n/a"
+        )
 
         lines.append(
             f"| {scale} | {structural_status} | {inference_status} | {status} "
@@ -403,7 +437,10 @@ def _build_report(
             f"| {null_access_str} "
             f"| {blindness_str} "
             f"| {margin_delta_str} "
-            f"| {router_stability_str} |"
+            f"| {router_stability_str} "
+            f"| {mc_barrier_str} "
+            f"| {rss_cos_str} "
+            f"| {dim_recruit_str} |"
         )
 
     lines.append("")
@@ -558,6 +595,54 @@ def _build_report(
                 if router_stability is not None:
                     lines.append(
                         f"  - moe_router_stability={float(router_stability):.6f}",
+                    )
+                # Mode connectivity
+                mc_bar = cx.get("mode_connectivity_barrier")
+                if mc_bar is not None:
+                    mc_norm = cx.get("mode_connectivity_normalized_barrier")
+                    mc_meth = cx.get("mode_connectivity_method")
+                    lines.append(
+                        f"  - mode_connectivity_barrier={float(mc_bar):.6f}",
+                    )
+                    if mc_norm is not None:
+                        lines.append(
+                            f"  - mode_connectivity_normalized_barrier="
+                            f"{float(mc_norm):.6f}",
+                        )
+                    if mc_meth is not None:
+                        lines.append(
+                            f"  - mode_connectivity_method={mc_meth}",
+                        )
+                # Train-time degeneration
+                degen_max = cx.get("degeneration_max_ngram_repeat")
+                if degen_max is not None:
+                    lines.append(
+                        f"  - degeneration_max_ngram_repeat="
+                        f"{float(degen_max):.6f}",
+                    )
+                degen_mean = cx.get("degeneration_mean_ngram_repeat")
+                if degen_mean is not None:
+                    lines.append(
+                        f"  - degeneration_mean_ngram_repeat="
+                        f"{float(degen_mean):.6f}",
+                    )
+                # RSS similarity
+                rss_cos = cx.get("rss_final_cosine")
+                if rss_cos is not None:
+                    lines.append(
+                        f"  - rss_final_cosine={float(rss_cos):.6f}",
+                    )
+                rss_spear = cx.get("rss_final_spearman")
+                if rss_spear is not None:
+                    lines.append(
+                        f"  - rss_final_spearman={float(rss_spear):.6f}",
+                    )
+                # Dimensional recruitment
+                dim_recruit = cx.get("dim_null_recruitment_from_baseline")
+                if dim_recruit is not None:
+                    lines.append(
+                        f"  - dim_null_recruitment_from_baseline="
+                        f"{float(dim_recruit):.6f}",
                     )
             lines.append("")
 

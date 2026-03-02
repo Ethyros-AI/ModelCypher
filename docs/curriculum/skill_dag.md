@@ -67,13 +67,14 @@ Consider generating `phase_mt_only.jsonl` for isolated MT training before recogn
 ### Node: `disjunctive_syllogism`
 **Formal statement:** (P∨Q, ¬P) ⊢ Q
 **Natural language:** Given "P or Q" and P is false, conclude Q.
-**Prerequisites:** Understanding of negation and disjunction semantics. No direct MP
-dependency.
+**Prerequisites:** None — root node (depth 0), parallel to `modus_ponens`.
 **Proof of independence from MP:** DS is proven by disjunction elimination: case 1 (P is
 true) leads to contradiction with ¬P; case 2 (Q is true) gives Q directly. This proof
-does not invoke MP. DS and MP are independent inference rules.
-**DAG position:** Parallel to `modus_tollens` in the logic branch. Can be taught after
-`modus_ponens` is consolidated, but does not require MT.
+does not invoke MP. DS and MP are independent inference rules with no formal dependency
+between them.
+**DAG position:** Root node alongside `modus_ponens` and `arithmetic_add`. PhaseScheduler
+will teach DS alphabetically after `arithmetic_add` but before `modus_ponens` when both
+have no prerequisites mastered yet. This ordering is formally permissible.
 **Training data:** Present in `data/training/phase3_rule_recognition.jsonl` (mixed)
 **Gap:** No DS-only training file.
 
@@ -111,14 +112,17 @@ phases 1-6. Should be made explicit.
 ---
 
 ### Node: `chain_reasoning`
-**Formal statement:** Multi-step deductions combining HS + MP + MT/DS
+**Formal statement:** Multi-step deductions combining HS + MP + MT + DS + UI
 **Natural language:** Given a sequence of premises, derive a conclusion through multiple
 rule applications without being told which rules to use.
-**Prerequisites:** `hypothetical_syllogism`, `modus_tollens`, `disjunctive_syllogism`
+**Prerequisites:** `hypothetical_syllogism`, `modus_tollens`, `disjunctive_syllogism`,
+`universal_instantiation`
 **Training data:** `data/training/phase5_benchmark_failures_base.jsonl`,
 `data/training/phase6_benchmark_failures_p1_5.jsonl` (failure-targeted)
 **Proof of dependency:** Chain reasoning is by definition a composition of component rules.
-A model cannot chain rules it has not consolidated.
+Universal instantiation is included because the 1p2b training data contains quantifier
+reasoning chains (∀x P(x) → P(a) compositions). A model cannot chain rules it has not
+consolidated.
 
 ---
 
@@ -151,22 +155,21 @@ modus_ponens ──────────────────────�
     │                                                        │
     ├──► hypothetical_syllogism ─────────────────────────────┤
     │                                                        │
-    └──► universal_instantiation                             │
+    └──► universal_instantiation ────────────────────────────┤
 
-disjunctive_syllogism (parallel, no MP dep) ─────────────────┤
+disjunctive_syllogism (root, no prerequisites) ──────────────┤
 
 {modus_ponens, modus_tollens, disjunctive_syllogism}
     └──► rule_recognition ──► concise_reasoning
 ```
 
 **Training order (topological sort):**
-1. `modus_ponens`
-2. `modus_tollens` ∥ `hypothetical_syllogism` ∥ `disjunctive_syllogism` (parallel, all
-   depend only on MP)
-3. `universal_instantiation` (can run parallel with 2)
-4. `rule_recognition` (requires 1+2+3 consolidated)
-5. `concise_reasoning` (requires rule_recognition)
-6. `chain_reasoning` (requires all above)
+1. `disjunctive_syllogism` ∥ `modus_ponens` (both depth 0, independent roots)
+2. `modus_tollens` ∥ `hypothetical_syllogism` ∥ `universal_instantiation`
+   (all depend only on MP, depth 1)
+3. `rule_recognition` (requires MP + MT + DS consolidated, depth 2)
+4. `concise_reasoning` (requires rule_recognition, depth 3)
+5. `chain_reasoning` (requires HS + MT + DS + UI, depth 2 — parallel with rule_recognition)
 
 ---
 
@@ -205,9 +208,12 @@ iff C × B = A. Checking the result requires multiplication.
 **Formal statement:** Given a natural language description, identify the operation and
 compute a single-operation answer.
 **Example:** "Sarah has 5 apples. She buys 3 more. How many does she have?" → addition.
-**Prerequisites:** `arithmetic_add` ∥ `arithmetic_multiply` ∥ `arithmetic_divide` (one
-arithmetic op mastered) AND `modus_ponens` (to apply the rule "if context says buy more,
-add")
+**Prerequisites:** `arithmetic_add` AND `modus_ponens`
+**Why arithmetic_add specifically (not any arithmetic op):** The DAG model requires a
+specific node name as prerequisite, not a disjunction. `arithmetic_add` is the minimal
+arithmetic prerequisite — it is the most fundamental operation and required by all
+higher arithmetic. A model that cannot add cannot reliably solve even the simplest word
+problem.
 **Cross-branch dependency:** This is the junction of the logic branch and math branch.
 The model must both know the arithmetic operation AND apply the logical inference "context
 implies operation." Both branches must be in `reinforce` regime before this node.
@@ -270,7 +276,7 @@ arithmetic_add ──► arithmetic_multiply ──► arithmetic_divide
 ## Cross-Branch Junction
 
 `word_problem_1step` requires BOTH:
-- Math branch: at least one arithmetic operation in `reinforce` regime
+- Math branch: `arithmetic_add` in `reinforce` regime
 - Logic branch: `modus_ponens` in `reinforce` regime
 
 `word_problem_multi` requires BOTH:

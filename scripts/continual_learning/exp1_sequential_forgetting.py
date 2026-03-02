@@ -489,6 +489,7 @@ def main() -> None:
     base_capacity = capacity_service.analyze(
         model_path=str(current_model_path),
         checkpoint_path=run_dir / "capacity_checkpoint.json",
+        resume=True,
     )
     base_mean_null_dim = (
         sum(r.null_space_dim_f32 for r in base_capacity.layer_reports)

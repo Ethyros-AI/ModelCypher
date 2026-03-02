@@ -62,16 +62,20 @@ def evaluate_skill_mastery(
 
     n_total = len(problems)
     if n_total < 50:
+        # Clopper-Pearson CI at n=50, alpha=1/n=0.02 gives ~±14% at 95% confidence.
+        # Below 50 samples the CI is too wide for reliable regime classification.
         logger.warning(
             "Skill '%s' eval set has only %d samples (minimum 50 for reliable CI). "
             "Results will have wide uncertainty bounds.",
             skill.name, n_total,
         )
 
-    # Import backend lazily — heavy, only needed when actually running eval
-    from modelcypher.adapters.mlx_inference_adapter import MLXInferenceAdapter
+    # Use the canonical inference path: InferenceEngine via Backend protocol.
+    # max_tokens=None → InferenceEngine._derive_max_tokens() auto-derives from
+    # context limit and prompt length.
+    from modelcypher.adapters.inference_engine import get_inference_engine
 
-    adapter = MLXInferenceAdapter(model_path=model_path)
+    engine = get_inference_engine()
     n_correct = 0
 
     for item in problems:
@@ -92,8 +96,8 @@ def evaluate_skill_mastery(
                 expected = tokens[-1].strip().lower()
 
         try:
-            response = adapter.generate(prompt, max_tokens=64)
-            predicted = response.strip().lower()
+            result = engine.run(model=model_path, prompt=prompt, max_tokens=None)
+            predicted = result.response.strip().lower()
             if expected and expected in predicted:
                 n_correct += 1
         except Exception:

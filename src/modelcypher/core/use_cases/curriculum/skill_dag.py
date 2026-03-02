@@ -185,7 +185,7 @@ def build_curriculum_dag() -> SkillDAG:
         SkillNode(
             name="disjunctive_syllogism",
             formal_statement="(P∨Q, ¬P) ⊢ Q",
-            prerequisites=("modus_ponens",),
+            prerequisites=(),
             train_files=(
                 # TODO: generate data/training/disj_syllogism_train.jsonl
             ),
@@ -194,8 +194,8 @@ def build_curriculum_dag() -> SkillDAG:
             ),
             branch="logic",
             notes=(
-                "Provably independent of MT (different elimination rule). "
-                "Parallel to MT in the DAG; both depend only on MP."
+                "Proven independent of MP: proof uses disjunction elimination, not MP. "
+                "Root node (depth 0) parallel to modus_ponens and arithmetic_add."
             ),
         ),
 
