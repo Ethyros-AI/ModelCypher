@@ -166,9 +166,7 @@ class _MLXTrainingAdapterDiagnosticsMixin:
 
     def _iter_nb_lora_modules(self, model):
         """Yield (layer_key, NBLoRALinear) pairs from model tree."""
-        base = getattr(model, "model", model)
-        if not hasattr(base, "layers"):
-            return
+        base, key_prefix = self._get_model_base(model)
 
         for layer_idx, layer in enumerate(base.layers):
             attn = getattr(layer, "self_attn", None)
@@ -176,7 +174,7 @@ class _MLXTrainingAdapterDiagnosticsMixin:
                 for proj_name in ("q_proj", "k_proj", "v_proj", "o_proj"):
                     proj = getattr(attn, proj_name, None)
                     if isinstance(proj, NBLoRALinear):
-                        key = f"model.layers.{layer_idx}.self_attn.{proj_name}.weight"
+                        key = f"{key_prefix}.{layer_idx}.self_attn.{proj_name}.weight"
                         yield key, proj
 
             mlp = getattr(layer, "mlp", None)
@@ -184,7 +182,7 @@ class _MLXTrainingAdapterDiagnosticsMixin:
                 for proj_name in ("up_proj", "down_proj", "gate_proj"):
                     proj = getattr(mlp, proj_name, None)
                     if isinstance(proj, NBLoRALinear):
-                        key = f"model.layers.{layer_idx}.mlp.{proj_name}.weight"
+                        key = f"{key_prefix}.{layer_idx}.mlp.{proj_name}.weight"
                         yield key, proj
 
                 experts = getattr(mlp, "experts", None)
@@ -201,7 +199,7 @@ class _MLXTrainingAdapterDiagnosticsMixin:
                             proj = getattr(expert, proj_name, None)
                             if isinstance(proj, NBLoRALinear):
                                 key = (
-                                    f"model.layers.{layer_idx}.mlp.experts.{expert_idx}."
+                                    f"{key_prefix}.{layer_idx}.mlp.experts.{expert_idx}."
                                     f"{proj_name}.weight"
                                 )
                                 yield key, proj
@@ -212,7 +210,7 @@ class _MLXTrainingAdapterDiagnosticsMixin:
                         proj = getattr(shared_expert, proj_name, None)
                         if isinstance(proj, NBLoRALinear):
                             key = (
-                                f"model.layers.{layer_idx}.mlp.shared_expert."
+                                f"{key_prefix}.{layer_idx}.mlp.shared_expert."
                                 f"{proj_name}.weight"
                             )
                             yield key, proj
@@ -792,10 +790,17 @@ class _MLXTrainingAdapterDiagnosticsMixin:
     def _resolve_parent_and_attr(self, model, layer_key: str) -> tuple[Any, str]:
         path_parts = layer_key.replace(".weight", "").split(".")
         obj = model
-        for part in path_parts[:-1]:
+        for i, part in enumerate(path_parts[:-1]):
             if part.isdigit():
                 obj = obj[int(part)]
             else:
+                # For multimodal models (e.g. Qwen3.5), safetensors keys start with
+                # "model." as a HuggingFace serialization prefix, but the Python
+                # attribute "model" may be None. When that occurs at position 0,
+                # skip the prefix and continue traversal from the root object.
+                next_obj = getattr(obj, part, None)
+                if next_obj is None and i == 0 and part == "model":
+                    continue
                 obj = getattr(obj, part)
         return obj, path_parts[-1]
 

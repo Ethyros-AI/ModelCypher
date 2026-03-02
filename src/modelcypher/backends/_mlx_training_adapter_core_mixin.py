@@ -186,6 +186,29 @@ class _MLXTrainingAdapterCoreMixin:
         return dataset
 
     @staticmethod
+    def _get_model_base(model) -> tuple[Any, str]:
+        """Return (layers_module, key_prefix) for the model architecture.
+
+        Handles two layouts:
+        - Standard transformer (Qwen3, LFM2, etc.): model.model.layers
+          → prefix = "model.layers"
+        - Multimodal language model (Qwen3.5): model.language_model.layers
+          → prefix = "model.language_model.layers"
+
+        The key_prefix is used to construct weight keys matching the
+        safetensors serialization format (HuggingFace convention).
+        """
+        inner = getattr(model, "model", None)
+        if inner is not None and hasattr(inner, "layers"):
+            return inner, "model.layers"
+        lm = getattr(model, "language_model", None)
+        if lm is not None and hasattr(lm, "layers"):
+            return lm, "model.language_model.layers"
+        if hasattr(model, "layers"):
+            return model, "model.layers"
+        raise ValueError("Model has no .layers attribute — unsupported architecture")
+
+    @staticmethod
     def _dequantize_weight(proj) -> Any:
         """Return the full-precision weight matrix for a projection.
 
@@ -208,6 +231,7 @@ class _MLXTrainingAdapterCoreMixin:
         self,
         layer_idx: int,
         layer: Any,
+        key_prefix: str = "model.layers",
     ) -> Iterator[tuple[str, Any]]:
         """Yield `(weight_key, projection_module)` for analyzable layer weights."""
         attn = getattr(layer, "self_attn", None)
@@ -215,7 +239,7 @@ class _MLXTrainingAdapterCoreMixin:
             for proj_name in ("q_proj", "k_proj", "v_proj", "o_proj"):
                 proj = getattr(attn, proj_name, None)
                 if proj is not None and hasattr(proj, "weight"):
-                    key = f"model.layers.{layer_idx}.self_attn.{proj_name}.weight"
+                    key = f"{key_prefix}.{layer_idx}.self_attn.{proj_name}.weight"
                     yield key, proj
 
         mlp = getattr(layer, "mlp", None)
@@ -225,12 +249,12 @@ class _MLXTrainingAdapterCoreMixin:
         for proj_name in ("up_proj", "down_proj", "gate_proj"):
             proj = getattr(mlp, proj_name, None)
             if proj is not None and hasattr(proj, "weight"):
-                key = f"model.layers.{layer_idx}.mlp.{proj_name}.weight"
+                key = f"{key_prefix}.{layer_idx}.mlp.{proj_name}.weight"
                 yield key, proj
 
         router_gate = getattr(mlp, "gate", None)
         if router_gate is not None and hasattr(router_gate, "weight"):
-            key = f"model.layers.{layer_idx}.mlp.gate.weight"
+            key = f"{key_prefix}.{layer_idx}.mlp.gate.weight"
             yield key, router_gate
 
         # Packed SwitchGLU experts: mlp.switch_mlp has SwitchLinear modules
@@ -248,7 +272,7 @@ class _MLXTrainingAdapterCoreMixin:
                 for expert_idx in range(num_experts):
                     expert_slice = packed_w[expert_idx]
                     key = (
-                        f"model.layers.{layer_idx}.mlp.experts.{expert_idx}."
+                        f"{key_prefix}.{layer_idx}.mlp.experts.{expert_idx}."
                         f"{proj_name}.weight"
                     )
                     yield key, _VirtualProjection(expert_slice)
@@ -272,7 +296,7 @@ class _MLXTrainingAdapterCoreMixin:
                     if proj is None or not hasattr(proj, "weight"):
                         continue
                     key = (
-                        f"model.layers.{layer_idx}.mlp.experts.{expert_idx}."
+                        f"{key_prefix}.{layer_idx}.mlp.experts.{expert_idx}."
                         f"{proj_name}.weight"
                     )
                     yield key, proj
@@ -284,14 +308,14 @@ class _MLXTrainingAdapterCoreMixin:
                 if proj is None or not hasattr(proj, "weight"):
                     continue
                 key = (
-                    f"model.layers.{layer_idx}.mlp.shared_expert."
+                    f"{key_prefix}.{layer_idx}.mlp.shared_expert."
                     f"{proj_name}.weight"
                 )
                 yield key, proj
 
         shared_expert_gate = getattr(mlp, "shared_expert_gate", None)
         if shared_expert_gate is not None and hasattr(shared_expert_gate, "weight"):
-            key = f"model.layers.{layer_idx}.mlp.shared_expert_gate.weight"
+            key = f"{key_prefix}.{layer_idx}.mlp.shared_expert_gate.weight"
             yield key, shared_expert_gate
 
     def _compute_layer_geometry_for_weight(
@@ -373,13 +397,10 @@ class _MLXTrainingAdapterCoreMixin:
             ``analyze_weight_geometries_for_keys_streaming()`` for subsets.
         """
         weights: dict[str, Any] = {}
-        base = getattr(model, "model", model)
-
-        if not hasattr(base, "layers"):
-            raise ValueError("Model has no .layers attribute — unsupported architecture")
+        base, key_prefix = self._get_model_base(model)
 
         for layer_idx, layer in enumerate(base.layers):
-            for key, proj in self._iter_layer_weight_projections(layer_idx, layer):
+            for key, proj in self._iter_layer_weight_projections(layer_idx, layer, key_prefix):
                 weights[key] = self._dequantize_weight(proj)
 
         logger.info(
@@ -420,9 +441,7 @@ class _MLXTrainingAdapterCoreMixin:
             compute_layer_geometry_randomized,
         )
 
-        base = getattr(model, "model", model)
-        if not hasattr(base, "layers"):
-            raise ValueError("Model has no .layers attribute — unsupported architecture")
+        base, key_prefix = self._get_model_base(model)
 
         geometries: dict[str, "LayerGeometry"] = {}
         rng_kwargs = randomized_kwargs or {}
@@ -431,7 +450,7 @@ class _MLXTrainingAdapterCoreMixin:
         analyzed = 0
 
         for layer_idx, layer in enumerate(base.layers):
-            for key, proj in self._iter_layer_weight_projections(layer_idx, layer):
+            for key, proj in self._iter_layer_weight_projections(layer_idx, layer, key_prefix):
                 if self._analyze_projection_geometry(
                     key=key,
                     proj=proj,
@@ -884,7 +903,7 @@ class _MLXTrainingAdapterCoreMixin:
         hidden_states_mean: list[dict[int, Any]] = []  # per sample: {layer: [hidden]}
         hidden_states_full: list[dict[int, Any]] = []  # per sample: {layer: [seq, hidden]}
 
-        base = getattr(model, "model", model)
+        base, _ = self._get_model_base(model)
         for idx in sample_indices:
             s = paired_dataset[idx]
             tokens = s["tokens"][:max_seq_length].reshape(1, -1)

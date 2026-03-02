@@ -69,6 +69,7 @@ def test_build_report_includes_dual_verdict_fields():
                     "null_observability_max_condition_layer": 9,
                     "online_eval_first_pre_degraded_epoch": 2,
                     "online_eval_first_post_degraded_epoch": 3,
+                    "moe_router_stability": 0.00456,
                 },
             ],
         },
@@ -91,3 +92,4 @@ def test_build_report_includes_dual_verdict_fields():
     assert "cooccurrence_class=cka_shift_without_inference_degradation" in report
     assert "null_access_min_behavioral_preserved_fraction=0.220000 (layer=7)" in report
     assert "null_observability_max_condition_number=15.500000 (layer=9)" in report
+    assert "moe_router_stability=0.004560" in report

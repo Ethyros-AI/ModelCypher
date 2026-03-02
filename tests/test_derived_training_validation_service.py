@@ -57,6 +57,7 @@ class _FakeTrainResult:
     max_effective_gain_ratio: float | None = None
     epoch_metrics: list[dict[str, object]] | None = None
     seq_length_used: int = 64
+    moe_router_stability: float | None = None
     adapter_path: str | None = "adapter-path"
 
 
@@ -398,6 +399,48 @@ def test_trial_to_dict_includes_adapter_saturation(tmp_path):
     d = result.trial_results[0].to_dict()
     assert "adapter_saturation_median_ratio" in d
     assert d["adapter_saturation_median_ratio"] == pytest.approx(0.75)
+
+
+def test_moe_router_stability_round_trips_through_trial(tmp_path):
+    """moe_router_stability extracted from train result and serialized in to_dict()."""
+    service, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.4,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+            moe_router_stability=0.00123,
+        ),
+    ])
+    result = service.validate(
+        model_path=model_dir, dataset_path=data_file,
+        eval_dataset_path=None, trials=1, base_seed=1,
+    )
+    trial = result.trial_results[0]
+    assert trial.moe_router_stability == pytest.approx(0.00123)
+    d = trial.to_dict()
+    assert "moe_router_stability" in d
+    assert d["moe_router_stability"] == pytest.approx(0.00123)
+
+
+def test_moe_router_stability_none_when_absent(tmp_path):
+    """moe_router_stability is None for non-MoE models."""
+    service, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.4,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+        ),
+    ])
+    result = service.validate(
+        model_path=model_dir, dataset_path=data_file,
+        eval_dataset_path=None, trials=1, base_seed=1,
+    )
+    trial = result.trial_results[0]
+    assert trial.moe_router_stability is None
+    d = trial.to_dict()
+    assert d["moe_router_stability"] is None
 
 
 def test_phase5_cka_shift_inference_healthy(tmp_path, monkeypatch):

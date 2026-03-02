@@ -138,6 +138,7 @@ class DerivedTrainingTrial:
     argmax_cert_gap: float | None
     argmax_preservation_certified: bool | None
     argmax_n_correct_flipped: int | None
+    moe_router_stability: float | None
     structural_passed: bool
     inference_passed: bool
     cooccurrence_class: str
@@ -211,6 +212,7 @@ class DerivedTrainingTrial:
             "argmax_cert_gap": self.argmax_cert_gap,
             "argmax_preservation_certified": self.argmax_preservation_certified,
             "argmax_n_correct_flipped": self.argmax_n_correct_flipped,
+            "moe_router_stability": self.moe_router_stability,
             "structural_passed": self.structural_passed,
             "inference_passed": self.inference_passed,
             "cooccurrence_class": self.cooccurrence_class,
@@ -866,6 +868,11 @@ class DerivedTrainingValidationService:
             argmax_n_correct_flipped=(
                 phase5_metrics.argmax_n_correct_flipped
                 if phase5_metrics is not None
+                else None
+            ),
+            moe_router_stability=(
+                float(getattr(train_result, "moe_router_stability", None))
+                if getattr(train_result, "moe_router_stability", None) is not None
                 else None
             ),
             structural_passed=structural_passed,

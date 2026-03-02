@@ -273,7 +273,8 @@ def _build_report(
         "| Inference pass/fail | Composite pass/fail | "
         "online_eval_delta_correct (mean) | max_ngram_repeat_delta (max) | "
         "CKA worst layer | Null-access min preserved | "
-        "cka_blindness_ratio (max) | margin_mean_delta (mean) |"
+        "cka_blindness_ratio (max) | margin_mean_delta (mean) | "
+        "moe_router_stability (mean) |"
     )
     lines.append(
         "|-------|------------|-----------|-----------|----------------------|"
@@ -281,6 +282,7 @@ def _build_report(
         "----------------------------------|----------------------------|"
         "----------------|----------------------------|"
         "--------------------------|--------------------------|"
+        "-----------------------------|"
     )
 
     for scale in SCALE_ORDER:
@@ -379,6 +381,16 @@ def _build_report(
             if margin_delta_values
             else "n/a"
         )
+        router_stability_values = [
+            float(trial["moe_router_stability"])
+            for trial in trial_results
+            if trial.get("moe_router_stability") is not None
+        ]
+        router_stability_str = (
+            f"{(sum(router_stability_values) / len(router_stability_values)):.6f}"
+            if router_stability_values
+            else "n/a"
+        )
 
         lines.append(
             f"| {scale} | {structural_status} | {inference_status} | {status} "
@@ -390,7 +402,8 @@ def _build_report(
             f"| {cka_worst_str} "
             f"| {null_access_str} "
             f"| {blindness_str} "
-            f"| {margin_delta_str} |"
+            f"| {margin_delta_str} "
+            f"| {router_stability_str} |"
         )
 
     lines.append("")
@@ -540,6 +553,11 @@ def _build_report(
                 if margin_flipped is not None:
                     lines.append(
                         f"  - margin_n_flipped_sign={int(margin_flipped)}",
+                    )
+                router_stability = cx.get("moe_router_stability")
+                if router_stability is not None:
+                    lines.append(
+                        f"  - moe_router_stability={float(router_stability):.6f}",
                     )
             lines.append("")
 
