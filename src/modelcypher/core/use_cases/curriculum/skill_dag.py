@@ -168,8 +168,7 @@ def build_curriculum_dag() -> SkillDAG:
             formal_statement="(P→Q, ¬Q) ⊢ ¬P",
             prerequisites=("modus_ponens",),
             train_files=(
-                # Phase 3 is mixed recognition; no MT-only train file yet.
-                # TODO: generate data/training/modus_tollens_train.jsonl
+                "data/training/modus_tollens_train.jsonl",
             ),
             eval_files=(
                 "data/eval/modus_tollens_eval.jsonl",
@@ -186,7 +185,7 @@ def build_curriculum_dag() -> SkillDAG:
             formal_statement="(P∨Q, ¬P) ⊢ Q",
             prerequisites=(),
             train_files=(
-                # TODO: generate data/training/disj_syllogism_train.jsonl
+                "data/training/disj_syllogism_train.jsonl",
             ),
             eval_files=(
                 "data/eval/disjunctive_syllogism_eval.jsonl",
@@ -217,7 +216,7 @@ def build_curriculum_dag() -> SkillDAG:
             formal_statement="(∀x P(x), a in domain) ⊢ P(a)",
             prerequisites=("modus_ponens",),
             train_files=(
-                # TODO: generate data/training/universal_instantiation_train.jsonl
+                "data/training/universal_instantiation_train.jsonl",
             ),
             eval_files=(
                 "data/eval/universal_instantiation_eval.jsonl",
@@ -294,7 +293,7 @@ def build_curriculum_dag() -> SkillDAG:
             formal_statement="Given integers A, B, compute C = A + B.",
             prerequisites=(),
             train_files=(
-                # TODO: generate data/training/arithmetic_add_train.jsonl
+                "data/training/arithmetic_add_train.jsonl",
             ),
             eval_files=(
                 "data/eval/arithmetic_add_eval.jsonl",
@@ -325,7 +324,7 @@ def build_curriculum_dag() -> SkillDAG:
             formal_statement="Given integers A, B (B≠0), compute C = A ÷ B.",
             prerequisites=("arithmetic_multiply",),
             train_files=(
-                # TODO: generate data/training/arithmetic_div_train.jsonl
+                "data/training/arithmetic_div_train.jsonl",
             ),
             eval_files=(
                 "data/eval/arithmetic_divide_eval.jsonl",
