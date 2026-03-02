@@ -1194,6 +1194,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         # Fail-closed: if derivation fails, degen_ngram_order stays None and
         # the degeneration gate is disabled (no underived magic numbers).
         degen_ngram_order: int | None = None
+        readout_erank: float | None = None
         try:
             from modelcypher.core.domain.geometry.perturbation_bound import (
                 compute_readout_effective_rank,
@@ -1204,7 +1205,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
 
             readout_erank = compute_readout_effective_rank(model, self._backend)
             degen_ngram_order = derive_ngram_order(
-                readout_erank, generation_length_words=400,
+                readout_erank, generation_length=400,
             )
             logger.info(
                 "Readout effective rank=%.1f -> n-gram order=%d",
@@ -1460,6 +1461,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             degen_prompts=degen_prompts_for_training,
             degen_baseline_max=degen_baseline_max,
             degen_ngram_order=degen_ngram_order,
+            readout_erank=readout_erank,
             grad_accum_steps=grad_accum_steps,
         )
         training_time_seconds = time.time() - train_start

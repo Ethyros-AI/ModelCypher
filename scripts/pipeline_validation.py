@@ -271,7 +271,7 @@ def _build_report(
     lines.append(
         "| Model | Structural | Inference | Composite | Structural pass/fail "
         "| Inference pass/fail | Composite pass/fail | "
-        "online_eval_delta_correct (mean) | max_4gram_repeat_delta (max) | "
+        "online_eval_delta_correct (mean) | max_ngram_repeat_delta (max) | "
         "CKA worst layer | Null-access min preserved | "
         "cka_blindness_ratio (max) | margin_mean_delta (mean) |"
     )
@@ -314,9 +314,9 @@ def _build_report(
             else "n/a"
         )
         rep_delta_values = [
-            float(trial["max_4gram_repeat_delta"])
+            float(trial["max_ngram_repeat_delta"])
             for trial in trial_results
-            if trial.get("max_4gram_repeat_delta") is not None
+            if trial.get("max_ngram_repeat_delta") is not None
         ]
         rep_delta_str = (
             f"{max(rep_delta_values):+.6f}"
@@ -422,7 +422,7 @@ def _build_report(
                 sat = cx.get("adapter_saturation_median_ratio")
                 cooccurrence = cx.get("cooccurrence_class")
                 delta_correct = cx.get("online_eval_delta_correct")
-                rep_delta = cx.get("max_4gram_repeat_delta")
+                rep_delta = cx.get("max_ngram_repeat_delta")
                 null_access_min = cx.get("null_access_min_behavioral_preserved_fraction")
                 null_access_layer = cx.get("null_access_min_behavioral_preserved_layer")
                 null_obs_max_cond = cx.get("null_observability_max_condition_number")
@@ -446,7 +446,7 @@ def _build_report(
                 if delta_correct is not None:
                     lines.append(f"  - online_eval_delta_correct={int(delta_correct):+d}")
                 if rep_delta is not None:
-                    lines.append(f"  - max_4gram_repeat_delta={float(rep_delta):+.6f}")
+                    lines.append(f"  - max_ngram_repeat_delta={float(rep_delta):+.6f}")
                 if null_access_min is not None:
                     if null_access_layer is None:
                         lines.append(

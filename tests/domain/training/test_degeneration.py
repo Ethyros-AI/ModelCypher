@@ -7,6 +7,7 @@ import pytest
 from modelcypher.core.domain.training.degeneration import (
     derive_ngram_order,
     ngram_repetition_rate,
+    sequence_ngram_repetition_rate,
 )
 
 
@@ -134,3 +135,44 @@ def test_rate_in_unit_interval():
     ]:
         rate = ngram_repetition_rate(text, 4)
         assert 0.0 <= rate <= 1.0
+
+
+# --- sequence_ngram_repetition_rate tests ---
+
+
+def test_sequence_ngram_no_repeats():
+    """Fully unique token sequence has repetition rate 0."""
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    assert sequence_ngram_repetition_rate(tokens, 4) == 0.0
+
+
+def test_sequence_ngram_all_repeats():
+    """Repeating token pattern has high repetition rate."""
+    tokens = [1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4]
+    rate = sequence_ngram_repetition_rate(tokens, 4)
+    assert rate > 0.5
+
+
+def test_sequence_ngram_short():
+    """Sequence shorter than n returns 0."""
+    assert sequence_ngram_repetition_rate([1, 2, 3], 4) == 0.0
+    assert sequence_ngram_repetition_rate([], 4) == 0.0
+
+
+def test_sequence_ngram_matches_text():
+    """sequence_ngram_repetition_rate on word list equals ngram_repetition_rate on text."""
+    text = "a b c d a b c d a b c d"
+    words = text.lower().split()
+    assert sequence_ngram_repetition_rate(words, 4) == ngram_repetition_rate(text, 4)
+
+
+def test_sequence_ngram_unit_interval():
+    """Rate is always in [0, 1]."""
+    for tokens in [
+        list(range(20)),
+        [1, 2, 3, 4] * 10,
+        [42] * 50,
+    ]:
+        for n in [2, 3, 4, 5]:
+            rate = sequence_ngram_repetition_rate(tokens, n)
+            assert 0.0 <= rate <= 1.0

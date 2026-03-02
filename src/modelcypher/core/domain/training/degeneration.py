@@ -21,40 +21,52 @@ Validation against known models:
 from __future__ import annotations
 
 import math
+from collections.abc import Hashable, Sequence
 
 
 def derive_ngram_order(
     readout_effective_rank: float,
-    generation_length_words: int,
+    generation_length: int,
 ) -> int:
     """Derive n-gram order from birthday paradox on readout effective rank.
 
-    Given r_eff effective output modes and T words of generated text,
+    Given r_eff effective output modes and T elements of generated sequence,
     selects smallest n where expected random n-gram collisions are negligible:
     T^2 / (2 * r_eff^n) < 1  =>  n = ceil(2 * log(T) / log(r_eff)).
 
+    Works for both word sequences (text) and token sequences (IDs).
+
     Args:
         readout_effective_rank: Shannon effective rank of readout weight matrix.
-        generation_length_words: Approximate word count per generated response.
+        generation_length: Sequence length (words for text, tokens for IDs).
     """
     if readout_effective_rank < 2.0:
         return 2
     n = math.ceil(
-        2.0 * math.log(generation_length_words) / math.log(readout_effective_rank)
+        2.0 * math.log(generation_length) / math.log(readout_effective_rank)
     )
     return max(2, n)
+
+
+def sequence_ngram_repetition_rate(tokens: Sequence[Hashable], n: int) -> float:
+    """Fraction of n-grams in a sequence that are repeated.
+
+    Operates on any sequence of hashable elements (words, token IDs, etc.).
+    Returns 0.0 for sequences shorter than *n* elements.
+    """
+    if len(tokens) < n:
+        return 0.0
+    ngrams = [tuple(tokens[i : i + n]) for i in range(len(tokens) - n + 1)]
+    if not ngrams:
+        return 0.0
+    unique = len(set(ngrams))
+    return 1.0 - unique / len(ngrams)
 
 
 def ngram_repetition_rate(text: str, n: int) -> float:
     """Fraction of n-grams in *text* that are repeated.
 
+    Case-insensitive, splits on whitespace.
     Returns 0.0 for texts shorter than *n* words.
     """
-    words = text.lower().split()
-    if len(words) < n:
-        return 0.0
-    ngrams = [tuple(words[i : i + n]) for i in range(len(words) - n + 1)]
-    if not ngrams:
-        return 0.0
-    unique = len(set(ngrams))
-    return 1.0 - unique / len(ngrams)
+    return sequence_ngram_repetition_rate(text.lower().split(), n)

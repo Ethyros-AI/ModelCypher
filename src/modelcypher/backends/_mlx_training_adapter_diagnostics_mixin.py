@@ -435,15 +435,16 @@ class _MLXTrainingAdapterDiagnosticsMixin:
         model,
         tokenizer,
         n_sequences: int = 3,
-        # For 4-gram repetition, >=16 generated tokens gives >=4 n-gram instances;
-        # 64 keeps a 4x margin while staying lightweight.
         max_tokens: int = 64,
+        readout_erank: float | None = None,
     ) -> tuple[float | None, float | None]:
         """Generate short sequences and measure entropy + repetition.
 
         Returns (mean_token_entropy, repetition_rate) or (None, None) on failure.
         Entropy: mean Shannon entropy per token across all generated sequences.
-        Repetition: fraction of 4-grams that are repeated.
+        Repetition: fraction of n-grams that are repeated (n derived from
+        readout effective rank via birthday paradox). Returns None for
+        repetition when readout_erank is unavailable (fail-closed).
         """
         if tokenizer is None:
             return None, None
@@ -488,13 +489,19 @@ class _MLXTrainingAdapterDiagnosticsMixin:
 
         mean_entropy = sum(all_entropies) / len(all_entropies) if all_entropies else None
 
-        # 4-gram repetition rate (Papineni et al. 2002 BLEU uses up to 4-grams).
-        n = 4
-        if len(all_tokens) >= n:
-            ngrams = [tuple(all_tokens[i : i + n]) for i in range(len(all_tokens) - n + 1)]
-            repetition_rate = 1.0 - len(set(ngrams)) / len(ngrams) if ngrams else 0.0
+        # Token-level n-gram repetition: derive n from readout effective rank
+        # using the same birthday paradox as the text-level degeneration gate,
+        # with T = actual generated token count.
+        if readout_erank is not None and all_tokens:
+            from modelcypher.core.domain.training.degeneration import (
+                derive_ngram_order,
+                sequence_ngram_repetition_rate,
+            )
+
+            n = derive_ngram_order(readout_erank, generation_length=len(all_tokens))
+            repetition_rate = sequence_ngram_repetition_rate(all_tokens, n)
         else:
-            repetition_rate = 0.0
+            repetition_rate = None
 
         return mean_entropy, repetition_rate
 

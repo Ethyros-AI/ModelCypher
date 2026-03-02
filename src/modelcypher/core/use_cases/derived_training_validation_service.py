@@ -49,8 +49,8 @@ class _Phase5Metrics:
     baseline_n_total: int
     adapted_n_correct: int
     adapted_n_total: int
-    baseline_max_4gram_repeat: float
-    adapted_max_4gram_repeat: float
+    baseline_max_ngram_repeat: float
+    adapted_max_ngram_repeat: float
     baseline_margins: dict[str, float] | None = None
     adapted_margins: dict[str, float] | None = None
     max_logit_delta_inf: float | None = None
@@ -68,10 +68,11 @@ class _Phase5Context:
     keep_all_artifacts: bool
     probe_problems: list[StarProblem]
     baseline_eval: OnlineEvalResult | None = None
-    baseline_max_4gram_repeat: float | None = None
+    baseline_max_ngram_repeat: float | None = None
     max_tokens: int | None = None
     baseline_margins: dict[str, float] | None = None
     baseline_logits: dict[str, Any] | None = None
+    ngram_order: int | None = None
 
 
 @dataclass(frozen=True)
@@ -115,9 +116,10 @@ class DerivedTrainingTrial:
     online_eval_adapted_correct: int | None
     online_eval_adapted_total: int | None
     online_eval_delta_correct: int | None
-    baseline_max_4gram_repeat: float | None
-    adapted_max_4gram_repeat: float | None
-    max_4gram_repeat_delta: float | None
+    baseline_max_ngram_repeat: float | None
+    adapted_max_ngram_repeat: float | None
+    max_ngram_repeat_delta: float | None
+    ngram_order: int | None
     # Dual-manifold CKA diagnostics
     inference_min_cka: float | None
     inference_mean_cka: float | None
@@ -189,9 +191,10 @@ class DerivedTrainingTrial:
             "online_eval_adapted_correct": self.online_eval_adapted_correct,
             "online_eval_adapted_total": self.online_eval_adapted_total,
             "online_eval_delta_correct": self.online_eval_delta_correct,
-            "baseline_max_4gram_repeat": self.baseline_max_4gram_repeat,
-            "adapted_max_4gram_repeat": self.adapted_max_4gram_repeat,
-            "max_4gram_repeat_delta": self.max_4gram_repeat_delta,
+            "baseline_max_ngram_repeat": self.baseline_max_ngram_repeat,
+            "adapted_max_ngram_repeat": self.adapted_max_ngram_repeat,
+            "max_ngram_repeat_delta": self.max_ngram_repeat_delta,
+            "ngram_order": self.ngram_order,
             "inference_min_cka": self.inference_min_cka,
             "inference_mean_cka": self.inference_mean_cka,
             "inference_min_cka_layer": self.inference_min_cka_layer,
@@ -371,6 +374,7 @@ class DerivedTrainingValidationService:
                 loss_delta=loss_delta,
                 perplexity_delta=perplexity_delta,
                 phase5_metrics=phase5_metrics,
+                ngram_order=phase5_ctx.ngram_order if phase5_ctx.enabled else None,
             )
             trials_out.append(trial)
 
@@ -426,6 +430,7 @@ class DerivedTrainingValidationService:
         loss_delta: float,
         perplexity_delta: float,
         phase5_metrics: _Phase5Metrics | None,
+        ngram_order: int | None = None,
     ) -> DerivedTrainingTrial:
         eps = machine_epsilon(
             self._backend,
@@ -495,9 +500,9 @@ class DerivedTrainingValidationService:
         online_eval_adapted_correct = None
         online_eval_adapted_total = None
         online_eval_delta_correct = None
-        baseline_max_4gram_repeat = None
-        adapted_max_4gram_repeat = None
-        max_4gram_repeat_delta = None
+        baseline_max_ngram_repeat = None
+        adapted_max_ngram_repeat = None
+        max_ngram_repeat_delta = None
         if phase5_metrics is not None:
             online_eval_baseline_correct = int(phase5_metrics.baseline_n_correct)
             online_eval_baseline_total = int(phase5_metrics.baseline_n_total)
@@ -506,15 +511,15 @@ class DerivedTrainingValidationService:
             online_eval_delta_correct = (
                 online_eval_adapted_correct - online_eval_baseline_correct
             )
-            baseline_max_4gram_repeat = float(phase5_metrics.baseline_max_4gram_repeat)
-            adapted_max_4gram_repeat = float(phase5_metrics.adapted_max_4gram_repeat)
-            max_4gram_repeat_delta = (
-                adapted_max_4gram_repeat - baseline_max_4gram_repeat
+            baseline_max_ngram_repeat = float(phase5_metrics.baseline_max_ngram_repeat)
+            adapted_max_ngram_repeat = float(phase5_metrics.adapted_max_ngram_repeat)
+            max_ngram_repeat_delta = (
+                adapted_max_ngram_repeat - baseline_max_ngram_repeat
             )
             if online_eval_adapted_correct < online_eval_baseline_correct:
                 inference_failure_modes.append("online_eval_degraded")
-            if adapted_max_4gram_repeat > baseline_max_4gram_repeat + sqrt_eps:
-                inference_failure_modes.append("fourgram_degenerated")
+            if adapted_max_ngram_repeat > baseline_max_ngram_repeat + sqrt_eps:
+                inference_failure_modes.append("ngram_degenerated")
             # Argmax preservation certificate gate (fail-closed on explicit False;
             # fail-open when measurement is unavailable / None).
             if phase5_metrics.argmax_preservation_certified is False:
@@ -819,9 +824,10 @@ class DerivedTrainingValidationService:
             online_eval_adapted_correct=online_eval_adapted_correct,
             online_eval_adapted_total=online_eval_adapted_total,
             online_eval_delta_correct=online_eval_delta_correct,
-            baseline_max_4gram_repeat=baseline_max_4gram_repeat,
-            adapted_max_4gram_repeat=adapted_max_4gram_repeat,
-            max_4gram_repeat_delta=max_4gram_repeat_delta,
+            baseline_max_ngram_repeat=baseline_max_ngram_repeat,
+            adapted_max_ngram_repeat=adapted_max_ngram_repeat,
+            max_ngram_repeat_delta=max_ngram_repeat_delta,
+            ngram_order=ngram_order,
             inference_min_cka=inference_min_cka_val,
             inference_mean_cka=inference_mean_cka_val,
             inference_min_cka_layer=inference_min_cka_layer_val,
@@ -948,13 +954,14 @@ class DerivedTrainingValidationService:
                 f"observed {max_tokens} vs baseline {context.max_tokens}.",
             )
 
-        if context.baseline_eval is None or context.baseline_max_4gram_repeat is None:
+        if context.baseline_eval is None or context.baseline_max_ngram_repeat is None:
             (
                 baseline_eval,
-                baseline_max_4gram,
+                baseline_max_ngram,
                 baseline_margins,
                 _,
                 baseline_logits,
+                probe_ngram_order,
             ) = self._run_probe_eval(
                 model_path=model_path,
                 adapter_path=None,
@@ -965,9 +972,10 @@ class DerivedTrainingValidationService:
                 collect_logits_for_delta=True,
             )
             context.baseline_eval = baseline_eval
-            context.baseline_max_4gram_repeat = baseline_max_4gram
+            context.baseline_max_ngram_repeat = baseline_max_ngram
             context.baseline_margins = baseline_margins
             context.baseline_logits = baseline_logits
+            context.ngram_order = probe_ngram_order
 
         adapter_path = getattr(train_result, "adapter_path", None)
         if not adapter_path:
@@ -978,10 +986,11 @@ class DerivedTrainingValidationService:
 
         (
             adapted_eval,
-            adapted_max_4gram,
+            adapted_max_ngram,
             adapted_margins,
             max_logit_delta_inf,
             _,
+            _adapted_ngram_order,
         ) = self._run_probe_eval(
             model_path=model_path,
             adapter_path=Path(adapter_path),
@@ -1021,8 +1030,8 @@ class DerivedTrainingValidationService:
             baseline_n_total=context.baseline_eval.n_total,
             adapted_n_correct=adapted_eval.n_correct,
             adapted_n_total=adapted_eval.n_total,
-            baseline_max_4gram_repeat=context.baseline_max_4gram_repeat,
-            adapted_max_4gram_repeat=adapted_max_4gram,
+            baseline_max_ngram_repeat=context.baseline_max_ngram_repeat,
+            adapted_max_ngram_repeat=adapted_max_ngram,
             baseline_margins=context.baseline_margins,
             adapted_margins=adapted_margins,
             max_logit_delta_inf=max_logit_delta_inf,
@@ -1042,20 +1051,36 @@ class DerivedTrainingValidationService:
         epoch: int,
         baseline_logits: dict[str, Any] | None = None,
         collect_logits_for_delta: bool = False,
-    ) -> tuple[OnlineEvalResult, float, dict[str, float], float | None, dict[str, Any] | None]:
+    ) -> tuple[OnlineEvalResult, float, dict[str, float], float | None, dict[str, Any] | None, int | None]:
         """Run probe evaluation and margin measurement.
 
-        Returns (eval_result, max_4gram_repeat, margins, max_logit_delta_inf,
-        collected_logits).
+        Returns (eval_result, max_ngram_repeat, margins, max_logit_delta_inf,
+        collected_logits, ngram_order).
 
         max_logit_delta_inf is only computed when baseline_logits is provided
         (adapted run), allowing per-probe ||Δlogits||_∞ measurement.
         collected_logits is populated when collect_logits_for_delta=True.
         """
+        from modelcypher.core.domain.geometry.perturbation_bound import (
+            compute_readout_effective_rank,
+        )
+        from modelcypher.core.domain.training.degeneration import (
+            derive_ngram_order,
+            ngram_repetition_rate,
+        )
+
         model, tokenizer = self._backend.load_model(
             str(model_path),
             str(adapter_path) if adapter_path is not None else None,
         )
+
+        # Derive n-gram order from readout geometry (fail-closed: 0.0 on failure).
+        ngram_order: int | None = None
+        try:
+            readout_erank = compute_readout_effective_rank(model, self._backend)
+            ngram_order = derive_ngram_order(readout_erank, generation_length=max_tokens)
+        except Exception:
+            logger.debug("Readout erank unavailable in probe eval", exc_info=True)
 
         def _generate(prompt: str, max_toks: int) -> str:
             return self._backend.generate(model, tokenizer, prompt, max_tokens=max_toks)
@@ -1070,10 +1095,13 @@ class DerivedTrainingValidationService:
 
         prompts = self._build_probe_prompts(problems)
         responses = [_generate(prompt, max_tokens) for prompt in prompts]
-        max_repetition = max(
-            (self._compute_4gram_repetition_rate(text) for text in responses),
-            default=0.0,
-        )
+        if ngram_order is not None:
+            max_repetition = max(
+                (ngram_repetition_rate(text, ngram_order) for text in responses),
+                default=0.0,
+            )
+        else:
+            max_repetition = 0.0
 
         # Decision-boundary margin diagnostics
         from modelcypher.core.domain.training.online_eval import compute_answer_margin
@@ -1140,7 +1168,7 @@ class DerivedTrainingValidationService:
         gc.collect()
         self._clear_backend_cache()
 
-        return eval_result, max_repetition, margins, max_logit_delta_inf, collected_logits
+        return eval_result, max_repetition, margins, max_logit_delta_inf, collected_logits, ngram_order
 
     @staticmethod
     def _build_probe_prompts(problems: list[StarProblem]) -> list[str]:
@@ -1154,16 +1182,6 @@ class DerivedTrainingValidationService:
             build_forward_prompt(problem, demonstrations=n_demonstrations)
             for problem in problems
         ]
-
-    @staticmethod
-    def _compute_4gram_repetition_rate(text: str) -> float:
-        words = text.lower().split()
-        if len(words) < 4:
-            return 0.0
-        ngrams = [tuple(words[i : i + 4]) for i in range(len(words) - 3)]
-        if not ngrams:
-            return 0.0
-        return 1.0 - (len(set(ngrams)) / len(ngrams))
 
     def _derive_phase5_probe_count(self) -> int:
         derive_fn = getattr(self._dataset_training_service, "_derive_regime_n_from_ci", None)

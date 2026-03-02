@@ -184,15 +184,16 @@ class TestAdaptiveLRLogic:
 
 
 class TestNgramRepetition:
-    """Tests for 4-gram repetition rate computation."""
+    """Tests for n-gram repetition rate computation."""
 
     @staticmethod
     def repetition_rate(tokens: list[int], n: int = 4) -> float:
-        """Same logic as in _probe_entropy_and_repetition."""
-        if len(tokens) < n:
-            return 0.0
-        ngrams = [tuple(tokens[i : i + n]) for i in range(len(tokens) - n + 1)]
-        return 1.0 - len(set(ngrams)) / len(ngrams) if ngrams else 0.0
+        """Delegates to canonical implementation."""
+        from modelcypher.core.domain.training.degeneration import (
+            sequence_ngram_repetition_rate,
+        )
+
+        return sequence_ngram_repetition_rate(tokens, n)
 
     def test_no_repetition(self):
         tokens = list(range(20))  # all unique 4-grams

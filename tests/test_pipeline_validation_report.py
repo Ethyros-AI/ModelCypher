@@ -44,7 +44,7 @@ def test_build_report_includes_dual_verdict_fields():
                 {
                     "stop_reason": "certificate",
                     "online_eval_delta_correct": 0,
-                    "max_4gram_repeat_delta": 0.0,
+                    "max_ngram_repeat_delta": 0.0,
                     "min_cka": 0.934,
                     "min_cka_layer": 7,
                     "null_access_min_behavioral_preserved_fraction": 0.22,
@@ -62,7 +62,7 @@ def test_build_report_includes_dual_verdict_fields():
                     "min_cka": 0.934,
                     "min_cka_layer": 7,
                     "online_eval_delta_correct": 0,
-                    "max_4gram_repeat_delta": 0.0,
+                    "max_ngram_repeat_delta": 0.0,
                     "null_access_min_behavioral_preserved_fraction": 0.22,
                     "null_access_min_behavioral_preserved_layer": 7,
                     "null_observability_max_condition_number": 15.5,
@@ -85,7 +85,7 @@ def test_build_report_includes_dual_verdict_fields():
     assert "Inference" in report
     assert "Composite" in report
     assert "online_eval_delta_correct" in report
-    assert "max_4gram_repeat_delta" in report
+    assert "max_ngram_repeat_delta" in report
     assert "CKA worst layer" in report
     assert "Null-access min preserved" in report
     assert "cooccurrence_class=cka_shift_without_inference_degradation" in report

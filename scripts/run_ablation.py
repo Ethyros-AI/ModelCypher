@@ -164,15 +164,10 @@ ARM_CONFIGS: dict[str, ArmConfig] = {
 # =============================================================================
 
 def compute_4gram_repetition_rate(text: str) -> float:
-    """Fraction of 4-grams that are repeated in the text."""
-    words = text.lower().split()
-    if len(words) < 4:
-        return 0.0
-    ngrams = [tuple(words[i:i+4]) for i in range(len(words) - 3)]
-    if not ngrams:
-        return 0.0
-    unique = len(set(ngrams))
-    return 1.0 - (unique / len(ngrams))
+    """Delegates to domain module — fixed n=4 for this experiment."""
+    from modelcypher.core.domain.training.degeneration import ngram_repetition_rate
+
+    return ngram_repetition_rate(text, 4)
 
 
 def _t_crit_95_two_tailed(df: int) -> float:

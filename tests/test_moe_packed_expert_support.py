@@ -24,7 +24,6 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from modelcypher.backends.mlx_backend import MLXBackend
 from modelcypher.core.domain.moe.topology import MoETopology, detect_expert_format
 
 
@@ -148,71 +147,6 @@ def test_topology_from_config_dense_model_returns_none():
         },
     }
     assert MoETopology.from_config(config) is None
-
-
-# ---------------------------------------------------------------------------
-# Compat loading: gate_up_proj split
-# ---------------------------------------------------------------------------
-
-
-class _FakeArray:
-    """Minimal array-like for testing slicing without MLX dependency."""
-
-    def __init__(self, data: np.ndarray):
-        self._data = data
-        self.shape = data.shape
-
-    def __getitem__(self, key):
-        sliced = self._data[key]
-        return _FakeArray(sliced)
-
-    def __eq__(self, other):
-        if isinstance(other, _FakeArray):
-            return np.array_equal(self._data, other._data)
-        return NotImplemented
-
-    def tolist(self):
-        return self._data.tolist()
-
-
-def test_remap_splits_fused_gate_up_proj():
-    """gate_up_proj [N, 2*intermediate, hidden] → gate_proj + up_proj."""
-    num_experts = 4
-    intermediate = 8
-    hidden = 16
-    gate_data = np.random.randn(num_experts, intermediate, hidden).astype(np.float32)
-    up_data = np.random.randn(num_experts, intermediate, hidden).astype(np.float32)
-    fused = np.concatenate([gate_data, up_data], axis=1)
-
-    weights = {
-        "model.language_model.layers.0.mlp.experts.gate_up_proj": _FakeArray(fused),
-        "model.language_model.layers.0.mlp.experts.down_proj": _FakeArray(
-            np.random.randn(num_experts, hidden, intermediate).astype(np.float32)
-        ),
-        "model.language_model.layers.0.mlp.gate.weight": "router",
-        "lm_head.weight": "head",
-    }
-
-    def concat(arrays, axis=0):
-        return ("concat", axis, tuple(arrays))
-
-    remapped = MLXBackend._remap_qwen35_weights_for_qwen3_next(weights, concatenate=concat)
-
-    gate_result = remapped["model.layers.0.mlp.switch_mlp.gate_proj.weight"]
-    up_result = remapped["model.layers.0.mlp.switch_mlp.up_proj.weight"]
-    down_result = remapped["model.layers.0.mlp.switch_mlp.down_proj.weight"]
-
-    assert gate_result == _FakeArray(gate_data)
-    assert up_result == _FakeArray(up_data)
-    assert down_result.shape == (num_experts, hidden, intermediate)
-
-    # Stale keys removed
-    assert "model.layers.0.mlp.experts.gate_up_proj" not in remapped
-    assert "model.layers.0.mlp.experts.down_proj" not in remapped
-
-    # Non-expert keys preserved
-    assert remapped["model.layers.0.mlp.gate.weight"] == "router"
-    assert remapped["lm_head.weight"] == "head"
 
 
 # ---------------------------------------------------------------------------

@@ -131,6 +131,22 @@ def _pick_representative_delta(backend, deltas: list):
     return best
 
 
+def _read_quant_config(model_path: str) -> dict:
+    """Read quantization parameters from model config.json.
+
+    Returns dict with 'bits', 'group_size' keys if present, else empty dict.
+    """
+    config_path = Path(model_path) / "config.json"
+    if not config_path.exists():
+        return {}
+    try:
+        with config_path.open() as fh:
+            cfg = json.load(fh)
+        return cfg.get("quantization", {})
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
 def _precompute_tail_bases(backend, model_loader, model_path: str,
                            adapted_keys: set[str], eps: float) -> dict:
     """Precompute V_tail basis for each adapted layer from base model SVD.
@@ -140,18 +156,57 @@ def _precompute_tail_bases(backend, model_loader, model_path: str,
       tail_dims = full_rank - rank_eps(S)
       V_tail = last tail_dims columns of V [in, tail_dims]
 
+    For 4-bit quantized models (MLX packed uint32 dtype), the weight is
+    dequantized before SVD. The LoRA delta lives in the unpacked [out, in]
+    space; V_tail must be in that same space or delta @ V_tail fails
+    dimensionally. Quantization parameters are read from config.json.
+
     Returns dict mapping layer_name -> (V_tail, tail_dims).
     Layers with tail_dims == 0 are excluded (fully saturated, no null space).
     """
+    quant_cfg = _read_quant_config(model_path)
+
+    # Single-pass collection: gather adapted weights and their quant tensors.
+    # For quantized layers we need .weight (uint32), .scales, and .biases.
+    needed = set(adapted_keys)
+    needed |= {k.replace(".weight", ".scales") for k in adapted_keys}
+    needed |= {k.replace(".weight", ".biases") for k in adapted_keys}
+
+    collected: dict = {}
+    for layer_name, tensor in model_loader.iter_weights(model_path):
+        if layer_name in needed:
+            collected[layer_name] = tensor
+
     tail_bases = {}
 
-    for layer_name, tensor in model_loader.iter_weights(model_path):
-        if layer_name not in adapted_keys:
+    for layer_name in sorted(adapted_keys):
+        tensor = collected.get(layer_name)
+        if tensor is None:
             continue
 
         shape = getattr(tensor, "shape", None)
         if shape is None or len(shape) != 2:
             continue
+
+        # Detect 4-bit quantized weight: MLX packs 8 4-bit values per uint32,
+        # giving shape [out, in/8]. The LoRA delta has shape [out, in] (full),
+        # so SVD must operate on the dequantized [out, in] matrix.
+        dtype_str = str(getattr(tensor, "dtype", "")).lower()
+        if "uint" in dtype_str and "float" not in dtype_str:
+            scales = collected.get(layer_name.replace(".weight", ".scales"))
+            biases = collected.get(layer_name.replace(".weight", ".biases"))
+            if scales is None:
+                print(f"  SKIP {layer_name}: quantized weight without scales")
+                continue
+            bits = quant_cfg.get("bits", 4)
+            # group_size: derived from packed shape and scales shape.
+            # in_full = in_packed * (32 // bits); n_groups = scales.shape[1]
+            # group_size = in_full / n_groups
+            in_full = shape[1] * (32 // bits)
+            group_size = quant_cfg.get("group_size") or (in_full // scales.shape[1])
+            # mx.dequantize(w, scales, biases, group_size, bits) — no mode arg
+            tensor = backend.mx.dequantize(tensor, scales, biases, group_size, bits)
+            backend.eval(tensor)
 
         tensor_f32 = backend.astype(tensor, "float32")
         U, S, Vt = backend.svd(tensor_f32, compute_uv=True)

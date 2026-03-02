@@ -116,6 +116,8 @@ class _MLXTrainingAdapterTrainMixin:
         degen_prompts: list[str] | None = None,
         degen_baseline_max: float | None = None,
         degen_ngram_order: int | None = None,
+        # Readout effective rank for diagnostics probe n-gram derivation.
+        readout_erank: float | None = None,
         # Gradient accumulation: when > 1, batch_size is the logical batch
         # and micro_batch_size = ceil(batch_size / grad_accum_steps) is used
         # for forward/backward passes. Mathematically equivalent.
@@ -828,7 +830,7 @@ class _MLXTrainingAdapterTrainMixin:
 
                 # 5. Entropy and repetition probe
                 mean_entropy, rep_rate = self._probe_entropy_and_repetition(
-                    model, tokenizer,
+                    model, tokenizer, readout_erank=readout_erank,
                 )
 
                 # 5a. Spectral-ratio growth rate (per-iter perturbation slope)

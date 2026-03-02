@@ -424,8 +424,8 @@ def test_phase5_cka_shift_inference_healthy(tmp_path, monkeypatch):
             baseline_n_total=10,
             adapted_n_correct=8,
             adapted_n_total=10,
-            baseline_max_4gram_repeat=0.10,
-            adapted_max_4gram_repeat=0.10,
+            baseline_max_ngram_repeat=0.10,
+            adapted_max_ngram_repeat=0.10,
         ),
     )
 
@@ -445,7 +445,7 @@ def test_phase5_cka_shift_inference_healthy(tmp_path, monkeypatch):
     assert trial.inference_passed is True
     assert "cka_bound_violation" not in trial.failure_modes
     assert "online_eval_degraded" not in trial.failure_modes
-    assert "fourgram_degenerated" not in trial.failure_modes
+    assert "ngram_degenerated" not in trial.failure_modes
     assert trial.cooccurrence_class == "cka_shift_without_inference_degradation"
 
 
@@ -468,8 +468,8 @@ def test_phase5_online_eval_drop_triggers_failure(tmp_path, monkeypatch):
             baseline_n_total=10,
             adapted_n_correct=8,
             adapted_n_total=10,
-            baseline_max_4gram_repeat=0.10,
-            adapted_max_4gram_repeat=0.10,
+            baseline_max_ngram_repeat=0.10,
+            adapted_max_ngram_repeat=0.10,
         ),
     )
 
@@ -510,8 +510,8 @@ def test_phase5_fourgram_crossing_triggers_failure(tmp_path, monkeypatch):
             baseline_n_total=10,
             adapted_n_correct=8,
             adapted_n_total=10,
-            baseline_max_4gram_repeat=0.10,
-            adapted_max_4gram_repeat=0.25,
+            baseline_max_ngram_repeat=0.10,
+            adapted_max_ngram_repeat=0.25,
         ),
     )
 
@@ -526,7 +526,7 @@ def test_phase5_fourgram_crossing_triggers_failure(tmp_path, monkeypatch):
     )
 
     trial = result.trial_results[0]
-    assert "fourgram_degenerated" in trial.failure_modes
+    assert "ngram_degenerated" in trial.failure_modes
     assert trial.inference_passed is False
     assert trial.structural_passed is True
 
@@ -550,8 +550,8 @@ def test_argmax_not_certified_triggers_inference_failure(tmp_path, monkeypatch):
             baseline_n_total=10,
             adapted_n_correct=8,
             adapted_n_total=10,
-            baseline_max_4gram_repeat=0.10,
-            adapted_max_4gram_repeat=0.10,
+            baseline_max_ngram_repeat=0.10,
+            adapted_max_ngram_repeat=0.10,
             max_logit_delta_inf=0.40,
             argmax_cert_gap=-0.05,
             argmax_preservation_certified=False,
@@ -595,8 +595,8 @@ def test_argmax_certified_does_not_trigger_failure(tmp_path, monkeypatch):
             baseline_n_total=10,
             adapted_n_correct=8,
             adapted_n_total=10,
-            baseline_max_4gram_repeat=0.10,
-            adapted_max_4gram_repeat=0.10,
+            baseline_max_ngram_repeat=0.10,
+            adapted_max_ngram_repeat=0.10,
             max_logit_delta_inf=0.05,
             argmax_cert_gap=0.25,
             argmax_preservation_certified=True,
@@ -639,8 +639,8 @@ def test_argmax_cert_none_does_not_trigger_failure(tmp_path, monkeypatch):
             baseline_n_total=10,
             adapted_n_correct=8,
             adapted_n_total=10,
-            baseline_max_4gram_repeat=0.10,
-            adapted_max_4gram_repeat=0.10,
+            baseline_max_ngram_repeat=0.10,
+            adapted_max_ngram_repeat=0.10,
             max_logit_delta_inf=None,
             argmax_cert_gap=None,
             argmax_preservation_certified=None,
@@ -724,6 +724,7 @@ def test_phase5_argmax_certificate_from_adapted_margins(
                 {"p1": 0.8, "p2": 0.6, "p3": -0.5},
                 None,
                 {"p1": object(), "p2": object(), "p3": object()},
+                4,  # ngram_order
             )
         return (
             adapted_eval,
@@ -731,6 +732,7 @@ def test_phase5_argmax_certificate_from_adapted_margins(
             full_adapted_margins,
             0.5,
             None,
+            4,  # ngram_order
         )
 
     monkeypatch.setattr(service, "_run_probe_eval", _fake_run_probe_eval)
@@ -774,8 +776,8 @@ def test_phase5_argmax_certificate_fields_round_trip_in_trial_dict(
             baseline_n_total=10,
             adapted_n_correct=8,
             adapted_n_total=10,
-            baseline_max_4gram_repeat=0.10,
-            adapted_max_4gram_repeat=0.10,
+            baseline_max_ngram_repeat=0.10,
+            adapted_max_ngram_repeat=0.10,
             max_logit_delta_inf=0.12,
             argmax_cert_gap=0.36,
             argmax_preservation_certified=True,
@@ -831,8 +833,8 @@ def test_phase5_probe_derivation_is_deterministic(tmp_path, monkeypatch):
             baseline_n_total=10,
             adapted_n_correct=8,
             adapted_n_total=10,
-            baseline_max_4gram_repeat=0.10,
-            adapted_max_4gram_repeat=0.10,
+            baseline_max_ngram_repeat=0.10,
+            adapted_max_ngram_repeat=0.10,
         ),
     )
     monkeypatch.setattr(
@@ -843,8 +845,8 @@ def test_phase5_probe_derivation_is_deterministic(tmp_path, monkeypatch):
             baseline_n_total=10,
             adapted_n_correct=8,
             adapted_n_total=10,
-            baseline_max_4gram_repeat=0.10,
-            adapted_max_4gram_repeat=0.10,
+            baseline_max_ngram_repeat=0.10,
+            adapted_max_ngram_repeat=0.10,
         ),
     )
 
