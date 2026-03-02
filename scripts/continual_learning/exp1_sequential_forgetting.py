@@ -154,15 +154,19 @@ def _compute_consumed_dims(backend, deltas_keyed: dict, tail_bases: dict,
     For each adapted layer with tail_dims > 0:
       C_l = delta_l @ V_tail_l   [out, tail_dims]
       consumed_l = rank_eps(C_l)
+      energy_ratio_l = ||C_l||_F^2 / ||delta_l||_F^2
 
     Returns (total_consumed, per_layer_dict).
+    Per-layer dict includes: tail_dims, consumed, energy_ratio.
     """
     total_consumed = 0
     per_layer = {}
 
     for layer_name, (V_tail, tail_dims) in tail_bases.items():
         if layer_name not in deltas_keyed:
-            per_layer[layer_name] = {"tail_dims": tail_dims, "consumed": 0}
+            per_layer[layer_name] = {
+                "tail_dims": tail_dims, "consumed": 0, "energy_ratio": 0.0,
+            }
             continue
 
         delta = deltas_keyed[layer_name]
@@ -176,10 +180,70 @@ def _compute_consumed_dims(backend, deltas_keyed: dict, tail_bases: dict,
         s_list = backend.tolist(S_c)
         consumed = _rank_eps(s_list, eps)
 
-        per_layer[layer_name] = {"tail_dims": tail_dims, "consumed": consumed}
+        # Projected energy ratio: how much of the delta's energy lands in null space
+        # ||C_l||_F^2 / ||delta_l||_F^2
+        c_frob_sq = sum(s * s for s in s_list)
+        S_delta = _svd_singular_values(backend, delta_f32)
+        sd_list = backend.tolist(S_delta)
+        d_frob_sq = sum(s * s for s in sd_list)
+        energy_ratio = c_frob_sq / d_frob_sq if d_frob_sq > 0 else 0.0
+
+        per_layer[layer_name] = {
+            "tail_dims": tail_dims, "consumed": consumed,
+            "energy_ratio": energy_ratio,
+        }
         total_consumed += consumed
 
     return total_consumed, per_layer
+
+
+def _incremental_new_dims(backend, all_projections: list, tail_bases: dict,
+                          eps: float) -> list[int]:
+    """Compute incremental new null-space dimensions consumed per task.
+
+    incremental_new_dims_t = rank([C_1..C_t]) - rank([C_1..C_{t-1}])
+
+    This separates genuinely new capacity use from overlap/reuse across tasks.
+    Stacks projected coefficients C_l vertically across tasks per layer,
+    then sums incremental rank across layers.
+    """
+    if not all_projections:
+        return []
+
+    incremental = []
+    prev_total_rank = 0
+
+    for t in range(len(all_projections)):
+        total_rank = 0
+        for layer_name, (V_tail, tail_dims) in tail_bases.items():
+            # Stack C matrices from tasks 0..t for this layer
+            c_stack = []
+            for task_idx in range(t + 1):
+                deltas_keyed = all_projections[task_idx]
+                if layer_name not in deltas_keyed:
+                    continue
+                delta = deltas_keyed[layer_name]
+                delta_f32 = backend.astype(delta, "float32")
+                C = backend.matmul(delta_f32, V_tail)
+                backend.eval(C)
+                c_stack.append(C)
+
+            if not c_stack:
+                continue
+
+            # Vertical stack: [sum(out_i), tail_dims]
+            stacked = backend.concatenate(c_stack, axis=0)
+            backend.eval(stacked)
+            S_stacked = backend.svd(stacked, compute_uv=False)
+            backend.eval(S_stacked)
+            s_list = backend.tolist(S_stacked)
+            total_rank += _rank_eps(s_list, eps)
+
+        new_dims = total_rank - prev_total_rank
+        incremental.append(new_dims)
+        prev_total_rank = total_rank
+
+    return incremental
 
 
 def main() -> None:
@@ -289,7 +353,7 @@ def main() -> None:
 
         # Per-layer detail
         for ln, info in sorted(per_layer.items()):
-            print(f"    {ln}: {info['consumed']}/{info['tail_dims']} consumed")
+            print(f"    {ln}: {info['consumed']}/{info['tail_dims']} consumed, energy_ratio={info['energy_ratio']:.4f}")
 
         # 5. Real CKA from training result (activation-space, not weight-space)
         task_min_cka = result.min_cka if result is not None else None
@@ -332,6 +396,26 @@ def main() -> None:
 
     deltas_per_task = [len(td) for td in delta_history_flat]
 
+    # Incremental new dims: rank([C_1..C_t]) - rank([C_1..C_{t-1}]) per task
+    incremental = _incremental_new_dims(backend, delta_history_keyed, tail_bases or {}, eps)
+    print(f"Incremental new dims per task: {incremental}")
+
+    # Collect per-layer energy ratios from the last task's per_layer (for JSON)
+    # Re-compute per-task consumed/energy for all tasks to include in output
+    per_task_depletion = []
+    for t_idx, dk in enumerate(delta_history_keyed):
+        consumed_t, per_layer_t = _compute_consumed_dims(backend, dk, tail_bases or {}, eps)
+        per_task_depletion.append({
+            "task": t_idx,
+            "consumed": consumed_t,
+            "remaining": capacity_total - consumed_t,
+            "per_layer": {
+                ln: {"consumed": info["consumed"], "tail_dims": info["tail_dims"],
+                     "energy_ratio": round(info["energy_ratio"], 6)}
+                for ln, info in sorted(per_layer_t.items())
+            },
+        })
+
     output = {
         "seed": args.seed,
         "model_path": args.model_path,
@@ -352,6 +436,8 @@ def main() -> None:
             "cka_stability": cka_stability,
             "weyl_accumulation": cumulative_weyl,
             "deltas_per_task": deltas_per_task,
+            "incremental_new_dims": incremental,
+            "per_task_depletion": per_task_depletion,
         },
     }
 
