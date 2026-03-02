@@ -57,7 +57,6 @@ class InterpolationMethod(Enum):
 
     LINEAR = "linear"  # W(t) = (1-t)*W_0 + t*W_1
     GEODESIC = "geodesic"  # Riemannian geodesic (for rotation matrices)
-    BEZIER = "bezier"  # Quadratic Bezier curve (learns midpoint)
 
 
 @dataclass
@@ -207,8 +206,6 @@ def compute_path_losses(
         interp_fn = linear_interpolate
     elif method == InterpolationMethod.GEODESIC:
         interp_fn = geodesic_interpolate
-    elif method == InterpolationMethod.BEZIER:
-        raise NotImplementedError("Bezier interpolation not yet implemented")
     else:
         raise ValueError(f"Unknown interpolation method: {method}")
 

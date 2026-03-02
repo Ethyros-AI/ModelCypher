@@ -153,20 +153,6 @@ class TestComputePathLosses:
         assert call_count[0] == 5
         assert losses == [1.0, 2.0, 3.0, 4.0, 5.0]
 
-    def test_bezier_method_raises_not_implemented(self, backend):
-        """Bezier is declared but not implemented and should fail loudly."""
-        W0 = backend.random_normal((2, 2))
-        W1 = backend.random_normal((2, 2))
-
-        def dummy_loss(w):
-            return 1.0
-
-        with pytest.raises(NotImplementedError, match="Bezier interpolation not yet implemented"):
-            compute_path_losses(
-                W0, W1, dummy_loss, n_steps=3,
-                method=InterpolationMethod.BEZIER, backend=backend,
-            )
-
     def test_unknown_method_raises_value_error(self, backend):
         """Unexpected interpolation method should fail with ValueError."""
         W0 = backend.random_normal((2, 2))
