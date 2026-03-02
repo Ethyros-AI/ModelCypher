@@ -54,6 +54,7 @@ register_default_atlas_inventories()
 
 # The 8 commands
 from modelcypher.cli.commands import adapter as adapter_commands
+from modelcypher.cli.commands import curriculum as curriculum_commands
 from modelcypher.cli.commands import infer as infer_commands
 from modelcypher.cli.commands import merge as merge_commands
 from modelcypher.cli.commands import model as model_commands
@@ -160,6 +161,7 @@ app.add_typer(model_commands.app, name="model", help="Model registry")
 app.add_typer(system_commands.app, name="system", help="System status")
 app.add_typer(adapter_commands.app, name="adapter", help="LoRA adapter analysis")
 app.add_typer(quantize_commands.quantize_app, name="quantize", help="Quantization correction")
+app.add_typer(curriculum_commands.curriculum_app, name="curriculum", help="Mastery-gated curriculum training")
 
 
 def _context(ctx: typer.Context) -> CLIContext:

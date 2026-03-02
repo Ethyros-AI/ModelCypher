@@ -1090,7 +1090,7 @@ class DerivedTrainingValidationService:
             str(adapter_path) if adapter_path is not None else None,
         )
 
-        # Derive n-gram order from readout geometry (fail-closed: 0.0 on failure).
+        # Derive n-gram order from readout geometry (fail-closed: None on failure).
         ngram_order: int | None = None
         try:
             readout_erank = compute_readout_effective_rank(model, self._backend)

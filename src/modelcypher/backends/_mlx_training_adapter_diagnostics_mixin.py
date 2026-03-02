@@ -166,7 +166,10 @@ class _MLXTrainingAdapterDiagnosticsMixin:
 
     def _iter_nb_lora_modules(self, model):
         """Yield (layer_key, NBLoRALinear) pairs from model tree."""
-        base, key_prefix = self._get_model_base(model)
+        try:
+            base, key_prefix = self._get_model_base(model)
+        except ValueError:
+            return
 
         for layer_idx, layer in enumerate(base.layers):
             attn = getattr(layer, "self_attn", None)

@@ -265,6 +265,71 @@ def test_save_adapter_per_layer_ranks(backend_name, tmp_path) -> None:
         assert rank > 0
 
 
+# ── Qwen3.5-style layout: root.language_model.layers ──────────────────────────
+
+class _ToyLMBackbone(nn.Module):
+    """Mimics Qwen3.5 text backbone: root.language_model has .layers."""
+
+    def __init__(self, n_layers: int = 2, hidden_dim: int = 16):
+        super().__init__()
+        self.layers = [_ToyLayer(hidden_dim) for _ in range(n_layers)]
+
+
+class _ToyLMModel(nn.Module):
+    """Mimics Qwen3.5 root: root.model is None, root.language_model has layers."""
+
+    def __init__(self, n_layers: int = 2, hidden_dim: int = 16):
+        super().__init__()
+        self.language_model = _ToyLMBackbone(n_layers=n_layers, hidden_dim=hidden_dim)
+        # model attr is absent — matches Qwen3.5 where model.model is None
+
+
+@pytest.mark.parametrize("backend_name", ["mlx"])
+@pytest.mark.mlx
+def test_get_model_base_language_model_layout(backend_name) -> None:
+    """_get_model_base returns language_model and correct prefix for Qwen3.5 layout."""
+    backend = _get_backend_or_fail(backend_name)
+    model = _ToyLMModel()
+    adapter = MLXTrainingAdapter(backend)
+
+    base, key_prefix = adapter._get_model_base(model)
+
+    assert base is model.language_model
+    assert key_prefix == "model.language_model.layers"
+
+
+@pytest.mark.parametrize("backend_name", ["mlx"])
+@pytest.mark.mlx
+def test_extract_weight_matrices_language_model_layout(backend_name) -> None:
+    """extract_weight_matrices produces correct key namespace for Qwen3.5 layout."""
+    backend = _get_backend_or_fail(backend_name)
+    model = _ToyLMModel(n_layers=1, hidden_dim=16)
+    adapter = MLXTrainingAdapter(backend)
+
+    weights = adapter.extract_weight_matrices(model)
+
+    assert len(weights) > 0
+    for key in weights:
+        assert key.startswith("model.language_model.layers."), f"Wrong key namespace: {key}"
+        assert key.endswith(".weight")
+
+
+@pytest.mark.parametrize("backend_name", ["mlx"])
+@pytest.mark.mlx
+def test_resolve_parent_and_attr_language_model_layout(backend_name) -> None:
+    """_resolve_parent_and_attr traverses model.language_model.layers.X.self_attn.q_proj."""
+    backend = _get_backend_or_fail(backend_name)
+    model = _ToyLMModel(n_layers=1, hidden_dim=16)
+    adapter = MLXTrainingAdapter(backend)
+
+    key = "model.language_model.layers.0.self_attn.q_proj.weight"
+    parent, attr = adapter._resolve_parent_and_attr(model, key)
+
+    assert attr == "q_proj"
+    assert hasattr(parent, "q_proj")
+    assert parent is model.language_model.layers[0].self_attn
+
+
 @pytest.mark.parametrize("backend_name", ["mlx"])
 @pytest.mark.mlx
 def test_streaming_geometry_matches_batch(backend_name) -> None:
