@@ -18,6 +18,43 @@
 import pytest
 
 
+class _StdModel:
+    """Stub: standard layout — model.model.layers."""
+    class _Inner:
+        layers = [object()]
+    model = _Inner()
+
+
+class _Qwen35Model:
+    """Stub: Qwen3.5 layout — model.model is None, model.language_model.layers."""
+    class _LM:
+        layers = [object()]
+    model = None
+    language_model = _LM()
+
+
+def test_resolve_model_base_standard_layout():
+    from modelcypher.backends.mlx_backend import MLXBackend
+
+    backend = MLXBackend()
+    m = _StdModel()
+
+    result = backend._resolve_model_base(m)
+
+    assert result is m.model
+
+
+def test_resolve_model_base_language_model_layout():
+    from modelcypher.backends.mlx_backend import MLXBackend
+
+    backend = MLXBackend()
+    m = _Qwen35Model()
+
+    result = backend._resolve_model_base(m)
+
+    assert result is m.language_model
+
+
 def test_mlx_backend_array_accepts_large_int_list():
     import mlx.core as mx
 

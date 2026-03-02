@@ -23,6 +23,23 @@ from typing import Any
 
 
 class _MLXBackendActivationMixin:
+    @staticmethod
+    def _resolve_model_base(model: Any) -> Any:
+        """Return the backbone object that has .embed_tokens and .layers.
+
+        Handles both standard layout (model.model.layers) and Qwen3.5 layout
+        (model.language_model.layers) where model.model is None.
+        """
+        inner = getattr(model, "model", None)
+        if inner is not None and hasattr(inner, "layers"):
+            return inner
+        lm = getattr(model, "language_model", None)
+        if lm is not None and hasattr(lm, "layers"):
+            return lm
+        if hasattr(model, "layers"):
+            return model
+        return model  # best-effort fallback
+
     def collect_hidden_activations(
         self,
         model: Any,
@@ -41,7 +58,7 @@ class _MLXBackendActivationMixin:
         Returns:
             Dictionary mapping layer index to activations [batch, seq, hidden].
         """
-        base = getattr(model, "model", model)
+        base = self._resolve_model_base(model)
         n_layers = len(base.layers)
         if layer_indices is None:
             layer_indices = list(range(n_layers))
@@ -94,7 +111,7 @@ class _MLXBackendActivationMixin:
         tokens = tokenizer.encode(prompt)
         input_ids = self.mx.array([tokens])
 
-        base = getattr(model, "model", model)
+        base = self._resolve_model_base(model)
 
         # Embedding
         hidden = base.embed_tokens(input_ids)
@@ -155,7 +172,7 @@ class _MLXBackendActivationMixin:
             token_ids = tokenizer.encode(text)
         input_ids = self.mx.array([token_ids])
 
-        base = getattr(model, "model", model)
+        base = self._resolve_model_base(model)
         h = base.embed_tokens(input_ids)
         self.mx.eval(h)
 
@@ -179,7 +196,7 @@ class _MLXBackendActivationMixin:
         input_ids = self.mx.array([token_ids])
         activations: dict[int, Any] = {}
 
-        base = getattr(model, "model", model)
+        base = self._resolve_model_base(model)
         h = base.embed_tokens(input_ids)
 
         for layer_idx, layer in enumerate(base.layers):
@@ -258,7 +275,7 @@ class _MLXBackendActivationMixin:
         k_activations: dict[int, Any] = {}
         v_activations: dict[int, Any] = {}
 
-        base = getattr(model, "model", model)
+        base = self._resolve_model_base(model)
         h = base.embed_tokens(input_ids)
 
         for layer_idx, layer in enumerate(base.layers):
@@ -342,7 +359,7 @@ class _MLXBackendActivationMixin:
         embedding_results: list[Any] = []
         all_tensors: list[Any] = []
 
-        base = getattr(model, "model", model)
+        base = self._resolve_model_base(model)
         h = base.embed_tokens(input_ids)
 
         # Compute mask for proper mean pooling
@@ -494,7 +511,7 @@ class _MLXBackendActivationMixin:
         input_ids = self.mx.array(padded)
         text_lengths = [len(ids) for ids in all_token_ids]
 
-        base = getattr(model, "model", model)
+        base = self._resolve_model_base(model)
         h = base.embed_tokens(input_ids)
 
         lengths = self.mx.array(text_lengths, dtype=h.dtype)
@@ -614,7 +631,7 @@ class _MLXBackendActivationMixin:
         results: list[dict[int, Any]] = [{} for _ in range(batch_size)]
         all_tensors = []
 
-        base = getattr(model, "model", model)
+        base = self._resolve_model_base(model)
         h = base.embed_tokens(input_ids)
 
         for layer_idx, layer in enumerate(base.layers):
@@ -654,7 +671,7 @@ class _MLXBackendActivationMixin:
         results: list[dict[int, Any]] = [{} for _ in range(batch_size)]
         all_tensors = []
 
-        base = getattr(model, "model", model)
+        base = self._resolve_model_base(model)
         h = base.embed_tokens(input_ids)
 
         for layer_idx, layer in enumerate(base.layers):
@@ -738,7 +755,7 @@ class _MLXBackendActivationMixin:
         results: list[dict[int, Any]] = [{} for _ in range(batch_size)]
         all_tensors: list[Any] = []
 
-        base = getattr(model, "model", model)
+        base = self._resolve_model_base(model)
         h = base.embed_tokens(input_ids)
 
         seq_lengths = [len(ids) for ids in all_token_ids]
@@ -856,7 +873,7 @@ class _MLXBackendActivationMixin:
         padded = [ids + [pad_id] * (max_len - len(ids)) for ids in all_token_ids]
         input_ids = self.mx.array(padded)
 
-        base = getattr(model, "model", model)
+        base = self._resolve_model_base(model)
         h = base.embed_tokens(input_ids)
 
         # Embedding positions
