@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import math
 
-from modelcypher.core.domain.moe.routing_analysis import RoutingProfile
+from modelcypher.core.domain.moe.routing_analysis import (
+    RoutingProfile,
+    routing_kl_divergence,
+)
 from modelcypher.core.domain.moe.topology import MoETopology
 
 
@@ -65,3 +68,60 @@ def test_layer_entropy_is_shannon_entropy():
     )
     assert entropy_layer1 == -4.0 * (0.25 * math.log(0.25))
     assert entropy_layer1 > entropy_layer0
+
+
+def test_routing_kl_divergence_identical_profiles_returns_zero():
+    """KL(P||P) = 0 by definition."""
+    topology = _topology()
+    routing = {
+        0: [[0], [0], [0], [1]],
+        1: [[2], [2], [3], [3]],
+    }
+    profile = RoutingProfile.from_routing_decisions(routing, topology)
+    kl = routing_kl_divergence(profile, profile)
+    assert abs(kl) < 1e-12
+
+
+def test_routing_kl_divergence_shifted_distribution():
+    """Shifted routing should produce KL > 0."""
+    topology = _topology()
+    pre_routing = {
+        0: [[0], [0], [0], [1]],
+        1: [[2], [2], [3], [3]],
+    }
+    post_routing = {
+        0: [[1], [1], [1], [0]],
+        1: [[2], [3], [3], [3]],
+    }
+    pre = RoutingProfile.from_routing_decisions(pre_routing, topology)
+    post = RoutingProfile.from_routing_decisions(post_routing, topology)
+    kl = routing_kl_divergence(pre, post)
+    assert kl > 0.0
+
+
+def test_routing_kl_divergence_handles_zero_frequency_experts():
+    """Experts with zero frequency in pre should not cause log(0)."""
+    topology = _topology()
+    # Pre: all tokens to expert 0 (experts 1,2,3 have zero frequency)
+    pre_routing = {
+        0: [[0], [0], [0], [0]],
+        1: [[0], [0], [0], [0]],
+    }
+    # Post: tokens spread to expert 1 (which was zero in pre)
+    post_routing = {
+        0: [[0], [0], [1], [1]],
+        1: [[0], [0], [1], [1]],
+    }
+    pre = RoutingProfile.from_routing_decisions(pre_routing, topology)
+    post = RoutingProfile.from_routing_decisions(post_routing, topology)
+    kl = routing_kl_divergence(pre, post)
+    assert math.isfinite(kl)
+    assert kl > 0.0
+
+
+def test_routing_kl_divergence_empty_profiles():
+    """Profiles with no MoE layers return 0.0."""
+    pre = RoutingProfile(stats={}, total_tokens=0, num_layers=0, num_experts=4)
+    post = RoutingProfile(stats={}, total_tokens=0, num_layers=0, num_experts=4)
+    kl = routing_kl_divergence(pre, post)
+    assert kl == 0.0

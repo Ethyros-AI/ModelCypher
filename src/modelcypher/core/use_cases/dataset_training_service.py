@@ -910,6 +910,44 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 uncapped_params / max(capped_params, 1),
             )
 
+        # 5.9. Pre-training routing snapshot (MoE only).
+        # Collect routing decisions BEFORE LoRA injection so the post-training
+        # comparison measures indirect routing shift from changed expert outputs.
+        routing_sample_texts: list[str] | None = None
+        pre_routing_profile: "RoutingProfile | None" = None
+        # 20 texts matches degeneration diagnostic budget (line ~1613).
+        # ~20 texts * ~100 tokens = ~2000 routing decisions/layer,
+        # yielding SE(frequency) ~ 1/sqrt(2000) ~ 0.02.
+        _ROUTING_SAMPLE_N = 20
+
+        if moe_topology is not None and hasattr(
+            self._backend, "collect_routing_decisions"
+        ):
+            from modelcypher.core.domain.moe.routing_analysis import RoutingProfile
+
+            routing_sample_texts = [
+                s["text"]
+                for s in eval_samples[:_ROUTING_SAMPLE_N]
+                if s.get("text")
+            ]
+            if routing_sample_texts:
+                try:
+                    pre_decisions = self._backend.collect_routing_decisions(
+                        model, tokenizer, routing_sample_texts,
+                    )
+                    pre_routing_profile = RoutingProfile.from_routing_decisions(
+                        pre_decisions, moe_topology,
+                    )
+                    logger.info(
+                        "Pre-training routing snapshot: %d layers, %d tokens",
+                        pre_routing_profile.num_layers,
+                        pre_routing_profile.total_tokens,
+                    )
+                except Exception:
+                    logger.debug(
+                        "Pre-training routing collection failed", exc_info=True,
+                    )
+
         # 6. Inject NB-LoRA (bounds by construction)
         logger.info(
             "Injecting NB-LoRA into %d target modules...",
@@ -1763,9 +1801,32 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             if saturated_keys:
                 moe_saturated_during_training = sorted(saturated_keys)
 
-        # TODO(design-component-8): compute routing KL divergence pre/post
-        # training once routing-profile collection is integrated in this service.
+        # 11.9. MoE routing stability (KL divergence pre/post training).
         moe_router_stability: float | None = None
+        if pre_routing_profile is not None and routing_sample_texts is not None:
+            try:
+                from modelcypher.core.domain.moe.routing_analysis import (
+                    RoutingProfile,
+                    routing_kl_divergence,
+                )
+
+                post_decisions = self._backend.collect_routing_decisions(
+                    model, tokenizer, routing_sample_texts,
+                )
+                post_routing_profile = RoutingProfile.from_routing_decisions(
+                    post_decisions, moe_topology,
+                )
+                moe_router_stability = routing_kl_divergence(
+                    pre_routing_profile, post_routing_profile,
+                )
+                logger.info(
+                    "MoE routing stability: KL(post||pre) = %.6f nats",
+                    moe_router_stability,
+                )
+            except Exception:
+                logger.debug(
+                    "Post-training routing collection failed", exc_info=True,
+                )
 
         if rp is not None:
             rp.training_complete(

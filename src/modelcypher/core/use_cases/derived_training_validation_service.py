@@ -49,8 +49,8 @@ class _Phase5Metrics:
     baseline_n_total: int
     adapted_n_correct: int
     adapted_n_total: int
-    baseline_max_ngram_repeat: float
-    adapted_max_ngram_repeat: float
+    baseline_max_ngram_repeat: float | None
+    adapted_max_ngram_repeat: float | None
     baseline_margins: dict[str, float] | None = None
     adapted_margins: dict[str, float] | None = None
     max_logit_delta_inf: float | None = None
@@ -511,14 +511,22 @@ class DerivedTrainingValidationService:
             online_eval_delta_correct = (
                 online_eval_adapted_correct - online_eval_baseline_correct
             )
-            baseline_max_ngram_repeat = float(phase5_metrics.baseline_max_ngram_repeat)
-            adapted_max_ngram_repeat = float(phase5_metrics.adapted_max_ngram_repeat)
-            max_ngram_repeat_delta = (
-                adapted_max_ngram_repeat - baseline_max_ngram_repeat
-            )
+            if (
+                phase5_metrics.baseline_max_ngram_repeat is not None
+                and phase5_metrics.adapted_max_ngram_repeat is not None
+            ):
+                baseline_max_ngram_repeat = float(phase5_metrics.baseline_max_ngram_repeat)
+                adapted_max_ngram_repeat = float(phase5_metrics.adapted_max_ngram_repeat)
+                max_ngram_repeat_delta = (
+                    adapted_max_ngram_repeat - baseline_max_ngram_repeat
+                )
             if online_eval_adapted_correct < online_eval_baseline_correct:
                 inference_failure_modes.append("online_eval_degraded")
-            if adapted_max_ngram_repeat > baseline_max_ngram_repeat + sqrt_eps:
+            if (
+                adapted_max_ngram_repeat is not None
+                and baseline_max_ngram_repeat is not None
+                and adapted_max_ngram_repeat > baseline_max_ngram_repeat + sqrt_eps
+            ):
                 inference_failure_modes.append("ngram_degenerated")
             # Argmax preservation certificate gate (fail-closed on explicit False;
             # fail-open when measurement is unavailable / None).
@@ -1051,11 +1059,12 @@ class DerivedTrainingValidationService:
         epoch: int,
         baseline_logits: dict[str, Any] | None = None,
         collect_logits_for_delta: bool = False,
-    ) -> tuple[OnlineEvalResult, float, dict[str, float], float | None, dict[str, Any] | None, int | None]:
+    ) -> tuple[OnlineEvalResult, float | None, dict[str, float], float | None, dict[str, Any] | None, int | None]:
         """Run probe evaluation and margin measurement.
 
         Returns (eval_result, max_ngram_repeat, margins, max_logit_delta_inf,
         collected_logits, ngram_order).
+        max_ngram_repeat is None when readout erank derivation fails (fail-closed).
 
         max_logit_delta_inf is only computed when baseline_logits is provided
         (adapted run), allowing per-probe ||Δlogits||_∞ measurement.
@@ -1096,12 +1105,12 @@ class DerivedTrainingValidationService:
         prompts = self._build_probe_prompts(problems)
         responses = [_generate(prompt, max_tokens) for prompt in prompts]
         if ngram_order is not None:
-            max_repetition = max(
+            max_repetition: float | None = max(
                 (ngram_repetition_rate(text, ngram_order) for text in responses),
                 default=0.0,
             )
         else:
-            max_repetition = 0.0
+            max_repetition = None
 
         # Decision-boundary margin diagnostics
         from modelcypher.core.domain.training.online_eval import compute_answer_margin

@@ -196,16 +196,20 @@ def _precompute_tail_bases(backend, model_loader, model_path: str,
             scales = collected.get(layer_name.replace(".weight", ".scales"))
             biases = collected.get(layer_name.replace(".weight", ".biases"))
             if scales is None:
-                print(f"  SKIP {layer_name}: quantized weight without scales")
-                continue
+                raise RuntimeError(
+                    f"Quantized weight {layer_name!r} has no scales tensor. "
+                    "Cannot compute tail_bases — capacity_total and all depletion "
+                    "metrics would be incorrect with partial geometry."
+                )
             bits = quant_cfg.get("bits", 4)
             # group_size: derived from packed shape and scales shape.
             # in_full = in_packed * (32 // bits); n_groups = scales.shape[1]
             # group_size = in_full / n_groups
             in_full = shape[1] * (32 // bits)
             group_size = quant_cfg.get("group_size") or (in_full // scales.shape[1])
-            # mx.dequantize(w, scales, biases, group_size, bits) — no mode arg
-            tensor = backend.mx.dequantize(tensor, scales, biases, group_size, bits)
+            mode = quant_cfg.get("mode", "affine")
+            tensor = backend.dequantize(tensor, scales, biases,
+                                        group_size=group_size, bits=bits, mode=mode)
             backend.eval(tensor)
 
         tensor_f32 = backend.astype(tensor, "float32")

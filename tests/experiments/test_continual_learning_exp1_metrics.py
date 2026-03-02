@@ -25,7 +25,9 @@ if str(_EXP1_PATH) not in sys.path:
 
 from exp1_sequential_forgetting import (  # noqa: E402
     _cumulative_utilization_by_layer,
+    _precompute_tail_bases,
     _rank_eps,
+    _read_quant_config,
 )
 
 
@@ -162,3 +164,130 @@ def test_cumulative_utilization_no_tasks() -> None:
 
     util = _cumulative_utilization_by_layer(backend, [], tail_bases, eps)
     assert util["layer_a"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Tests for _precompute_tail_bases quantization handling
+# ---------------------------------------------------------------------------
+
+
+class _FakeModelLoader:
+    """Minimal model_loader stub: yields from a fixed dict."""
+
+    def __init__(self, weights: dict):
+        self._weights = weights
+
+    def iter_weights(self, _model_path: str):
+        yield from sorted(self._weights.items())
+
+
+def test_precompute_tail_bases_float_weight() -> None:
+    """Non-quantized (float32) weight goes straight to SVD without dequantize."""
+    backend = _get_backend()
+    eps = float(backend.finfo().eps)
+
+    # 4×4 identity: rank=4, tail_dims=0 (fully used)
+    W = backend.array(
+        [[1.0, 0.0, 0.0, 0.0],
+         [0.0, 1.0, 0.0, 0.0],
+         [0.0, 0.0, 1.0, 0.0],
+         [0.0, 0.0, 0.0, 1.0]], dtype="float32"
+    )
+    # Use a rank-deficient weight so we get tail_dims > 0
+    W_rank2 = backend.array(
+        [[1.0, 0.0, 0.0, 0.0],
+         [0.0, 1.0, 0.0, 0.0],
+         [0.0, 0.0, 0.0, 0.0],
+         [0.0, 0.0, 0.0, 0.0]], dtype="float32"
+    )
+
+    loader = _FakeModelLoader({"layer.weight": W_rank2})
+    # Provide a temp dir that has no config.json so quant_cfg is empty
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        result = _precompute_tail_bases(
+            backend, loader, tmp, {"layer.weight"}, eps
+        )
+
+    assert "layer.weight" in result
+    V_tail, tail_dims = result["layer.weight"]
+    assert tail_dims == 2
+    assert V_tail.shape[0] == 4  # V_tail lives in input space (4-dim)
+    assert V_tail.shape[1] == 2  # 2 tail dimensions
+
+
+@pytest.mark.mlx
+def test_precompute_tail_bases_quantized_weight() -> None:
+    """Quantized (uint32) weight is dequantized before SVD.
+
+    Constructs a 4×64 weight (MLX minimum group_size=64), quantizes it via
+    backend.quantize, passes the packed tensor to _precompute_tail_bases, and
+    verifies:
+    - V_tail lives in the unpacked 64-dim input space (not 8-dim packed space)
+    - tail_dims > 0 (confirming SVD ran on the dequantized matrix)
+    """
+    backend = _get_backend()
+    eps = float(backend.finfo().eps)
+
+    # 4×64 weight: rows 0–1 are identical → rank ≤ 3, tail_dims ≥ 1.
+    # MLX quantize requires group_size ∈ {32, 64, 128} and in_features % group_size == 0.
+    # Use group_size=64 (exactly one group per row).
+    row0 = [float(i % 8 + 1) for i in range(64)]
+    row1 = list(row0)                        # identical → linear dependence
+    row2 = [float((i + 1) % 8 + 1) for i in range(64)]
+    row3 = [float((i + 3) % 8 + 1) for i in range(64)]
+    W_fp = backend.array([row0, row1, row2, row3], dtype="float32")
+    backend.eval(W_fp)
+
+    w_q, scales, biases = backend.quantize(W_fp, group_size=64, bits=4, mode="affine")
+    backend.eval(w_q, scales)
+    if biases is not None:
+        backend.eval(biases)
+
+    weights: dict = {"layer.weight": w_q, "layer.scales": scales}
+    if biases is not None:
+        weights["layer.biases"] = biases
+
+    import json, tempfile
+    quant_cfg = {"bits": 4, "group_size": 64, "mode": "affine"}
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg_path = Path(tmp) / "config.json"
+        cfg_path.write_text(json.dumps({"quantization": quant_cfg}))
+
+        loader = _FakeModelLoader(weights)
+        result = _precompute_tail_bases(
+            backend, loader, tmp, {"layer.weight"}, eps
+        )
+
+    assert "layer.weight" in result, "quantized layer must be processed"
+    V_tail, tail_dims = result["layer.weight"]
+    # V_tail input dimension must match unpacked in_features=64, not packed=8
+    assert V_tail.shape[0] == 64, (
+        f"V_tail.shape[0]={V_tail.shape[0]}, expected 64 (unpacked in_features)"
+    )
+    assert tail_dims >= 1
+
+
+@pytest.mark.mlx
+def test_precompute_tail_bases_missing_scales_raises() -> None:
+    """Quantized weight without scales raises RuntimeError (fail-closed).
+
+    Partial geometry (missing scales → can't dequantize) would silently bias
+    capacity_total and the stop rule. Must fail closed.
+    """
+    backend = _get_backend()
+    eps = float(backend.finfo().eps)
+
+    # Produce a real packed uint32 tensor via quantize (group_size=64 required by MLX).
+    W_fp = backend.array([[float(i % 8 + 1) for i in range(64)]], dtype="float32")
+    backend.eval(W_fp)
+    w_q, _scales, _biases = backend.quantize(W_fp, group_size=64, bits=4, mode="affine")
+    backend.eval(w_q)
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        loader = _FakeModelLoader({"layer.weight": w_q})
+        with pytest.raises(RuntimeError, match="no scales tensor"):
+            _precompute_tail_bases(
+                backend, loader, tmp, {"layer.weight"}, eps
+            )

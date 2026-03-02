@@ -167,6 +167,64 @@ class RoutingProfile:
         return entropy
 
 
+def routing_kl_divergence(pre: RoutingProfile, post: RoutingProfile) -> float:
+    """KL(post || pre) averaged across MoE layers.
+
+    Measures how much the post-training routing distribution diverges from
+    the pre-training baseline.  Close to 0.0 when routing is stable (expected
+    when router weights are frozen).
+
+    Uses Laplace smoothing with pseudocount ``1 / (total_tokens * num_experts)``
+    — the minimum detectable frequency for the sample size.  This is a
+    measurement-resolution floor, not a hyperparameter.
+
+    Reference: Cover & Thomas, *Elements of Information Theory*, Theorem 2.6.3.
+
+    Args:
+        pre: Routing profile collected before training.
+        post: Routing profile collected after training (same texts).
+
+    Returns:
+        Mean KL divergence (nats) across layers.  Returns 0.0 if no MoE
+        layers are present in both profiles.
+    """
+    pre_layers = {layer for (layer, _) in pre.stats}
+    post_layers = {layer for (layer, _) in post.stats}
+    common_layers = sorted(pre_layers & post_layers)
+
+    if not common_layers:
+        return 0.0
+
+    num_experts = max(pre.num_experts, post.num_experts, 1)
+    pre_tokens = max(pre.total_tokens, 1)
+    eps = 1.0 / (pre_tokens * num_experts)
+
+    kl_sum = 0.0
+    for layer in common_layers:
+        p = [0.0] * num_experts  # pre (reference)
+        q = [0.0] * num_experts  # post (measured)
+
+        for e in range(num_experts):
+            pre_stat = pre.stats.get((layer, e))
+            post_stat = post.stats.get((layer, e))
+            p[e] = (pre_stat.frequency if pre_stat is not None else 0.0) + eps
+            q[e] = (post_stat.frequency if post_stat is not None else 0.0) + eps
+
+        # Normalize to proper distributions.
+        p_total = sum(p)
+        q_total = sum(q)
+        p = [v / p_total for v in p]
+        q = [v / q_total for v in q]
+
+        kl = 0.0
+        for qi, pi in zip(q, p):
+            if qi > 0.0:
+                kl += qi * math.log(qi / pi)
+        kl_sum += kl
+
+    return kl_sum / len(common_layers)
+
+
 def build_routing_profile(
     routing_decisions: dict[int, object],
     topology: MoETopology,
@@ -179,4 +237,5 @@ __all__ = [
     "ExpertRoutingStats",
     "RoutingProfile",
     "build_routing_profile",
+    "routing_kl_divergence",
 ]
