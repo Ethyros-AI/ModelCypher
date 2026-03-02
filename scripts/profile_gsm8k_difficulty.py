@@ -162,7 +162,7 @@ def main() -> None:
     scored.sort(key=lambda x: x[0])
 
     step_counts = [s for s, _ in scored]
-    print(f"\nReasoning step distribution:")
+    print("\nReasoning step distribution:")
     print(f"  Min:    {min(step_counts)} steps")
     print(f"  Median: {sorted(step_counts)[len(step_counts)//2]} steps")
     print(f"  Max:    {max(step_counts)} steps")
@@ -170,7 +170,7 @@ def main() -> None:
 
     easy_cutoff = step_counts[len(step_counts) // 3]
     hard_cutoff = step_counts[2 * len(step_counts) // 3]
-    print(f"\nTertile boundaries:")
+    print("\nTertile boundaries:")
     print(f"  Easy:   ≤ {easy_cutoff} steps")
     print(f"  Medium: {easy_cutoff+1}–{hard_cutoff} steps")
     print(f"  Hard:   > {hard_cutoff} steps")
@@ -186,7 +186,7 @@ def main() -> None:
         tertile_split(formatted, args.eval_size)
     )
 
-    print(f"\nSplits:")
+    print("\nSplits:")
     print(f"  Easy:   {len(easy_train):,} train + {len(easy_eval):,} eval")
     print(f"  Medium: {len(medium_train):,} train + {len(medium_eval):,} eval")
     print(f"  Hard:   {len(hard_train):,} train + {len(hard_eval):,} eval")

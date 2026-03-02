@@ -61,6 +61,12 @@ def evaluate_skill_mastery(
                 problems.append(json.loads(line))
 
     n_total = len(problems)
+    if n_total <= 1:
+        raise ValueError(
+            f"Eval set for skill '{skill.name}' must contain at least 2 samples "
+            f"to derive Clopper-Pearson confidence bounds (got n_total={n_total})."
+        )
+
     if n_total < 50:
         # Clopper-Pearson CI at n=50, alpha=1/n=0.02 gives ~±14% at 95% confidence.
         # Below 50 samples the CI is too wide for reliable regime classification.
@@ -73,7 +79,19 @@ def evaluate_skill_mastery(
     # Use the canonical inference path: InferenceEngine via Backend protocol.
     # max_tokens=None → InferenceEngine._derive_max_tokens() auto-derives from
     # context limit and prompt length.
+    #
+    # When called from scripts (not CLI entry point), the backend may not be
+    # initialized yet. Auto-initialize here so scripts don't need boilerplate.
     from modelcypher.adapters.inference_engine import get_inference_engine
+    from modelcypher.core.domain._backend import get_default_backend
+
+    try:
+        get_default_backend()
+    except RuntimeError:
+        from modelcypher.backends import detect_default_backend_type, get_backend
+        from modelcypher.core.domain._backend import set_default_backend
+
+        set_default_backend(get_backend(detect_default_backend_type()))
 
     engine = get_inference_engine()
     n_correct = 0
@@ -106,7 +124,11 @@ def evaluate_skill_mastery(
             )
 
     accuracy = n_correct / n_total if n_total > 0 else 0.0
-    ci_lower, ci_upper = clopper_pearson_interval(n_correct, n_total, alpha=1.0 / n_total)
+    ci_lower, ci_upper = clopper_pearson_interval(
+        n_correct=n_correct,
+        n_total=n_total,
+        alpha=1.0 / n_total,
+    )
 
     if ci_lower > chance_rate:
         regime = "reinforce"
