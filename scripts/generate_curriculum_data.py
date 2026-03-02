@@ -354,11 +354,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Generate curriculum training data")
     parser.add_argument("--output", default="data/training", help="Output directory")
     parser.add_argument("--seed", type=int, default=42)
-    # val_fraction=0.15: matches generate_reasoning_traces.py (established precedent).
-    # Lower bound from auto-regime statistical power: need ≥20 val examples per logic
-    # type for Clopper-Pearson CI to distinguish chance (≈50%) from partial knowledge
-    # (≥80%). With 61 pairs × 4 templates, floor = 20/(61×4) ≈ 0.082. 0.15 gives 36
-    # val examples — 1.8× the statistical minimum.
+    # val_fraction=0.15: DATA DESIGN CHOICE — matches generate_reasoning_traces.py
+    # (established precedent across this codebase). _domain_split operates on domains,
+    # not examples: PREMISE_PAIRS has 12 domains → n_val_domains = max(1, int(12×0.15))
+    # = 1 held-out domain → 3–6 premise pairs × 4 templates = 12–24 val examples per
+    # logic type (seed-dependent). UI_PAIRS has 7 domains → 1 val domain → 12–16
+    # examples. This produces fewer examples than the ≥20 Clopper-Pearson floor for
+    # auto-regime CI; these val files are for curriculum monitoring, not regime gating.
     parser.add_argument("--val-fraction", type=float, default=0.15)
     args = parser.parse_args()
 
