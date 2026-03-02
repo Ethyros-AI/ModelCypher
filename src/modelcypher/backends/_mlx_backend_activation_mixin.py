@@ -25,17 +25,32 @@ from typing import Any
 class _MLXBackendActivationMixin:
     @staticmethod
     def _resolve_model_base(model: Any) -> Any:
-        """Return the backbone object that has .embed_tokens and .layers.
+        """Return the backbone object that has both .embed_tokens and .layers.
 
-        Handles both standard layout (model.model.layers) and Qwen3.5 layout
-        (model.language_model.layers) where model.model is None.
+        Handles:
+        - Standard layout: model.model (has embed_tokens + layers)
+        - Qwen3.5 layout: model.language_model.model (Qwen3_5TextModel has both;
+          model.language_model (TextModel) only has layers, not embed_tokens)
         """
+
+        def _has_both(obj: Any) -> bool:
+            return obj is not None and hasattr(obj, "embed_tokens") and hasattr(obj, "layers")
+
         inner = getattr(model, "model", None)
-        if inner is not None and hasattr(inner, "layers"):
+        if _has_both(inner):
             return inner
+
         lm = getattr(model, "language_model", None)
-        if lm is not None and hasattr(lm, "layers"):
-            return lm
+        if lm is not None:
+            if _has_both(lm):
+                return lm
+            lm_inner = getattr(lm, "model", None)
+            if _has_both(lm_inner):
+                return lm_inner
+            # lm has layers but not embed_tokens — still usable as fallback
+            if hasattr(lm, "layers"):
+                return lm
+
         if hasattr(model, "layers"):
             return model
         return model  # best-effort fallback

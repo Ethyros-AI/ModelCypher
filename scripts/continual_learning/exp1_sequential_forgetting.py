@@ -544,7 +544,10 @@ def main() -> None:
             print(f"  Train: {result.train_iters} iters, loss {result.initial_loss:.3f} -> {result.final_loss:.3f}")
             print(f"  Eval:  baseline={result.baseline_loss:.3f}, post={result.post_loss:.3f}")
         except Exception as e:
+            diag = getattr(e, "diagnostics", None)
             print(f"  Training FAILED: {e}")
+            if diag:
+                print(f"  Diagnostics: {diag}")
 
         # Clean up temp replay file
         if args.replay_fraction > 0 and prev_shard_samples:

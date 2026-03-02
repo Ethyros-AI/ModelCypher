@@ -19,18 +19,35 @@ import pytest
 
 
 class _StdModel:
-    """Stub: standard layout — model.model.layers."""
+    """Stub: standard layout — model.model has embed_tokens + layers."""
     class _Inner:
+        embed_tokens = object()
         layers = [object()]
     model = _Inner()
 
 
 class _Qwen35Model:
-    """Stub: Qwen3.5 layout — model.model is None, model.language_model.layers."""
+    """Stub: Qwen3.5 layout — model.language_model.model has embed_tokens + layers.
+
+    Mirrors the real hierarchy:
+      model.model = None
+      model.language_model = TextModel (has .layers, no .embed_tokens)
+      model.language_model.model = Qwen3_5TextModel (has both .embed_tokens + .layers)
+    """
+    class _LMInner:
+        embed_tokens = object()
+        layers = [object()]
+
     class _LM:
         layers = [object()]
-    model = None
-    language_model = _LM()
+
+        def __init__(self, lm_inner):
+            self.model = lm_inner
+
+    def __init__(self):
+        self._lm_inner = self._LMInner()
+        self.language_model = self._LM(self._lm_inner)
+        self.model = None
 
 
 def test_resolve_model_base_standard_layout():
@@ -50,9 +67,10 @@ def test_resolve_model_base_language_model_layout():
     backend = MLXBackend()
     m = _Qwen35Model()
 
+    # Should return language_model.model (Qwen3_5TextModel), not language_model (TextModel)
     result = backend._resolve_model_base(m)
 
-    assert result is m.language_model
+    assert result is m.language_model.model
 
 
 def test_mlx_backend_array_accepts_large_int_list():
