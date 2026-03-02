@@ -39,58 +39,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+from generate_reasoning_traces import MT_ANSWER_TEMPLATES, MT_TRACE_TEMPLATES  # noqa: E402
 from novel_problems import PREMISE_PAIRS  # noqa: E402
-
-
-# ---------------------------------------------------------------------------
-# Modus Tollens — reuse templates from generate_reasoning_traces.py
-# ---------------------------------------------------------------------------
-
-MT_TRACE_TEMPLATES = [
-    # Template 1: Formal rule naming
-    (
-        "Apply logical reasoning:\n"
-        "If {A}, then {B}. It is not the case that {B}.\n"
-        "What can we conclude?\n"
-        "The premise states: if {A}, then {B}. We observe that {B} is not the case. "
-        "By modus tollens, when the consequent is false, the antecedent must also be false. "
-        "Therefore, it is not the case that {A}."
-    ),
-    # Template 2: Contrapositive explanation
-    (
-        "Apply logical reasoning:\n"
-        "If {A}, then {B}. It is not the case that {B}.\n"
-        "What can we conclude?\n"
-        "We know that {A} implies {B}. The contrapositive is equally valid: "
-        "if not {B}, then not {A}. Since {B} is not the case, "
-        "it follows that it is not the case that {A}."
-    ),
-    # Template 3: Step-by-step with rule
-    (
-        "Apply logical reasoning:\n"
-        "If {A}, then {B}. It is not the case that {B}.\n"
-        "What can we conclude?\n"
-        "Premise: if {A} then {B}. "
-        "Observation: not {B}. "
-        "If the consequent ({B}) is denied, the antecedent ({A}) must be denied. "
-        "Conclusion: it is not the case that {A}."
-    ),
-    # Template 4: Direct and concise
-    (
-        "Apply logical reasoning:\n"
-        "If {A}, then {B}. It is not the case that {B}.\n"
-        "What can we conclude?\n"
-        "Since {B} is not the case, and {A} would require {B}, "
-        "it is not the case that {A}."
-    ),
-]
-
-MT_ANSWER_TEMPLATES = [
-    "The premise states: if {A}, then {B}.",
-    "We know that {A} implies {B}.",
-    "Premise: if {A} then {B}.",
-    "Since {B} is not the case,",
-]
 
 
 def generate_mt(pairs: list, seed: int) -> list[dict]:
@@ -286,8 +236,11 @@ def generate_ui(pairs: list, seed: int) -> list[dict]:
 def generate_add(seed: int, n_examples: int = 200) -> list[dict]:
     """Generate integer addition examples.
 
-    Draws from A, B in [1, 25]. Two phrasings per pair (A+B and B+A for
-    commutativity), capped at n_examples with deterministic shuffle.
+    Range [1, 25]: covers all single-digit and two-digit addend combinations
+    up to 25+25=50, matching the scope of standard addition fact tables.
+    n_examples=200: sized to match retention_replay.jsonl (235 examples), the
+    established arithmetic curriculum baseline.
+    Two phrasings per unique pair to surface commutativity.
     """
     rng = random.Random(seed)
     samples = []
@@ -329,9 +282,12 @@ def generate_add(seed: int, n_examples: int = 200) -> list[dict]:
 def generate_div(seed: int, n_examples: int = 200) -> list[dict]:
     """Generate integer division examples with exact results.
 
-    Generates pairs (divisor, quotient) in [2, 15] × [2, 12] so that
-    dividend = divisor * quotient is always an exact integer.
-    Two phrasings per pair.
+    Divisor [2, 15] × quotient [2, 12]: spans the standard multiplication
+    table fact space (divisors up to 15, results up to 12), giving 14×11=154
+    unique pairs before phrasing expansion. Capped at n_examples=200 to match
+    retention_replay.jsonl scale (the arithmetic curriculum baseline).
+    All pairs guarantee exact integer results by construction (dividend = divisor × quotient).
+    Two phrasings per pair for format variation.
     """
     rng = random.Random(seed)
     samples = []
@@ -391,6 +347,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Generate curriculum training data")
     parser.add_argument("--output", default="data/training", help="Output directory")
     parser.add_argument("--seed", type=int, default=42)
+    # val_fraction=0.15: matches generate_reasoning_traces.py convention
+    # (same domain-split strategy, same 85/15 train/val boundary).
     parser.add_argument("--val-fraction", type=float, default=0.15)
     args = parser.parse_args()
 

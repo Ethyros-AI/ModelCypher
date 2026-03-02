@@ -343,8 +343,7 @@ def build_curriculum_dag() -> SkillDAG:
             ),
             prerequisites=("arithmetic_add", "modus_ponens"),
             train_files=(
-                # Populated by profile_gsm8k_difficulty.py → easy tier
-                # data/training/gsm8k_easy_train.jsonl
+                "data/training/gsm8k_easy_train.jsonl",
             ),
             eval_files=(
                 "data/eval/gsm8k_easy_eval.jsonl",
@@ -365,9 +364,8 @@ def build_curriculum_dag() -> SkillDAG:
             ),
             prerequisites=("word_problem_1step", "hypothetical_syllogism"),
             train_files=(
-                # Populated by profile_gsm8k_difficulty.py → medium/hard tier
-                # data/training/gsm8k_medium_train.jsonl
-                # data/training/gsm8k_hard_train.jsonl
+                "data/training/gsm8k_medium_train.jsonl",
+                "data/training/gsm8k_hard_train.jsonl",
             ),
             eval_files=(
                 "data/eval/gsm8k_medium_eval.jsonl",
