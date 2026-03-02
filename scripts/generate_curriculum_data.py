@@ -233,13 +233,17 @@ def generate_ui(pairs: list, seed: int) -> list[dict]:
 # Arithmetic Add — A + B = C, integer range
 # ---------------------------------------------------------------------------
 
-def generate_add(seed: int, n_examples: int = 200) -> list[dict]:
+def generate_add(seed: int) -> list[dict]:
     """Generate integer addition examples.
 
-    Range [1, 25]: covers all single-digit and two-digit addend combinations
-    up to 25+25=50, matching the scope of standard addition fact tables.
-    n_examples=200: sized to match retention_replay.jsonl (235 examples), the
-    established arithmetic curriculum baseline.
+    DATA DESIGN CHOICE (not an algorithmic threshold):
+    Range A, B ∈ [1, 25] defines the scope of addition facts taught —
+    single-digit through two-digit addends, sums up to 50. This is a
+    curriculum coverage decision about which facts are "in scope", not
+    a convergence parameter. Example count is the exhaustive consequence
+    of this range: 325 unique unordered pairs × 2 phrasings (commutativity)
+    minus 25 diagonal pairs with a=b = 625 total.
+
     Two phrasings per unique pair to surface commutativity.
     """
     rng = random.Random(seed)
@@ -272,21 +276,24 @@ def generate_add(seed: int, n_examples: int = 200) -> list[dict]:
             })
 
     rng.shuffle(samples)
-    return samples[:n_examples]
+    return samples
 
 
 # ---------------------------------------------------------------------------
 # Arithmetic Divide — (A * B) / A = B, exact integer division
 # ---------------------------------------------------------------------------
 
-def generate_div(seed: int, n_examples: int = 200) -> list[dict]:
+def generate_div(seed: int) -> list[dict]:
     """Generate integer division examples with exact results.
 
-    Divisor [2, 15] × quotient [2, 12]: spans the standard multiplication
-    table fact space (divisors up to 15, results up to 12), giving 14×11=154
-    unique pairs before phrasing expansion. Capped at n_examples=200 to match
-    retention_replay.jsonl scale (the arithmetic curriculum baseline).
-    All pairs guarantee exact integer results by construction (dividend = divisor × quotient).
+    DATA DESIGN CHOICE (not an algorithmic threshold):
+    Divisor [2, 15] × quotient [2, 12] defines the scope of division facts
+    taught — the standard multiplication table range, giving 14×11=154
+    unique (divisor, quotient) pairs. All results are exact integers by
+    construction (dividend = divisor × quotient). Example count is the
+    exhaustive consequence of this scope: 154 pairs × 2 phrasings = 308.
+
+    All pairs guarantee exact integer results (no remainders).
     Two phrasings per pair for format variation.
     """
     rng = random.Random(seed)
@@ -308,7 +315,7 @@ def generate_div(seed: int, n_examples: int = 200) -> list[dict]:
             })
 
     rng.shuffle(samples)
-    return samples[:n_examples]
+    return samples
 
 
 # ---------------------------------------------------------------------------
@@ -347,8 +354,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Generate curriculum training data")
     parser.add_argument("--output", default="data/training", help="Output directory")
     parser.add_argument("--seed", type=int, default=42)
-    # val_fraction=0.15: matches generate_reasoning_traces.py convention
-    # (same domain-split strategy, same 85/15 train/val boundary).
+    # val_fraction=0.15: matches generate_reasoning_traces.py (established precedent).
+    # Lower bound from auto-regime statistical power: need ≥20 val examples per logic
+    # type for Clopper-Pearson CI to distinguish chance (≈50%) from partial knowledge
+    # (≥80%). With 61 pairs × 4 templates, floor = 20/(61×4) ≈ 0.082. 0.15 gives 36
+    # val examples — 1.8× the statistical minimum.
     parser.add_argument("--val-fraction", type=float, default=0.15)
     args = parser.parse_args()
 

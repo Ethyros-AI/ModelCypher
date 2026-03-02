@@ -126,7 +126,7 @@ def test_generate_ui_schema():
 def test_generate_add_answer_start_offset():
     """answer_start is a valid integer index into the text pointing at the answer."""
     gen = _load_script("generate_curriculum_data")
-    samples = gen.generate_add(seed=0, n_examples=50)
+    samples = gen.generate_add(seed=0)
     assert len(samples) > 0
     for s in samples:
         assert isinstance(s["answer_start"], int), (
@@ -145,7 +145,7 @@ def test_generate_add_answer_start_offset():
 def test_generate_div_answer_start_offset():
     """answer_start correctly indexes into division examples."""
     gen = _load_script("generate_curriculum_data")
-    samples = gen.generate_div(seed=0, n_examples=50)
+    samples = gen.generate_div(seed=0)
     assert len(samples) > 0
     for s in samples:
         assert isinstance(s["answer_start"], int)
