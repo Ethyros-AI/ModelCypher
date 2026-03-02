@@ -111,10 +111,11 @@ class _MLXTrainingAdapterTrainMixin:
         # Per-epoch degeneration gate: few-shot prompts + baseline max n-gram.
         # When provided, generates responses at epoch boundaries and stops
         # if max n-gram repetition exceeds baseline + sqrt(eps_f32).
-        # n-gram order is derived from readout effective rank (birthday paradox).
+        # n-gram order must be derived from readout effective rank (birthday
+        # paradox); gate is disabled when degen_ngram_order is None.
         degen_prompts: list[str] | None = None,
         degen_baseline_max: float | None = None,
-        degen_ngram_order: int = 4,
+        degen_ngram_order: int | None = None,
         # Gradient accumulation: when > 1, batch_size is the logical batch
         # and micro_batch_size = ceil(batch_size / grad_accum_steps) is used
         # for forward/backward passes. Mathematically equivalent.
@@ -1894,6 +1895,7 @@ class _MLXTrainingAdapterTrainMixin:
                 # 7d. Degeneration gate: n-gram repetition on few-shot prompts
                 if (degen_prompts
                         and degen_baseline_max is not None
+                        and degen_ngram_order is not None
                         and tokenizer is not None):
                     from modelcypher.core.domain.training.degeneration import (
                         ngram_repetition_rate,

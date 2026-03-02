@@ -28,6 +28,7 @@ from modelcypher.core.domain.training.exceptions import TrainingDerivationError 
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.training.geometric_lora import LayerGeometry
+    from modelcypher.ports.backend import Backend
 
 
 class _VirtualProjection:
@@ -41,7 +42,6 @@ class _VirtualProjection:
 
     def __init__(self, weight_2d: Any) -> None:
         self.weight = weight_2d
-    from modelcypher.ports.backend import Backend
 
 
 class _MLXTrainingAdapterCoreMixin:

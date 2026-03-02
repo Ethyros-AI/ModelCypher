@@ -1537,6 +1537,8 @@ class MLXBackend(_MLXBackendActivationMixin, Backend):
         return (
             "Model type qwen3_5 not supported." in message
             or "Model type qwen3_5_text not supported." in message
+            or "Model type qwen3_5_moe not supported." in message
+            or "Model type qwen3_5_moe_text not supported." in message
         )
 
     @staticmethod
@@ -1580,6 +1582,17 @@ class MLXBackend(_MLXBackendActivationMixin, Backend):
         if intermediate_size is not None:
             normalized.setdefault("shared_expert_intermediate_size", intermediate_size)
             normalized.setdefault("moe_intermediate_size", intermediate_size)
+        else:
+            # MoE models may lack intermediate_size; dense layers need it.
+            # Fall back to shared_expert_intermediate_size or moe_intermediate_size.
+            fallback = (
+                normalized.get("shared_expert_intermediate_size")
+                or normalized.get("moe_intermediate_size")
+            )
+            if fallback is not None:
+                normalized.setdefault("intermediate_size", fallback)
+                normalized.setdefault("shared_expert_intermediate_size", fallback)
+                normalized.setdefault("moe_intermediate_size", fallback)
 
         if "tie_word_embeddings" not in normalized:
             normalized["tie_word_embeddings"] = bool(raw_config.get("tie_word_embeddings", False))
@@ -1678,13 +1691,33 @@ class MLXBackend(_MLXBackendActivationMixin, Backend):
 
         class Qwen35CompatModel(qwen3_next.Model):
             def sanitize(self, weights: dict[str, Any]) -> dict[str, Any]:
+                import mlx.core as _mx
+
                 remapped = backend._remap_qwen35_weights_for_qwen3_next(
                     weights,
                     concatenate=backend.concatenate,
                 )
-                return super().sanitize(remapped)
+                # super().sanitize() returns early because expert keys
+                # are already in switch_mlp format.  Apply the remaining
+                # fixes (conv1d transpose, norm +1.0) that super() would
+                # otherwise handle.
+                result = super().sanitize(remapped)
+                norm_suffixes = (
+                    ".input_layernorm.weight",
+                    ".post_attention_layernorm.weight",
+                    "model.norm.weight",
+                    ".q_norm.weight",
+                    ".k_norm.weight",
+                )
+                for k, v in result.items():
+                    if "conv1d.weight" in k and v.shape[-1] != 1:
+                        result[k] = _mx.moveaxis(v, 2, 1)
+                    if any(k.endswith(sfx) for sfx in norm_suffixes):
+                        if v.ndim == 1:
+                            result[k] = v + 1.0
+                return result
 
-        def get_model_classes(_: dict[str, Any]):
+        def get_model_classes(_=None, *, config=None):
             return Qwen35CompatModel, qwen3_next.ModelArgs
 
         model, loaded_config = load_mlx_model(
@@ -1724,6 +1757,37 @@ class MLXBackend(_MLXBackendActivationMixin, Backend):
                 return self._load_qwen35_with_mlx_compat(path, adapter_path=adapter_path)
             raise
         return model, tokenizer
+
+    def prepare_model_for_training(self, model: Any, model_path: str) -> int:
+        """Unpack packed MoE expert tensors for per-expert NB-LoRA training.
+
+        Lossless identity operation: same weights, different layout.
+        After unpacking, each expert is a standard nn.Linear.
+
+        Returns:
+            Number of MoE layers unpacked (0 for dense models).
+        """
+        import json
+        from pathlib import Path
+
+        from modelcypher.core.domain.moe.topology import MoETopology
+
+        config_path = Path(model_path) / "config.json"
+        if not config_path.exists():
+            return 0
+
+        raw_cfg = json.loads(config_path.read_text())
+        text_cfg = raw_cfg.get("text_config")
+        merged_cfg = (
+            {**text_cfg, **raw_cfg} if isinstance(text_cfg, dict) else raw_cfg
+        )
+        moe_topo = MoETopology.from_config(merged_cfg)
+        if moe_topo is None:
+            return 0
+
+        from modelcypher.backends.moe_expert_unpacking import unpack_model_experts
+
+        return unpack_model_experts(model, moe_topo)
 
     def generate(
         self,

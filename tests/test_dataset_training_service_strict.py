@@ -39,6 +39,9 @@ class _DummyBackend:
     def load_model(self, _model_path: str):
         return object(), object()
 
+    def prepare_model_for_training(self, _model, _model_path: str) -> int:
+        return 0
+
     def encode_tokens(self, _tokenizer, text: str) -> list[str]:
         return text.split()
 

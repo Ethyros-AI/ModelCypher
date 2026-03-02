@@ -99,8 +99,12 @@ def _write_probe_output(result: Any, context: CLIContext, model_path: str) -> No
             text_cfg = raw_config.get("text_config")
             cfg = {**text_cfg, **raw_config} if isinstance(text_cfg, dict) else raw_config
             moe_topology = MoETopology.from_config(cfg)
-        except Exception:
-            pass
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "MoE topology detection failed: %s", exc,
+            )
 
     if moe_topology is not None:
         payload["moe"] = {

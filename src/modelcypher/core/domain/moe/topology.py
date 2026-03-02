@@ -177,9 +177,11 @@ def detect_expert_format(mlp_module: object) -> str:
     if hasattr(experts, "gate_up_proj") or hasattr(experts, "gate_proj"):
         return "packed_switch"
 
-    # Individual experts: experts is iterable, each element has gate_proj
+    # Individual experts: experts is iterable, each element has gate_proj.
+    # Dict-backed experts: iterate values (keys are indices/names).
     try:
-        first = next(iter(experts))
+        items = experts.values() if isinstance(experts, dict) else experts
+        first = next(iter(items))
         if hasattr(first, "gate_proj"):
             return "individual"
     except (TypeError, StopIteration):

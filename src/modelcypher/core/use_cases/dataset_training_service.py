@@ -482,6 +482,16 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 merged_layers,
             )
 
+        # 1.1. Unpack packed MoE expert tensors for per-expert geometry + training.
+        # Lossless identity operation: same weights, different layout.
+        # After unpacking, each expert is a standard nn.Linear that NB-LoRA can target.
+        n_unpacked = self._backend.prepare_model_for_training(model, str(model_path))
+        if n_unpacked > 0:
+            logger.info(
+                "MoE model: %d layers unpacked for per-expert training",
+                n_unpacked,
+            )
+
         # 1.5. Pre-training benchmark (optional, when --benchmark is set)
         benchmark_baseline_scores: dict[str, float] | None = None
         _benchmark_service = None
@@ -1449,7 +1459,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             research_outcome_selector=research_outcome_selector,
             degen_prompts=degen_prompts_for_training,
             degen_baseline_max=degen_baseline_max,
-            **({"degen_ngram_order": degen_ngram_order} if degen_ngram_order is not None else {}),
+            degen_ngram_order=degen_ngram_order,
             grad_accum_steps=grad_accum_steps,
         )
         training_time_seconds = time.time() - train_start

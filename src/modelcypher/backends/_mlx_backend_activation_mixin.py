@@ -557,11 +557,12 @@ class _MLXBackendActivationMixin:
 
                 ff_module = getattr(layer, "mlp", None) or getattr(layer, "feed_forward", None)
 
-            if (
+            is_moe_block = (
                 ff_module is not None
-                and hasattr(ff_module, "experts")
                 and hasattr(ff_module, "gate")
-            ):
+                and (hasattr(ff_module, "experts") or hasattr(ff_module, "switch_mlp"))
+            )
+            if is_moe_block:
                 gate_logits = ff_module.gate(h_post)
                 num_experts = int(gate_logits.shape[-1])
                 top_k_raw = (

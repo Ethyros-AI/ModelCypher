@@ -654,6 +654,21 @@ class Backend(Protocol):
         """
         ...
 
+    def prepare_model_for_training(self, model: Any, model_path: str) -> int:
+        """Prepare a loaded model for training.
+
+        Backend-specific preparation such as unpacking packed MoE expert
+        tensors into individual modules that NB-LoRA can target.
+
+        Args:
+            model: Model object from load_model.
+            model_path: Path to model directory (for reading config).
+
+        Returns:
+            Number of layers modified (0 if no preparation needed).
+        """
+        ...
+
     def generate(
         self,
         model: Any,
