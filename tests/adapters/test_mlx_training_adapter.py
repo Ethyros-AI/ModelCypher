@@ -399,11 +399,15 @@ def test_memory_safe_micro_batch_raises_when_one_oom(monkeypatch) -> None:
 
 @pytest.mark.mlx
 def test_memory_safe_micro_batch_no_catastrophic_jump(monkeypatch) -> None:
-    """At large logical batch sizes, geometric doubling prevents fatal jumps.
+    """Geometric doubling returns last safe power-of-2 without binary refinement.
 
-    Old binary search with logical_batch=64 and OOM at >=20 would probe
-    midpoint 32 immediately after 1 — a 32x jump. Geometric doubling
-    probes 1, 2, 4, 8, 16, 32(fail), then refines in [16, 32).
+    With OOM threshold=20 and logical_batch=64: probes 1, 2, 4, 8, 16 (pass),
+    32 (fail). Returns 16 — the last safe geometric step.
+
+    Phase 2 binary refinement is intentionally absent: the doubling algorithm's
+    2-competitive guarantee provides ~2x memory headroom, which accounts for
+    training-vs-probe overhead. Binary search discards that margin and causes
+    hard kills under actual training load.
     """
     import mlx.core as mx
     import mlx_lm.tuner.trainer as trainer
@@ -441,9 +445,14 @@ def test_memory_safe_micro_batch_no_catastrophic_jump(monkeypatch) -> None:
         logical_batch_size=64,
     )
 
-    assert safe_bs == 19
+    assert safe_bs == 16
     assert probe_history[0] == 1
-    # Critical safety property: no probe exceeds 2x the largest known-safe value.
+    # Binary refinement removed: probe sequence must be strictly geometric (powers of 2).
+    expected_probes = [1, 2, 4, 8, 16, 32]
+    assert probe_history == expected_probes, (
+        f"Expected geometric probe sequence {expected_probes}, got {probe_history}"
+    )
+    # Safety property: no probe exceeds 2x the largest known-safe value.
     max_safe = 0
     for bs in probe_history:
         if bs < oom_threshold:
@@ -452,6 +461,57 @@ def test_memory_safe_micro_batch_no_catastrophic_jump(monkeypatch) -> None:
             assert bs <= max_safe * 2, (
                 f"Catastrophic jump: probed {bs} but max safe was {max_safe}"
             )
+
+
+@pytest.mark.mlx
+def test_memory_safe_micro_batch_non_power_of_two_logical_batch(monkeypatch) -> None:
+    """When logical_batch is not a power of 2, no max_candidate probe is issued.
+
+    logical_batch=50, OOM at >=60: doubling probes 1, 2, 4, 8, 16, 32 (all
+    pass), then 64 > 50 exits loop. safe=32. The old code would then probe 50;
+    the new code returns 32 directly — preserving the 2x headroom.
+    """
+    import mlx.core as mx
+    import mlx_lm.tuner.trainer as trainer
+    import modelcypher.backends._mlx_training_adapter_diagnostics_mixin as diag_mixin
+
+    backend = _get_backend_or_fail("mlx")
+    adapter = MLXTrainingAdapter(backend)
+
+    oom_threshold = 60
+    probe_history: list[int] = []
+
+    def _fake_iterate_batches(_dataset, batch_size, _seq_length, loop=False, seed=0):
+        del loop, seed
+        probe_history.append(int(batch_size))
+        if int(batch_size) >= oom_threshold:
+            raise RuntimeError("out of memory")
+        yield mx.zeros((int(batch_size), 8), dtype=mx.int32), [8] * int(batch_size)
+
+    def _fake_value_and_grad(_model, _loss_fn):
+        def _loss_vg(model, batch, lengths):  # noqa: ANN001
+            del model, batch, lengths
+            return (mx.array(0.0), None), {}
+
+        return _loss_vg
+
+    monkeypatch.setattr(trainer, "iterate_batches", _fake_iterate_batches)
+    monkeypatch.setattr(diag_mixin.nn, "value_and_grad", _fake_value_and_grad)
+
+    model = _ToyModel(n_layers=1, hidden_dim=16)
+    train_dataset = [([1, 2, 3, 4], 0)] * 128
+    safe_bs = adapter.derive_memory_safe_micro_batch_size(
+        model=model,
+        train_dataset=train_dataset,
+        seq_length=8,
+        logical_batch_size=50,  # non-power-of-2: doubling reaches 32, then 64 > 50
+    )
+
+    # Returns 32, not 50 — max_candidate probe is not issued
+    assert safe_bs == 32
+    assert probe_history == [1, 2, 4, 8, 16, 32], (
+        f"max_candidate probe was issued: {probe_history}"
+    )
 
 
 class _QuantizedToyAttention(nn.Module):

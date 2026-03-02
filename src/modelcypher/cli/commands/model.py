@@ -88,6 +88,31 @@ def _write_probe_output(result: Any, context: CLIContext, model_path: str) -> No
         "layers": [_layer_payload(layer) for layer in result.layers[:20]],
     }
 
+    # Detect MoE topology from config
+    moe_topology = None
+    config_path = Path(model_path) / "config.json"
+    if config_path.exists():
+        try:
+            from modelcypher.core.domain.moe.topology import MoETopology
+
+            raw_config = json.loads(config_path.read_text())
+            text_cfg = raw_config.get("text_config")
+            cfg = {**text_cfg, **raw_config} if isinstance(text_cfg, dict) else raw_config
+            moe_topology = MoETopology.from_config(cfg)
+        except Exception:
+            pass
+
+    if moe_topology is not None:
+        payload["moe"] = {
+            "numExperts": moe_topology.num_experts,
+            "activePerToken": moe_topology.num_experts_per_tok,
+            "moeIntermediateSize": moe_topology.moe_intermediate_size,
+            "hasSharedExpert": moe_topology.has_shared_expert,
+            "sharedExpertIntermediateSize": moe_topology.shared_expert_intermediate_size,
+            "moeLayers": len(moe_topology.moe_layer_indices),
+            "totalLayers": moe_topology.num_layers,
+        }
+
     if context.output_format == "text":
         lines = [
             "MODEL INFO",
@@ -102,6 +127,23 @@ def _write_probe_output(result: Any, context: CLIContext, model_path: str) -> No
             lines.append(f"Layers (config): {result.layer_count_config}")
         if result.quantization:
             lines.append(f"Quantization: {result.quantization}")
+        if moe_topology is not None:
+            lines.append("")
+            lines.append("MoE Topology:")
+            lines.append(f"  Experts: {moe_topology.num_experts}")
+            lines.append(f"  Active per token: {moe_topology.num_experts_per_tok}")
+            lines.append(f"  Expert intermediate: {moe_topology.moe_intermediate_size}")
+            lines.append(
+                f"  Shared expert: {'yes' if moe_topology.has_shared_expert else 'no'}"
+                + (
+                    f" (intermediate={moe_topology.shared_expert_intermediate_size})"
+                    if moe_topology.shared_expert_intermediate_size
+                    else ""
+                )
+            )
+            lines.append(
+                f"  MoE layers: {len(moe_topology.moe_layer_indices)}/{moe_topology.num_layers}"
+            )
 
         write_output("\n".join(lines), context.output_format, context.pretty)
         return

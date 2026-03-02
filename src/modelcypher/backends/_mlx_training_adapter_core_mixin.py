@@ -28,6 +28,19 @@ from modelcypher.core.domain.training.exceptions import TrainingDerivationError 
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.training.geometric_lora import LayerGeometry
+
+
+class _VirtualProjection:
+    """Lightweight wrapper exposing ``.weight`` for a 2D slice of a packed 3D tensor.
+
+    Zero-copy: the slice is a view into the original packed tensor.
+    Downstream ``compute_layer_geometry()`` only reads ``.weight``.
+    """
+
+    __slots__ = ("weight",)
+
+    def __init__(self, weight_2d: Any) -> None:
+        self.weight = weight_2d
     from modelcypher.ports.backend import Backend
 
 
@@ -220,12 +233,36 @@ class _MLXTrainingAdapterCoreMixin:
             key = f"model.layers.{layer_idx}.mlp.gate.weight"
             yield key, router_gate
 
+        # Packed SwitchGLU experts: mlp.switch_mlp has SwitchLinear modules
+        # with 3D weights [num_experts, out_dim, in_dim].
+        switch_mlp = getattr(mlp, "switch_mlp", None)
+        if switch_mlp is not None:
+            for proj_name in ("gate_proj", "up_proj", "down_proj"):
+                switch_linear = getattr(switch_mlp, proj_name, None)
+                if switch_linear is None or not hasattr(switch_linear, "weight"):
+                    continue
+                packed_w = switch_linear.weight
+                if packed_w.ndim != 3:
+                    continue
+                num_experts = packed_w.shape[0]
+                for expert_idx in range(num_experts):
+                    expert_slice = packed_w[expert_idx]
+                    key = (
+                        f"model.layers.{layer_idx}.mlp.experts.{expert_idx}."
+                        f"{proj_name}.weight"
+                    )
+                    yield key, _VirtualProjection(expert_slice)
+
+        # Individual expert modules: mlp.experts is iterable of per-expert modules.
         experts = getattr(mlp, "experts", None)
-        if experts is not None:
+        if experts is not None and switch_mlp is None:
             if isinstance(experts, dict):
                 expert_items = list(experts.items())
             else:
-                expert_items = list(enumerate(experts))
+                try:
+                    expert_items = list(enumerate(experts))
+                except TypeError:
+                    expert_items = []
             for raw_expert_idx, expert in expert_items:
                 if expert is None:
                     continue

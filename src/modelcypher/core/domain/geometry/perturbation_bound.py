@@ -144,6 +144,75 @@ class MarginSafetyResult:
     """min_margin / logit_bound.  >1.0 means safe."""
 
 
+def compute_readout_effective_rank(
+    model: Any,
+    backend: "Backend",
+) -> float:
+    r"""Shannon effective rank of the readout weight matrix.
+
+    Uses the same readout-matrix detection logic as
+    :func:`compute_readout_spectral_norm`.  Computes
+    ``SVD(W, compute_uv=False)`` to get singular values, then
+
+    .. math::
+
+        \text{erank} = \exp\!\bigl(-\sum_i p_i \ln p_i\bigr),
+        \qquad p_i = \sigma_i^2 / \sum_j \sigma_j^2
+
+    (Shannon effective rank, Roy & Vetterli 2007).
+
+    The readout effective rank bounds the per-position output diversity
+    under greedy decoding, which determines the n-gram order at which
+    random collisions become negligible (birthday paradox).
+
+    Scaling: full SVD of the readout matrix (vocab × hidden_dim).  For
+    current models (350M–8B) this is at most ~150K × 4K — completes in
+    <1 second.  If scaling to larger vocabularies becomes a bottleneck,
+    replace with eigendecomposition of W^T W (hidden_dim × hidden_dim,
+    much smaller) which yields the same singular values squared.
+    """
+    from modelcypher.core.domain.geometry.numerical_stability import (
+        division_epsilon,
+        safe_log_epsilon,
+    )
+
+    base = getattr(model, "model", model)
+
+    if hasattr(model, "lm_head") and hasattr(model.lm_head, "weight"):
+        w_out = model.lm_head.weight
+    elif hasattr(base, "embed_tokens") and hasattr(base.embed_tokens, "weight"):
+        w_out = base.embed_tokens.weight
+    else:
+        raise ValueError("Cannot find output projection weight matrix")
+
+    w_f32 = backend.astype(w_out, "float32")
+    backend.eval(w_f32)
+    S = backend.svd(w_f32, compute_uv=False)
+    backend.eval(S)
+
+    # Shannon effective rank from singular-value distribution
+    eigvals = S * S
+    total = backend.sum(eigvals)
+    backend.eval(total)
+    total_val = float(backend.to_scalar(total))
+
+    eps = division_epsilon(backend, eigvals)
+    if total_val <= eps:
+        return 1.0
+
+    p = eigvals / total_val
+    log_eps = safe_log_epsilon(backend, eigvals)
+    p_safe = backend.where(
+        p > log_eps,
+        p,
+        backend.full(p.shape, log_eps),
+    )
+    entropy = -backend.sum(p * backend.log(p_safe))
+    erank = backend.exp(entropy)
+    backend.eval(erank)
+    return float(backend.to_scalar(erank))
+
+
 def compute_readout_spectral_norm(
     model: Any,
     backend: "Backend",

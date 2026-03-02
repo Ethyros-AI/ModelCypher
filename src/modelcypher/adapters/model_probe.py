@@ -249,11 +249,15 @@ class ModelProbe:
                 return value[0] if isinstance(value[0], str) else None
             return value if isinstance(value, str) else None
 
+        # Multimodal models (e.g. Qwen3.5) nest text params in text_config
+        text_cfg = config.get("text_config")
+        cfg = {**text_cfg, **config} if isinstance(text_cfg, dict) else config
+
         architecture = first_str(config.get("architectures")) or config.get("model_type") or "unknown"
-        vocab_size = int(config.get("vocab_size") or 0)
-        hidden_size = int(config.get("hidden_size") or config.get("n_embd") or 0)
-        num_attention_heads = int(config.get("num_attention_heads") or config.get("n_head") or 0)
-        num_layers = int(config.get("num_hidden_layers") or config.get("n_layer") or config.get("num_layers") or 0)
+        vocab_size = int(cfg.get("vocab_size") or 0)
+        hidden_size = int(cfg.get("hidden_size") or cfg.get("n_embd") or 0)
+        num_attention_heads = int(cfg.get("num_attention_heads") or cfg.get("n_head") or 0)
+        num_layers = int(cfg.get("num_hidden_layers") or cfg.get("n_layer") or cfg.get("num_layers") or 0)
 
         quant = config.get("quantization")
         quantization = None

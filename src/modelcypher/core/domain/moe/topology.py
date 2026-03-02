@@ -76,40 +76,52 @@ class MoETopology:
 
     @classmethod
     def from_config(cls, config: dict) -> MoETopology | None:
-        """Return topology for MoE config, else None for dense models."""
+        """Return topology for MoE config, else None for dense models.
+
+        Handles multimodal models (e.g. Qwen3.5) that nest text model
+        parameters inside a ``text_config`` sub-dict.  Top-level keys
+        take precedence; ``text_config`` provides fallback values.
+        """
+        # Multimodal models nest text params in text_config
+        text_cfg = config.get("text_config")
+        if isinstance(text_cfg, dict):
+            cfg: dict = {**text_cfg, **config}
+        else:
+            cfg = config
+
         num_experts = _as_positive_int(
-            config.get("num_experts", config.get("num_local_experts")),
+            cfg.get("num_experts", cfg.get("num_local_experts")),
         )
         if num_experts is None:
             return None
 
-        layer_types = config.get("layer_types")
+        layer_types = cfg.get("layer_types")
         if isinstance(layer_types, list) and layer_types:
             num_layers = len(layer_types)
         else:
-            num_layers = _as_positive_int(config.get("num_hidden_layers")) or 0
+            num_layers = _as_positive_int(cfg.get("num_hidden_layers")) or 0
 
-        num_experts_per_tok = _as_positive_int(config.get("num_experts_per_tok")) or 1
+        num_experts_per_tok = _as_positive_int(cfg.get("num_experts_per_tok")) or 1
         num_experts_per_tok = min(num_experts_per_tok, num_experts)
 
         moe_intermediate_size = (
-            _as_positive_int(config.get("moe_intermediate_size"))
-            or _as_positive_int(config.get("intermediate_size"))
+            _as_positive_int(cfg.get("moe_intermediate_size"))
+            or _as_positive_int(cfg.get("intermediate_size"))
             or 0
         )
 
-        shared_size = _as_positive_int(config.get("shared_expert_intermediate_size"))
+        shared_size = _as_positive_int(cfg.get("shared_expert_intermediate_size"))
         has_shared_expert = (
             shared_size is not None
-            or bool(config.get("shared_expert_intermediate_size"))
-            or bool(config.get("has_shared_expert"))
+            or bool(cfg.get("shared_expert_intermediate_size"))
+            or bool(cfg.get("has_shared_expert"))
         )
 
-        explicit_indices = _as_layer_indices(config.get("moe_layer_indices"), num_layers)
+        explicit_indices = _as_layer_indices(cfg.get("moe_layer_indices"), num_layers)
         if explicit_indices:
             moe_layer_indices = explicit_indices
         else:
-            step = _as_positive_int(config.get("decoder_sparse_step"))
+            step = _as_positive_int(cfg.get("decoder_sparse_step"))
             if step is not None and num_layers > 0:
                 moe_layer_indices = list(range(0, num_layers, step))
             elif num_layers > 0:
@@ -143,4 +155,37 @@ class MoETopology:
         return 1.0 / float(self.num_experts)
 
 
-__all__ = ["MoETopology"]
+def detect_expert_format(mlp_module: object) -> str:
+    """Detect whether an MoE MLP block uses packed or individual experts.
+
+    Structural check on the loaded module — no heuristics.
+
+    Returns:
+        ``"packed_switch"``  — SwitchGLU with 3D packed tensors
+            (``mlp.experts`` has ``gate_up_proj`` or ``gate_proj`` attribute)
+        ``"individual"``    — per-expert sub-modules with ``gate_proj``
+        ``"unknown"``       — unrecognised layout
+    """
+    experts = getattr(mlp_module, "experts", None)
+    if experts is None:
+        # Some architectures use switch_mlp instead of experts
+        experts = getattr(mlp_module, "switch_mlp", None)
+    if experts is None:
+        return "unknown"
+
+    # Packed SwitchGLU / SwitchLinear: experts has gate_up_proj or gate_proj attribute
+    if hasattr(experts, "gate_up_proj") or hasattr(experts, "gate_proj"):
+        return "packed_switch"
+
+    # Individual experts: experts is iterable, each element has gate_proj
+    try:
+        first = next(iter(experts))
+        if hasattr(first, "gate_proj"):
+            return "individual"
+    except (TypeError, StopIteration):
+        pass
+
+    return "unknown"
+
+
+__all__ = ["MoETopology", "detect_expert_format"]

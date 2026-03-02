@@ -4,6 +4,7 @@
 import argparse
 import json
 import math
+import random
 from pathlib import Path
 
 from modelcypher.backends import initialize_default_backend
@@ -15,27 +16,57 @@ from modelcypher.cli.composition import (
 from modelcypher.core.domain.continual_learning_metrics import get_continual_learning_metrics
 from modelcypher.core.domain.geometry.cka import compute_linear_cka_gram
 
-MODEL_PATH_DEFAULT = "/Volumes/CodeCypher/models/mlx-community/Qwen3-8B-bf16"
 OUTPUT_ROOT_DEFAULT = Path("results/continual_learning/exp1")
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Exp 1: Sequential Forgetting")
-    parser.add_argument("--model-path", default=MODEL_PATH_DEFAULT)
+    parser.add_argument(
+        "--model-path",
+        default="/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
+    )
     parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT_DEFAULT)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--baseline", action="store_true", help="Run unconstrained LoRA baseline")
+    parser.add_argument("--baseline", action="store_true")
     parser.add_argument(
         "--task-datasets",
         nargs="+",
-        default=["data/training/benchmark_train.jsonl", "data/training/retention_replay.jsonl"],
-        help="List of dataset paths for sequential training",
+        default=[
+            "data/training/shards/S1.jsonl",
+            "data/training/shards/S2.jsonl",
+            "data/training/shards/S3.jsonl",
+            "data/training/shards/S4.jsonl",
+            "data/training/shards/S5.jsonl",
+            "data/training/shards/S6.jsonl",
+            "data/training/shards/S7.jsonl",
+            "data/training/shards/S8.jsonl",
+        ],
+    )
+    parser.add_argument(
+        "--replay-fraction",
+        type=float,
+        default=0.0,
+        help="Fraction of previous-task samples to mix into each task's training data",
+    )
+    parser.add_argument(
+        "--run-id",
+        default="R0",
+        help="Run label for output directory (e.g. R1, R2)",
+    )
+    parser.add_argument(
+        "--model-id",
+        default=None,
+        help="Human-readable model label for output JSON (defaults to model path basename)",
     )
     return parser.parse_args()
 
 
+# ---------------------------------------------------------------------------
+# Geometry helpers
+# ---------------------------------------------------------------------------
+
 def _extract_adapter_deltas_keyed(backend, adapter_path: Path) -> dict:
-    """Extract ALL LoRA delta pairs from a saved adapter, keyed by base weight name.
+    """Extract all LoRA delta pairs from a saved adapter, keyed by base weight name.
 
     Returns dict mapping base weight key (e.g. 'model.layers.10.self_attn.q_proj.weight')
     to delta array [out, in].
@@ -56,7 +87,6 @@ def _extract_adapter_deltas_keyed(backend, adapter_path: Path) -> dict:
                 b = adapter_weights[b_key]  # [r, out]
                 # delta = (a @ b).T = b.T @ a.T = [out, in] (weight convention)
                 delta = backend.transpose(backend.matmul(a, b))
-                # Map to base weight key: strip .lora_a, add .weight
                 base_key = k.replace(".lora_a", ".weight")
                 deltas[base_key] = delta
 
@@ -80,8 +110,8 @@ def _spectral_norm(backend, tensor) -> float:
 def _rank_eps(s_list: list[float], eps: float) -> int:
     """Count singular values above IEEE 754-derived noise threshold.
 
-    Threshold = σ_1 * sqrt(eps). Singular values below this are
-    indistinguishable from numerical noise at the working precision.
+    Threshold = σ_1 * sqrt(eps). Below this is indistinguishable from
+    numerical noise at the working precision.
     """
     if not s_list or s_list[0] <= 0:
         return 0
@@ -114,7 +144,6 @@ def _precompute_tail_bases(backend, model_loader, model_path: str,
     Layers with tail_dims == 0 are excluded (fully saturated, no null space).
     """
     tail_bases = {}
-    sqrt_eps = math.sqrt(eps)
 
     for layer_name, tensor in model_loader.iter_weights(model_path):
         if layer_name not in adapted_keys:
@@ -135,11 +164,8 @@ def _precompute_tail_bases(backend, model_loader, model_path: str,
         tail_dims = full_rank - used_rank
 
         if tail_dims > 0:
-            # V = Vt.T, V_tail = V[:, used_rank:] = Vt[used_rank:, :].T
-            # Vt shape: [min(out,in), in] — rows are right singular vectors
-            Vt_tail = backend.astype(Vt, "float32")
-            # Slice last tail_dims rows of Vt, then transpose to get V_tail [in, tail_dims]
-            V_tail = backend.transpose(Vt_tail[used_rank:])
+            # V_tail = last tail_dims columns of V = Vt[used_rank:, :].T
+            V_tail = backend.transpose(backend.astype(Vt, "float32")[used_rank:])
             backend.eval(V_tail)
             tail_bases[layer_name] = (V_tail, tail_dims)
             print(f"  {layer_name}: rank={used_rank}/{full_rank}, tail_dims={tail_dims}")
@@ -157,21 +183,17 @@ def _compute_consumed_dims(backend, deltas_keyed: dict, tail_bases: dict,
       energy_ratio_l = ||C_l||_F^2 / ||delta_l||_F^2
 
     Returns (total_consumed, per_layer_dict).
-    Per-layer dict includes: tail_dims, consumed, energy_ratio.
     """
     total_consumed = 0
     per_layer = {}
 
     for layer_name, (V_tail, tail_dims) in tail_bases.items():
         if layer_name not in deltas_keyed:
-            per_layer[layer_name] = {
-                "tail_dims": tail_dims, "consumed": 0, "energy_ratio": 0.0,
-            }
+            per_layer[layer_name] = {"tail_dims": tail_dims, "consumed": 0, "energy_ratio": 0.0}
             continue
 
         delta = deltas_keyed[layer_name]
         delta_f32 = backend.astype(delta, "float32")
-        # C = delta @ V_tail: [out, in] @ [in, tail_dims] = [out, tail_dims]
         C = backend.matmul(delta_f32, V_tail)
         backend.eval(C)
 
@@ -180,8 +202,6 @@ def _compute_consumed_dims(backend, deltas_keyed: dict, tail_bases: dict,
         s_list = backend.tolist(S_c)
         consumed = _rank_eps(s_list, eps)
 
-        # Projected energy ratio: how much of the delta's energy lands in null space
-        # ||C_l||_F^2 / ||delta_l||_F^2
         c_frob_sq = sum(s * s for s in s_list)
         S_delta = _svd_singular_values(backend, delta_f32)
         sd_list = backend.tolist(S_delta)
@@ -189,8 +209,7 @@ def _compute_consumed_dims(backend, deltas_keyed: dict, tail_bases: dict,
         energy_ratio = c_frob_sq / d_frob_sq if d_frob_sq > 0 else 0.0
 
         per_layer[layer_name] = {
-            "tail_dims": tail_dims, "consumed": consumed,
-            "energy_ratio": energy_ratio,
+            "tail_dims": tail_dims, "consumed": consumed, "energy_ratio": energy_ratio,
         }
         total_consumed += consumed
 
@@ -202,10 +221,7 @@ def _incremental_new_dims(backend, all_projections: list, tail_bases: dict,
     """Compute incremental new null-space dimensions consumed per task.
 
     incremental_new_dims_t = rank([C_1..C_t]) - rank([C_1..C_{t-1}])
-
-    This separates genuinely new capacity use from overlap/reuse across tasks.
-    Stacks projected coefficients C_l vertically across tasks per layer,
-    then sums incremental rank across layers.
+    Summed across layers.
     """
     if not all_projections:
         return []
@@ -215,8 +231,7 @@ def _incremental_new_dims(backend, all_projections: list, tail_bases: dict,
 
     for t in range(len(all_projections)):
         total_rank = 0
-        for layer_name, (V_tail, tail_dims) in tail_bases.items():
-            # Stack C matrices from tasks 0..t for this layer
+        for layer_name, (V_tail, _) in tail_bases.items():
             c_stack = []
             for task_idx in range(t + 1):
                 deltas_keyed = all_projections[task_idx]
@@ -231,7 +246,6 @@ def _incremental_new_dims(backend, all_projections: list, tail_bases: dict,
             if not c_stack:
                 continue
 
-            # Vertical stack: [sum(out_i), tail_dims]
             stacked = backend.concatenate(c_stack, axis=0)
             backend.eval(stacked)
             S_stacked = backend.svd(stacked, compute_uv=False)
@@ -239,18 +253,156 @@ def _incremental_new_dims(backend, all_projections: list, tail_bases: dict,
             s_list = backend.tolist(S_stacked)
             total_rank += _rank_eps(s_list, eps)
 
-        new_dims = total_rank - prev_total_rank
-        incremental.append(new_dims)
+        incremental.append(total_rank - prev_total_rank)
         prev_total_rank = total_rank
 
     return incremental
 
 
+def _cumulative_utilization_by_layer(backend, all_deltas_keyed: list[dict],
+                                     tail_bases: dict, eps: float) -> dict:
+    """Per-layer cumulative null-space utilization across all tasks.
+
+    For each layer: rank([C_1..C_T]) / tail_dims — the fraction of null-space
+    dimensions consumed by the UNION of all task adapters.
+
+    This is the correct end-state capacity metric; per-task consumed values are
+    not additive (adapters may reuse the same directions).
+    """
+    utilization = {}
+    for layer_name, (V_tail, tail_dims) in tail_bases.items():
+        c_stack = []
+        for dk in all_deltas_keyed:
+            if layer_name not in dk:
+                continue
+            delta_f32 = backend.astype(dk[layer_name], "float32")
+            C = backend.matmul(delta_f32, V_tail)
+            backend.eval(C)
+            c_stack.append(C)
+
+        if not c_stack:
+            utilization[layer_name] = 0.0
+            continue
+
+        stacked = backend.concatenate(c_stack, axis=0)
+        backend.eval(stacked)
+        S_stacked = backend.svd(stacked, compute_uv=False)
+        backend.eval(S_stacked)
+        s_list = backend.tolist(S_stacked)
+        cumulative_rank = _rank_eps(s_list, eps)
+        utilization[layer_name] = round(cumulative_rank / tail_dims, 6) if tail_dims > 0 else 0.0
+
+    return utilization
+
+
+def _compute_pairwise_overlap(backend, delta_prev: dict, delta_curr: dict,
+                               tail_bases: dict, eps: float) -> int:
+    """Sum over layers of: consumed[prev] + consumed[curr] - rank([C_prev; C_curr]).
+
+    Measures the null-space dimensions shared between two consecutive tasks.
+    Zero when tasks are orthogonal in null space; positive when they overlap.
+    """
+    total_overlap = 0
+
+    for layer_name, (V_tail, _) in tail_bases.items():
+        c_stack = []
+        for dk in (delta_prev, delta_curr):
+            if layer_name not in dk:
+                continue
+            delta_f32 = backend.astype(dk[layer_name], "float32")
+            C = backend.matmul(delta_f32, V_tail)
+            backend.eval(C)
+            c_stack.append(C)
+
+        if len(c_stack) < 2:
+            continue
+
+        # rank of each individually
+        s_prev = backend.tolist(backend.svd(c_stack[0], compute_uv=False))
+        s_curr = backend.tolist(backend.svd(c_stack[1], compute_uv=False))
+        r_prev = _rank_eps(s_prev, eps)
+        r_curr = _rank_eps(s_curr, eps)
+
+        # rank of joint stack
+        stacked = backend.concatenate(c_stack, axis=0)
+        backend.eval(stacked)
+        s_joint = backend.tolist(backend.svd(stacked, compute_uv=False))
+        r_joint = _rank_eps(s_joint, eps)
+
+        total_overlap += r_prev + r_curr - r_joint
+
+    return total_overlap
+
+
+def _percentile(vals: list[float], p: int) -> float:
+    """p-th percentile of a list. p in [0, 100]."""
+    if not vals:
+        return 0.0
+    sorted_v = sorted(vals)
+    idx = max(0, min(len(sorted_v) - 1, int(len(sorted_v) * p / 100)))
+    return sorted_v[idx]
+
+
+def _energy_ratio_stats(per_layer: dict) -> dict:
+    """Compute mean, p10, p50, p90 of energy_ratio across layers."""
+    vals = [info["energy_ratio"] for info in per_layer.values() if info["consumed"] > 0]
+    if not vals:
+        vals = [info["energy_ratio"] for info in per_layer.values()]
+    if not vals:
+        return {"mean": 0.0, "p10": 0.0, "p50": 0.0, "p90": 0.0}
+    return {
+        "mean": sum(vals) / len(vals),
+        "p10": _percentile(vals, 10),
+        "p50": _percentile(vals, 50),
+        "p90": _percentile(vals, 90),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Replay helpers
+# ---------------------------------------------------------------------------
+
+def _load_jsonl(path: str) -> list[dict]:
+    samples = []
+    with open(path) as fh:
+        for line in fh:
+            line = line.strip()
+            if line:
+                samples.append(json.loads(line))
+    return samples
+
+
+def _write_merged_dataset(samples: list[dict], path: Path) -> None:
+    with path.open("w") as fh:
+        for s in samples:
+            fh.write(json.dumps(s) + "\n")
+
+
+def _build_replay_dataset(current_samples: list[dict], prev_samples: list[list[dict]],
+                          replay_fraction: float, seed: int) -> list[dict]:
+    """Mix current task samples with a random sample of previous-task samples.
+
+    Replay count = floor(replay_fraction * len(current_samples)).
+    Samples uniformly from the pool of all previous-task samples.
+    """
+    n_replay = math.floor(replay_fraction * len(current_samples))
+    pool = [s for shard in prev_samples for s in shard]
+    rng = random.Random(seed)
+    replay = rng.sample(pool, min(n_replay, len(pool)))
+    merged = current_samples + replay
+    rng.shuffle(merged)
+    return merged
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 def main() -> None:
     args = _parse_args()
-    output_root = args.output_root.expanduser().resolve()
-    seed_dir = output_root / f"seed{args.seed}"
-    seed_dir.mkdir(parents=True, exist_ok=True)
+    model_id = args.model_id or Path(args.model_path).name
+    run_dir = args.output_root.expanduser().resolve() / args.run_id / f"seed{args.seed}"
+    run_dir.mkdir(parents=True, exist_ok=True)
 
     backend = initialize_default_backend()
     cpu_metrics = get_continual_learning_metrics(None)
@@ -259,11 +411,11 @@ def main() -> None:
     capacity_service = get_capacity_analysis_service()
     eps = float(backend.finfo().eps)
 
-    print(f"=== Starting Experiment 1 (Sequential Forgetting) | Seed: {args.seed} ===")
+    print(f"=== Exp 1 | run={args.run_id} | model={model_id} | seed={args.seed} | replay={args.replay_fraction} ===")
 
     current_model_path = args.model_path
 
-    # Calculate sigma_k_ref from first weight layer (spectral bound reference)
+    # Spectral reference from first weight layer
     weight_items = model_loader.iter_weights(str(current_model_path))
     try:
         first_layer_name, first_tensor = next(weight_items)
@@ -273,11 +425,11 @@ def main() -> None:
         sigma_k_ref = 1.0
     print(f"sigma_k_ref from {first_layer_name}: {sigma_k_ref:.4f}")
 
-    # Profile base model null-space capacity (once, before any training)
+    # Base model null-space capacity (once, before training)
     print("Profiling base model capacity...")
     base_capacity = capacity_service.analyze(
         model_path=str(current_model_path),
-        checkpoint_path=seed_dir / "capacity_checkpoint.json",
+        checkpoint_path=run_dir / "capacity_checkpoint.json",
     )
     base_mean_null_dim = (
         sum(r.null_space_dim_f32 for r in base_capacity.layer_reports)
@@ -285,41 +437,62 @@ def main() -> None:
     ) if base_capacity.layer_reports else 0.0
     print(f"Base mean null-space dim: {base_mean_null_dim:.2f} ({base_capacity.analyzed_layers} layers)")
 
-    # Discover which layers the adapter targets by doing a quick probe train
-    # (or read from an existing adapter). For now, we precompute V_tail for all
-    # adapted layers after the first training pass.
-    # We defer tail basis computation until we know which keys the adapter uses.
-
-    # Per-task telemetry accumulators
+    # Per-task accumulators
     task_remaining_null = []
-    delta_history_keyed = []  # list[dict[str, Array]]
-    delta_history_flat = []   # list[list[Array]] — for CKA/spectral
+    delta_history_keyed = []   # list[dict[str, Array]]
+    delta_history_flat = []    # list[list[Array]]
     representative_deltas = []
     cka_matrix = []
     per_task_cka = []
     cumulative_weyl = 0.0
-    tail_bases = None         # Computed once after first adapter is saved
+    tail_bases = None
     capacity_total = 0
+    cumulative_new_dims = 0
+    all_task_metrics = []      # full per-task metric records
+    prev_shard_samples: list[list[dict]] = []  # raw samples per completed task
 
-    for i, dataset_path in enumerate(args.task_datasets):
-        print(f"\n--> Task {i+1}/{len(args.task_datasets)}: {dataset_path}")
-        adapter_path = seed_dir / f"adapter_task_{i}"
+    task_datasets = args.task_datasets
+    for i, dataset_path in enumerate(task_datasets):
+        print(f"\n--> Task {i+1}/{len(task_datasets)}: {dataset_path}")
+        adapter_path = run_dir / f"adapter_task_{i}"
 
-        # 1. Train adapter on current task
+        # Load raw samples for replay bookkeeping
+        current_samples = _load_jsonl(dataset_path)
+
+        # Build replay-merged dataset if needed
+        if args.replay_fraction > 0 and prev_shard_samples:
+            merged_samples = _build_replay_dataset(
+                current_samples, prev_shard_samples, args.replay_fraction, args.seed + i,
+            )
+            merged_path = run_dir / f"replay_merged_task_{i}.jsonl"
+            _write_merged_dataset(merged_samples, merged_path)
+            train_path = str(merged_path)
+            print(f"  Replay: {len(merged_samples) - len(current_samples)} samples from {len(prev_shard_samples)} prior shards")
+        else:
+            train_path = dataset_path
+
+        # Train
         result = None
         try:
             result = dataset_service.train_from_dataset(
                 model_path=str(current_model_path),
-                dataset_path=str(dataset_path),
-                eval_dataset_path=str(dataset_path),
+                dataset_path=train_path,
+                eval_dataset_path=dataset_path,  # eval always on current task only
                 output_path=str(adapter_path),
                 seed=args.seed + i,
             )
-            print(f"  Training: {result.train_iters} iters, loss {result.initial_loss:.3f} -> {result.final_loss:.3f}")
+            print(f"  Train: {result.train_iters} iters, loss {result.initial_loss:.3f} -> {result.final_loss:.3f}")
+            print(f"  Eval:  baseline={result.baseline_loss:.3f}, post={result.post_loss:.3f}")
         except Exception as e:
             print(f"  Training FAILED: {e}")
 
-        # 2. Extract ALL geometry deltas from adapter, keyed by base weight name
+        # Clean up temp replay file
+        if args.replay_fraction > 0 and prev_shard_samples:
+            merged_path.unlink(missing_ok=True)
+
+        prev_shard_samples.append(current_samples)
+
+        # Extract geometry deltas
         deltas_keyed = _extract_adapter_deltas_keyed(backend, adapter_path)
         task_deltas = list(deltas_keyed.values())
         if not task_deltas:
@@ -328,11 +501,10 @@ def main() -> None:
         delta_history_flat.append(task_deltas)
         print(f"  Extracted {len(deltas_keyed)} LoRA delta pairs")
 
-        # Pick representative delta for cross-task CKA
         rep_delta = _pick_representative_delta(backend, task_deltas)
         representative_deltas.append(rep_delta)
 
-        # 3. Precompute V_tail bases once (after first adapter reveals target keys)
+        # Precompute V_tail bases once (after first adapter reveals target keys)
         if tail_bases is None:
             print("\n  Precomputing tail bases from base model SVD...")
             tail_bases = _precompute_tail_bases(
@@ -342,26 +514,45 @@ def main() -> None:
             capacity_total = sum(td for _, td in tail_bases.values())
             print(f"  Capacity total: {capacity_total} tail dims across {len(tail_bases)} layers")
 
-        # 4. Null-space depletion: project delta into V_tail, count consumed dims
-        consumed, per_layer = _compute_consumed_dims(
-            backend, deltas_keyed, tail_bases, eps,
-        )
+        # Null-space depletion
+        consumed, per_layer = _compute_consumed_dims(backend, deltas_keyed, tail_bases, eps)
         remaining = capacity_total - consumed
-        depletion = consumed / capacity_total if capacity_total > 0 else 0.0
+        depletion_fraction = consumed / capacity_total if capacity_total > 0 else 0.0
         task_remaining_null.append(remaining)
-        print(f"  Null-space: consumed={consumed}/{capacity_total}, depletion={depletion:.4f}, remaining={remaining}")
 
-        # Per-layer detail
+        # Incremental new dims (single-task: joint rank - cumulative rank so far)
+        # Computed incrementally to avoid re-stacking all tasks each iteration.
+        # Re-use _incremental_new_dims on history up to this task.
+        incr_list = _incremental_new_dims(backend, delta_history_keyed, tail_bases, eps)
+        this_incr = incr_list[-1] if incr_list else 0
+        cumulative_new_dims += this_incr
+
+        # Overlap with previous task
+        if i > 0:
+            overlap = _compute_pairwise_overlap(
+                backend, delta_history_keyed[-2], delta_history_keyed[-1], tail_bases, eps,
+            )
+        else:
+            overlap = 0
+
+        # Energy ratio statistics across layers
+        er_stats = _energy_ratio_stats(per_layer)
+
+        print(f"  Null-space: consumed={consumed}/{capacity_total}, depletion={depletion_fraction:.4f}, remaining={remaining}")
+        print(f"  Incremental new dims: {this_incr}, cumulative: {cumulative_new_dims}")
+        print(f"  Energy ratio: mean={er_stats['mean']:.4f}, p10={er_stats['p10']:.4f}, p50={er_stats['p50']:.4f}, p90={er_stats['p90']:.4f}")
+        print(f"  Overlap with prev task: {overlap}")
+
         for ln, info in sorted(per_layer.items()):
             print(f"    {ln}: {info['consumed']}/{info['tail_dims']} consumed, energy_ratio={info['energy_ratio']:.4f}")
 
-        # 5. Real CKA from training result (activation-space, not weight-space)
+        # CKA
         task_min_cka = result.min_cka if result is not None else None
         task_mean_cka = result.mean_cka if result is not None else None
         per_task_cka.append({"task": i, "min_cka": task_min_cka, "mean_cka": task_mean_cka})
         print(f"  CKA: min={task_min_cka}, mean={task_mean_cka}")
 
-        # 6. Cross-task CKA matrix (weight-delta Gram proxy for inter-adapter similarity)
+        # Cross-task CKA matrix (weight-delta Gram)
         eval_cka_row = []
         for past_rep in representative_deltas:
             gram1 = backend.matmul(rep_delta, backend.transpose(rep_delta))
@@ -370,7 +561,7 @@ def main() -> None:
             eval_cka_row.append(cka_val)
         cka_matrix.append(eval_cka_row)
 
-        # 7. Per-task spectral norms (for trajectory and Weyl accumulation)
+        # Spectral / Weyl
         task_max_spectral = 0.0
         task_weyl = 0.0
         for d in task_deltas:
@@ -380,28 +571,71 @@ def main() -> None:
         cumulative_weyl += task_weyl
         print(f"  Spectral: max={task_max_spectral:.4f}, task_weyl={task_weyl:.4f}")
 
-    # Final telemetry summary
+        # Accumulate full per-task record
+        all_task_metrics.append({
+            "task": i,
+            "dataset": dataset_path,
+            "incremental_new_dims": this_incr,
+            "cumulative_new_dims": cumulative_new_dims,
+            "consumed": consumed,
+            "remaining": remaining,
+            "depletion_fraction": depletion_fraction,
+            "energy_ratio_mean": er_stats["mean"],
+            "energy_ratio_p10": er_stats["p10"],
+            "energy_ratio_p50": er_stats["p50"],
+            "energy_ratio_p90": er_stats["p90"],
+            "overlap_with_previous_task": overlap,
+            "train_loss_start_end": [
+                result.initial_loss if result else None,
+                result.final_loss if result else None,
+            ],
+            "eval_loss_start_end": [
+                result.baseline_loss if result else None,
+                result.post_loss if result else None,
+            ],
+            "min_cka": task_min_cka,
+            "mean_cka": task_mean_cka,
+            "per_layer": {
+                ln: {
+                    "consumed": info["consumed"],
+                    "tail_dims": info["tail_dims"],
+                    "energy_ratio": round(info["energy_ratio"], 6),
+                }
+                for ln, info in sorted(per_layer.items())
+            },
+        })
+
+        # Stop rule: full capacity consumed
+        if capacity_total > 0 and cumulative_new_dims >= capacity_total:
+            print(f"\n  *** Capacity saturated ({cumulative_new_dims}/{capacity_total}) — stopping early ***")
+            break
+
+    # ---------------------------------------------------------------------------
+    # Post-loop telemetry
+    # ---------------------------------------------------------------------------
     print(f"\n=== Final Telemetry Summary ===")
     depletion_rate = cpu_metrics.null_space_depletion_rate(task_remaining_null)
     cka_stability = cpu_metrics.cka_stability(cka_matrix)
 
-    # Spectral budget trajectory: max spectral norm per task / sigma_k_ref
     safe_sigma = max(sigma_k_ref, eps)
     trajectory = []
-    for task_deltas in delta_history_flat:
+    for td in delta_history_flat:
         task_max = 0.0
-        for d in task_deltas:
+        for d in td:
             task_max = max(task_max, _spectral_norm(backend, d))
         trajectory.append(task_max / safe_sigma)
 
-    deltas_per_task = [len(td) for td in delta_history_flat]
+    # Final tail utilization by layer: cumulative rank across ALL tasks / tail_dims.
+    # Not the last task's consumed — adapters may reuse the same null-space directions,
+    # so per-task consumed values are not additive. We need rank([C_1..C_T]) per layer.
+    final_tail_utilization_by_layer = _cumulative_utilization_by_layer(
+        backend, delta_history_keyed, tail_bases or {}, eps,
+    )
 
-    # Incremental new dims: rank([C_1..C_t]) - rank([C_1..C_{t-1}]) per task
-    incremental = _incremental_new_dims(backend, delta_history_keyed, tail_bases or {}, eps)
-    print(f"Incremental new dims per task: {incremental}")
+    # Full incremental_new_dims list (may be shorter than task_datasets if early stop)
+    incremental_all = [m["incremental_new_dims"] for m in all_task_metrics]
 
-    # Collect per-layer energy ratios from the last task's per_layer (for JSON)
-    # Re-compute per-task consumed/energy for all tasks to include in output
+    # Per-task depletion (re-compute consumed/energy from adapter deltas for all tasks in output)
     per_task_depletion = []
     for t_idx, dk in enumerate(delta_history_keyed):
         consumed_t, per_layer_t = _compute_consumed_dims(backend, dk, tail_bases or {}, eps)
@@ -410,16 +644,22 @@ def main() -> None:
             "consumed": consumed_t,
             "remaining": capacity_total - consumed_t,
             "per_layer": {
-                ln: {"consumed": info["consumed"], "tail_dims": info["tail_dims"],
-                     "energy_ratio": round(info["energy_ratio"], 6)}
+                ln: {
+                    "consumed": info["consumed"],
+                    "tail_dims": info["tail_dims"],
+                    "energy_ratio": round(info["energy_ratio"], 6),
+                }
                 for ln, info in sorted(per_layer_t.items())
             },
         })
 
     output = {
+        "run_id": args.run_id,
         "seed": args.seed,
+        "model_id": model_id,
         "model_path": args.model_path,
         "baseline": args.baseline,
+        "replay_fraction": args.replay_fraction,
         "tasks": args.task_datasets,
         "sigma_k_ref": sigma_k_ref,
         "base_capacity": {
@@ -428,20 +668,22 @@ def main() -> None:
             "capacity_total_tail_dims": capacity_total,
         },
         "telemetry": {
-            "task_remaining_null": task_remaining_null,
+            "task_metrics": all_task_metrics,
+            "cross_task_cka_matrix": cka_matrix,
             "per_task_cka": per_task_cka,
-            "cka_matrix": cka_matrix,
+            "task_remaining_null": task_remaining_null,
             "depletion_rate": depletion_rate,
-            "spectral_budget_trajectory": trajectory,
             "cka_stability": cka_stability,
+            "incremental_new_dims": incremental_all,
+            "spectral_budget_trajectory": trajectory,
             "weyl_accumulation": cumulative_weyl,
-            "deltas_per_task": deltas_per_task,
-            "incremental_new_dims": incremental,
+            "deltas_per_task": [len(td) for td in delta_history_flat],
+            "final_tail_utilization_by_layer": final_tail_utilization_by_layer,
             "per_task_depletion": per_task_depletion,
         },
     }
 
-    out_file = seed_dir / "exp1_results.json"
+    out_file = run_dir / "exp1_results.json"
     out_file.write_text(json.dumps(output, indent=2))
     print(f"Saved results to {out_file}")
 

@@ -137,10 +137,10 @@ def _configure_logging(log_path: Path) -> logging.Logger:
 
 
 def _fourgram_repetition_rate(text: str) -> float:
-    """Delegates to domain module. See degeneration.py for derivation status."""
-    from modelcypher.core.domain.training.degeneration import fourgram_repetition_rate
+    """Delegates to domain module — hardcoded n=4 for this experiment."""
+    from modelcypher.core.domain.training.degeneration import ngram_repetition_rate
 
-    return fourgram_repetition_rate(text)
+    return ngram_repetition_rate(text, 4)
 
 
 def _safe_clear_backend_cache(backend: Any) -> None:

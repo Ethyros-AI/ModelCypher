@@ -157,7 +157,7 @@ def _evaluate_degeneration(
 ) -> dict[str, float]:
     """Measure 4-gram repetition rate on generated completions."""
     from modelcypher.core.domain._backend import get_default_backend
-    from modelcypher.core.domain.training.degeneration import fourgram_repetition_rate
+    from modelcypher.core.domain.training.degeneration import ngram_repetition_rate
 
     backend = get_default_backend()
     logger.info("Evaluating degeneration: model=%s", Path(model_path).name)
@@ -174,7 +174,7 @@ def _evaluate_degeneration(
         except Exception as e:
             logger.warning("Generation failed for prompt '%s...': %s", prompt[:30], e)
             response = ""
-        rate = fourgram_repetition_rate(response)
+        rate = ngram_repetition_rate(response, 4)
         rates.append(rate)
         completions.append({"prompt": prompt, "response": response, "repetition": rate})
         logger.info("  prompt='%s...' repetition=%.4f", prompt[:30], rate)

@@ -108,11 +108,13 @@ class _MLXTrainingAdapterTrainMixin:
         research_online_eval_stop_stage: str = "pre_outcome",
         # Research controls: choose REINFORCE outcome problem selector.
         research_outcome_selector: str = "all",
-        # Per-epoch degeneration gate: few-shot prompts + baseline max_4gram.
+        # Per-epoch degeneration gate: few-shot prompts + baseline max n-gram.
         # When provided, generates responses at epoch boundaries and stops
-        # if max_4gram exceeds baseline + sqrt(eps_f32).
+        # if max n-gram repetition exceeds baseline + sqrt(eps_f32).
+        # n-gram order is derived from readout effective rank (birthday paradox).
         degen_prompts: list[str] | None = None,
         degen_baseline_max: float | None = None,
+        degen_ngram_order: int = 4,
         # Gradient accumulation: when > 1, batch_size is the logical batch
         # and micro_batch_size = ceil(batch_size / grad_accum_steps) is used
         # for forward/backward passes. Mathematically equivalent.
@@ -1889,12 +1891,12 @@ class _MLXTrainingAdapterTrainMixin:
                     )
                     break
 
-                # 7d. Degeneration gate: 4-gram repetition on few-shot prompts
+                # 7d. Degeneration gate: n-gram repetition on few-shot prompts
                 if (degen_prompts
                         and degen_baseline_max is not None
                         and tokenizer is not None):
                     from modelcypher.core.domain.training.degeneration import (
-                        fourgram_repetition_rate,
+                        ngram_repetition_rate,
                     )
                     _sqrt_eps = math.sqrt(
                         float(self._backend.finfo().eps)
@@ -1905,22 +1907,25 @@ class _MLXTrainingAdapterTrainMixin:
                             _resp = self._backend.generate(
                                 model, tokenizer, _dp, max_tokens=512,
                             )
-                            _degen_rates.append(fourgram_repetition_rate(_resp))
+                            _degen_rates.append(
+                                ngram_repetition_rate(_resp, degen_ngram_order)
+                            )
                         except Exception:
                             pass
                     if _degen_rates:
                         _degen_max = max(_degen_rates)
                         _degen_mean = sum(_degen_rates) / len(_degen_rates)
                         logger.info(
-                            "Degeneration check (epoch %d): max_4gram=%.3f, "
-                            "mean_4gram=%.3f, baseline_max=%.3f (%d prompts)",
-                            epoch_num, _degen_max, _degen_mean,
+                            "Degeneration check (epoch %d): max_ngram(%d)=%.3f, "
+                            "mean=%.3f, baseline_max=%.3f (%d prompts)",
+                            epoch_num, degen_ngram_order, _degen_max,
+                            _degen_mean,
                             degen_baseline_max, len(_degen_rates),
                         )
                         if _degen_max > degen_baseline_max + _sqrt_eps:
                             stop_reason = (
                                 f"degeneration_exceeded ("
-                                f"max_4gram={_degen_max:.3f} > "
+                                f"max_ngram({degen_ngram_order})={_degen_max:.3f} > "
                                 f"baseline={degen_baseline_max:.3f}+eps, "
                                 f"epoch={epoch_num})"
                             )

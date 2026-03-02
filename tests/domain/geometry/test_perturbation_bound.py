@@ -27,6 +27,7 @@ from modelcypher.core.domain.geometry.perturbation_bound import (
     MarginSafetyResult,
     check_margin_safety,
     compute_logit_perturbation_bound,
+    compute_readout_effective_rank,
 )
 
 
@@ -218,6 +219,104 @@ class TestComputeLogitPerturbationBound:
         assert 0 in result.per_layer_propagation_factor
         assert 2 in result.per_layer_propagation_factor
         assert result.sigma_max_readout == 2.0
+
+
+class TestComputeReadoutEffectiveRank:
+    """Tests for Shannon effective rank of the readout weight matrix."""
+
+    def test_rank_one_readout(self, any_backend):
+        """Rank-1 readout matrix has effective rank ~ 1."""
+
+        class MockWeight:
+            def __init__(self, w):
+                self.weight = w
+
+        class MockModel:
+            def __init__(self, w):
+                self.lm_head = MockWeight(w)
+
+        # Rank-1 matrix: outer product of two vectors
+        u = any_backend.reshape(any_backend.array([1.0, 0.0, 0.0, 0.0]), (4, 1))
+        v = any_backend.reshape(any_backend.array([1.0, 0.0, 0.0, 0.0]), (1, 4))
+        w = any_backend.matmul(u, v)
+        any_backend.eval(w)
+
+        model = MockModel(w)
+        erank = compute_readout_effective_rank(model, any_backend)
+        assert erank == pytest.approx(1.0, abs=0.1)
+
+    def test_full_rank_readout(self, any_backend):
+        """Identity matrix has effective rank = dimension."""
+
+        class MockWeight:
+            def __init__(self, w):
+                self.weight = w
+
+        class MockModel:
+            def __init__(self, w):
+                self.lm_head = MockWeight(w)
+
+        # Identity: all singular values equal → max entropy → erank = d
+        d = 8
+        w = any_backend.array(
+            [[1.0 if i == j else 0.0 for j in range(d)] for i in range(d)]
+        )
+        any_backend.eval(w)
+
+        model = MockModel(w)
+        erank = compute_readout_effective_rank(model, any_backend)
+        assert erank == pytest.approx(float(d), abs=0.5)
+
+    def test_embed_tokens_fallback(self, any_backend):
+        """Falls back to embed_tokens when lm_head is absent."""
+
+        class MockWeight:
+            def __init__(self, w):
+                self.weight = w
+
+        class MockBase:
+            def __init__(self, w):
+                self.embed_tokens = MockWeight(w)
+
+        class MockModel:
+            def __init__(self, w):
+                self.model = MockBase(w)
+
+        d = 4
+        w = any_backend.array(
+            [[1.0 if i == j else 0.0 for j in range(d)] for i in range(d)]
+        )
+        any_backend.eval(w)
+
+        model = MockModel(w)
+        erank = compute_readout_effective_rank(model, any_backend)
+        assert erank == pytest.approx(float(d), abs=0.5)
+
+    def test_erank_between_one_and_dim(self, any_backend):
+        """Effective rank is always in [1, min(rows, cols)]."""
+
+        class MockWeight:
+            def __init__(self, w):
+                self.weight = w
+
+        class MockModel:
+            def __init__(self, w):
+                self.lm_head = MockWeight(w)
+
+        # Random-ish matrix with decaying spectrum
+        rows, cols = 6, 4
+        data = []
+        for i in range(rows):
+            row = []
+            for j in range(cols):
+                row.append(float((i * 7 + j * 3 + 1) % 11) / 10.0)
+            data.append(row)
+        w = any_backend.array(data)
+        any_backend.eval(w)
+
+        model = MockModel(w)
+        erank = compute_readout_effective_rank(model, any_backend)
+        assert 1.0 <= erank <= float(min(rows, cols))
 
 
 class TestBoundMathProperties:

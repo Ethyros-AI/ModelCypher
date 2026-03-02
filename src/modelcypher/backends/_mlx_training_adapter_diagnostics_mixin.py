@@ -752,37 +752,27 @@ class _MLXTrainingAdapterDiagnosticsMixin:
                 failed = candidate
                 break
 
-        # If doubling never failed and we haven't reached max_candidate exactly
-        if failed is None and safe < max_candidate:
-            logger.info(
-                "Memory probe: trying micro_batch=%d (max candidate)",
-                max_candidate,
-            )
-            ok, peak = _probe(max_candidate)
-            if ok:
-                safe = max_candidate
-                safe_peak = peak
-            else:
-                failed = max_candidate
-
-        # Phase 2: Binary refinement between last safe and first failure.
-        # Gap is at most 2x (from doubling), so few extra probes needed.
-        if failed is not None:
-            low, high = safe, failed
-            while low + 1 < high:
-                mid = (low + high) // 2
-                logger.info(
-                    "Memory probe: refining micro_batch=%d in [%d, %d)",
-                    mid, low, high,
-                )
-                mid_ok, mid_peak = _probe(mid)
-                if mid_ok:
-                    low = mid
-                    safe_peak = mid_peak
-                else:
-                    high = mid
-            safe = low
-
+        # max_candidate probe intentionally omitted.
+        #
+        # When doubling exits with safe < max_candidate (e.g. safe=32,
+        # max_candidate=50), the next power-of-2 candidate (64) exceeded
+        # max_candidate so the loop terminated without testing 50. Probing
+        # max_candidate directly would find a value in the gray zone between
+        # the last safe doubling step and the true OOM boundary — identical
+        # to the binary refinement problem. Return safe from Phase 1 only.
+        #
+        # Phase 2 (binary refinement) intentionally omitted.
+        #
+        # After geometric doubling: probe(safe) passed, probe(2×safe) failed.
+        # By linear activation memory scaling: probe_peak(safe) ≈ avail/2.
+        # Actual training peak ≤ 2× probe peak (MLX lazy graph construction
+        # adds a second copy of the activation graph before evaluation).
+        # Therefore training_peak(safe) ≤ 2 × (avail/2) = avail — safe fits.
+        #
+        # Binary refinement would find values where probe_peak ≈ avail, leaving
+        # no headroom for training overhead. The 2-competitive guarantee of the
+        # doubling algorithm is the derived safety margin; discarding it is the
+        # root cause of the B_crit=41 → hard-kill failure mode.
         if safe_peak is not None:
             logger.info(
                 "Memory-safe micro batch size=%d (peak=%.2f GB)",

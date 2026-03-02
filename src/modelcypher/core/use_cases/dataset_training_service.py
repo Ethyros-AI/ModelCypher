@@ -145,9 +145,10 @@ class DatasetTrainResult:
     mode_connectivity_barrier: float | None = None
     mode_connectivity_normalized_barrier: float | None = None
     mode_connectivity_method: str | None = None
-    # G4 diagnostic: Degeneration measurement (not a gate until n derived — TODO: G1)
-    degeneration_max_4gram_repeat: float | None = None
-    degeneration_mean_4gram_repeat: float | None = None
+    # G4: Degeneration gate — n-gram order derived from readout effective rank
+    degeneration_max_ngram_repeat: float | None = None
+    degeneration_mean_ngram_repeat: float | None = None
+    degeneration_ngram_order: int | None = None
     # Standard benchmark eval (pre/post training, optional via --benchmark)
     benchmark_baseline: dict[str, float] | None = None
     benchmark_post: dict[str, float] | None = None
@@ -242,10 +243,12 @@ class DatasetTrainResult:
             result["mode_connectivity_normalized_barrier"] = self.mode_connectivity_normalized_barrier
         if self.mode_connectivity_method is not None:
             result["mode_connectivity_method"] = self.mode_connectivity_method
-        if self.degeneration_max_4gram_repeat is not None:
-            result["degeneration_max_4gram_repeat"] = self.degeneration_max_4gram_repeat
-        if self.degeneration_mean_4gram_repeat is not None:
-            result["degeneration_mean_4gram_repeat"] = self.degeneration_mean_4gram_repeat
+        if self.degeneration_max_ngram_repeat is not None:
+            result["degeneration_max_ngram_repeat"] = self.degeneration_max_ngram_repeat
+        if self.degeneration_mean_ngram_repeat is not None:
+            result["degeneration_mean_ngram_repeat"] = self.degeneration_mean_ngram_repeat
+        if self.degeneration_ngram_order is not None:
+            result["degeneration_ngram_order"] = self.degeneration_ngram_order
         if self.benchmark_baseline is not None:
             result["benchmark_baseline"] = self.benchmark_baseline
         if self.benchmark_post is not None:
@@ -1175,16 +1178,44 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 baseline_result.accuracy * 100,
             )
 
-        # 8.10.1. Baseline degeneration measurement: few-shot prompted generation.
+        # 8.10.1. Derive n-gram order from readout geometry (birthday paradox).
+        # n = ceil(2 * log(T) / log(r_eff)) where T ~ 400 words and r_eff =
+        # Shannon effective rank of the readout weight matrix.
+        # Fail-closed: if derivation fails, degen_ngram_order stays None and
+        # the degeneration gate is disabled (no underived magic numbers).
+        degen_ngram_order: int | None = None
+        try:
+            from modelcypher.core.domain.geometry.perturbation_bound import (
+                compute_readout_effective_rank,
+            )
+            from modelcypher.core.domain.training.degeneration import (
+                derive_ngram_order,
+            )
+
+            readout_erank = compute_readout_effective_rank(model, self._backend)
+            degen_ngram_order = derive_ngram_order(
+                readout_erank, generation_length_words=400,
+            )
+            logger.info(
+                "Readout effective rank=%.1f -> n-gram order=%d",
+                readout_erank, degen_ngram_order,
+            )
+        except Exception:
+            logger.info(
+                "Readout erank unavailable — degeneration gate disabled (no underived fallback)"
+            )
+            logger.debug("Readout erank error details", exc_info=True)
+
+        # 8.10.2. Baseline degeneration measurement: few-shot prompted generation.
         # Uses same prompt format and token budget as G5 validation and the
         # post-training diagnostic. Measured here so train_loop can compare
         # per-epoch and stop if degeneration exceeds baseline + sqrt(eps).
         degen_baseline_max: float | None = None
         degen_prompts_for_training: list[str] | None = None
-        if eval_problems:
+        if eval_problems and degen_ngram_order is not None:
             try:
                 from modelcypher.core.domain.training.degeneration import (
-                    fourgram_repetition_rate,
+                    ngram_repetition_rate,
                 )
                 from modelcypher.core.domain.star.prompting import (
                     build_forward_prompt,
@@ -1204,7 +1235,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                         response = self._backend.generate(
                             model, tokenizer, prompt_text, max_tokens=512,
                         )
-                        rate = fourgram_repetition_rate(response)
+                        rate = ngram_repetition_rate(response, degen_ngram_order)
                         baseline_degen_rates.append(rate)
                     except Exception:
                         logger.debug(
@@ -1213,7 +1244,8 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 if baseline_degen_rates:
                     degen_baseline_max = max(baseline_degen_rates)
                     logger.info(
-                        "Baseline degeneration: max_4gram=%.3f, mean_4gram=%.3f (%d prompts)",
+                        "Baseline degeneration: max_ngram(%d)=%.3f, mean=%.3f (%d prompts)",
+                        degen_ngram_order,
                         degen_baseline_max,
                         sum(baseline_degen_rates) / len(baseline_degen_rates),
                         len(baseline_degen_rates),
@@ -1417,6 +1449,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             research_outcome_selector=research_outcome_selector,
             degen_prompts=degen_prompts_for_training,
             degen_baseline_max=degen_baseline_max,
+            **({"degen_ngram_order": degen_ngram_order} if degen_ngram_order is not None else {}),
             grad_accum_steps=grad_accum_steps,
         )
         training_time_seconds = time.time() - train_start
@@ -1545,16 +1578,16 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             if hasattr(last, "rss_top1_agreement") and last.rss_top1_agreement is not None:
                 rss_final_top1 = last.rss_top1_agreement
 
-        # 11.7. Degeneration diagnostic — measures 4-gram repetition on few-shot
+        # 11.7. Degeneration diagnostic — measures n-gram repetition on few-shot
         # prompted generation. Uses same prompt format and token budget as G5
         # validation (build_forward_prompt + 512 max_tokens) to ensure the
         # measurement matches what validation will check.
-        degeneration_max_4gram_repeat = None
-        degeneration_mean_4gram_repeat = None
-        if eval_problems:
+        degeneration_max_ngram_repeat = None
+        degeneration_mean_ngram_repeat = None
+        if eval_problems and degen_ngram_order is not None:
             try:
                 from modelcypher.core.domain.training.degeneration import (
-                    fourgram_repetition_rate,
+                    ngram_repetition_rate,
                 )
                 from modelcypher.core.domain.star.prompting import (
                     build_forward_prompt,
@@ -1576,18 +1609,19 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                         response = self._backend.generate(
                             model, tokenizer, prompt_text, max_tokens=512,
                         )
-                        rate = fourgram_repetition_rate(response)
+                        rate = ngram_repetition_rate(response, degen_ngram_order)
                         degen_rates.append(rate)
                     except Exception:
                         logger.debug("Degeneration generation failed for prompt", exc_info=True)
 
                 if degen_rates:
-                    degeneration_max_4gram_repeat = max(degen_rates)
-                    degeneration_mean_4gram_repeat = sum(degen_rates) / len(degen_rates)
+                    degeneration_max_ngram_repeat = max(degen_rates)
+                    degeneration_mean_ngram_repeat = sum(degen_rates) / len(degen_rates)
                     logger.info(
-                        "Degeneration diagnostic: max_4gram=%.3f, mean_4gram=%.3f (%d prompts)",
-                        degeneration_max_4gram_repeat,
-                        degeneration_mean_4gram_repeat,
+                        "Degeneration diagnostic: max_ngram(%d)=%.3f, mean=%.3f (%d prompts)",
+                        degen_ngram_order,
+                        degeneration_max_ngram_repeat,
+                        degeneration_mean_ngram_repeat,
                         len(degen_rates),
                     )
             except Exception:
@@ -1787,8 +1821,9 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             mode_connectivity_barrier=mode_connectivity_barrier,
             mode_connectivity_normalized_barrier=mode_connectivity_normalized_barrier,
             mode_connectivity_method=mode_connectivity_method,
-            degeneration_max_4gram_repeat=degeneration_max_4gram_repeat,
-            degeneration_mean_4gram_repeat=degeneration_mean_4gram_repeat,
+            degeneration_max_ngram_repeat=degeneration_max_ngram_repeat,
+            degeneration_mean_ngram_repeat=degeneration_mean_ngram_repeat,
+            degeneration_ngram_order=degen_ngram_order,
             benchmark_baseline=benchmark_baseline_scores,
             benchmark_post=benchmark_post_scores,
             moe_targets=moe_targets,

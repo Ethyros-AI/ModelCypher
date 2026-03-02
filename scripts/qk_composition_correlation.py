@@ -106,13 +106,13 @@ def measure_degeneration(model: Any, tokenizer: Any, prompts: list[str],
     """Generate text and measure 4-gram repetition rate."""
     import mlx_lm
 
-    from modelcypher.core.domain.training.degeneration import fourgram_repetition_rate
+    from modelcypher.core.domain.training.degeneration import ngram_repetition_rate
 
     rates: list[float] = []
     for prompt in prompts:
         try:
             text = mlx_lm.generate(model, tokenizer, prompt=prompt, max_tokens=max_tokens)
-            rate = fourgram_repetition_rate(text)
+            rate = ngram_repetition_rate(text, 4)
             rates.append(rate)
         except Exception as e:
             logger.warning("Generation failed for prompt '%s...': %s", prompt[:30], e)

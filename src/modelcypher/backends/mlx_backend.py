@@ -1636,6 +1636,26 @@ class MLXBackend(_MLXBackendActivationMixin, Backend):
         for key in [k for k in remapped.keys() if k.endswith(stale_suffixes)]:
             remapped.pop(key, None)
 
+        # Split fused packed expert tensors for SwitchGLU.
+        # HF format: experts.gate_up_proj [num_experts, 2*intermediate, hidden]
+        # MLX target: switch_mlp.gate_proj.weight + switch_mlp.up_proj.weight
+        gate_up_suffix = ".mlp.experts.gate_up_proj"
+        for key in list(remapped.keys()):
+            if not key.endswith(gate_up_suffix):
+                continue
+            prefix = key[: -len("experts.gate_up_proj")]
+            gate_up = remapped.pop(key)
+            intermediate = gate_up.shape[1] // 2
+            remapped[f"{prefix}switch_mlp.gate_proj.weight"] = gate_up[:, :intermediate, :]
+            remapped[f"{prefix}switch_mlp.up_proj.weight"] = gate_up[:, intermediate:, :]
+
+        down_suffix = ".mlp.experts.down_proj"
+        for key in list(remapped.keys()):
+            if not key.endswith(down_suffix):
+                continue
+            prefix = key[: -len("experts.down_proj")]
+            remapped[f"{prefix}switch_mlp.down_proj.weight"] = remapped.pop(key)
+
         return remapped
 
     def _load_qwen35_with_mlx_compat(
