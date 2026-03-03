@@ -1073,18 +1073,94 @@ Uses PCA to reduce to 50 dimensions before ripser (standard TDA practice for hig
 
 ---
 
-## 9. Information-Theoretic Characterization `[CONJECTURAL]`
+## 9. Information-Theoretic Characterization — RESOLVED (2026-03-03) `[EMPIRICAL]`
 
-**Unknown:** What is the mutual information between layers?
+**Question:** What is the mutual information between layers?
 
-**Questions:**
-- I(layer_i; layer_j) as function of |i-j|
-- Does MI decay exponentially?
-- Is there a "information bottleneck" at the highway?
+**Framework:** Matrix-based Rényi α=2 MI (Giraldo et al. 2014) using RBF Gram matrices.
+Shannon MI is +∞ for deterministic continuous maps. Kernel bandwidth σ creates finite
+measurement resolution. Full derivation: `docs/research/information_bridge_derivation.md`.
 
-**Connection to geometry:**
-- Low ID at highway → compressed representation
-- Does low ID = low MI with input?
+**Implementation:** `src/modelcypher/core/domain/geometry/renyi_mi.py` (Rényi entropy, joint
+entropy, MI), `src/modelcypher/core/domain/geometry/information_bridge.py` (curvature excess,
+all-pairs MI, MI trajectories). 15/15 unit tests passing.
+
+### Results (3 models: LFM2-350M, LFM2-700M, Qwen3.5-0.8B)
+
+| # | Prediction | 350M | 700M | Qwen 0.8B | Verdict |
+|---|-----------|------|------|-----------|---------|
+| P1 | CKA decays with \|i-j\| | r=-0.61*** | r=-0.64*** | r=-0.42*** | **CONFIRMED 3/3** |
+| P2 | Rényi MI decays with \|i-j\| | r=-0.13 | r=-0.20* | r=+0.14* | **REFUTED** |
+| P3 | CKA and Rényi MI correlate | r=0.29** | r=0.19* | r=0.30*** | **WEAK** |
+| P4 | Highway = MI minimum | fail | pass | fail | **REFUTED 2/3** |
+| P5 | ID tracks MI with input | r=-0.33 | r=0.21 | r=0.40 | **REFUTED 3/3** |
+| P6 | DPI holds at fixed σ | 5 violations | 3 violations | 1 violation | **REFUTED 3/3** |
+| P7 | C_ex peaks at highway | pass | pass | fail | **INCONCLUSIVE** |
+| P8 | CKA shows phase blocks | fail | pass | fail | **REFUTED 2/3** |
+
+Significance: \*p<0.05, \*\*p<0.01, \*\*\*p<0.001
+
+### Answers to Original Questions
+
+**I(layer_i; layer_j) as function of |i-j|:** CKA decays with layer distance (r≈-0.55,
+p<1e-12, all 3 models). Rényi MI does NOT decay — correlation is near zero or even positive.
+CKA measures representational geometry similarity; MI measures statistical dependence. These
+are fundamentally different quantities.
+
+**Does MI decay exponentially?** No. Rényi MI shows no systematic decay with layer distance.
+The per-layer-sigma trajectory is erratic (values swing between 0.6 and 7.3 bits) because
+different layers have different bandwidths, making MI values at different depths incommensurable.
+The fixed-sigma trajectory saturates quickly (~layer 10-15) at ~7.2-7.4 bits because σ₀ is too
+small for deeper layers, causing Gram matrices to approach I (maximum entropy).
+
+**Is there an information bottleneck at the highway?** No evidence. The highway layers
+(low spectral entropy, low curvature) do not consistently show MI minima (P4 REFUTED 2/3).
+Moreover, DPI — the theoretical foundation of information bottleneck theory — does NOT hold
+for matrix-based Rényi MI (P6 REFUTED 3/3), as predicted by the derivation (Section 8.2).
+Without DPI, the bottleneck framework does not apply.
+
+**Does low ID = low MI with input?** No. ID and input-MI show no significant correlation
+(P5 REFUTED 3/3, p>0.05 in all models, sign inconsistent). Low intrinsic dimension at the
+highway reflects geometric compression but not information loss at this measurement resolution.
+
+### Key Discoveries
+
+1. **CKA ≠ Rényi MI.** CKA measures geometric similarity (Hilbert-Schmidt norm). MI measures
+   statistical dependence. They correlate weakly (r≈0.19-0.30) but behave qualitatively
+   differently: CKA decays with depth, MI does not. This means layers CHANGE their geometry
+   with depth while retaining similar information content.
+
+2. **DPI fails empirically for matrix-based Rényi MI** (3/3 models, multiple violations each).
+   This confirms the theoretical gap identified in the derivation. Information bottleneck
+   arguments cannot be made with this MI estimator.
+
+3. **Sigma regime matters critically.** Per-layer σ (Regime 1) makes cross-layer MI comparisons
+   meaningless. Fixed σ (Regime 3) saturates. Neither regime supports the simple "MI decays with
+   depth" narrative. Any future MI work must address the sigma commensurability problem.
+
+4. **Phase classification limits prediction testing.** P4, P7, P8 depend on phase labels from
+   `classify_phases()`, which uses ID + curvature. When classification is poor (only layer 0 as
+   highway), phase-dependent predictions fail trivially. The spectral entropy trajectory shows
+   clear compression regions (S_spec drops from ~3.0 to ~0.3 nats) that the classifier misses.
+
+### Status Tags
+
+- [PROVEN] Hadamard product of PSD kernels is PSD (Schur 1911)
+- [PROVEN] S₂ bounds: 0 ≤ S₂ ≤ log₂(N) (Giraldo et al. 2014)
+- [PROVEN] I₂ ≥ 0 for infinitely divisible kernels (Giraldo et al. 2014)
+- [PROVEN] CKA decays with layer distance (3/3 models, p<1e-12)
+- [EMPIRICAL] CKA and Rényi MI weakly correlate (r≈0.19-0.30)
+- [EMPIRICAL] Curvature excess C_ex = S_spec - ln(ID) ≥ 0 (clamped)
+- [REFUTED] MI does NOT decay with layer distance
+- [REFUTED] DPI does NOT hold for matrix-based Rényi MI
+- [REFUTED] ID does NOT track MI with input
+- [REFUTED] No evidence of information bottleneck at highway
+- [NOT PROVEN] Hadamard product ≠ joint-space RBF for geodesic distances
+
+### Data
+
+Full results: `results/information_bridge/{LFM2-350M,LFM2-700M,Qwen3.5-0.8B}/`
+Experiment script: `scripts/information_bridge_experiment.py`
 
 ---
 

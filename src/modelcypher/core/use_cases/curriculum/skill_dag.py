@@ -353,7 +353,7 @@ def build_curriculum_dag() -> SkillDAG:
                 "data/eval/multi_digit_add_eval.jsonl",
             ),
             branch="math",
-            answer_mode="numeric",
+            answer_mode="procedural",
             notes=(
                 "Structural recursion: apply carry_rule column-by-column from ones position. "
                 "Training on 2-digit, eval on 3-digit (OOD) verifies procedure generalization."
@@ -371,7 +371,7 @@ def build_curriculum_dag() -> SkillDAG:
                 "data/eval/arithmetic_multiply_eval.jsonl",
             ),
             branch="math",
-            answer_mode="numeric",
+            answer_mode="procedural",
             notes=(
                 "A × B is column-by-column multiplication of each digit of A by B, "
                 "with carry propagation — same geometric trajectory as multi_digit_add. "

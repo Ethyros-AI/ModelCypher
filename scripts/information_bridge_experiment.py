@@ -16,7 +16,7 @@ Predictions (pre-registered, thresholds from statistical testing):
     P1: CKA(i,j) decays with |i-j|              (Spearman < 0, p < 0.01)
     P2: Rényi MI(i,j) decays with |i-j|         (Spearman < 0, p < 0.01)
     P3: CKA and I₂ correlate                    (Spearman > 0, p < 0.01)
-    P4: Highway = I₂(X₀,·) minimum             (permutation null, p < 0.01)
+    P4: Highway = I₂(X₀,·) global minimum      (min layer in highway set)
     P5: ID tracks MI with input                  (Spearman > 0, p < 0.01)
     P6: DPI holds at fixed σ                     (no violations outside null CI)
     P7: C_ex peaks at highway                    (permutation null, p < 0.01)
@@ -272,7 +272,6 @@ def test_predictions(
     from scipy import stats
 
     results = {}
-    layer_indices = list(range(num_layers))
 
     # --- P1: CKA decays with |i-j| ---
     distances, cka_values = [], []
@@ -313,19 +312,26 @@ def test_predictions(
                   "REFUTED" if (r_p3 <= 0 or p_p3 >= 0.05) else "INCONCLUSIVE",
     }
 
-    # --- P4: Highway = I₂(X₀,·) minimum ---
+    # --- P4: Highway = I₂(X₀,·) global minimum ---
     highway_indices = [i for i, p in enumerate(phases) if p == "highway"]
     if highway_indices and len(input_mi_traj) > 1:
-        highway_mi = [input_mi_traj[i] for i in highway_indices if i < len(input_mi_traj)]
-        median_mi = sorted(input_mi_traj)[len(input_mi_traj) // 2]
-        below_median = sum(1 for m in highway_mi if m <= median_mi)
-        fraction_below = below_median / len(highway_mi) if highway_mi else 0
+        min_idx = min(range(len(input_mi_traj)), key=lambda i: input_mi_traj[i])
+        min_val = input_mi_traj[min_idx]
+        highway_min_idx = min(
+            highway_indices,
+            key=lambda i: input_mi_traj[i],
+        )
+        highway_min_val = input_mi_traj[highway_min_idx]
+        is_global_min_in_highway = min_idx in highway_indices
         results["P4"] = {
             "prediction": "Highway = MI minimum",
             "highway_layers": highway_indices,
-            "fraction_below_median": fraction_below,
-            "pass": fraction_below > 0.5,
-            "status": "CONFIRMED" if fraction_below > 0.5 else "REFUTED",
+            "global_min_layer": min_idx,
+            "global_min_value": min_val,
+            "highway_min_layer": highway_min_idx,
+            "highway_min_value": highway_min_val,
+            "pass": is_global_min_in_highway,
+            "status": "CONFIRMED" if is_global_min_in_highway else "REFUTED",
         }
     else:
         results["P4"] = {
@@ -512,21 +518,45 @@ def main():
     logger.info("Step 5: Computing Gram matrices (per-layer sigma)...")
     t0 = time.time()
     from modelcypher.core.domain.geometry.cka import (
-        rbf_gram_matrix,
         rbf_gram_matrix_with_sigma,
     )
 
     layer_grams = []
+    layer_sigmas = []
     for layer_idx in sorted_layers:
-        gram = rbf_gram_matrix(layer_activations[layer_idx], backend)
+        gram, sigma = rbf_gram_matrix_with_sigma(
+            layer_activations[layer_idx], backend
+        )
         layer_grams.append(gram)
+        layer_sigmas.append(sigma)
     logger.info("  %d Gram matrices in %.1fs", num_layers, time.time() - t0)
 
-    # --- Step 6: Extract sigma_0 for fixed-sigma trajectory ---
-    _, sigma_0 = rbf_gram_matrix_with_sigma(
-        layer_activations[sorted_layers[0]], backend
-    )
+    # --- Step 6: Extract sigma_0 and log per-layer bandwidth drift ---
+    sigma_0 = layer_sigmas[0]
+    sigma_ratios = [
+        (sigma / sigma_0) if sigma_0 > 0 else float("nan")
+        for sigma in layer_sigmas
+    ]
+    adjacent_sigma_ratios = [
+        (layer_sigmas[i + 1] / layer_sigmas[i]) if layer_sigmas[i] > 0 else float("nan")
+        for i in range(num_layers - 1)
+    ]
     logger.info("  sigma_0 (input layer) = %.6f", sigma_0)
+    min_sigma = min(layer_sigmas)
+    max_sigma = max(layer_sigmas)
+    logger.info(
+        "  sigma range: min=%.6f max=%.6f max/min=%.3f",
+        min_sigma,
+        max_sigma,
+        (max_sigma / min_sigma) if min_sigma > 0 else float("nan"),
+    )
+    for layer_idx, sigma, ratio in zip(sorted_layers, layer_sigmas, sigma_ratios):
+        logger.info(
+            "  sigma[layer %d]=%.6f (sigma_l/sigma_0=%.3f)",
+            layer_idx,
+            sigma,
+            ratio,
+        )
 
     # --- Step 7: CKA matrix ---
     logger.info("Step 7: Computing L×L CKA matrix...")
@@ -636,6 +666,9 @@ def main():
         "curvature_radians": curvatures,
         "curvature_excess_nats": curvature_excess,
         "phases": phase_names,
+        "layer_sigma": layer_sigmas,
+        "layer_sigma_over_sigma0": sigma_ratios,
+        "adjacent_sigma_ratio": adjacent_sigma_ratios,
         "input_mi_per_layer_sigma": input_mi_traj,
         "input_mi_fixed_sigma": fixed_mi_traj,
         "sigma_0": sigma_0,
@@ -656,11 +689,24 @@ def main():
         "",
         f"Phases: {phase_names}",
         "",
+        "## Kernel Bandwidth Diagnostics",
+        "",
+        "| Layer | Sigma_l | Sigma_l / Sigma_0 | Sigma_l / Sigma_{l-1} |",
+        "|-------|---------|-------------------|-----------------------|",
+    ]
+    for i, layer in enumerate(sorted_layers):
+        prev_ratio = "-" if i == 0 else f"{adjacent_sigma_ratios[i - 1]:.3f}"
+        report_lines.append(
+            f"| {layer} | {layer_sigmas[i]:.6f} | {sigma_ratios[i]:.3f} | {prev_ratio} |"
+        )
+
+    report_lines.extend([
+        "",
         "## Prediction Results",
         "",
         "| # | Prediction | Status | Evidence |",
         "|---|-----------|--------|----------|",
-    ]
+    ])
     for key in sorted(predictions.keys()):
         p = predictions[key]
         evidence = ""
@@ -668,8 +714,11 @@ def main():
             evidence = f"r={p['spearman_r']:.4f}, p={p['p_value']:.2e}"
         elif "ratio" in p:
             evidence = f"ratio={p['ratio']:.4f}"
-        elif "fraction_below_median" in p:
-            evidence = f"fraction={p['fraction_below_median']:.2f}"
+        elif "global_min_layer" in p:
+            evidence = (
+                f"global_min=L{p['global_min_layer']} ({p['global_min_value']:.3f}), "
+                f"highway={p['highway_layers']}"
+            )
         report_lines.append(
             f"| {key} | {p['prediction']} | **{p['status']}** | {evidence} |"
         )

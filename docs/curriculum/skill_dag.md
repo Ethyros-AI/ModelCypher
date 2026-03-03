@@ -72,9 +72,9 @@ Consider generating `phase_mt_only.jsonl` for isolated MT training before recogn
 true) leads to contradiction with ¬P; case 2 (Q is true) gives Q directly. This proof
 does not invoke MP. DS and MP are independent inference rules with no formal dependency
 between them.
-**DAG position:** Root node alongside `modus_ponens` and `arithmetic_add`. PhaseScheduler
-will teach DS alphabetically after `arithmetic_add` but before `modus_ponens` when both
-have no prerequisites mastered yet. This ordering is formally permissible.
+**DAG position:** Root node alongside `modus_ponens` and `single_digit_add`. PhaseScheduler
+will teach DS alphabetically after other depth-0 nodes when no prerequisites are mastered.
+This ordering is formally permissible.
 **Training data:** Present in `data/training/phase3_rule_recognition.jsonl` (mixed)
 **Gap:** No DS-only training file.
 
@@ -175,23 +175,61 @@ disjunctive_syllogism (root, no prerequisites) ───────────
 
 ## Math Branch
 
-### Node: `arithmetic_add`
-**Formal statement:** Given integers A, B, compute C = A + B uniquely.
-**Prerequisites:** None — this is a primitive arithmetic operation.
-**Training data:** `data/training/retention_replay.jsonl` contains multiplication facts.
-Need to verify arithmetic addition is covered, or generate `arithmetic_add.jsonl`.
-**Note:** The `retention_replay.jsonl` has "What is 7 * 8? 56" format with `answer_start`.
-This format trains the model on the answer span specifically. Reuse this format for add/div.
+### Node: `single_digit_add`
+**Formal statement:** Given A, B ∈ [0,9], compute C = A + B.
+**Prerequisites:** None — this is an enumerable primitive. All 100 ordered pairs are
+memorizable by table lookup.
+**Training data:** `data/training/single_digit_add_train.jsonl`
+**Eval data:** `data/eval/single_digit_add_eval.jsonl` — held-out subset: pairs where
+sum ≥ 10 (45 items).
+**answer_mode:** `numeric`
+**Proof of terminability:** The domain is finite (100 pairs). The model can enumerate
+and memorize all outcomes.
+
+---
+
+### Node: `carry_rule`
+**Formal statement:** For A + B ≥ 10: write (A+B) mod 10 as the ones digit and carry 1.
+**Prerequisites:** `single_digit_add`
+**Proof of dependency:** The carry rule is stated in terms of a sum A+B. Computing that
+sum requires `single_digit_add`. The rule itself — "when the sum of two digits exceeds 9,
+write the ones digit and carry 1" — cannot be derived from a lookup table alone. It is the
+bridging principle between single-digit sums and multi-digit positional notation.
+**Training data:** `data/training/carry_rule_train.jsonl` (45 items, exhaustive)
+**Eval data:** `data/eval/carry_rule_eval.jsonl` (45 items, exhaustive — all carry-inducing
+pairs). No meaningful in/out-of-distribution distinction for a 45-item finite set.
+**answer_mode:** `procedural` — requires carry-indicator tokens ("write"/"carry") in output
+AND correct final digit. Pure memorization (correct number, no carry tokens) fails this gate.
+
+---
+
+### Node: `multi_digit_add`
+**Formal statement:** Column-wise addition with carry propagation, any digit count.
+**Prerequisites:** `carry_rule`
+**Proof of dependency:** Multi-digit addition is structural recursion: apply `carry_rule`
+column-by-column from the ones position. Each column is a single-digit addition (requires
+`single_digit_add`) with a possible carry-in from the previous column (requires
+`carry_rule`). The recursion terminates when all columns are processed.
+**Training data:** `data/training/multi_digit_add_train.jsonl` (2-digit pairs)
+**Eval data:** `data/eval/multi_digit_add_eval.jsonl` — OOD: 3-digit + 3-digit (100 items).
+OOD eval makes memorization structurally impossible; only procedure generalizes.
+**answer_mode:** `procedural` — requires carry-indicator tokens in output AND correct final
+answer.
 
 ---
 
 ### Node: `arithmetic_multiply`
-**Formal statement:** Given integers A, B, compute C = A × B.
-**Prerequisites:** `arithmetic_add`
-**Proof of dependency:** Multiplication is defined as repeated addition: A × B = A added to
-itself B times. This is the mathematical definition, not a heuristic. A model that cannot
-reliably add cannot derive multiplication from first principles.
-**Training data:** `data/training/retention_replay.jsonl` (multiplication facts, 200 samples)
+**Formal statement:** Given integers A, B (B single-digit), compute C = A × B.
+**Prerequisites:** `multi_digit_add`
+**Proof of dependency:** Column-by-column multiplication uses the same carry propagation
+trajectory as `multi_digit_add`: multiply each digit of A by B; if product exceeds 9,
+write the ones digit and carry — this is `carry_rule` applied to multiplication. The
+model cannot correctly execute this without having consolidated the carry procedure.
+**Training data:** `data/training/arithmetic_multiply_train.jsonl` (exhaustive 720 pairs:
+A ∈ [10,99], B ∈ [2,9])
+**Eval data:** `data/eval/arithmetic_multiply_eval.jsonl` — OOD: A ∈ [100,999].
+**answer_mode:** `procedural` — requires carry-indicator tokens in output AND correct final
+answer.
 
 ---
 
@@ -208,12 +246,11 @@ iff C × B = A. Checking the result requires multiplication.
 **Formal statement:** Given a natural language description, identify the operation and
 compute a single-operation answer.
 **Example:** "Sarah has 5 apples. She buys 3 more. How many does she have?" → addition.
-**Prerequisites:** `arithmetic_add` AND `modus_ponens`
-**Why arithmetic_add specifically (not any arithmetic op):** The DAG model requires a
-specific node name as prerequisite, not a disjunction. `arithmetic_add` is the minimal
-arithmetic prerequisite — it is the most fundamental operation and required by all
-higher arithmetic. A model that cannot add cannot reliably solve even the simplest word
-problem.
+**Prerequisites:** `multi_digit_add` AND `modus_ponens`
+**Why multi_digit_add specifically:** The DAG model requires a specific node name as
+prerequisite, not a disjunction. `multi_digit_add` is the most complete arithmetic
+foundation — it implies `single_digit_add` and `carry_rule` are mastered. A model that
+cannot add multi-digit numbers reliably cannot solve even the simplest word problem.
 **Cross-branch dependency:** This is the junction of the logic branch and math branch.
 The model must both know the arithmetic operation AND apply the logical inference "context
 implies operation." Both branches must be in `reinforce` regime before this node.
@@ -258,17 +295,17 @@ reasoning.
 ## Math Branch DAG (summary)
 
 ```
-arithmetic_add ──► arithmetic_multiply ──► arithmetic_divide
-                          │                        │
-                          └──────────────┬──────────┘
-                                         ▼
-              modus_ponens ──────► word_problem_1step ──► word_problem_multi
-                                                               │
-              hyp_syllogism ──────────────────────────────────►│
-                                                               ▼
-              modus_tollens ──────────────────────────► algebra_linear
-                                                               │
-              chain_reasoning ────────────────────────► algebra_nonlinear
+single_digit_add ──► carry_rule ──► multi_digit_add ──► arithmetic_multiply ──► arithmetic_divide
+                                            │                    │                      │
+                                            └────────────────────┴──────────┬───────────┘
+                                                                             ▼
+              modus_ponens ─────────────────────────────────► word_problem_1step ──► word_problem_multi
+                                                                                          │
+              hyp_syllogism ─────────────────────────────────────────────────────────────►│
+                                                                                          ▼
+              modus_tollens ─────────────────────────────────────────────────► algebra_linear
+                                                                                          │
+              chain_reasoning ──────────────────────────────────────────────► algebra_nonlinear
 ```
 
 ---
@@ -276,7 +313,7 @@ arithmetic_add ──► arithmetic_multiply ──► arithmetic_divide
 ## Cross-Branch Junction
 
 `word_problem_1step` requires BOTH:
-- Math branch: `arithmetic_add` in `reinforce` regime
+- Math branch: `multi_digit_add` in `reinforce` regime
 - Logic branch: `modus_ponens` in `reinforce` regime
 
 `word_problem_multi` requires BOTH:
@@ -307,7 +344,11 @@ that went through logic phases first. Prediction: logic-first model should reach
 | `phase5_benchmark_failures_base.jsonl` | `chain_reasoning` | Has data |
 | `phase5_benchmark_failures_p1_4.jsonl` | `chain_reasoning` | Has data |
 | `phase6_benchmark_failures_p1_5.jsonl` | `chain_reasoning` | Has data |
-| `retention_replay.jsonl` | `arithmetic_multiply` | Has data |
+| `single_digit_add_train.jsonl` | `single_digit_add` | Has data |
+| `carry_rule_train.jsonl` | `carry_rule` | Has data (45 items, exhaustive) |
+| `multi_digit_add_train.jsonl` | `multi_digit_add` | Has data |
+| `arithmetic_multiply_train.jsonl` | `arithmetic_multiply` | Has data (720 pairs) |
+| `arithmetic_div_train.jsonl` | `arithmetic_divide` | Has data |
 | GSM8K (easy tier, to be split) | `word_problem_1step` | Needs split |
 | GSM8K (medium/hard tier) | `word_problem_multi` | Needs split |
 | MATH dataset | `algebra_linear` | Needs download |
@@ -316,8 +357,6 @@ that went through logic phases first. Prediction: logic-first model should reach
 **Gaps in existing data:**
 - `modus_tollens` has no isolated training set (only in phase3 mixed recognition)
 - `disjunctive_syllogism` has no isolated training set
-- `arithmetic_add` has no training file (retention_replay only has multiplication)
-- `arithmetic_divide` has no training file
 - `word_problem_1step` needs GSM8K difficulty split
 - `universal_instantiation` not treated as explicit skill node
 
@@ -337,9 +376,11 @@ measures baseline accuracy on this eval set to determine Zone 1/2/3.
 | `rule_recognition` | Subset of benchmark_val.jsonl (logical rules) | ≥50 | existing |
 | `concise_reasoning` | Generated: concise_eval.jsonl | ≥30 | `{"text": "..."}` |
 | `chain_reasoning` | benchmark_val.jsonl (multi-step logical) | ≥50 | existing |
-| `arithmetic_add` | Generated: arithmetic_add_eval.jsonl | ≥50 | `{"text": "...", "answer_start": N}` |
-| `arithmetic_multiply` | Subset of retention_replay.jsonl | ≥50 | existing |
-| `arithmetic_divide` | Generated: arithmetic_div_eval.jsonl | ≥50 | `{"text": "...", "answer_start": N}` |
+| `single_digit_add` | `data/eval/single_digit_add_eval.jsonl` | 45 (sum≥10 subset) | `{"text": "...", "answer_start": N}` |
+| `carry_rule` | `data/eval/carry_rule_eval.jsonl` | 45 (exhaustive) | `{"text": "...", "answer_start": N}` |
+| `multi_digit_add` | `data/eval/multi_digit_add_eval.jsonl` | ≥100, OOD 3-digit+3-digit | `{"text": "...", "answer_start": N}` |
+| `arithmetic_multiply` | `data/eval/arithmetic_multiply_eval.jsonl` | ≥100, OOD A∈[100,999] | `{"text": "...", "answer_start": N}` |
+| `arithmetic_divide` | `data/eval/arithmetic_div_eval.jsonl` | ≥50 | `{"text": "...", "answer_start": N}` |
 | `word_problem_1step` | GSM8K easy eval split | ≥100 | `{"text": "..."}` |
 | `word_problem_multi` | GSM8K med/hard eval split | ≥100 | `{"text": "..."}` |
 | `algebra_linear` | MATH easy subset | ≥100 | `{"text": "..."}` |

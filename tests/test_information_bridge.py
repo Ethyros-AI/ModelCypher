@@ -261,3 +261,167 @@ def test_fixed_sigma_mi_decreases_for_contraction(any_backend):
             f"MI should decrease under contraction. "
             f"I₂(X₀, X_{l})={trajectory[l]:.4f} < I₂(X₀, X_{l+1})={trajectory[l+1]:.4f}"
         )
+
+
+# ===========================================================================
+# Test: Normalized MI trajectory is non-negative
+# ===========================================================================
+# I₂(X₀, X_l) >= 0 for all l after L2 normalization + shared sigma.
+# Same invariant as per-layer sigma (Giraldo et al. 2014, subadditivity).
+# Tests with layers at wildly different scales to verify normalization works.
+
+
+def test_normalized_mi_trajectory_nonnegative(any_backend):
+    """I₂(X₀, X_l) >= 0 with L2 norm + shared sigma, even at different scales."""
+    from modelcypher.core.domain.geometry.information_bridge import (
+        compute_normalized_mi_trajectory,
+    )
+
+    backend = any_backend
+    n = 15
+
+    # 4 layers at wildly different scales (1x, 10x, 100x, 1000x)
+    base = [[float(i + 1), float(i * 2 + 1)] for i in range(n)]
+    layers = [
+        backend.array(base),
+        backend.array([[v * 10.0 for v in row] for row in base]),
+        backend.array([[v * 100.0 for v in row] for row in base]),
+        backend.array([[v * 1000.0 for v in row] for row in base]),
+    ]
+
+    trajectory, sigma = compute_normalized_mi_trajectory(layers, backend)
+
+    assert sigma > 0.0, f"Shared sigma must be positive. Got {sigma}"
+
+    eps = _div_eps(backend)
+    for l, mi_val in enumerate(trajectory):
+        assert mi_val >= -eps, (
+            f"Normalized I₂(X₀, X_{l}) must be >= 0. Got {mi_val:.6f}"
+        )
+
+
+# ===========================================================================
+# Test: Normalized MI is scale-invariant
+# ===========================================================================
+# L2 normalization maps X and cX to the same unit vectors.
+# Therefore layers_A = [X, 10X, 100X] and layers_B = [X, X, X]
+# must produce IDENTICAL MI trajectories after normalization.
+# This is THE critical test: proves normalization removes the scale artifact.
+
+
+def test_normalized_mi_trajectory_scale_invariant(any_backend):
+    """MI trajectory is identical for [X, 10X, 100X] and [X, X, X]."""
+    from modelcypher.core.domain.geometry.information_bridge import (
+        compute_normalized_mi_trajectory,
+    )
+
+    backend = any_backend
+    n = 15
+
+    base = [[float(i + 1), float(i * 2 + 1)] for i in range(n)]
+
+    # layers_A: same data at different scales
+    layers_a = [
+        backend.array(base),
+        backend.array([[v * 10.0 for v in row] for row in base]),
+        backend.array([[v * 100.0 for v in row] for row in base]),
+    ]
+
+    # layers_B: same data at same scale
+    layers_b = [
+        backend.array(base),
+        backend.array(base),
+        backend.array(base),
+    ]
+
+    traj_a, _ = compute_normalized_mi_trajectory(layers_a, backend)
+    traj_b, _ = compute_normalized_mi_trajectory(layers_b, backend)
+
+    eps = _div_eps(backend)
+    for l in range(len(traj_a)):
+        assert abs(traj_a[l] - traj_b[l]) < eps, (
+            f"Scale invariance violated at layer {l}: "
+            f"scaled={traj_a[l]:.6f}, unscaled={traj_b[l]:.6f}"
+        )
+
+
+# ===========================================================================
+# Test: Normalized MI decreases for progressive rotation
+# ===========================================================================
+# For layers [X, R₁X, R₂X] where R applies progressive rotation,
+# MI should decrease as angular structure diverges from input.
+# NOTE: pure scaling is killed by L2 norm, so we use rotation.
+
+
+def test_normalized_mi_decreases_for_rotation(any_backend):
+    """MI decreases under progressive rotation with normalized activations."""
+    from modelcypher.core.domain.geometry.information_bridge import (
+        compute_normalized_mi_trajectory,
+    )
+
+    backend = any_backend
+    n = 20
+
+    # X₀: 2D points with clear angular structure
+    base = [[float(i + 1), float(i * 2 + 1)] for i in range(n)]
+
+    # Apply progressively larger rotations (30°, 60°)
+    import math as m
+
+    def rotate(points, theta):
+        c, s = m.cos(theta), m.sin(theta)
+        return [[c * x - s * y, s * x + c * y] for x, y in points]
+
+    layers = [
+        backend.array(base),
+        backend.array(rotate(base, m.pi / 6)),   # 30° rotation
+        backend.array(rotate(base, m.pi / 3)),   # 60° rotation
+    ]
+
+    trajectory, _ = compute_normalized_mi_trajectory(layers, backend)
+
+    # Self-MI should be highest
+    assert trajectory[0] >= trajectory[1] - _div_eps(backend), (
+        f"Self-MI ({trajectory[0]:.4f}) should >= MI with 30° rotation ({trajectory[1]:.4f})"
+    )
+    # More rotation = less MI
+    assert trajectory[1] >= trajectory[2] - _div_eps(backend), (
+        f"MI at 30° ({trajectory[1]:.4f}) should >= MI at 60° ({trajectory[2]:.4f})"
+    )
+
+
+# ===========================================================================
+# Test: Normalized all-pairs MI is symmetric
+# ===========================================================================
+# MI(i,j) = MI(j,i) by Hadamard commutativity, regardless of sigma regime.
+
+
+def test_normalized_all_pairs_mi_symmetric(any_backend):
+    """Normalized L×L MI matrix is symmetric."""
+    from modelcypher.core.domain.geometry.information_bridge import (
+        compute_normalized_all_pairs_mi,
+    )
+
+    backend = any_backend
+    n = 15
+
+    # Three "layers" with different point clouds at different scales
+    layers = [
+        backend.array([[float(i + 1), float(i * 2 + 1)] for i in range(n)]),
+        backend.array([[float(i * 3 + 2) * 10, float(i + 5) * 10] for i in range(n)]),
+        backend.array([[float(n - i) * 100, float(i * 4 + 2) * 100] for i in range(n)]),
+    ]
+
+    mi_matrix, sigma = compute_normalized_all_pairs_mi(layers, backend)
+
+    assert sigma > 0.0, f"Shared sigma must be positive. Got {sigma}"
+
+    num_layers = len(mi_matrix)
+    eps = _div_eps(backend)
+
+    for i in range(num_layers):
+        for j in range(num_layers):
+            assert abs(mi_matrix[i][j] - mi_matrix[j][i]) < eps, (
+                f"Normalized MI matrix not symmetric at ({i},{j}): "
+                f"{mi_matrix[i][j]:.6f} vs {mi_matrix[j][i]:.6f}"
+            )

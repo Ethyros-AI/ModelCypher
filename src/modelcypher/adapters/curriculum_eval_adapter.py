@@ -163,9 +163,12 @@ def evaluate_skill_mastery(
                     and expected_int == predicted_int
                 )
                 # Procedural check: model must emit at least one carry-indicator token.
-                # Tokens derived from carry_rule training format:
-                #   "{a} + {b} = {sum}. Write {digit}, carry 1. Answer: {sum}"
-                # A model that learned the rule WILL generate these. Memorization won't.
+                # Token set derived from training scratchpad formats for all procedural nodes:
+                #   carry_rule:          "{a} + {b} = {sum}. Write {digit}, carry 1. Answer: {sum}"
+                #   multi_digit_add:     "Ones: X + Y = Z. Write D, carry 1.\n...Answer: N"
+                #   arithmetic_multiply: "Ones: X × Y = Z. Write D, carry C.\n...Answer: N"
+                # "write" and "carry" appear in all three formats — derived from training data.
+                # A model that learned the procedure WILL generate these. Memorization won't.
                 predicted_lower = predicted.lower()
                 has_procedure = "write" in predicted_lower or "carry" in predicted_lower
                 if numeric_correct and has_procedure:

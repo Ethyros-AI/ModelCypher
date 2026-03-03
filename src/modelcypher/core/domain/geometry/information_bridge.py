@@ -13,9 +13,20 @@ Computes curvature excess, all-pairs Rényi MI, and MI trajectories using
 pre-computed kernel matrices. Every formula traces to the derivations in
 docs/research/information_bridge_derivation.md.
 
+Sigma regimes (Section 2.3 of derivation):
+    Regime 1: Per-layer sigma — each layer measured at its own scale.
+        NOT comparable across layers.
+    Regime 3: Fixed sigma — single sigma from input layer.
+        Commensurable but saturates if sigma_0 is inappropriate for deep layers.
+    Regime 4: L2-normalized + shared sigma — L2-normalize activations to unit
+        hypersphere, derive one sigma from all layers' combined distances.
+        Fully commensurable (same resolution, bounded distance support).
+
 Dependencies:
     - renyi_mi.py: compute_renyi_mi_alpha2, compute_renyi_entropy_alpha2
-    - cka.py: rbf_gram_matrix, rbf_gram_matrix_with_sigma
+    - cka.py: rbf_gram_matrix, rbf_gram_matrix_with_sigma,
+              geodesic_squared_distances, _derive_rbf_sigma_from_values,
+              _rbf_gram_from_sq_distances
     - effective_rank.py: EffectiveRank.compute() -> spectral_entropy (nats)
     - intrinsic_dimension.py: IntrinsicDimension.compute_two_nn() -> ID
 """
@@ -151,3 +162,130 @@ def compute_fixed_sigma_mi_trajectory(
         compute_renyi_mi_alpha2(gram_0, gram_l, backend)
         for gram_l in grams
     ]
+
+
+def _normalize_and_build_grams(
+    layer_activations: list["Array"], backend: "Backend"
+) -> tuple[list["Array"], float]:
+    """L2-normalize activations, derive shared sigma, build Gram matrices.
+
+    Regime 4: projects all layers to the unit hypersphere S^{D-1}, making
+    geodesic distances = arc lengths in [0, π]. A single shared sigma
+    derived from ALL layers' combined distance statistics ensures
+    commensurable MI measurements across layers.
+
+    Args:
+        layer_activations: List of [N, D] activation matrices per layer.
+        backend: Backend for tensor operations.
+
+    Returns:
+        Tuple of (list_of_gram_matrices, shared_sigma).
+    """
+    from modelcypher.core.domain.geometry.cka import (
+        _derive_rbf_sigma_from_values,
+        _rbf_gram_from_sq_distances,
+        geodesic_squared_distances,
+    )
+    from modelcypher.core.domain.geometry.numerical_stability import (
+        division_epsilon,
+    )
+
+    if not layer_activations:
+        return [], 0.0
+
+    # Step 1: L2-normalize each layer's activation rows to the unit sphere
+    normalized = []
+    for acts in layer_activations:
+        norms = backend.norm(acts, axis=1, keepdims=True)
+        eps = division_epsilon(backend, acts)
+        # Clamp norms to avoid division by zero
+        safe_norms = backend.maximum(norms, backend.array([[eps]]))
+        normalized.append(acts / safe_norms)
+
+    # Step 2: Compute geodesic squared distances for all normalized layers
+    sq_dists = [geodesic_squared_distances(norm_acts, backend) for norm_acts in normalized]
+
+    # Step 3: Derive one shared sigma from ALL layers' combined distances
+    # Flatten and concatenate all distance matrices
+    all_values = backend.concatenate(
+        [backend.reshape(sd, (-1,)) for sd in sq_dists]
+    )
+    shared_sigma = _derive_rbf_sigma_from_values(all_values, backend)
+
+    # Step 4: Build Gram matrices with shared sigma
+    grams = [
+        _rbf_gram_from_sq_distances(sd, shared_sigma, backend)
+        for sd in sq_dists
+    ]
+
+    return grams, shared_sigma
+
+
+def compute_normalized_mi_trajectory(
+    layer_activations: list["Array"], backend: "Backend"
+) -> tuple[list[float], float]:
+    """Compute I₂(X₀, X_l) with L2 normalization + shared sigma (Regime 4).
+
+    Makes MI values commensurable across layers by:
+    1. L2-normalizing each activation row to the unit hypersphere
+    2. Computing geodesic squared distances for ALL normalized layers
+    3. Deriving ONE sigma from ALL layers' combined distance statistics
+    4. Building all Gram matrices with this single sigma
+
+    After L2 normalization, all activations lie on S^{D-1}. Geodesic
+    distances become arc lengths in [0, π], with bounded distance
+    distributions comparable across layers.
+
+    Args:
+        layer_activations: List of [N, D] activation matrices per layer.
+        backend: Backend for tensor operations.
+
+    Returns:
+        Tuple of (trajectory, sigma) where trajectory is
+        [I₂(X₀, X₀), I₂(X₀, X₁), ..., I₂(X₀, X_{L-1})]
+        and sigma is the shared bandwidth used.
+    """
+    if not layer_activations:
+        return [], 0.0
+
+    grams, sigma = _normalize_and_build_grams(layer_activations, backend)
+
+    gram_0 = grams[0]
+    trajectory = [
+        compute_renyi_mi_alpha2(gram_0, gram_l, backend)
+        for gram_l in grams
+    ]
+
+    return trajectory, sigma
+
+
+def compute_normalized_all_pairs_mi(
+    layer_activations: list["Array"], backend: "Backend"
+) -> tuple[list[list[float]], float]:
+    """Compute L×L matrix of pairwise Rényi MI with normalized activations.
+
+    Same Regime 4 normalization as compute_normalized_mi_trajectory:
+    L2-normalize, shared sigma, commensurable MI values.
+
+    Args:
+        layer_activations: List of [N, D] activation matrices per layer.
+        backend: Backend for tensor operations.
+
+    Returns:
+        Tuple of (mi_matrix, sigma) where mi_matrix is L×L.
+    """
+    if not layer_activations:
+        return [], 0.0
+
+    grams, sigma = _normalize_and_build_grams(layer_activations, backend)
+
+    num_layers = len(grams)
+    mi_matrix = [[0.0] * num_layers for _ in range(num_layers)]
+
+    for i in range(num_layers):
+        for j in range(i, num_layers):
+            mi = compute_renyi_mi_alpha2(grams[i], grams[j], backend)
+            mi_matrix[i][j] = mi
+            mi_matrix[j][i] = mi  # symmetric
+
+    return mi_matrix, sigma

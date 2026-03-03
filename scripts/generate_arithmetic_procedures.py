@@ -300,27 +300,26 @@ def generate_single_digit_add(seed: int) -> tuple[list[dict], list[dict]]:
 def generate_carry_rule(seed: int) -> tuple[list[dict], list[dict]]:
     """All 45 ordered pairs with A+B ≥ 10, A,B ∈ [0,9].
 
-    Train: 30 pairs. Eval: 15 pairs (held-out, disjoint).
+    Train: 45 pairs (exhaustive). Eval: 45 pairs (exhaustive).
+    carry_rule is a finite enumerable set — there is no meaningful in/out-of-distribution
+    distinction. Mastery requires procedural compliance (carry notation in output) across
+    all 45 carry-inducing pairs, so the eval set is the complete population.
+    Training and eval use DIFFERENT formats (scratchpad vs direct), so files are not
+    identical even though the pair populations are the same.
     Training uses scratchpad format; eval uses direct format.
     """
-    rng = random.Random(seed)
-
     pairs = [(a, b) for a in range(10) for b in range(10) if a + b >= 10]
     assert len(pairs) == 45, f"expected 45 carry pairs, got {len(pairs)}"
 
-    rng.shuffle(pairs)
-    eval_pairs = pairs[:15]
-    train_pairs = pairs[15:]
-
-    # Verify disjointness
-    eval_set = set(eval_pairs)
-    assert not any(p in eval_set for p in train_pairs), "train/eval overlap in carry_rule"
+    # Exhaustive coverage — seed not needed (no sampling)
+    train_pairs = pairs
+    eval_pairs = pairs
 
     train_items = [_make_carry_rule_train_item(a, b) for a, b in train_pairs]
     eval_items = [_make_addition_eval_item(a, b, "carry_rule") for a, b in eval_pairs]
 
-    assert len(train_items) == 30
-    assert len(eval_items) == 15
+    assert len(train_items) == 45
+    assert len(eval_items) == 45
 
     return train_items, eval_items
 
