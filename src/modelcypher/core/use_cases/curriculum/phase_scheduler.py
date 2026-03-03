@@ -4,9 +4,6 @@ The scheduler answers two questions at any point in training:
   1. "Which skill should the model learn next?"
   2. "Has the model mastered a given skill?"
 
-Both answers are derived from the skill DAG (formal dependency ordering) and the
-auto-regime mastery criterion (Clopper-Pearson CI from online_eval).
-
 Design:
 - PhaseScheduler is a pure orchestration layer with no ML imports.
 - Mastery evaluation (running the model) is done externally and fed in via
@@ -14,16 +11,20 @@ Design:
 - State persists to JSON so curriculum progress survives between sessions.
 
 Mastery criterion:
-  A skill is mastered when its MasteryRecord shows regime == 'reinforce'.
-  This corresponds to: Clopper-Pearson lower bound > chance_rate on the
-  held-out eval set for that skill.
+  A skill is mastered when the model answers every item in the eval set correctly
+  (n_correct == n_total, i.e., accuracy == 1.0 on the held-out set).
 
-  This criterion is derived, not chosen. See regime_selection.py for the
-  mathematical derivation.
+  Rationale: "Skill B depends on Skill A" means the formal proof of B uses A as
+  a premise. Using a skill as a reliable premise requires answering every instance
+  correctly — partial knowledge (e.g., 12% on chain_reasoning) cannot serve as a
+  dependable premise. The eval set is small and constructed so the expected answer
+  is unambiguous; a model that has genuinely internalized the rule should produce
+  the correct string on every item.
 
-  Open question: Is 'reinforce' sufficient or do we need ci_lower > secondary
-  threshold? Measure backward transfer after advancement and record results in
-  docs/curriculum/validation_results.md.
+  The `regime` field (ce / reinforce_entropy / reinforce) is retained for selecting
+  the TRAINING OBJECTIVE (CE vs REINFORCE) and is independent of mastery. A skill
+  may have regime='reinforce' but not yet be mastered (accuracy < 1.0), meaning
+  REINFORCE is the right training mode but the model needs more training.
 """
 
 from __future__ import annotations
@@ -47,20 +48,21 @@ logger = logging.getLogger(__name__)
 class MasteryRecord:
     """Mastery state for a single skill node.
 
-    Populated by external eval (e.g., online_eval.evaluate_correctness +
-    regime_selection.select_training_regime). Never populated by PhaseScheduler itself.
+    Populated by external eval (e.g., curriculum_eval_adapter.evaluate_skill_mastery).
+    Never populated by PhaseScheduler itself.
 
     Attributes:
         skill_name: Must match a node in the DAG.
         regime: 'unknown' | 'ce' | 'reinforce_entropy' | 'reinforce'
-            'unknown' = not yet evaluated.
-            'ce' = model has near-zero capability; CE is the right training mode.
+            Determines the TRAINING OBJECTIVE, not mastery:
+            'ce'               = near-zero capability; CE deposits the invariant.
             'reinforce_entropy' = emerging capability; REINFORCE+entropy refines.
-            'reinforce' = consolidated; this skill is MASTERED.
-        accuracy: Observed accuracy on held-out eval set (0.0–1.0).
+            'reinforce'        = above-chance capability; pure REINFORCE extracts.
+        n_correct: Number of eval items answered correctly.
+        n_total: Total number of eval items.
+        accuracy: n_correct / n_total (0.0–1.0).
         ci_lower: Clopper-Pearson lower bound on accuracy.
         ci_upper: Clopper-Pearson upper bound on accuracy.
-        n_total: Number of eval problems used.
         chance_rate: Random-chance baseline for this problem type.
     """
 
@@ -70,11 +72,21 @@ class MasteryRecord:
     ci_lower: float = 0.0
     ci_upper: float = 0.0
     n_total: int = 0
+    n_correct: int = 0
     chance_rate: float = 0.0
 
     def is_mastered(self) -> bool:
-        """True when regime is 'reinforce' — Clopper-Pearson lower bound > chance."""
-        return self.regime == "reinforce"
+        """True when the model answers every item in the eval set correctly.
+
+        Mastery requires n_correct == n_total (accuracy == 1.0). The model
+        cannot advance to the next skill in the DAG until it can reliably apply
+        the current skill without error. Partial knowledge is not mastery — it
+        is the training target.
+
+        The `regime` field controls the training objective (CE vs REINFORCE)
+        and is separate from this criterion.
+        """
+        return self.n_total > 0 and self.n_correct == self.n_total
 
 
 class PhaseScheduler:

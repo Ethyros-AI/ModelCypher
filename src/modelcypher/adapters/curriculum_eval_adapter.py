@@ -149,5 +149,6 @@ def evaluate_skill_mastery(
         ci_lower=ci_lower,
         ci_upper=ci_upper,
         n_total=n_total,
+        n_correct=n_correct,
         chance_rate=chance_rate,
     )
