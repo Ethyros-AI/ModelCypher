@@ -29,9 +29,19 @@ Layer 14 in LFM2-350M is a full attention layer; its activation distribution pro
 
 **Chain extension confirmed:** C_ex peaks at highway for LFM2 (2/3 models). The validated chain gains: `→ C_ex peak → Highway`. Qwen failure may reflect the phase classifier not being tuned to Qwen's architecture.
 
-**Verdict for Rényi MI as cross-layer measure:** NOT suitable with per-layer RBF kernels in heterogeneous models. Options if MI is needed: (a) shared sigma calibrated to one reference layer, (b) activation normalization before kernel computation, (c) use CKA as the MI proxy (P3 shows r≈0.3 correlation). CKA is the reliable tool; MI does not add reliable signal beyond it.
+**Root cause confirmed: sigma grows with depth (residual stream scale accumulation).**
 
-**Artifacts:** `results/information_bridge/LFM2-350M/`, `LFM2-700M/`, `Qwen3.5-0.8B/` — each contains `predictions.json`, `report.md` (with kernel bandwidth diagnostics table), `trajectories.json`, `cka_matrix.json`, `renyi_mi_matrix.json`.
+- LFM2-350M: Spearman(depth, sigma) = 0.756, p = 7e-4
+- LFM2-700M: Spearman(depth, sigma) = 0.915, p = 7e-7
+- Qwen3.5-0.8B: Spearman(depth, sigma) = 0.476, p = 0.019 (marginal; L19 outlier sigma=13.2)
+
+S_spec and attention type are NOT the drivers. Spearman(sigma, S_spec): 0.04, 0.34, -0.22 across the three models — no consistent signal. P9 (attention type predicts sigma): REFUTED (Qwen geometric ratio=1.563, p=0.578). Boundary-local transition test: one-sided p=0.066, not significant at p<0.01, and not independent of the depth trend.
+
+**Fix for MI measurement:** L2-normalize activations before computing kernels. This removes depth-driven scale while preserving directional structure (geometry). Per-layer sigma comparison becomes valid when all activation vectors have unit norm. Run this before adding further predictions.
+
+**Verdict for Rényi MI as cross-layer measure:** NOT suitable with per-layer RBF kernels on raw activations. The depth-driven scale makes sigmas incommensurable by construction. L2-normalize activations first, then retest P2/P4/P5/P6. CKA is the reliable tool in the interim.
+
+**Artifacts:** `results/information_bridge/LFM2-350M/`, `LFM2-700M/`, `Qwen3.5-0.8B/` — each contains `predictions.json`, `report.md` (with kernel bandwidth diagnostics table and layer type column), `trajectories.json`, `cka_matrix.json`, `renyi_mi_matrix.json`.
 
 ---
 

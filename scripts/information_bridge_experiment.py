@@ -278,6 +278,23 @@ def test_attention_type_sigma_regime(
 
 
 # ---------------------------------------------------------------------------
+# Activation normalization
+# ---------------------------------------------------------------------------
+
+
+def l2_normalize_rows(acts: object, backend: object) -> object:
+    """L2-normalize activation rows to unit norm (direction-only geometry)."""
+    from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
+    norms = backend.norm(acts, axis=1, keepdims=True)
+    eps = division_epsilon(backend, acts)
+    safe_norms = backend.maximum(norms, backend.full(norms.shape, eps))
+    normalized = acts / safe_norms
+    backend.eval(normalized)
+    return normalized
+
+
+# ---------------------------------------------------------------------------
 # Collect activations
 # ---------------------------------------------------------------------------
 
@@ -598,6 +615,11 @@ def main():
     sorted_layers = sorted(layer_activations.keys())
     num_layers = len(sorted_layers)
     logger.info("  Layers: %s", sorted_layers)
+    normalized_layer_activations = {
+        idx: l2_normalize_rows(layer_activations[idx], backend)
+        for idx in sorted_layers
+    }
+    logger.info("  L2-normalized activations for kernel computations.")
     layer_types = load_aligned_layer_types(args.model, sorted_layers)
     if layer_types is None:
         logger.info("  No per-layer architecture labels found in model config.")
@@ -645,7 +667,7 @@ def main():
     layer_sigmas = []
     for layer_idx in sorted_layers:
         gram, sigma = rbf_gram_matrix_with_sigma(
-            layer_activations[layer_idx], backend
+            normalized_layer_activations[layer_idx], backend
         )
         layer_grams.append(gram)
         layer_sigmas.append(sigma)
@@ -711,7 +733,7 @@ def main():
     logger.info("Step 9: Computing MI trajectories...")
     input_mi_traj = compute_input_mi_trajectory(layer_grams, backend)
 
-    layer_acts_list = [layer_activations[idx] for idx in sorted_layers]
+    layer_acts_list = [normalized_layer_activations[idx] for idx in sorted_layers]
     fixed_mi_traj = compute_fixed_sigma_mi_trajectory(
         layer_acts_list, backend, sigma_0
     )
