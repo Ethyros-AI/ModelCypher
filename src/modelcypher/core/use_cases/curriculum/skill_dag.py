@@ -387,8 +387,7 @@ def build_curriculum_dag() -> SkillDAG:
                 "modus_tollens",
             ),
             train_files=(
-                # MATH dataset (HS level) + NuminaMath easy tier
-                # data/training/math_hs_train.jsonl
+                "data/training/math_hs_train.jsonl",
             ),
             eval_files=(
                 "data/eval/math_hs_eval.jsonl",
@@ -405,8 +404,7 @@ def build_curriculum_dag() -> SkillDAG:
             formal_statement="Competition-level math requiring multi-step algebraic reasoning.",
             prerequisites=("algebra_linear", "chain_reasoning"),
             train_files=(
-                # NuminaMath full distribution
-                # data/training/numina_train.jsonl
+                "data/training/numina_train.jsonl",
             ),
             eval_files=(
                 "data/eval/numina_eval.jsonl",

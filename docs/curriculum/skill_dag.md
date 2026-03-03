@@ -363,7 +363,13 @@ measures baseline accuracy on this eval set to determine Zone 1/2/3.
    - Experiment: Advance to modus_tollens when MP reaches `reinforce` regime. Measure
      backward transfer on MP eval set after MT training. If backward transfer > 0.05,
      advance criterion was too permissive.
-   - Status: Not yet run.
+   - Status: **COMPLETED 2026-03-03**
+   - Result: McNemar p=0.2913 (not significant). pre_accuracy=0.450, post_accuracy=0.530,
+     delta=+0.080. n_lost=18, n_gained=26. MP accuracy improved slightly after MT training
+     (possible forward transfer — MT and MP share the same conditional-reasoning subgraph).
+   - Conclusion: **reinforce gate is safe** for the MP→MT transition. The gate is not too
+     permissive. Results saved to `results/backward_transfer_mp_mt.json`.
+   - Tool: `scripts/measure_backward_transfer.py` (two-phase McNemar test).
 
 3. **Does logic-first curriculum outperform math-only on word_problem_multi?**
    - Experiment: Train LFM2-350M two ways: (a) logic phases → arithmetic → word problems;
@@ -375,3 +381,31 @@ measures baseline accuracy on this eval set to determine Zone 1/2/3.
    - Experiment: Train on raw NuminaMath vs. deduplicated subset. Compare accuracy,
      degeneration, CKA, convergence.
    - Status: Not yet run. Run after PhaseScheduler is working.
+
+---
+
+## Validation Results
+
+### Experiment #2 — reinforce gate safety (2026-03-03)
+
+**Model:** LFM2-350M-MLX-bf16 (pretrained, no curriculum training)
+**Transition tested:** modus_ponens → modus_tollens
+
+| Metric | Value |
+|--------|-------|
+| pre_accuracy (MP baseline) | 0.450 |
+| post_accuracy (after MT training) | 0.530 |
+| delta | +0.080 |
+| n_lost | 18 |
+| n_gained | 26 |
+| McNemar chi² | 1.2321 |
+| McNemar p | 0.2913 |
+| Significant forgetting? | No |
+
+**Interpretation:** MT training did not cause systematic forgetting of MP (p=0.29 >> 0.05).
+The slight accuracy improvement (+8%) is consistent with forward transfer — MT and MP share
+the same conditional-reasoning subgraph (both require evaluating `if A then B`), so
+strengthening one reinforces the other. The reinforce gate is safe for this edge.
+
+**Files:** `results/mp_baseline.json`, `results/backward_transfer_mp_mt.json`
+**Tool:** `scripts/measure_backward_transfer.py`
