@@ -730,6 +730,21 @@ how many dimensions the value manifold needs = how much curvature accumulates pe
 Attention weight entropy is upstream and architecture-dependent in its effect.
 Full technical mapping: `docs/research/bayesian_geometry_connection.md`.
 
+**Operator split resolved (2026-03-03, CR-EC-001):** The operator-split experiment
+(`scripts/entropy_curvature_operator_split.py`) decisively confirms H_logit as the
+primary entropy operator for curvature coupling on standard transformers:
+
+| Model | r(H_logit, θ_attn) | r(H_attn, θ_attn) | r(H_logit, H_attn) |
+|-------|--------------------|--------------------|---------------------|
+| LFM2-700M | **+0.943** (p=0.005) | +0.829 (p=0.042) | +0.657 |
+| Qwen3.5-0.8B | +0.371 | -0.257 | -0.086 |
+| Qwen2.5-3B | **+0.867** (p<0.001) | -0.062 | -0.299 |
+
+The two operators are barely correlated on standard transformers (r=-0.086 to -0.299).
+Falsifiers: F1 PASS 3/3, F3 PASS (LFM2-qualified), F5 FAIL (LFM2 sign negative for
+H_logit→θ_total, Qwen signs positive). Architecture-term sign law remains open.
+Full results: `results/entropy_curvature_operator_split/`.
+
 ---
 
 ## 5. MLP Nonlinearity Geometry — SOLVED (2026-02-03) `[EMPIRICAL]`

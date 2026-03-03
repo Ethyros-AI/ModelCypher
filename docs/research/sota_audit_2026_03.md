@@ -100,9 +100,9 @@ Action:
 - Needed: intervention protocol and falsifier-driven conclusion.
 
 ### 4) Entropy operator and architecture dependence
-- Current status: directional grounding exists externally (Bayesian geometry trilogy), but internal mechanism remains unresolved across entropy operators and families.
-- Needed: explicit split between logit-entropy and attention-entropy operators, plus architecture-conditioned sublayer mechanism law.
-- New claim record: `CR-EC-001` (`[INCONCLUSIVE]`, `PUSH_FURTHER`).
+- Current status: operator split resolved — H_logit is the primary operator (r=0.867 on Qwen2.5-3B vs H_attn r=-0.062). F1 PASS 3/3, F3 PASS LFM2-qualified, F5 FAIL (sign inconsistency across families).
+- Needed: architecture-conditioned sign law for H_logit→θ_total to resolve F5 failure.
+- Claim record: `CR-EC-001` (`[EMPIRICAL]`, `PUSH_FURTHER`). Updated from `[INCONCLUSIVE]` after operator-split experiment.
 
 ## Threads To Retire
 

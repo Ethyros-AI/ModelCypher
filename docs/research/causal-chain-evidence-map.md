@@ -24,7 +24,7 @@ Attention selectivity
 H_attn (attention weight entropy)
     ↓ [EXPLORATORY] ← OPERATOR RECONCILIATION NEEDED
 H_logit (logit entropy / Entropy-Lens)
-    ↓ [EXPLORATORY, r=0.507] ← KEY DERIVATION GAP
+    ↓ [EXPLORATORY: r=0.507] ← KEY DERIVATION GAP
 Δcurvature
     ↓ [EXPLORATORY]
 Cumulative curvature → ID (r=0.821)

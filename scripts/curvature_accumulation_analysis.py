@@ -545,9 +545,32 @@ def compute_curvature_decomposition(
 
         # Total curvature: mean angular change h_in → h_out
         total_angles = []
+        total_theta_sq = []
+        log_perp_delta_sq = []
+        log_h_in_sq = []
+        eps = 1e-12
         for j in range(n_probes):
-            total_angles.append(angular_change(h_in[j], h_out[j]))
+            h_vec = h_in[j]
+            out_vec = h_out[j]
+            delta_vec = out_vec - h_vec
+
+            theta = angular_change(h_vec, out_vec)
+            total_angles.append(theta)
+            total_theta_sq.append(theta * theta)
+
+            # Small-angle decomposition terms:
+            # theta^2 ≈ ||P_perp(h) delta||^2 / ||h||^2
+            h_sq = float(np.dot(h_vec, h_vec))
+            if h_sq <= eps:
+                continue
+            proj_coeff = float(np.dot(delta_vec, h_vec) / h_sq)
+            delta_perp = delta_vec - proj_coeff * h_vec
+            perp_sq = float(np.dot(delta_perp, delta_perp))
+
+            log_perp_delta_sq.append(float(np.log(perp_sq + eps)))
+            log_h_in_sq.append(float(np.log(h_sq + eps)))
         total_curvature = float(np.mean(total_angles))
+        mean_theta_sq = float(np.mean(total_theta_sq))
 
         # Delta norm ratio (for comparison with alpha from Exp 1)
         delta = h_out - h_in
@@ -576,13 +599,27 @@ def compute_curvature_decomposition(
         valid_logit_ent = [e for e in raw_logit_ent if e is not None and not np.isnan(e)]
         mean_h_logit = float(np.mean(valid_logit_ent)) if valid_logit_ent else None
 
+        mean_log_perp_delta_sq = (
+            float(np.mean(log_perp_delta_sq)) if log_perp_delta_sq else None
+        )
+        mean_log_h_in_sq = float(np.mean(log_h_in_sq)) if log_h_in_sq else None
+        mean_log_ratio_perp_over_h_sq = (
+            mean_log_perp_delta_sq - mean_log_h_in_sq
+            if mean_log_perp_delta_sq is not None and mean_log_h_in_sq is not None
+            else None
+        )
+
         layer_result = {
             "layer_idx": i,
             "total_curvature": total_curvature,
+            "mean_theta_sq": mean_theta_sq,
             "mean_alpha": mean_alpha,
             "id_two_nn": id_val,
             "mean_h_attn": mean_h_attn,
             "mean_h_logit": mean_h_logit,
+            "mean_log_perp_delta_sq": mean_log_perp_delta_sq,
+            "mean_log_h_in_sq": mean_log_h_in_sq,
+            "mean_log_ratio_perp_over_h_sq": mean_log_ratio_perp_over_h_sq,
             "attn_curvature": None,
             "mlp_curvature": None,
             "attn_fraction": None,
@@ -1185,6 +1222,128 @@ def run_falsifier_tests(all_results: list[dict], n_permutations: int = 500) -> d
     else:
         out["operator_correlation"] = {
             "status": f"INSUFFICIENT_DATA: need >=10 observations with both H_attn and H_logit, have {n_pool_both}"
+        }
+
+    # -------------------------------------------------------------------------
+    # F5 frontier: sign-law decomposition for H_logit -> theta_total
+    # Tests whether sign is determined by numerator-vs-denominator competition in:
+    #   theta_total^2 ≈ ||P_perp(h) delta||^2 / ||h||^2
+    # Hence:
+    #   log(theta_total^2) ≈ log||P_perp(h) delta||^2 - log||h||^2
+    # -------------------------------------------------------------------------
+    pool_sign_law = []
+    for r in all_results:
+        family = r["architecture"]
+        n_layers = r["num_layers"]
+        for m in r["measurements"]:
+            h_logit = m.get("mean_h_logit")
+            theta_total = m.get("total_curvature")
+            log_num = m.get("mean_log_perp_delta_sq")
+            log_den = m.get("mean_log_h_in_sq")
+            depth_frac = m["layer_idx"] / max(n_layers - 1, 1)
+
+            if (
+                h_logit is not None and not np.isnan(h_logit)
+                and theta_total is not None and not np.isnan(theta_total)
+                and log_num is not None and not np.isnan(log_num)
+                and log_den is not None and not np.isnan(log_den)
+            ):
+                pool_sign_law.append({
+                    "H_logit": h_logit,
+                    "theta_total_sq_log": float(np.log((theta_total * theta_total) + 1e-12)),
+                    "log_num": log_num,
+                    "log_den": log_den,
+                    "depth_frac": depth_frac,
+                    "family": family,
+                })
+
+    if len(pool_sign_law) >= 10:
+        try:
+            H = np.array([p["H_logit"] for p in pool_sign_law])
+            y_theta = np.array([p["theta_total_sq_log"] for p in pool_sign_law])
+            y_num = np.array([p["log_num"] for p in pool_sign_law])
+            y_den = np.array([p["log_den"] for p in pool_sign_law])
+            depth = np.array([p["depth_frac"] for p in pool_sign_law])
+
+            H_res = residualize(H, depth)
+            y_theta_res = residualize(y_theta, depth)
+            y_num_res = residualize(y_num, depth)
+            y_den_res = residualize(y_den, depth)
+
+            b_theta, _, _, p_theta, _ = stats.linregress(H_res, y_theta_res)
+            b_num, _, _, p_num, _ = stats.linregress(H_res, y_num_res)
+            b_den, _, _, p_den, _ = stats.linregress(H_res, y_den_res)
+            b_pred = b_num - b_den
+
+            per_family = {}
+            sign_mismatch = 0
+            significant_families = 0
+            families = sorted({p["family"] for p in pool_sign_law})
+            for fam in families:
+                fam_rows = [p for p in pool_sign_law if p["family"] == fam]
+                if len(fam_rows) < 5:
+                    continue
+                Hf = np.array([p["H_logit"] for p in fam_rows])
+                Ytf = np.array([p["theta_total_sq_log"] for p in fam_rows])
+                Ynf = np.array([p["log_num"] for p in fam_rows])
+                Ydf = np.array([p["log_den"] for p in fam_rows])
+                Df = np.array([p["depth_frac"] for p in fam_rows])
+
+                Hf_r = residualize(Hf, Df)
+                Ytf_r = residualize(Ytf, Df)
+                Ynf_r = residualize(Ynf, Df)
+                Ydf_r = residualize(Ydf, Df)
+
+                b_t, _, _, p_t, _ = stats.linregress(Hf_r, Ytf_r)
+                b_n, _, _, p_n, _ = stats.linregress(Hf_r, Ynf_r)
+                b_d, _, _, p_d, _ = stats.linregress(Hf_r, Ydf_r)
+                b_p = b_n - b_d
+
+                sign_match = np.sign(b_t) == np.sign(b_p) or abs(b_t) < 1e-12 or abs(b_p) < 1e-12
+                if p_t < 0.05:
+                    significant_families += 1
+                    if not sign_match:
+                        sign_mismatch += 1
+
+                per_family[fam] = {
+                    "beta_theta_total_log": float(b_t),
+                    "p_theta_total_log": float(p_t),
+                    "beta_numerator_log": float(b_n),
+                    "p_numerator_log": float(p_n),
+                    "beta_denominator_log": float(b_d),
+                    "p_denominator_log": float(p_d),
+                    "beta_predicted_num_minus_den": float(b_p),
+                    "sign_match": bool(sign_match),
+                    "n_layers": len(fam_rows),
+                }
+
+            passes_sign_law = sign_mismatch == 0
+            out["f5_sign_law_decomposition"] = {
+                "equation": "log(theta_total^2) ~= log||P_perp(h)delta||^2 - log||h||^2",
+                "global": {
+                    "beta_theta_total_log": float(b_theta),
+                    "p_theta_total_log": float(p_theta),
+                    "beta_numerator_log": float(b_num),
+                    "p_numerator_log": float(p_num),
+                    "beta_denominator_log": float(b_den),
+                    "p_denominator_log": float(p_den),
+                    "beta_predicted_num_minus_den": float(b_pred),
+                },
+                "per_family": per_family,
+                "n_significant_families": significant_families,
+                "n_sign_mismatches": sign_mismatch,
+                "passes": passes_sign_law,
+                "derivation_prediction": "sign(beta_theta_total_log) = sign(beta_numerator_log - beta_denominator_log)",
+                "fail_criterion": "sign mismatch in any significant family",
+            }
+        except Exception as e:
+            out["f5_sign_law_decomposition"] = {"error": str(e), "passes": False}
+    else:
+        out["f5_sign_law_decomposition"] = {
+            "status": (
+                "INSUFFICIENT_DATA: need >=10 observations with "
+                "H_logit + theta_total + decomposition terms"
+            )
         }
 
     return out
