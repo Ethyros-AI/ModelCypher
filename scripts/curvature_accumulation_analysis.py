@@ -182,6 +182,76 @@ def angular_change(v1: np.ndarray, v2: np.ndarray) -> float:
     return float(np.arccos(cos_sim))
 
 
+def try_compute_attn_entropy(self_attn, normed: "mx.array") -> float | None:
+    """Compute mean attention entropy H(α) at the last query position.
+
+    Recomputes Q/K projections from the already-normed input to extract softmax weights.
+    Returns mean over heads in nats, or None if extraction fails (SSM layers, missing
+    projections, unsupported architecture).
+
+    Does NOT call self_attn() — uses q_proj and k_proj directly to avoid duplicate output
+    computation. Safe to call before the main self_attn() call in the decomposition branch.
+    """
+    import mlx.core as mx
+
+    q_proj = getattr(self_attn, "q_proj", None)
+    k_proj = getattr(self_attn, "k_proj", None)
+    if q_proj is None or k_proj is None:
+        return None
+
+    # Handle different naming conventions across Qwen/Llama/etc.
+    n_heads = getattr(self_attn, "n_heads", None) or getattr(self_attn, "num_heads", None)
+    n_kv_heads = (
+        getattr(self_attn, "n_kv_heads", None)
+        or getattr(self_attn, "num_key_value_heads", None)
+        or n_heads
+    )
+    if n_heads is None:
+        return None
+
+    try:
+        q = q_proj(normed)  # [1, T, n_heads * head_dim]
+        k = k_proj(normed)  # [1, T, n_kv_heads * head_dim]
+        mx.eval(q, k)
+
+        T = q.shape[1]
+        head_dim = q.shape[-1] // n_heads
+
+        # Reshape to [1, n_heads, T, head_dim]
+        q = q.reshape(1, T, n_heads, head_dim).transpose(0, 2, 1, 3)
+        k = k.reshape(1, T, n_kv_heads, head_dim).transpose(0, 2, 1, 3)
+
+        # GQA: repeat k heads to match q heads
+        if n_kv_heads < n_heads:
+            reps = n_heads // n_kv_heads
+            k = mx.repeat(k, reps, axis=1)
+
+        # Scaled dot-product: [1, n_heads, T, T]
+        scale = 1.0 / math.sqrt(float(head_dim))
+        scores = mx.matmul(q, k.transpose(0, 1, 3, 2)) * scale
+
+        # Causal mask: upper triangle = -inf (last token attends to all previous)
+        causal_mask = mx.triu(mx.ones((T, T), dtype=mx.float32), k=1) * -1e9
+        scores = scores + causal_mask[None, None, :, :]
+
+        # Softmax over key dimension: [1, n_heads, T, T]
+        alpha = mx.softmax(scores, axis=-1)
+
+        # Extract last query position: [n_heads, T]
+        alpha_last = alpha[0, :, -1, :]
+        mx.eval(alpha_last)
+        alpha_np = np.array(alpha_last.tolist(), dtype=np.float64)
+
+        # Entropy per head: H = -Σ_k α_k log α_k (nats)
+        eps = 1e-12
+        log_alpha = np.log(alpha_np + eps)
+        entropy_per_head = -np.sum(alpha_np * log_alpha, axis=-1)  # [n_heads]
+
+        return float(np.mean(entropy_per_head))
+    except Exception:
+        return None
+
+
 def collect_sublayer_activations(
     model, tokenizer, prompts: list[str], num_layers: int, backend
 ) -> list[dict]:
@@ -207,6 +277,7 @@ def collect_sublayer_activations(
     layer_h_in = [[] for _ in range(num_layers)]
     layer_h_post_attn = [[] for _ in range(num_layers)]
     layer_h_out = [[] for _ in range(num_layers)]
+    layer_h_attn_entropy = [[] for _ in range(num_layers)]
 
     for prompt in prompts:
         tokens = tokenizer.encode(prompt)
@@ -233,6 +304,7 @@ def collect_sublayer_activations(
 
             # Try to decompose into attention + MLP sub-steps
             h_post_attn = None
+            attn_entropy = None
             input_norm = getattr(layer, "input_layernorm", None)
             self_attn = getattr(layer, "self_attn", None)
             post_attn_norm = getattr(layer, "post_attention_layernorm", None)
@@ -242,6 +314,9 @@ def collect_sublayer_activations(
                 # Standard transformer: norm → attn → residual → norm → mlp → residual
                 try:
                     normed = input_norm(h_in)
+                    # Entropy extracted before main attn call — reuses normed,
+                    # does not duplicate the full attention output computation.
+                    attn_entropy = try_compute_attn_entropy(self_attn, normed)
                     attn_out = self_attn(normed, mask=layer_mask)
                     # Handle tuple returns (output, cache)
                     if isinstance(attn_out, tuple):
@@ -292,6 +367,9 @@ def collect_sublayer_activations(
                 # No decomposition available — mark as None
                 layer_h_post_attn[i].append(None)
 
+            # Entropy stored per-prompt (None for SSM/non-standard layers)
+            layer_h_attn_entropy[i].append(attn_entropy)
+
             hidden = h_out
 
         mx.eval(hidden)
@@ -305,6 +383,7 @@ def collect_sublayer_activations(
             "h_out": np.stack(layer_h_out[i]),
             "h_post_attn": np.stack(layer_h_post_attn[i]) if has_decomposition else None,
             "has_decomposition": has_decomposition,
+            "h_attn_entropy": layer_h_attn_entropy[i],
         })
 
     return result
@@ -352,11 +431,17 @@ def compute_curvature_decomposition(
             except Exception:
                 id_val = float("nan")
 
+        # Attention entropy: mean over non-None probe values
+        raw_ent = act.get("h_attn_entropy", [])
+        valid_ent = [e for e in raw_ent if e is not None and not np.isnan(e)]
+        mean_h_attn = float(np.mean(valid_ent)) if valid_ent else None
+
         layer_result = {
             "layer_idx": i,
             "total_curvature": total_curvature,
             "mean_alpha": mean_alpha,
             "id_two_nn": id_val,
+            "mean_h_attn": mean_h_attn,
             "attn_curvature": None,
             "mlp_curvature": None,
             "attn_fraction": None,
@@ -448,6 +533,215 @@ def compute_correlations(measurements: list[dict]) -> dict:
     result["mean_attn_fraction"] = float(np.mean(attn_fracs))
 
     return result
+
+
+# =============================================================================
+# Falsifier Tests (entropy-curvature-derivation.md F1, F3, F4, F5)
+# =============================================================================
+
+
+def run_falsifier_tests(all_results: list[dict], n_permutations: int = 500) -> dict:
+    """Run falsifier tests F1, F3, F4, F5 from entropy-curvature-derivation.md.
+
+    F2 (geometry-conditioned, requires E_mix proxy) is not yet implemented.
+
+    Args:
+        all_results: list of per-model result dicts from run_single_model.
+        n_permutations: permutation count for F4 null distribution.
+
+    Returns:
+        Dict with per-falsifier pass/fail results and supporting statistics.
+    """
+    from scipy import stats
+
+    # Collect cross-model pool: one row per (model, layer) with H and curvature values.
+    pool = []
+    for r in all_results:
+        family = r["architecture"]
+        n_layers = r["num_layers"]
+        for m in r["measurements"]:
+            h_val = m.get("mean_h_attn")
+            theta_attn = m.get("attn_curvature")
+            theta_mlp = m.get("mlp_curvature")
+            theta_total = m.get("total_curvature")
+            depth_frac = m["layer_idx"] / max(n_layers - 1, 1)
+
+            # Require H and both sublayer curvatures for the pool.
+            if (
+                h_val is not None
+                and not np.isnan(h_val)
+                and theta_attn is not None
+                and not np.isnan(theta_attn)
+                and theta_mlp is not None
+                and not np.isnan(theta_mlp)
+            ):
+                pool.append({
+                    "H": h_val,
+                    "theta_attn": theta_attn,
+                    "theta_mlp": theta_mlp,
+                    "theta_total": theta_total or 0.0,
+                    "theta_attn_sq": theta_attn ** 2,
+                    "depth_frac": depth_frac,
+                    "family": family,
+                    "model": r["model_name"],
+                    "layer": m["layer_idx"],
+                })
+
+    n_pool = len(pool)
+    out: dict = {
+        "n_observations": n_pool,
+        "f2_status": "NOT_IMPLEMENTED: requires E_mix proxy (V, W_O matrix access)",
+    }
+
+    if n_pool < 10:
+        out["status"] = f"INSUFFICIENT_DATA: need >=10 obs with entropy+decomp, have {n_pool}"
+        return out
+
+    H = np.array([p["H"] for p in pool])
+    theta_attn_sq = np.array([p["theta_attn_sq"] for p in pool])
+    theta_attn = np.array([p["theta_attn"] for p in pool])
+    theta_mlp = np.array([p["theta_mlp"] for p in pool])
+    depth_frac = np.array([p["depth_frac"] for p in pool])
+
+    def residualize(y: np.ndarray, x: np.ndarray) -> np.ndarray:
+        """Remove linear effect of x from y via OLS residual."""
+        X = np.column_stack([np.ones(len(x)), x])
+        b = np.linalg.lstsq(X, y, rcond=None)[0]
+        return y - X @ b
+
+    H_resid = residualize(H, depth_frac)
+    theta_sq_resid = residualize(theta_attn_sq, depth_frac)
+
+    # -------------------------------------------------------------------------
+    # F1: Sign falsifier — regression coefficient of H on θ_attn² (depth-controlled)
+    # Derivation prediction: slope >= 0 (higher entropy → higher squared curvature).
+    # Fail: significant negative slope (p < 0.05) in >=2 families.
+    # -------------------------------------------------------------------------
+    try:
+        slope, _, r_val, p_val, _ = stats.linregress(H_resid, theta_sq_resid)
+        r_sp, p_sp = stats.spearmanr(H_resid, theta_sq_resid)
+        passes_f1 = float(slope) >= 0 and float(p_val) < 0.05
+        out["f1_sign_falsifier"] = {
+            "slope_H_on_theta_attn_sq": float(slope),
+            "r_squared_ols": float(r_val ** 2),
+            "spearman_r": float(r_sp),
+            "p_value_ols": float(p_val),
+            "passes": passes_f1,
+            "derivation_prediction": "slope >= 0 (higher H -> higher theta_attn^2)",
+            "fail_criterion": "significant negative slope in >=2 families",
+        }
+    except Exception as e:
+        out["f1_sign_falsifier"] = {"error": str(e), "passes": False}
+
+    # -------------------------------------------------------------------------
+    # F3: Attention-vs-MLP falsifier
+    # Derivation prediction: |corr(H, θ_attn)| > |corr(H, θ_mlp)|.
+    # Fail: MLP correlation consistently >= attention correlation.
+    # -------------------------------------------------------------------------
+    try:
+        r_h_attn, p_h_attn = stats.spearmanr(H, theta_attn)
+        r_h_mlp, p_h_mlp = stats.spearmanr(H, theta_mlp)
+        passes_f3 = abs(float(r_h_attn)) > abs(float(r_h_mlp))
+        out["f3_attn_vs_mlp"] = {
+            "spearman_H_vs_theta_attn": float(r_h_attn),
+            "p_H_vs_theta_attn": float(p_h_attn),
+            "spearman_H_vs_theta_mlp": float(r_h_mlp),
+            "p_H_vs_theta_mlp": float(p_h_mlp),
+            "attention_dominates": passes_f3,
+            "passes": passes_f3,
+            "derivation_prediction": "|corr(H, theta_attn)| > |corr(H, theta_mlp)|",
+            "fail_criterion": "MLP correlation consistently >= attention correlation",
+        }
+    except Exception as e:
+        out["f3_attn_vs_mlp"] = {"error": str(e), "passes": False}
+
+    # -------------------------------------------------------------------------
+    # F4: Permutation falsifier — real fit must exceed permutation null
+    # Permutes H within depth quintile strata to preserve depth-entropy correlation.
+    # Derivation prediction: real |r| > 95th percentile of null.
+    # Fail: real fit within null envelope.
+    # -------------------------------------------------------------------------
+    try:
+        real_stat = abs(float(stats.spearmanr(H_resid, theta_sq_resid)[0]))
+
+        depth_strata = np.digitize(
+            depth_frac, np.quantile(depth_frac, [0.2, 0.4, 0.6, 0.8])
+        )
+        rng = np.random.default_rng(seed=0)  # Fixed for reproducibility
+        perm_stats = []
+        for _ in range(n_permutations):
+            H_perm = H_resid.copy()
+            for stratum in range(5):
+                idx = np.where(depth_strata == stratum)[0]
+                if len(idx) > 1:
+                    H_perm[idx] = rng.permutation(H_perm[idx])
+            r_perm, _ = stats.spearmanr(H_perm, theta_sq_resid)
+            perm_stats.append(abs(float(r_perm)))
+
+        perm_arr = np.array(perm_stats)
+        pct_in_null = float(np.mean(perm_arr <= real_stat)) * 100
+        passes_f4 = pct_in_null >= 95.0
+        out["f4_permutation_falsifier"] = {
+            "real_abs_spearman": real_stat,
+            "null_mean": float(np.mean(perm_arr)),
+            "null_95th_pct": float(np.percentile(perm_arr, 95)),
+            "percentile_in_null": pct_in_null,
+            "n_permutations": n_permutations,
+            "passes": passes_f4,
+            "derivation_prediction": "real |r| beyond 95th percentile of permutation null",
+            "fail_criterion": "real fit within null envelope -> coincidence not ruled out",
+        }
+    except Exception as e:
+        out["f4_permutation_falsifier"] = {"error": str(e), "passes": False}
+
+    # -------------------------------------------------------------------------
+    # F5: Scale/Family falsifier — same sign of H coefficient across families.
+    # Derivation prediction: same-sign H coefficient (magnitude may differ).
+    # Fail: sign flips in >=2 families with p < 0.05 (indicates missing arch term).
+    # -------------------------------------------------------------------------
+    try:
+        families = list({p["family"] for p in pool})
+        family_results: dict = {}
+        sign_flips = 0
+
+        for fam in families:
+            fam_pool = [p for p in pool if p["family"] == fam]
+            if len(fam_pool) < 5:
+                continue
+
+            H_f = np.array([p["H"] for p in fam_pool])
+            theta_sq_f = np.array([p["theta_attn_sq"] for p in fam_pool])
+            depth_f = np.array([p["depth_frac"] for p in fam_pool])
+
+            H_f_res = residualize(H_f, depth_f)
+            theta_sq_f_res = residualize(theta_sq_f, depth_f)
+
+            if np.std(H_f_res) < 1e-10 or np.std(theta_sq_f_res) < 1e-10:
+                continue
+
+            slope_f, _, _, p_f, _ = stats.linregress(H_f_res, theta_sq_f_res)
+            r_f, _ = stats.spearmanr(H_f_res, theta_sq_f_res)
+            family_results[fam] = {
+                "slope": float(slope_f),
+                "spearman_r": float(r_f),
+                "p_value": float(p_f),
+                "n_layers": len(fam_pool),
+            }
+            if float(slope_f) < 0 and float(p_f) < 0.05:
+                sign_flips += 1
+
+        passes_f5 = sign_flips < 2
+        out["f5_scale_family_falsifier"] = {
+            "per_family": family_results,
+            "n_significant_sign_flips": sign_flips,
+            "passes": passes_f5,
+            "derivation_prediction": "same sign of H coefficient across families",
+            "fail_criterion": "sign flips in >=2 families -> claim is MECHANISM_UNDERSPECIFIED",
+        }
+    except Exception as e:
+        out["f5_scale_family_falsifier"] = {"error": str(e), "passes": False}
+
+    return out
 
 
 # =============================================================================
@@ -566,13 +860,57 @@ def run_experiment(args: argparse.Namespace) -> None:
 
     for r in all_results:
         c = r["correlations"]
+        n_ent = sum(
+            1 for m in r["measurements"]
+            if m.get("mean_h_attn") is not None
+        )
         logger.info(
             f"  {r['model_name']:20s}: "
             f"cum_curv↔ID r={c.get('spearman_cum_total_vs_id', 0):.3f}, "
             f"attn_frac={c.get('mean_attn_fraction', 0):.3f}, "
             f"attn↔dID r={c.get('spearman_attn_curv_vs_id_gradient', 0):.3f}, "
-            f"mlp↔dID r={c.get('spearman_mlp_curv_vs_id_gradient', 0):.3f}"
+            f"mlp↔dID r={c.get('spearman_mlp_curv_vs_id_gradient', 0):.3f}, "
+            f"entropy_layers={n_ent}/{r['num_layers']}"
         )
+
+    # Run F1/F3/F4/F5 falsifier tests
+    logger.info(f"\n{'='*60}")
+    logger.info("ENTROPY-CURVATURE FALSIFIER TESTS (F1, F3, F4, F5)")
+    logger.info(f"{'='*60}")
+    falsifier_results = run_falsifier_tests(all_results)
+    n_obs = falsifier_results.get("n_observations", 0)
+    logger.info(f"  Pool: {n_obs} (model, layer) observations with entropy+decomp")
+    for key in ("f1_sign_falsifier", "f3_attn_vs_mlp", "f4_permutation_falsifier",
+                "f5_scale_family_falsifier"):
+        f = falsifier_results.get(key, {})
+        if "error" in f:
+            logger.warning(f"  {key}: ERROR — {f['error']}")
+        elif "passes" in f:
+            status = "PASS" if f["passes"] else "FAIL"
+            if key == "f1_sign_falsifier":
+                logger.info(
+                    f"  F1 [{status}]: slope={f.get('slope_H_on_theta_attn_sq', 0):.4f}, "
+                    f"spearman_r={f.get('spearman_r', 0):.3f}, p={f.get('p_value_ols', 1):.4f}"
+                )
+            elif key == "f3_attn_vs_mlp":
+                logger.info(
+                    f"  F3 [{status}]: r(H,θ_attn)={f.get('spearman_H_vs_theta_attn', 0):.3f} "
+                    f"vs r(H,θ_mlp)={f.get('spearman_H_vs_theta_mlp', 0):.3f}"
+                )
+            elif key == "f4_permutation_falsifier":
+                logger.info(
+                    f"  F4 [{status}]: real |r|={f.get('real_abs_spearman', 0):.3f}, "
+                    f"null 95th={f.get('null_95th_pct', 0):.3f}, "
+                    f"pct={f.get('percentile_in_null', 0):.1f}%"
+                )
+            elif key == "f5_scale_family_falsifier":
+                logger.info(
+                    f"  F5 [{status}]: sign_flips={f.get('n_significant_sign_flips', 0)}, "
+                    f"families={list(f.get('per_family', {}).keys())}"
+                )
+        else:
+            logger.info(f"  {key}: {f.get('status', 'no result')}")
+    logger.info(f"  F2: {falsifier_results.get('f2_status', 'unknown')}")
 
     # Save results
     output_dir = Path(args.output)
@@ -585,6 +923,7 @@ def run_experiment(args: argparse.Namespace) -> None:
         "n_models": len(all_results),
         "n_probes": len(probes),
         "models": all_results,
+        "falsifier_tests": falsifier_results,
     }
 
     with open(output_file, "w") as f:

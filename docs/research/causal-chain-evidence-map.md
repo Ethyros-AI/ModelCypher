@@ -148,13 +148,11 @@ attention operator that would let us predict curvature from entropy without meas
 families — partial support for generalization. Does not close the derivation gap.
 
 **What promotes this to `[VALIDATED]`:**
-- Derive: given entropy H(α) of attention weights, expected dimensionality of {output_i}
-  over input distribution.
-- This requires: (a) distribution over V-column selections, (b) expected rank of their
-  convex hull, (c) connection to curvature measure.
-- Steps (a) and (b) are tractable from linear algebra. Step (c) requires working out the
-  relationship between manifold dimensionality (as measured by TwoNN or Riemannian distance)
-  and attention entropy.
+Derive from the population map `x → α(x) → y(x) = W_O V α(x)`:
+1. `Cov[y]` spectrum as a function of `H(α)` via `k_eff = exp(H(α))`
+2. Local output dimensionality bounds from V and α
+3. Angle-based curvature and TwoNN response as functions of `Cov[y]` spectrum
+See `entropy-curvature-derivation.md` for the formal derivation target.
 
 ---
 
@@ -226,32 +224,35 @@ the expected curvature C of the layer output distribution
 is a function f(H(α), V).
 ```
 
-The derivable path:
+The derivable path (population framing):
 
-1. **Uniform case (H max):** α_i = 1/T → output_i = (1/T)Σ_j v_j for all i. All outputs
-   collapse to the same centroid. ID = 0, curvature = 0 by degeneracy. (This is the wrong
-   direction — need to think about the population of inputs, not a single input.)
+The correct object is the population map `x → α(x) → y(x)` where `y(x) = W_O V α(x)`.
+Curvature and ID are properties of the set `{y(x) : x ~ P(x)}`, not of a single output.
 
-2. **Correct framing:** Over a distribution of inputs P(x), different inputs produce
-   different attention patterns α(x). Low-entropy models produce peaked α(x) concentrated
-   on a few v_j. High-entropy models produce diffuse α(x). The question is: what is the
-   intrinsic dimensionality of {output(x) : x ~ P(x)} under each regime?
+1. **Step 1 — Output covariance from α distribution:**
+   Derive `Cov[y] = W_O V · Cov[α] · V^T W_O^T` over `P(x)`.
+   The rank and spectrum of `Cov[y]` is bounded by `rank(Cov[α])`, which is in turn
+   bounded by `k_eff(x) = exp(H(α(x)))` — the effective number of tokens attended to.
+   Low entropy → small `k_eff` → low-rank `Cov[α]` → low-rank `Cov[y]` → low ID.
+   High entropy → large `k_eff` → higher-rank `Cov[α]` → higher-rank `Cov[y]` → higher ID.
+   **Consistent with Bayesian 5-cluster geometry (arXiv 2512.22471): peaked α → cluster
+   structure in y, one cluster per attended token.**
 
-3. **Low entropy regime:** outputs ≈ discrete selections from {v_j} → outputs form clusters
-   (one per attended token) → within-cluster variation low → low ID. **Consistent with
-   Bayesian 5-cluster Mamba geometry (arXiv 2512.22471).**
+2. **Step 2 — Local dimensionality bounds:**
+   Derive bounds on local output dimensionality from `V` and `α`. For a neighborhood of
+   inputs with similar `α(x)`, the local covariance rank is bounded by `k_eff` and the
+   geometry of the attended V-columns. This gives local ID as a function of `H(α)` and the
+   spectral structure of the selected V submatrix.
 
-4. **High entropy regime:** outputs ≈ weighted averages across many v_j → outputs fill the
-   convex hull of V → higher-D → higher ID. The dimension is bounded by rank(V), which is
-   typically full-rank.
+3. **Step 3 — Curvature from covariance spectrum:**
+   Derive how the angle-based curvature operator (Riemannian distance between adjacent
+   hidden states) depends on `Cov[y]`. Then map the covariance spectrum to expected TwoNN
+   response. Both steps are tractable from the definitions of the curvature measure and
+   TwoNN estimator.
 
-5. **Connection to curvature:** Riemannian curvature as measured (adjacent hidden state
-   angle) correlates with ID because both measure local manifold dimensionality. This
-   connection needs to be derived from the TwoNN estimator's behavior and the angle-based
-   curvature definition.
-
-**Status:** The path is visible. The derivation has not been executed. Until step 5 is
-formalized, entropy→curvature stays `[EXPLORATORY]`.
+**Status:** The population framing is correct and the path is derivable. The derivation has
+not been executed. Until step 3 is formalized, entropy→curvature stays `[EXPLORATORY]`.
+Formal derivation target: `entropy-curvature-derivation.md`.
 
 ---
 
