@@ -34,6 +34,31 @@ Tracks doctrine and research documents audited under
 
 ---
 
+## Priority Audit Queue
+
+| Priority | File | Current State | Required Action |
+|----------|------|---------------|-----------------|
+| P0 | `AGENTS.md` | Governance language updated; not fully claim-form indexed | Add claim-form table for all promoted doctrinal claims |
+| P0 | `docs/research/COMPRESSION-RESEARCH-SYNTHESIS.md` | Section-level evidence tags present; no full claim-form mapping | Audit promoted claims and downgrade any missing architecture/scale/operator-validity terms |
+| P0 | `docs/research/architecture_geometry_theory.md` | Mixed theoretical and empirical claims; partial conjecture tagging | Add explicit falsifiers and commensurability assumptions per promoted claim |
+| P1 | `docs/research/deep_research_integration_2026_02.md` | Integration log includes promoted outcomes across threads | Normalize to canonical claim states and attach missing claim-form fields |
+| P1 | `docs/research/field_map_external_methods.md` | Comparative claims may imply promotion status | Mark claims as exploratory unless protocol fields are complete |
+
+---
+
+## Session Objective (Q5)
+
+For each queued file:
+1. Enumerate promoted claims.
+2. Attach protocol fields (operator, equation, architecture term, scale term, operator validity, falsifier).
+3. Reclassify to canonical evidence labels where fields are missing.
+4. Link artifacts or explicitly mark as exploratory.
+
+Q5 is complete only when every file in the priority queue has a dated audit row in
+`Completed Audits`.
+
+---
+
 ## Promotion Rule
 
 A claim cannot be promoted from exploratory status unless its row in the source document includes all required fields from the protocol and links raw artifacts.

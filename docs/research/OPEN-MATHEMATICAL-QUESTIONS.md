@@ -1154,73 +1154,89 @@ Uses PCA to reduce to 50 dimensions before ripser (standard TDA practice for hig
 
 ---
 
-## 9. Information-Theoretic Characterization — NOT RESOLVED (2026-03-03) `[MEASUREMENT_INVALID]`
+## 9. Information-Theoretic Characterization — PARTIALLY RESOLVED (2026-03-03)
 
 **Question:** What information-theoretic invariant is preserved across layers and across
 architectures?
 
-### Bedrock Diagnosis
+### Resolution: Sigma Calibration + DPI Violation Mechanism
 
-This thread is not resolved. The prior mixed outcomes were promoted too early.
-Cross-model MI conclusions remain blocked until measurement commensurability is proven.
+The measurement commensurability problem (previously `[MEASUREMENT_INVALID]`) is resolved.
 
-Current split:
+**Sigma calibration (Regime 5):** Constraint-satisfaction calibration finds the σ interval
+where ALL layers have non-degenerate Gram matrices (S₂ bounded away from 0 and log₂(N)),
+then picks the geometric midpoint. All 3 models have wide feasible intervals — none is
+intrinsically multi-scale. Design doc: `docs/research/sigma_calibration_design.md`.
 
-1. **Stable signal:** CKA depth-distance decay is validated cross-model.
-2. **Family-level signal:** `C_ex` highway peak appears in LFM2, not universal.
-3. **Blocked signal:** Rényi MI cross-model promotion is measurement-invalid under current
-   bandwidth calibration assumptions.
+| Model | σ* | Feasible Interval | Predictions Passed |
+|-------|-----|-------------------|--------------------|
+| LFM2-350M | 0.928 | [0.070, 12.228] | 3/9 |
+| LFM2-700M | 1.744 | [0.097, 31.265] | 4/9 |
+| Qwen3.5-0.8B | 1.602 | [0.050, 51.578] | 2/9 |
 
-### Why the MI Claims Are Blocked
+### Cross-Model Prediction Summary
 
-Kernel MI uses bandwidth `sigma`. When `sigma` calibration is not commensurable across compared
-layers/models, `I_2(X_0, X_l)` becomes dominated by bandwidth regime artifacts rather than causal
-geometry.
+| Prediction | LFM2-350M | LFM2-700M | Qwen3.5-0.8B | Verdict |
+|------------|-----------|-----------|---------------|---------|
+| P1: CKA decays with \|i-j\| | CONFIRMED | CONFIRMED | CONFIRMED | `[VALIDATED]` 3/3 |
+| P2: Rényi MI decays with \|i-j\| | REFUTED | REFUTED | REFUTED | `[REFUTED]` 0/3 |
+| P6: DPI holds at fixed σ | REFUTED | REFUTED | REFUTED | `[REFUTED]` 0/3 (explained below) |
+| P7: C_ex peaks at highway | CONFIRMED | CONFIRMED | REFUTED | `[EMPIRICAL]` 2/3 LFM2 only |
+| P8: CKA shows phase blocks | CONFIRMED | CONFIRMED | CONFIRMED | `[VALIDATED]` 3/3 |
 
-Observed mechanism from current runs:
+### DPI Violation Mechanism `[PROVEN]` + `[VALIDATED]`
 
-1. Depth strongly predicts sigma growth (dominant term in multiple models).
-2. Architecture transitions can create local residual jumps, but these are secondary once depth
-   scale is accounted for.
-3. Claims that ignore this decomposition mix causal terms and measurement terms.
+**Why DPI fails for normalized kernel MI:**
 
-This means the right model is not "architecture only" and not "noise only"; it is a coupled
-depth + architecture measurement problem that must be specified before interpretation.
+The unnormalized chain h₀ → h₁ → ... → h_L is Markov (h_{l+1} = h_l + F_l(h_l) is
+deterministic). DPI holds for true MI: I(h₀; h_{l+1}) ≤ I(h₀; h_l). `[PROVEN]`
+(standard information theory for deterministic channels.)
 
-### Required Claim Contract (Before Any New MI Promotion)
+Regime 5 L2-normalizes: X̃_l = h_l / ‖h_l‖. Given only X̃_l, h_l cannot be
+reconstructed (scale is lost). So X̃_{l+1} is NOT a function of X̃_l alone —
+the normalized chain is **not Markov**. DPI need not hold. `[PROVEN]`
+(X̃_{l+1} = (h_l + F_l(h_l)) / ‖h_l + F_l(h_l)‖ requires knowing ‖h_l‖, not
+just h_l / ‖h_l‖.)
 
-No MI claim is promotable without:
+**Empirical confirmation:** DPI violation magnitude correlates with residual bypass
+strength (‖F_l(h_l)‖ / ‖h_l‖) across all 3 models. `[VALIDATED]`
 
-1. `observable = f(geometry_state, architecture_state, scale_state, measurement_operator)`
-2. Explicit depth/scale term
-3. Explicit architecture/operator-family term
-4. Commensurability proof for kernel calibration
-5. Directional prediction registered before run
-6. Falsifier
+| Model | Layers | ρ(\|Δ_l\|, residual_ratio) | p-value |
+|-------|--------|---------------------------|---------|
+| LFM2-350M | 16 | 0.849 | 6.25e-05 |
+| LFM2-700M | 16 | 0.693 | 4.19e-03 |
+| Qwen3.5-0.8B | 24 | 0.735 | 6.43e-05 |
 
-Source of truth: `docs/research/FIRST_PRINCIPLES_REVIEW_PROTOCOL.md`.
-
-### Immediate Next Tests
-
-1. L2-normalize activations before kernel construction and re-run full prediction set.
-2. Fit depth-only vs depth+architecture sigma models; reject architecture-only narratives unless
-   residual variance requires architecture terms.
-3. Treat boundary-local effects as residual diagnostics, not primary causal claims, unless they
-   survive depth-controlled falsification.
-4. Keep CKA + `C_ex` as active bedrock diagnostics while MI commensurability remains unresolved.
+Layers that change the representation more (higher ‖F_l‖/‖h_l‖) produce larger
+MI changes in the normalized chain. The signed correlation is near zero (direction
+of MI change is not predicted by bypass strength, only magnitude).
 
 ### Status Tags
 
-- `[VALIDATED]` CKA depth-distance decay (cross-model)
-- `[EMPIRICAL]` `C_ex` highway peak (LFM2 family)
-- `[MEASUREMENT_INVALID]` cross-model Rényi MI promotion under current calibration assumptions
-- `[CONJECTURAL]` architecture-conditioned sigma regime derivation
-- `[CONJECTURAL]` commensurable MI operator for heterogeneous layer families
+- `[VALIDATED]` CKA depth-distance decay (P1, 3/3 models)
+- `[VALIDATED]` CKA phase block structure (P8, 3/3 models)
+- `[VALIDATED]` DPI violation ↔ bypass strength correlation (3/3 models, p < 0.01)
+- `[PROVEN]` Unnormalized chain is Markov → DPI holds for true MI
+- `[PROVEN]` L2 normalization breaks Markov property → DPI violations are genuine
+- `[EMPIRICAL]` C_ex highway peak (P7, LFM2 family only, 2/3)
+- `[REFUTED]` Rényi MI decays with layer distance (P2, 0/3)
+- `[REFUTED]` DPI holds for normalized kernel MI (P6, 0/3, mechanism explained)
+
+### Remaining Open Questions
+
+1. **Signed violation direction:** What determines whether MI increases or decreases at
+   a given layer? The bypass magnitude predicts |Δ| but not sign(Δ).
+2. **P2 refutation:** MI does NOT decay with |i-j|. What DOES the all-pairs MI matrix
+   structure reflect? (May connect to Section 7: layer-wise invariants.)
+3. **C_ex universality:** Is the C_ex highway peak an LFM2 architectural property
+   (hybrid attention-convolution) or does it appear in other families?
 
 ### Data and Artifacts
 
-- Results: `results/information_bridge/{LFM2-350M,LFM2-700M,Qwen3.5-0.8B}/`
-- Script: `scripts/information_bridge_experiment.py`
+- Calibration: `results/information_bridge/{LFM2-350M,LFM2-700M,Qwen3.5-0.8B}/`
+- DPI analysis: `results/dpi_analysis/{LFM2-350M,LFM2-700M,Qwen3.5-0.8B}/`
+- Scripts: `scripts/information_bridge_experiment.py`, `scripts/dpi_violation_analysis.py`
+- Calibration design: `docs/research/sigma_calibration_design.md`
 - Derivation: `docs/research/information_bridge_derivation.md`
 
 ---
