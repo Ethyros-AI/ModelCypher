@@ -1,6 +1,6 @@
 # Research Roadmap
 
-**Updated:** 2026-02-23
+**Updated:** 2026-03-03
 
 Consolidated research document: external foundations, internal progress, open questions, and future directions.
 
@@ -11,9 +11,16 @@ Consolidated research document: external foundations, internal progress, open qu
 All major claims in this roadmap are governed by:
 - `docs/research/GEOMETRIC-CONJECTURES-FALSIFICATION-PROTOCOL.md`
 - `docs/research/deep_research_integration_2026_02.md` (canonical integration log for external deep-research reports)
+- `docs/research/FIRST_PRINCIPLES_REVIEW_PROTOCOL.md` (claim-level bedrock audit contract)
 
 Status labels and promotion rules (`[CONJECTURAL]`, `[VALIDATED]`, `[DISPROVEN]`, etc.) are
 defined in `docs/EVIDENCE-TAXONOMY.md` and apply to every thread below.
+
+**Enforcement rule (2026-03-03):**
+A claim cannot be promoted if it is confirmed on some models and refuted on others
+without an explicit architecture-conditioned and scale-conditioned derivation.
+Such outcomes are classified as mechanism underspecification or measurement invalidity,
+not partial confirmation.
 
 ---
 
@@ -221,9 +228,9 @@ Why does Qwen3 have sharper attention than Qwen2.5 despite similar architecture?
 ### Q3: Information-Theoretic Characterization
 **Source:** `OPEN-MATHEMATICAL-QUESTIONS.md` §9
 
-- [ ] What is I(layer_i; layer_j) as function of |i-j|?
-- [ ] Does MI decay exponentially?
-- [ ] Is there an information bottleneck at highway?
+- [ ] Derive architecture-conditioned MI measurement model before testing outcomes
+- [ ] Prove kernel commensurability conditions across compared layers/models
+- [ ] Separate measurement artifacts from causal geometry changes at layer seams
 
 ### Q4: Geometry from Architecture (Fundamental)
 **Source:** `OPEN-MATHEMATICAL-QUESTIONS.md` §10

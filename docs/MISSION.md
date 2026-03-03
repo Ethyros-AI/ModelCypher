@@ -34,6 +34,36 @@ If any link is missing, the claim is conjectural and cannot be promoted to doctr
 
 Probability remains epistemic bookkeeping at readout and evaluation boundaries. It can quantify uncertainty in our observations; it does not cause model trajectories.
 
+## Bedrock Enforcement Upgrade (2026-03-03)
+
+Mixed "confirmed on one model, refuted on another" is not a valid endpoint. It is a signal that the mechanism is underspecified.
+
+From this point forward, no claim is promotable unless it includes all of:
+
+1. **Architecture term** — explicit dependence on architecture variables, not an implicit "all models" assumption.
+2. **Scale term** — explicit dependence on model size/depth/dimension where relevant.
+3. **Commensurability proof** — proof that the measurement is comparable across the compared objects.
+4. **Directional prediction** — sign/magnitude expectation from the derivation before running experiments.
+5. **Falsifier** — exact observation that invalidates the mechanism.
+
+If a result differs across models and those terms were omitted, the result is classified as **measurement-design failure**, not "partial confirmation."
+
+## Prediction Contract (Required Before Any New Experiment)
+
+Every pre-registered prediction must include this equation-level contract:
+
+```text
+observable = f(geometry_state, architecture_state, scale_state, measurement_operator)
+```
+
+With explicit declarations:
+- `geometry_state`: the causal geometric variables
+- `architecture_state`: layer/operator type, routing pattern, attention regime, etc.
+- `scale_state`: width/depth/parameter count and derived dimensional terms
+- `measurement_operator`: kernel/normalization/statistic with domain of validity
+
+No experiment starts until this contract is written in the experiment doc.
+
 ## "Fine" Is the Enemy of Correct
 
 A forward pass is a deterministic geometric map. Given parameters and input, there is exactly one output. There is no "fine." There is no "close enough." There is no "reasonable approximation." There is the correct answer, derived from the geometry, or there is a wrong answer you stopped questioning too early.

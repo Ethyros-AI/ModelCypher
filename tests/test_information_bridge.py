@@ -416,3 +416,249 @@ def test_normalized_all_pairs_mi_symmetric(any_backend):
                 f"Normalized MI matrix not symmetric at ({i},{j}): "
                 f"{mi_matrix[i][j]:.6f} vs {mi_matrix[j][i]:.6f}"
             )
+
+
+# ===========================================================================
+# Sigma Calibration Tests
+# ===========================================================================
+# Tests for constraint-satisfaction sigma calibration (Regime 5).
+# See docs/research/sigma_calibration_design.md for derivation.
+
+
+def _make_unit_sphere_layers(backend, n_probes, n_dims, n_layers, seed=42):
+    """Create synthetic layers on the unit sphere with different rotations.
+
+    Each layer applies a progressive rotation to the base data.
+    Returns L2-normalized activations and their squared geodesic distance matrices.
+    """
+    import random as rng
+
+    from modelcypher.core.domain.geometry.cka import geodesic_squared_distances
+
+    rng.seed(seed)
+
+    # Base data: deterministic points in R^D, then normalize to unit sphere
+    base = []
+    for i in range(n_probes):
+        row = [float(i + 1 + j * 0.3) for j in range(n_dims)]
+        norm = sum(v * v for v in row) ** 0.5
+        base.append([v / norm for v in row])
+
+    layers_raw = [base]
+    for l in range(1, n_layers):
+        # Apply progressive rotation: mix dimensions by increasing amounts
+        rotated = []
+        angle = 0.3 * l  # radians
+        import math as _math
+
+        cos_a, sin_a = _math.cos(angle), _math.sin(angle)
+        for row in base:
+            new_row = list(row)
+            # Rotate first two dimensions
+            new_row[0] = row[0] * cos_a - row[1] * sin_a
+            new_row[1] = row[0] * sin_a + row[1] * cos_a
+            # Normalize back to unit sphere
+            norm = sum(v * v for v in new_row) ** 0.5
+            new_row = [v / norm for v in new_row]
+            rotated.append(new_row)
+        layers_raw.append(rotated)
+
+    layer_arrays = [backend.array(layer) for layer in layers_raw]
+    sq_dists = [geodesic_squared_distances(la, backend) for la in layer_arrays]
+    return layer_arrays, sq_dists
+
+
+# ===========================================================================
+# Test: Calibration finds feasible sigma for well-behaved data
+# ===========================================================================
+# For layers on the unit sphere with moderate rotations, there exists a sigma
+# where all layers are non-degenerate. The feasible interval is non-empty.
+
+
+def test_calibration_finds_feasible_sigma(any_backend):
+    """Calibration finds non-None sigma for well-behaved unit sphere data."""
+    from modelcypher.core.domain.geometry.sigma_calibration import (
+        compute_calibrated_sigma,
+    )
+
+    backend = any_backend
+    _, sq_dists = _make_unit_sphere_layers(backend, n_probes=30, n_dims=10, n_layers=4)
+
+    result = compute_calibrated_sigma(sq_dists, n_probes=30, backend=backend)
+
+    assert not result.is_multi_scale, (
+        "Well-behaved unit sphere data should have a feasible sigma interval"
+    )
+    assert result.sigma_star is not None, "sigma_star should be non-None"
+    assert result.sigma_star > 0.0, f"sigma_star must be positive. Got {result.sigma_star}"
+    assert result.feasible_lower is not None
+    assert result.feasible_upper is not None
+    assert result.feasible_lower < result.feasible_upper, (
+        f"Feasible interval invalid: [{result.feasible_lower}, {result.feasible_upper}]"
+    )
+
+
+# ===========================================================================
+# Test: Calibration detects multi-scale when layers need incompatible sigmas
+# ===========================================================================
+# Layer A: tight cluster (all pairwise d² ≈ 1e-6, needing σ ~ 0.001)
+# Layer B: spread data (all pairwise d² ≈ 4.0, needing σ ~ 2.0)
+# These require sigmas ~2000× apart — no single sigma satisfies both.
+#
+# Derivation: for equidistant points with d² = D, feasible σ ∈ [D/(2×2.47), D/(2×0.251)]
+# when N=30. Tight: σ ∈ [0.0004, 0.004]. Spread: σ ∈ [0.81, 7.96]. Disjoint.
+
+
+def test_calibration_returns_multi_scale_for_extreme_layers(any_backend):
+    """Calibration reports multi-scale when layers need incompatible sigmas."""
+    from modelcypher.core.domain.geometry.sigma_calibration import (
+        compute_calibrated_sigma,
+    )
+
+    backend = any_backend
+    n = 30
+
+    # Tight cluster: all pairwise squared geodesic distances ≈ 1e-6
+    ones = backend.array([[1.0] * n] * n)
+    eye = backend.array([[1.0 if i == j else 0.0 for j in range(n)] for i in range(n)])
+    sq_dist_tight = (ones - eye) * 1e-6
+
+    # Spread cluster: all pairwise squared geodesic distances ≈ 4.0
+    sq_dist_spread = (ones - eye) * 4.0
+
+    result = compute_calibrated_sigma(
+        [sq_dist_tight, sq_dist_spread], n_probes=n, backend=backend
+    )
+
+    assert result.is_multi_scale, (
+        "Tight + spread clusters should be detected as multi-scale"
+    )
+    assert result.sigma_star is None, (
+        "sigma_star should be None when model is multi-scale"
+    )
+
+
+# ===========================================================================
+# Test: Calibrated Grams are non-degenerate
+# ===========================================================================
+# When calibration succeeds (sigma_star is not None), all layers' Gram matrices
+# at sigma_star must satisfy √ε < S₂ < log₂(N) - √ε.
+# This is the defining property: calibration guarantees non-degeneracy.
+
+
+def test_calibrated_grams_are_nondegenerate(any_backend):
+    """S₂ at sigma_star satisfies non-degeneracy constraints for all layers."""
+    from modelcypher.core.domain.geometry.sigma_calibration import (
+        compute_calibrated_sigma,
+    )
+
+    backend = any_backend
+    n = 30
+    _, sq_dists = _make_unit_sphere_layers(backend, n_probes=n, n_dims=10, n_layers=4)
+
+    result = compute_calibrated_sigma(sq_dists, n_probes=n, backend=backend)
+
+    assert not result.is_multi_scale, "Prerequisite: calibration must succeed"
+    assert result.per_layer_entropy is not None
+
+    eps = _div_eps(backend)
+    sqrt_eps = eps ** 0.5
+    log2_n = math.log2(n)
+
+    for l, s2 in enumerate(result.per_layer_entropy):
+        assert s2 > sqrt_eps, (
+            f"Layer {l}: S₂={s2:.6f} <= √ε={sqrt_eps:.6f} (collapsed)"
+        )
+        assert log2_n - s2 > sqrt_eps, (
+            f"Layer {l}: log₂(N)-S₂={log2_n - s2:.6f} <= √ε={sqrt_eps:.6f} (saturated)"
+        )
+
+
+# ===========================================================================
+# Test: Calibrated sigma is scale-invariant after L2 normalization
+# ===========================================================================
+# [X, 10X, 100X] and [X, X, X] produce identical unit vectors after L2 norm,
+# hence identical geodesic distance matrices, hence identical calibrated sigma.
+
+
+def test_calibrated_sigma_is_scale_invariant(any_backend):
+    """Calibration gives identical sigma for scaled vs unscaled layers."""
+    from modelcypher.core.domain.geometry.cka import geodesic_squared_distances
+    from modelcypher.core.domain.geometry.numerical_stability import (
+        division_epsilon,
+    )
+    from modelcypher.core.domain.geometry.sigma_calibration import (
+        compute_calibrated_sigma,
+    )
+
+    backend = any_backend
+    n = 20
+
+    # Base data: points on unit sphere
+    base_raw = [[float(i + 1 + j * 0.5) for j in range(8)] for i in range(n)]
+    # Normalize to unit sphere
+    base = []
+    for row in base_raw:
+        norm = sum(v * v for v in row) ** 0.5
+        base.append([v / norm for v in row])
+
+    base_arr = backend.array(base)
+
+    # layers_A: same data at different scales (L2 norm maps all to same unit vectors)
+    scaled_10 = base_arr * 10.0
+    scaled_100 = base_arr * 100.0
+
+    # Normalize before computing geodesics (as the pipeline does)
+    def l2_normalize(arr):
+        norms = backend.norm(arr, axis=1, keepdims=True)
+        eps_val = division_epsilon(backend, arr)
+        safe_norms = backend.maximum(norms, backend.array([[eps_val]]))
+        return arr / safe_norms
+
+    norm_a = [l2_normalize(base_arr), l2_normalize(scaled_10), l2_normalize(scaled_100)]
+    norm_b = [l2_normalize(base_arr), l2_normalize(base_arr), l2_normalize(base_arr)]
+
+    sq_dists_a = [geodesic_squared_distances(la, backend) for la in norm_a]
+    sq_dists_b = [geodesic_squared_distances(lb, backend) for lb in norm_b]
+
+    result_a = compute_calibrated_sigma(sq_dists_a, n_probes=n, backend=backend)
+    result_b = compute_calibrated_sigma(sq_dists_b, n_probes=n, backend=backend)
+
+    eps = _div_eps(backend)
+    assert result_a.sigma_star is not None, "Calibration A must succeed"
+    assert result_b.sigma_star is not None, "Calibration B must succeed"
+    assert abs(result_a.sigma_star - result_b.sigma_star) < eps, (
+        f"Scale invariance violated: σ_A={result_a.sigma_star:.6f}, "
+        f"σ_B={result_b.sigma_star:.6f}"
+    )
+
+
+# ===========================================================================
+# Test: S₂ is monotonically decreasing in sigma
+# ===========================================================================
+# Critical invariant for binary search correctness.
+# For any layer, S₂(K(σ_small)) > S₂(K(σ_large)) when σ_small < σ_large.
+# Proof: Section 2.2 of sigma_calibration_design.md.
+
+
+def test_calibration_monotonicity_of_entropy(any_backend):
+    """S₂ strictly decreases as sigma increases."""
+    from modelcypher.core.domain.geometry.sigma_calibration import (
+        _entropy_at_sigma,
+    )
+
+    backend = any_backend
+    n = 30
+    _, sq_dists = _make_unit_sphere_layers(backend, n_probes=n, n_dims=10, n_layers=1)
+    sq_dist = sq_dists[0]
+
+    # Test at multiple sigma pairs: smaller sigma → larger S₂
+    sigmas = [0.01, 0.05, 0.1, 0.5, 1.0, 5.0]
+
+    entropies = [_entropy_at_sigma(sq_dist, s, backend) for s in sigmas]
+
+    for i in range(len(sigmas) - 1):
+        assert entropies[i] > entropies[i + 1], (
+            f"Monotonicity violated: S₂(σ={sigmas[i]})={entropies[i]:.6f} "
+            f"<= S₂(σ={sigmas[i+1]})={entropies[i+1]:.6f}"
+        )

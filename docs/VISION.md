@@ -34,6 +34,20 @@ User's day of interactions
 
 The adapter IS the identity. The base model is the substrate. The substrate is the variable. The geometry is the constant.
 
+## Non-Negotiable Scientific Discipline
+
+This vision is only valid if its mechanisms are derived and verified from first principles.
+
+We do not promote architecture-agnostic narratives from mixed empirical outcomes.
+If a claim changes sign across models, we treat that as a missing mechanism term
+(architecture, scale, or measurement commensurability), not as "some models pass."
+
+Vision statements must remain downstream of:
+- causal operator identification,
+- formal derivation with architecture and scale terms,
+- measurement commensurability proof,
+- pre-registered falsification.
+
 ## What Already Exists
 
 Each piece of this architecture has a foundation in ModelCypher today:

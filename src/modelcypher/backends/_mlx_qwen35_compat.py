@@ -70,32 +70,25 @@ def _gated_delta_step_ops_uncompiled(
     return y, state
 
 
-def _iter_modules(model):
-    """Walk an MLX nn.Module tree, yielding (name, module) pairs."""
-    def _walk(prefix, m):
-        yield prefix, m
-        for k, v in vars(m).items():
-            if isinstance(v, nn.Module):
-                yield from _walk(f"{prefix}.{k}" if prefix else k, v)
-            elif isinstance(v, list):
-                for i, item in enumerate(v):
-                    if isinstance(item, nn.Module):
-                        yield from _walk(
-                            f"{prefix}.{k}[{i}]" if prefix else f"{k}[{i}]", item
-                        )
-    yield from _walk("", model)
-
-
 def _is_qwen35(model) -> bool:
-    """Return True if model contains GatedDeltaNet layers."""
+    """Return True if model contains GatedDeltaNet layers.
+
+    Uses nn.Module.apply_to_modules which is MLX's canonical tree traversal API.
+    (vars() only returns __dict__ entries; MLX stores sub-modules in the underlying
+    dict, so apply_to_modules is required to walk the full hierarchy.)
+    """
     try:
         import mlx_lm.models.qwen3_5 as q35
     except ImportError:
         return False
-    for _, m in _iter_modules(model):
-        if isinstance(m, q35.GatedDeltaNet):
-            return True
-    return False
+    found = [False]
+
+    def _check(name, module):
+        if isinstance(module, q35.GatedDeltaNet):
+            found[0] = True
+
+    model.apply_to_modules(_check)
+    return found[0]
 
 
 _patched = False

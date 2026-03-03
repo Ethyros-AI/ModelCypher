@@ -166,20 +166,22 @@ def compute_fixed_sigma_mi_trajectory(
 
 def _normalize_and_build_grams(
     layer_activations: list["Array"], backend: "Backend"
-) -> tuple[list["Array"], float]:
-    """L2-normalize activations, derive shared sigma, build Gram matrices.
+) -> tuple[list["Array"], float, "CalibrationResult | None"]:
+    """L2-normalize activations, calibrate sigma, build Gram matrices.
 
-    Regime 4: projects all layers to the unit hypersphere S^{D-1}, making
-    geodesic distances = arc lengths in [0, π]. A single shared sigma
-    derived from ALL layers' combined distance statistics ensures
-    commensurable MI measurements across layers.
+    Regime 5: projects all layers to the unit hypersphere S^{D-1}, then uses
+    constraint-satisfaction calibration to find a sigma where ALL layers have
+    non-degenerate Gram matrices (S₂ bounded away from both 0 and log₂(N)).
+
+    Falls back to gap heuristic if calibration reports multi-scale.
 
     Args:
         layer_activations: List of [N, D] activation matrices per layer.
         backend: Backend for tensor operations.
 
     Returns:
-        Tuple of (list_of_gram_matrices, shared_sigma).
+        Tuple of (list_of_gram_matrices, shared_sigma, calibration_result).
+        calibration_result is None only when layer_activations is empty.
     """
     from modelcypher.core.domain.geometry.cka import (
         _derive_rbf_sigma_from_values,
@@ -189,9 +191,12 @@ def _normalize_and_build_grams(
     from modelcypher.core.domain.geometry.numerical_stability import (
         division_epsilon,
     )
+    from modelcypher.core.domain.geometry.sigma_calibration import (
+        compute_calibrated_sigma,
+    )
 
     if not layer_activations:
-        return [], 0.0
+        return [], 0.0, None
 
     # Step 1: L2-normalize each layer's activation rows to the unit sphere
     normalized = []
@@ -205,12 +210,18 @@ def _normalize_and_build_grams(
     # Step 2: Compute geodesic squared distances for all normalized layers
     sq_dists = [geodesic_squared_distances(norm_acts, backend) for norm_acts in normalized]
 
-    # Step 3: Derive one shared sigma from ALL layers' combined distances
-    # Flatten and concatenate all distance matrices
-    all_values = backend.concatenate(
-        [backend.reshape(sd, (-1,)) for sd in sq_dists]
-    )
-    shared_sigma = _derive_rbf_sigma_from_values(all_values, backend)
+    # Step 3: Calibrate sigma via constraint satisfaction
+    n_probes = layer_activations[0].shape[0]
+    cal_result = compute_calibrated_sigma(sq_dists, n_probes, backend)
+
+    if cal_result.is_multi_scale:
+        # Fallback: gap heuristic (Regime 4 behavior)
+        all_values = backend.concatenate(
+            [backend.reshape(sd, (-1,)) for sd in sq_dists]
+        )
+        shared_sigma = _derive_rbf_sigma_from_values(all_values, backend)
+    else:
+        shared_sigma = cal_result.sigma_star
 
     # Step 4: Build Gram matrices with shared sigma
     grams = [
@@ -218,19 +229,19 @@ def _normalize_and_build_grams(
         for sd in sq_dists
     ]
 
-    return grams, shared_sigma
+    return grams, shared_sigma, cal_result
 
 
 def compute_normalized_mi_trajectory(
     layer_activations: list["Array"], backend: "Backend"
-) -> tuple[list[float], float]:
-    """Compute I₂(X₀, X_l) with L2 normalization + shared sigma (Regime 4).
+) -> tuple[list[float], float, "CalibrationResult | None"]:
+    """Compute I₂(X₀, X_l) with L2 normalization + calibrated sigma (Regime 5).
 
     Makes MI values commensurable across layers by:
     1. L2-normalizing each activation row to the unit hypersphere
     2. Computing geodesic squared distances for ALL normalized layers
-    3. Deriving ONE sigma from ALL layers' combined distance statistics
-    4. Building all Gram matrices with this single sigma
+    3. Calibrating sigma via constraint satisfaction (all layers non-degenerate)
+    4. Building all Gram matrices with calibrated sigma
 
     After L2 normalization, all activations lie on S^{D-1}. Geodesic
     distances become arc lengths in [0, π], with bounded distance
@@ -241,14 +252,15 @@ def compute_normalized_mi_trajectory(
         backend: Backend for tensor operations.
 
     Returns:
-        Tuple of (trajectory, sigma) where trajectory is
-        [I₂(X₀, X₀), I₂(X₀, X₁), ..., I₂(X₀, X_{L-1})]
-        and sigma is the shared bandwidth used.
+        Tuple of (trajectory, sigma, calibration_result) where trajectory is
+        [I₂(X₀, X₀), I₂(X₀, X₁), ..., I₂(X₀, X_{L-1})],
+        sigma is the shared bandwidth used, and calibration_result contains
+        diagnostics (feasible interval, per-layer entropy, bootstrap CIs).
     """
     if not layer_activations:
-        return [], 0.0
+        return [], 0.0, None
 
-    grams, sigma = _normalize_and_build_grams(layer_activations, backend)
+    grams, sigma, cal_result = _normalize_and_build_grams(layer_activations, backend)
 
     gram_0 = grams[0]
     trajectory = [
@@ -256,7 +268,7 @@ def compute_normalized_mi_trajectory(
         for gram_l in grams
     ]
 
-    return trajectory, sigma
+    return trajectory, sigma, cal_result
 
 
 def compute_normalized_all_pairs_mi(

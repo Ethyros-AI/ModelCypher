@@ -90,6 +90,23 @@ Probability language is strictly observer-side bookkeeping. It may summarize unc
 
 Scale is not a substitute for understanding. More parameters and more data cannot rescue a wrong causal model.
 
+## Bedrock Enforcement: No Mixed-Model Narrative
+
+If a prediction is confirmed on some models and refuted on others, do NOT narrate that as
+"partially validated." Treat it as one of two failures until proven otherwise:
+
+1. **Mechanism underspecified** — missing architecture or scale terms in the derivation.
+2. **Measurement invalid** — statistic is not commensurable across compared layers/models.
+
+Required before any cross-model claim:
+- Write the architecture-conditioned equation (explicit architecture variables).
+- Write the scale-conditioned equation (depth/width/parameter dependence).
+- Prove measurement commensurability for the chosen operator.
+- Pre-register directional prediction and falsifier.
+
+If any item is missing, the work is exploratory only and must not be promoted in roadmap,
+mission, or doctrine docs.
+
 ---
 
 ## The Foundational Premise
