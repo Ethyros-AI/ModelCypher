@@ -4,16 +4,16 @@
 This script is pure post-processing on CR-EC-001 operator-split artifacts.
 It decomposes the depth-controlled H_logit->theta_total relation into:
 
-1) attention component
+1) core component (attention or conv)
 2) MLP component
 3) cross-term component (sublayer perturbation alignment proxy)
 
 Geometry identity used at layer level (angle-space proxy):
-    theta_total^2 = theta_attn^2 + theta_mlp^2 + cross_energy
+    theta_total^2 = theta_core^2 + theta_mlp^2 + cross_energy
 where:
-    cross_energy := theta_total^2 - theta_attn^2 - theta_mlp^2
+    cross_energy := theta_total^2 - theta_core^2 - theta_mlp^2
 and an alignment proxy can be computed as:
-    cos_proxy := cross_energy / (2 * theta_attn * theta_mlp)
+    cos_proxy := cross_energy / (2 * theta_core * theta_mlp)
 
 Usage:
     poetry run python scripts/f5_sign_law_analysis.py
@@ -98,19 +98,33 @@ def analyze_model(model_result: dict) -> dict:
     for m in measurements:
         h = m.get("H_logit")
         th_t = m.get("theta_total")
-        th_a = m.get("theta_attn")
+        th_core = m.get("theta_core")
+        if th_core is None:
+            # Backward compatibility with pre-core artifacts.
+            th_core = m.get("theta_attn")
         th_m = m.get("theta_mlp")
+        core_op = m.get("core_operator")
         d = m.get("depth_fraction")
         if h is None or th_t is None or d is None:
             continue
         if not all(np.isfinite([h, th_t, d])):
             continue
         rows_total.append((float(h), float(th_t), float(d), int(m["layer_idx"])))
-        if th_a is None or th_m is None:
+        if th_core is None or th_m is None:
             continue
-        if not all(np.isfinite([th_a, th_m])):
+        if not all(np.isfinite([th_core, th_m])):
             continue
-        rows_decomp.append((float(h), float(th_t), float(th_a), float(th_m), float(d), int(m["layer_idx"])))
+        rows_decomp.append(
+            (
+                float(h),
+                float(th_t),
+                float(th_core),
+                float(th_m),
+                float(d),
+                int(m["layer_idx"]),
+                str(core_op) if core_op is not None else "unknown",
+            )
+        )
 
     if len(rows_decomp) < 6:
         return {
@@ -128,19 +142,20 @@ def analyze_model(model_result: dict) -> dict:
 
     h = np.array([r[0] for r in rows_decomp], dtype=float)
     theta_t = np.array([r[1] for r in rows_decomp], dtype=float)
-    theta_a = np.array([r[2] for r in rows_decomp], dtype=float)
+    theta_core = np.array([r[2] for r in rows_decomp], dtype=float)
     theta_m = np.array([r[3] for r in rows_decomp], dtype=float)
     depth = np.array([r[4] for r in rows_decomp], dtype=float)
     layers = np.array([r[5] for r in rows_decomp], dtype=int)
+    core_ops = [r[6] for r in rows_decomp]
 
     theta_t2 = theta_t * theta_t
-    theta_a2 = theta_a * theta_a
+    theta_core2 = theta_core * theta_core
     theta_m2 = theta_m * theta_m
 
     # Exact layer-wise residual in squared-angle proxy space.
-    cross_energy = theta_t2 - theta_a2 - theta_m2
+    cross_energy = theta_t2 - theta_core2 - theta_m2
 
-    denom = 2.0 * theta_a * theta_m
+    denom = 2.0 * theta_core * theta_m
     cos_proxy = np.full_like(cross_energy, np.nan)
     valid = np.abs(denom) > 1e-12
     cos_proxy[valid] = cross_energy[valid] / denom[valid]
@@ -152,25 +167,25 @@ def analyze_model(model_result: dict) -> dict:
     # Raw (F5-compatible) Spearman terms in theta-space.
     raw_t_all = _safe_spearman(h_total, theta_t_total)
     raw_t = _safe_spearman(h, theta_t)
-    raw_a = _safe_spearman(h, theta_a)
+    raw_core = _safe_spearman(h, theta_core)
     raw_m = _safe_spearman(h, theta_m)
-    beta_cross_raw = raw_t["rho"] - raw_a["rho"] - raw_m["rho"]
+    beta_cross_raw = raw_t["rho"] - raw_core["rho"] - raw_m["rho"]
 
     # Depth-controlled slopes in theta-space (secondary diagnostic).
     beta_t_all = _depth_controlled_slope(theta_t_total, h_total, depth_total)
     beta_t = _depth_controlled_slope(theta_t, h, depth)
-    beta_a = _depth_controlled_slope(theta_a, h, depth)
+    beta_core = _depth_controlled_slope(theta_core, h, depth)
     beta_m = _depth_controlled_slope(theta_m, h, depth)
 
-    beta_cross_angle = beta_t["slope"] - beta_a["slope"] - beta_m["slope"]
+    beta_cross_angle = beta_t["slope"] - beta_core["slope"] - beta_m["slope"]
 
     # Depth-controlled slopes in squared-angle proxy space with exact closure.
     beta_t2 = _depth_controlled_slope(theta_t2, h, depth)
-    beta_a2 = _depth_controlled_slope(theta_a2, h, depth)
+    beta_core2 = _depth_controlled_slope(theta_core2, h, depth)
     beta_m2 = _depth_controlled_slope(theta_m2, h, depth)
     beta_cross_energy = _depth_controlled_slope(cross_energy, h, depth)
     closure_error_t2 = (
-        beta_t2["slope"] - beta_a2["slope"] - beta_m2["slope"] - beta_cross_energy["slope"]
+        beta_t2["slope"] - beta_core2["slope"] - beta_m2["slope"] - beta_cross_energy["slope"]
     )
 
     # Cross-term diagnostics against H_logit.
@@ -181,19 +196,19 @@ def analyze_model(model_result: dict) -> dict:
 
     # Measurable sign-law candidate:
     # sign(theta_total slope) predicted by sign(beta_a + beta_m + beta_cross_angle).
-    beta_sum_angle = beta_a["slope"] + beta_m["slope"] + beta_cross_angle
+    beta_sum_angle = beta_core["slope"] + beta_m["slope"] + beta_cross_angle
     observed_sign = _sign_of(beta_t["slope"])
     predicted_sign = _sign_of(beta_sum_angle)
 
     observed_sign_raw = _sign_of(raw_t_all["rho"])
-    predicted_sign_raw = _sign_of(raw_a["rho"] + raw_m["rho"] + beta_cross_raw)
+    predicted_sign_raw = _sign_of(raw_core["rho"] + raw_m["rho"] + beta_cross_raw)
 
     # Architecture-conditioned mechanism classification.
-    if raw_a["rho"] > 0 and raw_m["rho"] < 0:
+    if raw_core["rho"] > 0 and raw_m["rho"] < 0:
         mechanism = "competing_sublayers"
-    elif raw_a["rho"] > 0 and raw_m["rho"] >= 0:
-        mechanism = "attention_pass_through"
-    elif raw_a["rho"] <= 0 and raw_m["rho"] > 0:
+    elif raw_core["rho"] > 0 and raw_m["rho"] >= 0:
+        mechanism = "core_pass_through"
+    elif raw_core["rho"] <= 0 and raw_m["rho"] > 0:
         mechanism = "mlp_dominant"
     else:
         mechanism = "mixed_or_flat"
@@ -211,11 +226,11 @@ def analyze_model(model_result: dict) -> dict:
             "raw_spearman": {
                 "beta_total_all_layers": raw_t_all,
                 "beta_total_decomp_layers": raw_t,
-                "beta_attn": raw_a,
+                "beta_core": raw_core,
                 "beta_mlp": raw_m,
                 "beta_cross_residual": {
                     "rho": float(beta_cross_raw),
-                    "definition": "rho_decomp(H,theta_total) - rho(H,theta_attn) - rho(H,theta_mlp)",
+                    "definition": "rho_decomp(H,theta_total) - rho(H,theta_core) - rho(H,theta_mlp)",
                 },
                 "observed_sign": observed_sign_raw,
                 "predicted_sign": predicted_sign_raw,
@@ -223,11 +238,11 @@ def analyze_model(model_result: dict) -> dict:
             "depth_controlled": {
             "beta_total_all_layers": beta_t_all,
             "beta_total_decomp_layers": beta_t,
-            "beta_attn": beta_a,
+            "beta_core": beta_core,
             "beta_mlp": beta_m,
             "beta_cross_residual": {
                 "slope": float(beta_cross_angle),
-                "definition": "beta_total_decomp - beta_attn - beta_mlp",
+                "definition": "beta_total_decomp - beta_core - beta_mlp",
             },
             "beta_sum_check_decomp": float(beta_sum_angle),
             "observed_sign": observed_sign,
@@ -236,7 +251,7 @@ def analyze_model(model_result: dict) -> dict:
         },
         "theta_squared_space": {
             "beta_total_sq": beta_t2,
-            "beta_attn_sq": beta_a2,
+            "beta_core_sq": beta_core2,
             "beta_mlp_sq": beta_m2,
             "beta_cross_energy": beta_cross_energy,
             "closure_error": float(closure_error_t2),
@@ -249,6 +264,9 @@ def analyze_model(model_result: dict) -> dict:
             "cos_proxy_outside_unit_fraction": float(np.mean(outside_unit)) if len(outside_unit) else 0.0,
         },
         "mechanism_classification": mechanism,
+        "core_operator_counts": {
+            op: core_ops.count(op) for op in sorted(set(core_ops))
+        },
     }
 
 
@@ -264,22 +282,23 @@ def build_cross_model_summary(per_model: list[dict]) -> dict:
             "architecture": m["architecture"],
             "rho_total_all_layers": t_raw["beta_total_all_layers"]["rho"],
             "rho_total_decomp_layers": t_raw["beta_total_decomp_layers"]["rho"],
-            "rho_attn": t_raw["beta_attn"]["rho"],
+            "rho_core": t_raw["beta_core"]["rho"],
             "rho_mlp": t_raw["beta_mlp"]["rho"],
             "rho_cross_residual": t_raw["beta_cross_residual"]["rho"],
             "observed_sign_raw": t_raw["observed_sign"],
             "beta_total_all_layers_depth_controlled": t_dc["beta_total_all_layers"]["slope"],
             "beta_total_decomp_layers_depth_controlled": t_dc["beta_total_decomp_layers"]["slope"],
-            "beta_attn_depth_controlled": t_dc["beta_attn"]["slope"],
+            "beta_core_depth_controlled": t_dc["beta_core"]["slope"],
             "beta_mlp_depth_controlled": t_dc["beta_mlp"]["slope"],
             "decomp_coverage_fraction": m.get("decomp_coverage_fraction"),
+            "core_operator_counts": m.get("core_operator_counts", {}),
             "mechanism_classification": m["mechanism_classification"],
         })
 
-    # F5 law candidate: sign(beta_mlp) as architecture term gate when beta_attn > 0.
+    # F5 law candidate: sign(beta_mlp) as architecture term gate when beta_core > 0.
     gate_checks = []
     for m in ok_models:
-        ba = m["theta_space"]["raw_spearman"]["beta_attn"]["rho"]
+        ba = m["theta_space"]["raw_spearman"]["beta_core"]["rho"]
         bm = m["theta_space"]["raw_spearman"]["beta_mlp"]["rho"]
         bt = m["theta_space"]["raw_spearman"]["beta_total_all_layers"]["rho"]
         if ba <= 0:
@@ -300,8 +319,8 @@ def build_cross_model_summary(per_model: list[dict]) -> dict:
             "FAIL" if gate_checks else "INCONCLUSIVE"
         ),
         "candidate_law": (
-            "When beta_attn > 0, sign/magnitude of beta_mlp acts as suppression gate; "
-            "negative beta_mlp yields competition, non-negative beta_mlp allows attention pass-through."
+            "When beta_core > 0, sign/magnitude of beta_mlp acts as suppression gate; "
+            "negative beta_mlp yields competition, non-negative beta_mlp allows core pass-through."
         ),
     }
 
@@ -312,14 +331,14 @@ def render_report(summary: dict, out_path: Path) -> None:
         "",
         "## Cross-Model Summary",
         "",
-        "| Model | Arch | rho_total(all) | rho_total(decomp) | rho_attn | rho_mlp | rho_cross | coverage | Mechanism |",
+        "| Model | Arch | rho_total(all) | rho_total(decomp) | rho_core | rho_mlp | rho_cross | coverage | Mechanism |",
         "|---|---|---:|---:|---:|---:|---:|---:|---|",
     ]
     for row in summary["models"]:
         lines.append(
             f"| {row['model']} | {row['architecture']} | {row['rho_total_all_layers']:.4f} | "
             f"{row['rho_total_decomp_layers']:.4f} | "
-            f"{row['rho_attn']:.4f} | {row['rho_mlp']:.4f} | "
+            f"{row['rho_core']:.4f} | {row['rho_mlp']:.4f} | "
             f"{row['rho_cross_residual']:.4f} | {row['decomp_coverage_fraction']:.3f} | "
             f"{row['mechanism_classification']} |"
         )
@@ -380,12 +399,12 @@ def main() -> None:
         with open(out_model_dir / "f5_sign_law.json", "w") as f:
             json.dump(result, f, indent=2, default=str)
         logger.info(
-            "%s: status=%s, rho_total(all)=%.4f, rho_total(decomp)=%.4f, rho_attn=%.4f, rho_mlp=%.4f, mech=%s",
+            "%s: status=%s, rho_total(all)=%.4f, rho_total(decomp)=%.4f, rho_core=%.4f, rho_mlp=%.4f, mech=%s",
             data["model_name"],
             result.get("status", "?"),
             result.get("theta_space", {}).get("raw_spearman", {}).get("beta_total_all_layers", {}).get("rho", float("nan")),
             result.get("theta_space", {}).get("raw_spearman", {}).get("beta_total_decomp_layers", {}).get("rho", float("nan")),
-            result.get("theta_space", {}).get("raw_spearman", {}).get("beta_attn", {}).get("rho", float("nan")),
+            result.get("theta_space", {}).get("raw_spearman", {}).get("beta_core", {}).get("rho", float("nan")),
             result.get("theta_space", {}).get("raw_spearman", {}).get("beta_mlp", {}).get("rho", float("nan")),
             result.get("mechanism_classification", "unknown"),
         )

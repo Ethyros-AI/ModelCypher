@@ -11,10 +11,10 @@ operator drives the r=0.507 correlation with angular curvature?
 Measurements per layer:
     1. H_logit: logit entropy (project h_l through unembedding, softmax, Shannon H)
     2. H_attn: attention weight entropy (Shannon H of softmax(QK^T/sqrt(d_k)))
-    3. theta_attn: angular change h_in -> h_post_attn
-    4. theta_mlp: angular change h_post_attn -> h_out
+    3. theta_core: angular change h_in -> h_post_core (core operator = attention or conv)
+    4. theta_mlp: angular change h_post_core -> h_out
     5. theta_total: angular change h_in -> h_out
-    6. G_mlp: MLP angular gain = theta_mlp / theta_attn
+    6. G_mlp: MLP angular gain = theta_mlp / theta_core
 
 Analysis:
     - Per-model Spearman correlations for both operators vs all curvature measures
@@ -423,9 +423,10 @@ def collect_all_data(
 
     # --- Sublayer activations + attention entropy ---
     layer_h_in = [[] for _ in range(num_layers)]
-    layer_h_post_attn = [[] for _ in range(num_layers)]
+    layer_h_post_core = [[] for _ in range(num_layers)]
     layer_h_out = [[] for _ in range(num_layers)]
     layer_attn_entropy = [[] for _ in range(num_layers)]
+    layer_core_operator = [[] for _ in range(num_layers)]
 
     for pi, prompt in enumerate(prompts):
         if pi % 10 == 0:
@@ -451,9 +452,11 @@ def collect_all_data(
             else:
                 layer_mask = numeric_mask
 
-            h_post_attn = None
+            h_post_core = None
+            core_operator = None
             input_norm = _get_pre_norm(layer)
             self_attn = getattr(layer, "self_attn", None)
+            conv = getattr(layer, "conv", None)
             post_attn_norm = getattr(layer, "post_attention_layernorm", None)
             if post_attn_norm is None:
                 post_attn_norm = getattr(layer, "ffn_norm", None)
@@ -461,6 +464,7 @@ def collect_all_data(
             if mlp is None:
                 mlp = getattr(layer, "feed_forward", None)
 
+            # 1) Attention-core decomposition
             if input_norm is not None and self_attn is not None and mlp is not None:
                 try:
                     normed = input_norm(h_in)
@@ -468,13 +472,44 @@ def collect_all_data(
                     attn_out = self_attn(normed, mask=attn_mask)
                     if isinstance(attn_out, tuple):
                         attn_out = attn_out[0]
-                    h_post_attn = h_in + attn_out
+                    h_post_core = h_in + attn_out
+                    core_operator = "attention"
 
-                    normed2 = post_attn_norm(h_post_attn) if post_attn_norm else h_post_attn
+                    normed2 = post_attn_norm(h_post_core) if post_attn_norm else h_post_core
                     mlp_out = mlp(normed2)
-                    h_out = h_post_attn + mlp_out
+                    h_out = h_post_core + mlp_out
                 except Exception:
-                    h_post_attn = None
+                    h_post_core = None
+                    core_operator = None
+                    try:
+                        h_out = layer(h_in, mask=layer_mask)
+                    except (TypeError, ValueError):
+                        try:
+                            h_out = layer(h_in, layer_mask)
+                        except (TypeError, ValueError):
+                            h_out = layer(h_in)
+            # 2) Conv-core decomposition (hybrid/ShortConv blocks)
+            elif input_norm is not None and conv is not None and mlp is not None:
+                try:
+                    normed = input_norm(h_in)
+                    try:
+                        conv_out = conv(normed)
+                    except (TypeError, ValueError):
+                        try:
+                            conv_out = conv(normed, mask=layer_mask)
+                        except (TypeError, ValueError):
+                            conv_out = conv(normed, layer_mask)
+                    if isinstance(conv_out, tuple):
+                        conv_out = conv_out[0]
+                    h_post_core = h_in + conv_out
+                    core_operator = "conv"
+
+                    normed2 = post_attn_norm(h_post_core) if post_attn_norm else h_post_core
+                    mlp_out = mlp(normed2)
+                    h_out = h_post_core + mlp_out
+                except Exception:
+                    h_post_core = None
+                    core_operator = None
                     try:
                         h_out = layer(h_in, mask=layer_mask)
                     except (TypeError, ValueError):
@@ -499,14 +534,14 @@ def collect_all_data(
             layer_h_in[i].append(np.array(h_in_last[0].tolist(), dtype=np.float32))
             layer_h_out[i].append(np.array(h_out_last[0].tolist(), dtype=np.float32))
 
-            if h_post_attn is not None:
-                h_pa_last = h_post_attn[:, -1, :].astype(mx.float32)
-                mx.eval(h_pa_last)
-                layer_h_post_attn[i].append(
-                    np.array(h_pa_last[0].tolist(), dtype=np.float32)
-                )
+            if h_post_core is not None:
+                h_pc_last = h_post_core[:, -1, :].astype(mx.float32)
+                mx.eval(h_pc_last)
+                layer_h_post_core[i].append(np.array(h_pc_last[0].tolist(), dtype=np.float32))
+                layer_core_operator[i].append(core_operator)
             else:
-                layer_h_post_attn[i].append(None)
+                layer_h_post_core[i].append(None)
+                layer_core_operator[i].append(None)
 
             # Attention entropy
             ent = compute_attention_entropy(layer, h_in, seq_len, model=model)
@@ -519,17 +554,26 @@ def collect_all_data(
     # Build sublayer result
     sublayer_data = []
     for i in range(num_layers):
-        has_decomp = all(x is not None for x in layer_h_post_attn[i])
+        has_decomp = all(x is not None for x in layer_h_post_core[i])
         valid_ent = [e for e in layer_attn_entropy[i] if e is not None]
         has_attn_entropy = len(valid_ent) > 0
+        valid_ops = [op for op in layer_core_operator[i] if op is not None]
+        core_operator = valid_ops[0] if valid_ops and len(set(valid_ops)) == 1 else (
+            "mixed" if valid_ops else None
+        )
+        core_operator_counts = {}
+        for op in valid_ops:
+            core_operator_counts[op] = core_operator_counts.get(op, 0) + 1
 
         sublayer_data.append({
             "h_in": np.stack(layer_h_in[i]),
             "h_out": np.stack(layer_h_out[i]),
-            "h_post_attn": np.stack(layer_h_post_attn[i]) if has_decomp else None,
+            "h_post_core": np.stack(layer_h_post_core[i]) if has_decomp else None,
             "has_decomposition": has_decomp,
             "attn_entropy": float(np.mean(valid_ent)) if has_attn_entropy else None,
             "is_attention_layer": has_attn_entropy,
+            "core_operator": core_operator,
+            "core_operator_counts": core_operator_counts,
         })
 
     # --- Logit entropy ---
@@ -566,9 +610,14 @@ def compute_measurements(data: dict, num_layers: int) -> list[dict]:
             "layer_idx": i,
             "depth_fraction": i / max(num_layers - 1, 1),
             "theta_total": theta_total,
+            "theta_core": None,
             "theta_attn": None,
+            "theta_conv": None,
             "theta_mlp": None,
+            "theta_mlp_post_core": None,
+            "core_operator": sd.get("core_operator"),
             "attn_fraction": None,
+            "core_fraction": None,
             "G_mlp": None,
             "H_logit": logit_entropy[i],
             "H_attn": sd["attn_entropy"],
@@ -576,22 +625,28 @@ def compute_measurements(data: dict, num_layers: int) -> list[dict]:
         }
 
         if sd["has_decomposition"]:
-            h_post_attn = sd["h_post_attn"]
-            attn_angles = [angular_change(h_in[j], h_post_attn[j]) for j in range(n_probes)]
-            mlp_angles = [angular_change(h_post_attn[j], h_out[j]) for j in range(n_probes)]
+            h_post_core = sd["h_post_core"]
+            core_angles = [angular_change(h_in[j], h_post_core[j]) for j in range(n_probes)]
+            mlp_angles = [angular_change(h_post_core[j], h_out[j]) for j in range(n_probes)]
 
-            theta_attn = float(np.mean(attn_angles))
+            theta_core = float(np.mean(core_angles))
             theta_mlp = float(np.mean(mlp_angles))
 
-            layer_result["theta_attn"] = theta_attn
+            layer_result["theta_core"] = theta_core
             layer_result["theta_mlp"] = theta_mlp
-            layer_result["attn_fraction"] = (
-                theta_attn / (theta_attn + theta_mlp)
-                if (theta_attn + theta_mlp) > 1e-10 else 0.5
+            layer_result["theta_mlp_post_core"] = theta_mlp
+            layer_result["core_fraction"] = (
+                theta_core / (theta_core + theta_mlp)
+                if (theta_core + theta_mlp) > 1e-10 else 0.5
             )
             layer_result["G_mlp"] = (
-                theta_mlp / theta_attn if theta_attn > 1e-10 else float("nan")
+                theta_mlp / theta_core if theta_core > 1e-10 else float("nan")
             )
+            if sd.get("core_operator") == "attention":
+                layer_result["theta_attn"] = theta_core
+                layer_result["attn_fraction"] = layer_result["core_fraction"]
+            elif sd.get("core_operator") == "conv":
+                layer_result["theta_conv"] = theta_core
 
         measurements.append(layer_result)
 
@@ -645,21 +700,30 @@ def compute_operator_correlations(measurements: list[dict]) -> dict:
         r, p = safe_spearman(H_logit, theta_total_l)
         result["H_logit_vs_theta_total"] = {"r": r, "p": p}
 
-        # With decomposition subset
-        logit_decomp = [m for m in logit_layers if m["theta_attn"] is not None]
+        # Core decomposition subset (attention or conv core)
+        logit_decomp = [m for m in logit_layers if m["theta_core"] is not None]
         if len(logit_decomp) >= 4:
             H_ld = [m["H_logit"] for m in logit_decomp]
-            theta_attn_ld = [m["theta_attn"] for m in logit_decomp]
+            theta_core_ld = [m["theta_core"] for m in logit_decomp]
             theta_mlp_ld = [m["theta_mlp"] for m in logit_decomp]
             G_mlp_ld = [m["G_mlp"] for m in logit_decomp]
 
-            r_la, p_la = safe_spearman(H_ld, theta_attn_ld)
+            r_lc, p_lc = safe_spearman(H_ld, theta_core_ld)
             r_lm, p_lm = safe_spearman(H_ld, theta_mlp_ld)
             r_lg, p_lg = safe_spearman(H_ld, G_mlp_ld)
 
-            result["H_logit_vs_theta_attn"] = {"r": r_la, "p": p_la}
+            result["H_logit_vs_theta_core"] = {"r": r_lc, "p": p_lc}
             result["H_logit_vs_theta_mlp"] = {"r": r_lm, "p": p_lm}
             result["H_logit_vs_G_mlp"] = {"r": r_lg, "p": p_lg}
+            result["core_decomp_coverage"] = float(len(logit_decomp) / len(logit_layers))
+
+            # Legacy attention-only correlation for continuity with prior artifacts.
+            logit_attn_only = [m for m in logit_decomp if m["theta_attn"] is not None]
+            if len(logit_attn_only) >= 4:
+                H_la = [m["H_logit"] for m in logit_attn_only]
+                theta_attn_la = [m["theta_attn"] for m in logit_attn_only]
+                r_la, p_la = safe_spearman(H_la, theta_attn_la)
+                result["H_logit_vs_theta_attn"] = {"r": r_la, "p": p_la}
 
     # --- Attention entropy correlations (attention layers only) ---
     if len(attn_layers) >= 4:
@@ -886,6 +950,7 @@ def build_cross_model_summary(all_results: list[dict]) -> dict:
         model = r["model_name"]
         corrs = r["correlations"]
         sign_table[model] = {
+            "r_H_logit_theta_core": corrs.get("H_logit_vs_theta_core", {}).get("r"),
             "r_H_logit_theta_attn": corrs.get("H_logit_vs_theta_attn", {}).get("r"),
             "r_H_logit_theta_mlp": corrs.get("H_logit_vs_theta_mlp", {}).get("r"),
             "r_H_attn_theta_attn": corrs.get("H_attn_vs_theta_attn", {}).get("r"),
@@ -893,6 +958,7 @@ def build_cross_model_summary(all_results: list[dict]) -> dict:
             "r_H_logit_theta_total": corrs.get("H_logit_vs_theta_total", {}).get("r"),
             "r_H_attn_theta_total": corrs.get("H_attn_vs_theta_total", {}).get("r"),
             "r_H_logit_vs_H_attn": corrs.get("H_logit_vs_H_attn", {}).get("r"),
+            "core_decomp_coverage": corrs.get("core_decomp_coverage"),
         }
 
     depth_summary = {}
