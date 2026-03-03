@@ -240,8 +240,11 @@ class TestGeneralizedProcrustesAlign:
         m2 = [[0.9, 0.1], [0.1, 0.9], [0.5, 0.5]]
         result = GeneralizedProcrustes().align([m1, m2])
         assert result is not None
-        # Should converge (max_iterations = max(100, 10 * model_count))
-        assert result.converged or result.iterations > 0
+        # `converged or iterations > 0` was a tautology — iterations is always > 0.
+        # GPA must actually converge (Gower 1975 monotonic convergence guarantee).
+        assert result.converged, (
+            f"GPA failed to converge (iterations={result.iterations})"
+        )
 
     def test_align_rotations_are_orthogonal(self) -> None:
         """Returned rotations should be orthogonal matrices."""
@@ -867,6 +870,34 @@ class TestProcrustesConvergenceQuality:
         assert abs(result.consensus_variance_ratio - 1.0) <= eps, (
             f"consensus_variance_ratio={result.consensus_variance_ratio} should be 1.0 "
             f"for identical matrices"
+        )
+
+    def test_random_non_identical_matrices_converge(self) -> None:
+        """Regression for convergence criterion bug.
+
+        Previous criterion: converged when residuals < sqrt(eps) of total energy.
+        Bug: for genuinely different matrices, residuals are bounded below by the
+        inherent data variance → NEVER converged → always hit max_iterations.
+
+        Correct criterion: converged when objective improvement < sqrt(eps) between
+        iterations (Gower 1975). This test guards against regression.
+        """
+        import numpy as np
+        rng = np.random.default_rng(17)
+        # 5 random 8x4 matrices — all different, none exact rotations of others
+        matrices = [
+            rng.standard_normal((8, 4)).astype(np.float32).tolist()
+            for _ in range(5)
+        ]
+        result = GeneralizedProcrustes().align(matrices)
+        assert result is not None
+        assert result.converged, (
+            f"GPA hit max_iterations ({result.iterations}) on random matrices — "
+            f"convergence criterion may have regressed to residual-magnitude check"
+        )
+        # Convergence should happen well before 100 iterations
+        assert result.iterations < 100, (
+            f"GPA took {result.iterations} iterations — likely not converging efficiently"
         )
 
 

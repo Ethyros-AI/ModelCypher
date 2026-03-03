@@ -52,6 +52,10 @@ def evaluate_skill_mastery(
                compare as integers. Used for arithmetic skills whose training
                data includes scratchpad steps (the model may generate intermediate
                steps; only the final numeric answer is checked for mastery).
+      'procedural': final integer correct AND at least one carry-indicator token
+               ("write" or "carry", case-insensitive) in generated output. Used
+               when the formal claim is procedure execution, not answer recall.
+               Pure memorization (correct number, no carry tokens) fails this gate.
 
     Args:
         model_path: Path to the model directory.
@@ -148,6 +152,23 @@ def evaluate_skill_mastery(
                     and predicted_int is not None
                     and expected_int == predicted_int
                 ):
+                    n_correct += 1
+            elif skill.answer_mode == "procedural":
+                # Numeric check: final answer must be correct.
+                expected_int = _extract_last_int(expected)
+                predicted_int = _extract_last_int(predicted)
+                numeric_correct = (
+                    expected_int is not None
+                    and predicted_int is not None
+                    and expected_int == predicted_int
+                )
+                # Procedural check: model must emit at least one carry-indicator token.
+                # Tokens derived from carry_rule training format:
+                #   "{a} + {b} = {sum}. Write {digit}, carry 1. Answer: {sum}"
+                # A model that learned the rule WILL generate these. Memorization won't.
+                predicted_lower = predicted.lower()
+                has_procedure = "write" in predicted_lower or "carry" in predicted_lower
+                if numeric_correct and has_procedure:
                     n_correct += 1
             else:
                 if expected and expected.lower() in predicted.lower():

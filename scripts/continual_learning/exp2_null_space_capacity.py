@@ -35,7 +35,7 @@ from modelcypher.cli.composition import (
 
 # Smallest model that demonstrates the property under test.
 # Per AGENTS.md: "Do NOT run 8B models for research iteration."
-MODEL_PATH_DEFAULT = "/Volumes/CodeCypher/models/mlx-community/Qwen3-1.7B-MLX-bf16"
+MODEL_PATH_DEFAULT = "/Volumes/CodeCypher/models/mlx-community/Qwen3.5-2B-bf16"
 TASK_PATH_DEFAULT = "data/training/shards/S1.jsonl"
 OUTPUT_ROOT_DEFAULT = Path("results/continual_learning/exp2")
 

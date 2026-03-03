@@ -232,7 +232,12 @@ class TestRiemannianGeometry:
 
         assert result.mean is not None
         assert result.iterations >= 0
-        assert result.converged is True or result.converged is False
+        # Variance is a sum of squared distances → must be non-negative
+        assert result.final_variance >= 0.0, (
+            f"final_variance={result.final_variance} is negative — invariant violated"
+        )
+        # result.converged is a bool; the k-NN approximation may not converge in
+        # max_iterations for all random inputs, so we don't assert converged=True here
 
     def test_farthest_point_sampling_result(self, backend):
         """farthest_point_sampling should return full result."""

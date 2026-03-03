@@ -130,7 +130,12 @@ class TestProcrustesBasic:
 
         assert result is not None
         # Convergence is determined by machine epsilon-derived threshold
-        assert result.converged or result.iterations > 0
+        # `converged or iterations > 0` was a tautology — iterations is always > 0.
+        # GPA must actually converge on random matrices (Gower 1975 guarantees it).
+        assert result.converged, (
+            f"GPA failed to converge on 3 random models/10 samples/5 dims "
+            f"(iterations={result.iterations})"
+        )
 
     def test_rotations_are_orthogonal(self) -> None:
         """Computed rotations should be orthogonal matrices."""
@@ -354,7 +359,12 @@ class TestProcrustesFrechetMean:
         result = gpa.align(activations)
 
         assert result is not None
-        # Convergence threshold is derived from machine epsilon
-        assert result.converged or result.iterations > 0
+        # Convergence threshold is derived from machine epsilon.
+        # `converged or iterations > 0` was a tautology — iterations is always > 0.
+        # GPA must actually converge on random matrices (Gower 1975 guarantees it).
+        assert result.converged, (
+            f"GPA failed to converge with Fréchet mean on 3 models/15 samples/4 dims "
+            f"(iterations={result.iterations})"
+        )
         eps = _eps(result.alignment_error)
         assert result.alignment_error >= -eps

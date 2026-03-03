@@ -92,10 +92,10 @@ def test_arithmetic_dag_dependency_chain():
 
 
 def test_arithmetic_nodes_have_numeric_answer_mode():
-    """All arithmetic nodes use answer_mode='numeric'."""
+    """Arithmetic nodes use answer_mode='numeric' or 'procedural'."""
     from modelcypher.core.use_cases.curriculum.skill_dag import CURRICULUM_DAG
     numeric_nodes = [
-        "single_digit_add", "carry_rule", "multi_digit_add",
+        "single_digit_add", "multi_digit_add",
         "arithmetic_multiply", "arithmetic_divide",
     ]
     for name in numeric_nodes:
@@ -103,6 +103,12 @@ def test_arithmetic_nodes_have_numeric_answer_mode():
         assert node.answer_mode == "numeric", (
             f"Expected {name}.answer_mode == 'numeric', got {node.answer_mode!r}"
         )
+    # carry_rule uses 'procedural': requires carry-indicator tokens + correct answer.
+    # Formal claim is procedure execution, not answer recall — numeric alone is insufficient.
+    assert CURRICULUM_DAG.get("carry_rule").answer_mode == "procedural", (
+        f"carry_rule.answer_mode should be 'procedural', "
+        f"got {CURRICULUM_DAG.get('carry_rule').answer_mode!r}"
+    )
 
 
 # ---------------------------------------------------------------------------

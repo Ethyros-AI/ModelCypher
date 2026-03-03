@@ -136,8 +136,10 @@ class TestMetricSampleBinning:
         ]
         result = MetricSample.binned(samples)
         assert result is not None
-        # Mean = 2.0, max deviation is 1.0 for both, so max is chosen
-        assert result.entropy == 3.0 or result.entropy == 1.0
+        # choose_extreme: `abs(max-mean) >= abs(mean-min)` → max wins on tie (>= not >).
+        # For [1.0, 2.0, 3.0]: both deviations == 1.0, so max=3.0 is returned.
+        # The previous `or == 1.0` was wrong — code is deterministic, min cannot win.
+        assert result.entropy == 3.0
 
     def test_binned_handles_nan(self) -> None:
         """Test that binning handles NaN values correctly."""

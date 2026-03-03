@@ -32,6 +32,11 @@ class SkillNode:
                        compare as integers. Use for arithmetic nodes whose training
                        data includes scratchpad steps that the model may generate
                        even when the eval item only specifies the final number.
+            'procedural': numeric check (last integer correct) AND at least one
+                       carry-indicator token ("write" or "carry", case-insensitive)
+                       must appear in the generated output. Use when the formal
+                       claim is about procedure execution, not just answer recall.
+                       Tokens are derived from the training scratchpad format.
         notes: Optional clarifications (not used by scheduler).
     """
 
@@ -329,7 +334,7 @@ def build_curriculum_dag() -> SkillDAG:
                 "data/eval/carry_rule_eval.jsonl",
             ),
             branch="math",
-            answer_mode="numeric",
+            answer_mode="procedural",
             notes=(
                 "Cannot be derived from single_digit_add alone — requires the rule "
                 "'when sum exceeds one digit, write digit and carry 1'. "
