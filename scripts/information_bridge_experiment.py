@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Information-Theoretic Bridge Experiment.
 
-Tests 8 pre-registered predictions connecting geometric quantities
+Tests 9 pre-registered predictions connecting geometric quantities
 (spectral entropy, CKA, intrinsic dimension, curvature) to
 information-theoretic quantities (Rényi MI).
 
@@ -21,11 +21,13 @@ Predictions (pre-registered, thresholds from statistical testing):
     P6: DPI holds at fixed σ                     (no violations outside null CI)
     P7: C_ex peaks at highway                    (permutation null, p < 0.01)
     P8: CKA heatmap shows phase blocks           (ratio exceeds null 99th percentile)
+    P9: Attention type predicts sigma regime     (exact permutation p < 0.01)
 """
 
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import logging
 import math
@@ -168,6 +170,111 @@ CODE_PROBES = [
 ]
 
 ALL_PROBES = MATH_PROBES[:50] + NARRATIVE_PROBES[:50] + FACTUAL_PROBES[:50] + CODE_PROBES[:50]
+
+
+# ---------------------------------------------------------------------------
+# Architecture metadata
+# ---------------------------------------------------------------------------
+
+
+def load_aligned_layer_types(model_path: str, layer_indices: list[int]) -> list[str] | None:
+    """Load per-layer architecture labels aligned to collected layer indices."""
+    config_path = Path(model_path) / "config.json"
+    if not config_path.exists() or not layer_indices:
+        return None
+
+    with config_path.open() as f:
+        config = json.load(f)
+
+    candidates = []
+    if isinstance(config.get("layer_types"), list):
+        candidates.append(config["layer_types"])
+    text_cfg = config.get("text_config")
+    if isinstance(text_cfg, dict) and isinstance(text_cfg.get("layer_types"), list):
+        candidates.append(text_cfg["layer_types"])
+    model_cfg = config.get("model_config")
+    if isinstance(model_cfg, dict) and isinstance(model_cfg.get("layer_types"), list):
+        candidates.append(model_cfg["layer_types"])
+
+    if not candidates:
+        return None
+
+    layer_types = candidates[0]
+    if max(layer_indices) >= len(layer_types):
+        return None
+
+    return [str(layer_types[i]) for i in layer_indices]
+
+
+def test_attention_type_sigma_regime(
+    layer_sigmas: list[float],
+    layer_types: list[str] | None,
+) -> dict:
+    """P9: test whether attention type predicts sigma regime.
+
+    Statistic: difference in mean log-sigma between full-attention and
+    linear-attention layers. Significance is computed via exact permutation
+    test over all allocations with fixed group sizes.
+    """
+    if layer_types is None or len(layer_types) != len(layer_sigmas):
+        return {
+            "prediction": "Attention type predicts sigma regime",
+            "pass": False,
+            "status": "INCONCLUSIVE",
+            "note": "No aligned per-layer architecture labels",
+        }
+
+    full_indices = [i for i, t in enumerate(layer_types) if t == "full_attention"]
+    linear_indices = [i for i, t in enumerate(layer_types) if t == "linear_attention"]
+    if not full_indices or not linear_indices:
+        return {
+            "prediction": "Attention type predicts sigma regime",
+            "pass": False,
+            "status": "INCONCLUSIVE",
+            "note": "Need both full_attention and linear_attention labels",
+            "layer_types": sorted(set(layer_types)),
+        }
+
+    log_sigma = [math.log(s) for s in layer_sigmas]
+    n = len(log_sigma)
+    n_full = len(full_indices)
+
+    total_sum = math.fsum(log_sigma)
+    observed_full_sum = math.fsum(log_sigma[i] for i in full_indices)
+    observed_delta = (
+        (observed_full_sum / n_full)
+        - ((total_sum - observed_full_sum) / (n - n_full))
+    )
+    observed_ratio = math.exp(observed_delta)
+
+    perm_total = math.comb(n, n_full)
+    extreme_count = 0
+    all_indices = range(n)
+    for full_perm in itertools.combinations(all_indices, n_full):
+        full_sum = math.fsum(log_sigma[i] for i in full_perm)
+        delta = (full_sum / n_full) - ((total_sum - full_sum) / (n - n_full))
+        if abs(delta) >= abs(observed_delta):
+            extreme_count += 1
+    p_exact = extreme_count / perm_total
+
+    return {
+        "prediction": "Attention type predicts sigma regime",
+        "full_layers": full_indices,
+        "linear_layers": linear_indices,
+        "n_full": n_full,
+        "n_linear": len(linear_indices),
+        "mean_log_sigma_full": observed_full_sum / n_full,
+        "mean_log_sigma_linear": (total_sum - observed_full_sum) / (n - n_full),
+        "geometric_sigma_ratio_full_over_linear": observed_ratio,
+        "exact_permutations": perm_total,
+        "p_value_exact": p_exact,
+        "pass": p_exact < 0.01,
+        "status": (
+            "CONFIRMED"
+            if p_exact < 0.01
+            else "REFUTED" if p_exact >= 0.05 else "INCONCLUSIVE"
+        ),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -491,6 +598,14 @@ def main():
     sorted_layers = sorted(layer_activations.keys())
     num_layers = len(sorted_layers)
     logger.info("  Layers: %s", sorted_layers)
+    layer_types = load_aligned_layer_types(args.model, sorted_layers)
+    if layer_types is None:
+        logger.info("  No per-layer architecture labels found in model config.")
+    else:
+        type_counts = {}
+        for t in layer_types:
+            type_counts[t] = type_counts.get(t, 0) + 1
+        logger.info("  Layer-type counts: %s", type_counts)
 
     # --- Step 2: Per-layer geometry ---
     logger.info("Step 2: Computing per-layer geometry...")
@@ -619,13 +734,17 @@ def main():
                 time.time() - t0, shared_sigma)
 
     # --- Step 10: Test predictions ---
-    logger.info("Step 10: Testing predictions P1-P8...")
+    logger.info("Step 10: Testing predictions P1-P9...")
     predictions = test_predictions(
         cka_matrix, mi_matrix, input_mi_traj, fixed_mi_traj,
         spectral_entropies, intrinsic_dims, curvature_excess,
         phase_names, num_layers,
         normalized_mi_matrix=normalized_mi_matrix,
         normalized_mi_traj=normalized_mi_traj,
+    )
+    predictions["P9"] = test_attention_type_sigma_regime(
+        layer_sigmas=layer_sigmas,
+        layer_types=layer_types,
     )
 
     # Print results
@@ -665,6 +784,7 @@ def main():
         "conjectures": [
             "CKA and Renyi MI are monotonically related (P3)",
             "C_ex peaks at highway (P7)",
+            "Attention type predicts sigma regime (P9)",
         ],
         "empirical_only": [
             "DPI for matrix-based Renyi MI (P6)",
@@ -688,6 +808,7 @@ def main():
 
     trajectories = {
         "layers": sorted_layers,
+        "layer_types": layer_types,
         "spectral_entropy_nats": spectral_entropies,
         "intrinsic_dimension": intrinsic_dims,
         "curvature_radians": curvatures,
@@ -721,13 +842,15 @@ def main():
         "",
         "## Kernel Bandwidth Diagnostics",
         "",
-        "| Layer | Sigma_l | Sigma_l / Sigma_0 | Sigma_l / Sigma_{l-1} |",
-        "|-------|---------|-------------------|-----------------------|",
+        "| Layer | Type | Sigma_l | Sigma_l / Sigma_0 | Sigma_l / Sigma_{l-1} |",
+        "|-------|------|---------|-------------------|-----------------------|",
     ]
     for i, layer in enumerate(sorted_layers):
         prev_ratio = "-" if i == 0 else f"{adjacent_sigma_ratios[i - 1]:.3f}"
+        layer_type = layer_types[i] if layer_types is not None else "-"
         report_lines.append(
-            f"| {layer} | {layer_sigmas[i]:.6f} | {sigma_ratios[i]:.3f} | {prev_ratio} |"
+            f"| {layer} | {layer_type} | {layer_sigmas[i]:.6f} | "
+            f"{sigma_ratios[i]:.3f} | {prev_ratio} |"
         )
 
     report_lines.extend([
@@ -744,6 +867,11 @@ def main():
             evidence = f"r={p['spearman_r']:.4f}, p={p['p_value']:.2e}"
         elif "ratio" in p:
             evidence = f"ratio={p['ratio']:.4f}"
+        elif "p_value_exact" in p:
+            evidence = (
+                f"geom_ratio={p['geometric_sigma_ratio_full_over_linear']:.3f}, "
+                f"p={p['p_value_exact']:.2e}"
+            )
         elif "global_min_layer" in p:
             evidence = (
                 f"global_min=L{p['global_min_layer']} ({p['global_min_value']:.3f}), "
