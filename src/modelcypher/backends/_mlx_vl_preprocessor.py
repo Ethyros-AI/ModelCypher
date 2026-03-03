@@ -17,6 +17,7 @@ Usage:
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -37,6 +38,9 @@ class VLPreprocessor:
             hf_processor: transformers.Qwen2VLImageProcessor instance.
         """
         self._proc = hf_processor
+        self._image_token_id: int | None = None
+        self._video_token_id: int | None = None
+        self._spatial_merge_size: int = 2
 
     @classmethod
     def from_model_path(cls, model_path: str) -> "VLPreprocessor":
@@ -55,7 +59,43 @@ class VLPreprocessor:
 
         model_path = str(Path(model_path).expanduser().resolve())
         proc = Qwen2VLImageProcessor.from_pretrained(model_path)
-        return cls(proc)
+        out = cls(proc)
+
+        cfg_path = Path(model_path) / "config.json"
+        if cfg_path.exists():
+            try:
+                cfg = json.loads(cfg_path.read_text())
+                out._image_token_id = cfg.get("image_token_id")
+                out._video_token_id = cfg.get("video_token_id")
+                vision_cfg = cfg.get("vision_config", {})
+                out._spatial_merge_size = int(vision_cfg.get("spatial_merge_size", 2))
+            except (OSError, ValueError, json.JSONDecodeError):
+                pass
+        return out
+
+    @staticmethod
+    def _resolve_token_id(tokenizer, token_text: str) -> int | None:
+        """Resolve a special token id from tokenizer without hardcoding ids."""
+        if hasattr(tokenizer, "convert_tokens_to_ids"):
+            token_id = tokenizer.convert_tokens_to_ids(token_text)
+            if isinstance(token_id, int) and token_id >= 0:
+                return token_id
+        if hasattr(tokenizer, "encode"):
+            encoded = tokenizer.encode(token_text)
+            if isinstance(encoded, list) and len(encoded) == 1 and isinstance(encoded[0], int):
+                return encoded[0]
+        return None
+
+    @staticmethod
+    def _expand_placeholder_tokens(tokens: list[int], placeholder_id: int, n_visual_tokens: int) -> list[int]:
+        """Replace one image placeholder with n visual placeholders."""
+        if n_visual_tokens <= 0:
+            return tokens
+        try:
+            idx = tokens.index(placeholder_id)
+        except ValueError:
+            return tokens
+        return tokens[:idx] + [placeholder_id] * n_visual_tokens + tokens[idx + 1:]
 
     def preprocess_image(self, image_path: str) -> tuple[mx.array, mx.array]:
         """Process a single image file into MLX arrays.
@@ -130,6 +170,21 @@ class VLPreprocessor:
             image_path = sample.get("image_path")
             if image_path:
                 pixel_values, position_ids = self.preprocess_image(image_path)
+                merge_area = self._spatial_merge_size ** 2
+                n_patches = int(pixel_values.shape[0])
+                if n_patches % merge_area != 0:
+                    raise RuntimeError(
+                        f"Visual patch count {n_patches} is not divisible by "
+                        f"spatial_merge_size^2={merge_area}."
+                    )
+                n_visual_tokens = n_patches // merge_area
+                image_token_id = self._image_token_id or self._resolve_token_id(tokenizer, "<|image_pad|>")
+                if image_token_id is None:
+                    raise RuntimeError(
+                        "Could not resolve <|image_pad|> token id for VL sample."
+                    )
+                tokens = self._expand_placeholder_tokens(tokens, image_token_id, n_visual_tokens)
+                tokens_mx = mx.array(tokens, dtype=mx.int32)
             else:
                 pixel_values, position_ids = None, None
 
@@ -138,6 +193,8 @@ class VLPreprocessor:
                 "pixel_values": pixel_values,
                 "position_ids": position_ids,
                 "n_text_tokens": len(tokens),
+                "image_token_id": self._image_token_id or self._resolve_token_id(tokenizer, "<|image_pad|>"),
+                "video_token_id": self._video_token_id or self._resolve_token_id(tokenizer, "<|video_pad|>"),
             })
 
         return result

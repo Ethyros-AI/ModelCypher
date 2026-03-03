@@ -208,6 +208,19 @@ class _MLXTrainingAdapterTrainMixin:
         )
 
         use_answer_mask = False  # Set True in answer_masked_dataset branch
+        use_vl = (
+            isinstance(train_dataset, list)
+            and len(train_dataset) > 0
+            and isinstance(train_dataset[0], dict)
+            and "tokens" in train_dataset[0]
+            and "pixel_values" in train_dataset[0]
+        )
+        if use_vl and grad_accum_steps > 1:
+            logger.info(
+                "VL path disables gradient accumulation (variable-size visual tensors). "
+                "Using grad_accum_steps=1."
+            )
+            grad_accum_steps = 1
 
         if geometric_reshape and paired_dataset is not None:
             # Determine target layers for geometric reshaping.
@@ -301,6 +314,20 @@ class _MLXTrainingAdapterTrainMixin:
             loss_value_and_grad = nn.value_and_grad(model, am_loss_fn)
             logger.info("Answer-masked CE: training on answer tokens + EOS only")
             use_answer_mask = True
+        elif use_vl:
+            image_token_id = train_dataset[0].get("image_token_id")
+            video_token_id = train_dataset[0].get("video_token_id")
+            loss_fn = make_vl_loss(
+                image_token_id=image_token_id,
+                video_token_id=video_token_id,
+            )
+            loss_value_and_grad = nn.value_and_grad(model, loss_fn)
+            logger.info(
+                "VL training: image-conditioned CE with visual embedding injection "
+                "(image_token_id=%s, video_token_id=%s)",
+                image_token_id,
+                video_token_id,
+            )
         else:
             if entropy_regularization:
                 # Measure baseline entropy to derive the floor
@@ -398,6 +425,17 @@ class _MLXTrainingAdapterTrainMixin:
                 answer_masked_dataset, batch_size, seq_length,
                 loop=False, seed=seed,
             )))
+        elif use_vl:
+            # VL path currently uses direct batches (no grad accumulation) because
+            # each sample carries variable-size visual tensors.
+            batch_iter = iterate_vl_batches(
+                train_dataset, batch_size, seq_length, loop=True, seed=seed,
+            )
+            n_batches_per_epoch = len(
+                list(iterate_vl_batches(
+                    train_dataset, batch_size, seq_length, loop=False, seed=seed,
+                ))
+            )
         else:
             # Gradient accumulation: use smaller micro-batches for forward/backward
             # to avoid OOM, accumulate grad_accum_steps micro-batches per optimizer step.
@@ -510,6 +548,11 @@ class _MLXTrainingAdapterTrainMixin:
                 inputs, targets, masks = next(batch_iter)
                 (loss, ntoks), grad = loss_value_and_grad(
                     model, inputs, targets, masks,
+                )
+            elif use_vl:
+                batch, lengths, pixel_values_batch, position_ids_batch = next(batch_iter)
+                (loss, ntoks), grad = loss_value_and_grad(
+                    model, batch, lengths, pixel_values_batch, position_ids_batch,
                 )
             else:
                 if grad_accum_steps <= 1:

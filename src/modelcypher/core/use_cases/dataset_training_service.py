@@ -423,7 +423,21 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
 
         # 1. Load model + tokenizer
         logger.info("Loading model from %s", model_path)
-        model, tokenizer = self._backend.load_model(str(model_path))
+        from modelcypher.backends._mlx_qwen35_vl_encoder import (  # noqa: PLC0415
+            is_qwen35_vl,
+            load_qwen35_vl_model,
+        )
+
+        model_path_str = str(model_path)
+        vl_model = is_qwen35_vl(model_path_str)
+        if vl_model:
+            logger.info(
+                "Detected Qwen3.5-VL model (vision_config present). "
+                "Loading text + visual encoder.",
+            )
+            model, tokenizer = load_qwen35_vl_model(model_path_str)
+        else:
+            model, tokenizer = self._backend.load_model(model_path_str)
 
         quantization_precheck_result: dict[str, Any] | None = None
         if quantization_reference_model_path is not None:
@@ -665,6 +679,14 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         # 2.6. Answer-masked dataset preparation
         answer_masked_train = None
         answer_masked_val = None
+        vl_samples_present = any(
+            isinstance(sample.get("image_path"), str) and bool(sample.get("image_path"))
+            for sample in (train_samples + eval_samples)
+        )
+        if answer_mask and vl_samples_present:
+            raise ValueError(
+                "--answer-mask is not yet supported for image-conditioned VL training."
+            )
         if answer_mask:
             missing_train = sum(
                 1 for sample in train_samples if "answer_start" not in sample
@@ -703,12 +725,50 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 len(answer_masked_val) if answer_masked_val else 0,
             )
 
-        train_dataset = self._adapter.prepare_dataset(train_samples, tokenizer)
-        eval_dataset = self._adapter.prepare_dataset(eval_samples, tokenizer)
+        if vl_samples_present:
+            if not vl_model:
+                raise ValueError(
+                    "Dataset contains image_path entries but model has no vision_config."
+                )
+            from modelcypher.backends._mlx_vl_preprocessor import (  # noqa: PLC0415
+                VLPreprocessor,
+            )
+
+            vl_preprocessor = VLPreprocessor.from_model_path(str(model_path))
+            train_dataset = vl_preprocessor.prepare_vl_dataset(train_samples, tokenizer)
+            eval_dataset = vl_preprocessor.prepare_vl_dataset(eval_samples, tokenizer)
+            logger.info(
+                "Prepared VL datasets: %d train / %d eval (image-conditioned)",
+                len(train_dataset), len(eval_dataset),
+            )
+        else:
+            train_dataset = self._adapter.prepare_dataset(train_samples, tokenizer)
+            eval_dataset = self._adapter.prepare_dataset(eval_samples, tokenizer)
         if not train_dataset:
             raise ValueError("No valid training samples after tokenization")
         if not eval_dataset:
             raise ValueError("No valid eval samples after tokenization")
+
+        # For VL, tokenization can expand <|image_pad|> to many visual-token slots.
+        # If derived seq_length underestimates this expanded length, bump to the
+        # nearest SIMD width boundary to avoid silent truncation.
+        if vl_samples_present:
+            vl_max_tokens = max(
+                int(sample["tokens"].shape[0]) for sample in (train_dataset + eval_dataset)
+            )
+            if vl_max_tokens > seq_length:
+                old_seq = seq_length
+                seq_length = (
+                    (vl_max_tokens + _MLX_SIMD_WIDTH - 1) // _MLX_SIMD_WIDTH
+                ) * _MLX_SIMD_WIDTH
+                logger.info(
+                    "Adjusted seq_length for VL token expansion: %d -> %d "
+                    "(max_vl_tokens=%d, SIMD_width=%d)",
+                    old_seq,
+                    seq_length,
+                    vl_max_tokens,
+                    _MLX_SIMD_WIDTH,
+                )
 
         # Eval uses all available data. batch_size=1 eliminates padding waste
         # and computes exact per-sample loss (no approximation from batching).

@@ -311,6 +311,89 @@ This document is a derivation contract, not a promotion claim.
 
 ---
 
+## Entropy Operator Reconciliation (ACT-016, 2026-03-03)
+
+**Status:** Measured. Conclusion: H_attn and H_logit are different quantities.
+
+### Context
+
+The derivation in this document is written for H_attn = Shannon entropy of QK softmax weights
+α. The empirical r=0.507 reported in the causal chain uses H_logit = Shannon entropy of the
+token distribution obtained by projecting h_l through the final norm and unembedding matrix
+(Entropy-Lens). These are distinct operators. ACT-016 required measuring corr(H_attn, H_logit)
+per family to determine whether the derivation path is valid in spirit.
+
+### Operator Correlation Results
+
+| Family | Model | corr(H_attn, H_logit) | Interpretation |
+|--------|-------|----------------------|----------------|
+| Qwen | Qwen2.5-3B | r = -0.094 | Different quantities |
+
+**Threshold:** r > 0.7 → proxies (derivation valid in spirit). r < 0.3 → different quantities.
+
+Result: r = -0.094 on Qwen2.5-3B is firmly in the "different quantities" regime.
+H_attn and H_logit are not proxies for the same underlying posterior uncertainty on standard
+transformers. The existing derivation (H(α) → Cov[y] → curvature) does not theoretically
+explain the empirical r=0.507 chain, which operates on H_logit.
+
+**Note:** Full multi-family results (LFM2, Llama) pending. Qwen2.5-3B is the only confirmed
+datapoint. Additional families required to complete the per-family table.
+
+### F1 Operator Split Results
+
+| Family | F1_attn (H_attn → θ²) | F1_logit (H_logit → θ²) |
+|--------|----------------------|------------------------|
+| Qwen2.5-3B | r = -0.036, p = 0.835 (FAIL) | H_logit significant (PASS) |
+
+H_attn fails F1 on standard transformers. H_logit passes F1 (consistent with r=0.507 baseline).
+
+### Sign-Law Decomposition Results
+
+From `f5_sign_law_decomposition` falsifier (2026-03-03):
+
+**Equation:** `log(θ_total²) ≈ log||P_perp(h)δ||² - log||h||²`
+
+| Family | beta_theta | p-value | Significant | sign_match |
+|--------|-----------|---------|-------------|------------|
+| Qwen2.5 | -0.2773 | 0.0030 | Yes | True |
+| Llama | -0.0649 | 0.0188 | Yes | True |
+| LFM2 | -0.0549 | 0.3971 | No | True |
+| Qwen3 | +0.0113 | 0.8909 | No | False (non-significant) |
+
+**F5 sign-law result:** PASSES — no sign mismatches in significant families.
+
+**Observation:** The beta direction is negative for significant families — higher H_logit
+predicts lower θ_total² (lower angular curvature). This is counter to the naive expectation
+from the derivation direction (higher entropy → higher curvature). The sign-law test confirms
+the decomposition structure is consistent (numerator-denominator competition governs sign),
+but the mechanism for the negative direction remains open.
+
+### Implications for the Derivation
+
+1. **This derivation's scope:** The formal derivation (Steps 1–3 above) explains H_attn's
+   effect on curvature through the population covariance path. This path is theoretically
+   sound but empirically inoperative on standard transformers — H_attn does not correlate
+   with curvature on Qwen/Llama.
+
+2. **The empirical chain uses H_logit:** The r=0.507 link requires a separate derivation
+   framed around H_logit. H_logit measures posterior uncertainty about the next token; its
+   relationship to angular curvature must be derived from the unembedding geometry, not
+   from the attention operator V/W_O path.
+
+3. **Two separate derivation targets:**
+   - **Target A (this document's scope):** H_attn → Cov[y] → curvature (theoretically clean;
+     empirically not the operative path on standard transformers)
+   - **Target B (open):** H_logit → curvature (empirically operative, r=0.507; derivation
+     requires understanding why higher posterior uncertainty at position l implies lower
+     angular change — the negative sign is the key puzzle)
+
+4. **Reframing required for empirical chain closure:** The causal chain's H_logit → Δcurvature
+   link cannot be derived from the attention mechanics path developed here. A separate derivation
+   starting from the unembedding projection and its geometric relationship to layer output
+   changes is needed.
+
+---
+
 ## References
 
 - Facco et al. (2017), TwoNN intrinsic dimension estimator.
@@ -320,9 +403,14 @@ This document is a derivation contract, not a promotion claim.
   the logit-vs-attention entropy distinction, architecture-dependent sublayer sign tables,
   MLP gain variation data, and contrast with Codex falsifier tests. This document provides
   the empirical findings; the present document provides the formal derivation framework.
+- `docs/research/causal-chain-evidence-map.md`: Updated chain with H_attn/H_logit split;
+  ACT-016 results recorded at the `H_attn ↔ H_logit [EXPLORATORY]` link.
 - `docs/research/bayesian_geometry_connection.md`: Agarwal 2026 alignment with causal chain.
 - Curvature operator implementation:
   `scripts/curvature_accumulation_analysis.py` (`angular_change = arccos(cosine_similarity)`).
+  Contains: `try_compute_logit_entropy`, `mean_h_logit`, `operator_correlation`,
+  `f1_sign_logit`, `f3_logit_vs_attn_operator`, `f4_permutation_logit`, `f5_family_logit`,
+  `f5_sign_law_decomposition`.
 - TwoNN implementation:
   `src/modelcypher/core/domain/geometry/intrinsic_dimension.py`.
 - Empirical data: `results/entropy_curvature/entropy_curvature_results.json`.

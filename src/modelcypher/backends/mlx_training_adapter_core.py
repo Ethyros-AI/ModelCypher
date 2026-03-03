@@ -563,6 +563,74 @@ def iterate_paired_batches(
 
 
 # =============================================================================
+# Vision-Language Batch Iterator (image + text)
+# =============================================================================
+
+
+def iterate_vl_batches(
+    dataset: list[dict[str, Any]],
+    batch_size: int,
+    max_seq_length: int,
+    *,
+    loop: bool = False,
+    seed: int | None = None,
+):
+    """Yield VL batches with token tensor + per-sample visual tensors."""
+    import numpy as np
+
+    if len(dataset) < batch_size:
+        raise ValueError(
+            f"Dataset must have at least batch_size={batch_size}"
+            f" examples but only has {len(dataset)}."
+        )
+
+    idx = sorted(range(len(dataset)), key=lambda i: int(dataset[i]["tokens"].shape[0]))
+    batch_idx = [
+        idx[i : i + batch_size]
+        for i in range(0, len(idx) - batch_size + 1, batch_size)
+    ]
+
+    if seed is not None:
+        np.random.seed(seed)
+
+    while True:
+        for i in np.random.permutation(len(batch_idx)):
+            batch_samples = [dataset[j] for j in batch_idx[i]]
+            lengths = [min(int(s["tokens"].shape[0]), max_seq_length) for s in batch_samples]
+
+            if max(lengths) > max_seq_length:
+                print(
+                    f"[WARNING] Some sequences are longer than {max_seq_length} tokens. "
+                    f"The longest sentence {max(lengths)} will be truncated to {max_seq_length}. "
+                    "Consider pre-splitting your data to save memory."
+                )
+
+            pad_to = 32
+            max_length_in_batch = 1 + pad_to * ((max(lengths) + pad_to - 1) // pad_to)
+            max_length_in_batch = min(max_length_in_batch, max_seq_length)
+            batch_arr = np.zeros((batch_size, max_length_in_batch), np.int32)
+
+            pixel_values_batch: list[Any] = []
+            position_ids_batch: list[Any] = []
+
+            for j, sample in enumerate(batch_samples):
+                tok_np = np.array(sample["tokens"].tolist()[: lengths[j]], dtype=np.int32)
+                batch_arr[j, : lengths[j]] = tok_np
+                pixel_values_batch.append(sample.get("pixel_values"))
+                position_ids_batch.append(sample.get("position_ids"))
+
+            yield (
+                mx.array(batch_arr),
+                mx.array([[0, l] for l in lengths], dtype=mx.int32),
+                pixel_values_batch,
+                position_ids_batch,
+            )
+
+        if not loop:
+            break
+
+
+# =============================================================================
 # Answer-Masked Batch Iterator (for answer-span CE training)
 # =============================================================================
 
@@ -1096,6 +1164,96 @@ def make_eos_excluded_loss(eos_token_id: int):
         ce = ce.astype(mx.float32).sum() / mx.maximum(ntoks, mx.array(1.0))
 
         return ce, ntoks
+
+    return _loss
+
+
+# =============================================================================
+# Vision-Language Loss Wrapper
+# =============================================================================
+
+
+def make_vl_loss(
+    *,
+    image_token_id: int | None = None,
+    video_token_id: int | None = None,
+):
+    """Create CE loss for Qwen3.5-VL batches with visual embedding injection."""
+
+    def _loss(model, batch, lengths, pixel_values_batch, position_ids_batch):
+        inputs = batch[:, :-1]
+        targets = batch[:, 1:]
+
+        steps = mx.arange(1, targets.shape[1] + 1)
+        mask = mx.logical_and(steps >= lengths[:, 0:1], steps <= lengths[:, 1:])
+        if image_token_id is not None:
+            mask = mx.logical_and(mask, targets != image_token_id)
+        if video_token_id is not None:
+            mask = mx.logical_and(mask, targets != video_token_id)
+
+        total_ce = mx.array(0.0, dtype=mx.float32)
+        total_ntoks = mx.array(0.0, dtype=mx.float32)
+
+        text_model = getattr(model, "language_model", None)
+        text_backbone = getattr(text_model, "model", text_model)
+        embed_tokens = getattr(text_backbone, "embed_tokens", None)
+
+        for i in range(inputs.shape[0]):
+            sample_inputs = inputs[i : i + 1]
+            sample_targets = targets[i : i + 1]
+            sample_mask = mask[i : i + 1]
+
+            pixel_values = pixel_values_batch[i] if i < len(pixel_values_batch) else None
+            position_ids = position_ids_batch[i] if i < len(position_ids_batch) else None
+
+            if pixel_values is not None and position_ids is not None and hasattr(model, "visual"):
+                if embed_tokens is None:
+                    raise RuntimeError(
+                        "VL loss requires model.language_model.model.embed_tokens."
+                    )
+                if image_token_id is None:
+                    raise RuntimeError("VL loss requires image_token_id for embedding replacement.")
+
+                token_embeds = embed_tokens(sample_inputs)
+                visual_embeds = model.visual(pixel_values, position_ids).astype(token_embeds.dtype)
+                placeholder_positions = [
+                    j for j, tid in enumerate(sample_inputs[0].tolist()) if tid == image_token_id
+                ]
+                if len(placeholder_positions) != int(visual_embeds.shape[0]):
+                    raise RuntimeError(
+                        "Image placeholder count does not match visual token count: "
+                        f"{len(placeholder_positions)} vs {int(visual_embeds.shape[0])}."
+                    )
+
+                if placeholder_positions:
+                    parts = []
+                    start = 0
+                    for k, pos in enumerate(placeholder_positions):
+                        if pos > start:
+                            parts.append(token_embeds[:, start:pos, :])
+                        vis_k = mx.expand_dims(
+                            mx.expand_dims(visual_embeds[k], axis=0),
+                            axis=0,
+                        )
+                        parts.append(vis_k)
+                        start = pos + 1
+                    if start < token_embeds.shape[1]:
+                        parts.append(token_embeds[:, start:, :])
+                    input_embeddings = mx.concatenate(parts, axis=1)
+                else:
+                    input_embeddings = token_embeds
+
+                logits = model(sample_inputs, input_embeddings=input_embeddings)
+            else:
+                logits = model(sample_inputs)
+
+            ce = nn.losses.cross_entropy(logits, sample_targets) * sample_mask
+            ntoks = sample_mask.sum()
+            total_ce = total_ce + ce.astype(mx.float32).sum()
+            total_ntoks = total_ntoks + ntoks.astype(mx.float32)
+
+        denom = mx.maximum(total_ntoks, mx.array(1.0, dtype=mx.float32))
+        return total_ce / denom, total_ntoks
 
     return _loss
 

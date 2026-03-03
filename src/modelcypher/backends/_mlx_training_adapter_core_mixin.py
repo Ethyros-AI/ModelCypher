@@ -826,15 +826,55 @@ class _MLXTrainingAdapterCoreMixin:
         n_batches: int,
     ) -> tuple[float, float]:
         """Compute average loss and perplexity over a dataset."""
-        del tokenizer
         from mlx_lm.tuner.trainer import default_loss, iterate_batches
+
+        is_vl_dataset = (
+            isinstance(dataset, list)
+            and len(dataset) > 0
+            and isinstance(dataset[0], dict)
+            and "tokens" in dataset[0]
+            and "pixel_values" in dataset[0]
+        )
+        if is_vl_dataset:
+            image_token_id = dataset[0].get("image_token_id")
+            video_token_id = dataset[0].get("video_token_id")
+            vl_loss = make_vl_loss(
+                image_token_id=image_token_id,
+                video_token_id=video_token_id,
+            )
 
         total_loss = 0.0
         total_tokens = 0.0
         n_evaluated = 0
 
-        for batch, lengths in iterate_batches(dataset, batch_size, seq_length, loop=False):
-            loss, ntoks = default_loss(model, batch, lengths)
+        if is_vl_dataset:
+            batch_iter = iterate_vl_batches(
+                dataset,
+                batch_size,
+                seq_length,
+                loop=False,
+            )
+        else:
+            batch_iter = iterate_batches(
+                dataset,
+                batch_size,
+                seq_length,
+                loop=False,
+            )
+
+        for batch_item in batch_iter:
+            if is_vl_dataset:
+                batch, lengths, pixel_values_batch, position_ids_batch = batch_item
+                loss, ntoks = vl_loss(
+                    model,
+                    batch,
+                    lengths,
+                    pixel_values_batch,
+                    position_ids_batch,
+                )
+            else:
+                batch, lengths = batch_item
+                loss, ntoks = default_loss(model, batch, lengths)
             mx.eval(loss, ntoks)
             total_loss += float(loss) * float(ntoks)
             total_tokens += float(ntoks)

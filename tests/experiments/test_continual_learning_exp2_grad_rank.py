@@ -13,6 +13,7 @@ Run with:
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -49,9 +50,15 @@ def test_default_model_is_not_8b() -> None:
 
     Per AGENTS.md: 'Do NOT run 8B models for research iteration.'
     """
-    assert "8B" not in MODEL_PATH_DEFAULT, (
-        f"MODEL_PATH_DEFAULT points to an 8B model: {MODEL_PATH_DEFAULT!r}. "
-        "Use a ≤4B model for research iteration (AGENTS.md: smallest-first policy)."
+    match = re.search(r"(\d+(?:\.\d+)?)B\b", Path(MODEL_PATH_DEFAULT).name)
+    assert match is not None, (
+        f"Could not parse model size from MODEL_PATH_DEFAULT={MODEL_PATH_DEFAULT!r}"
+    )
+    size_b = float(match.group(1))
+    assert size_b < 8.0, (
+        f"MODEL_PATH_DEFAULT points to an 8B-or-larger model: "
+        f"{MODEL_PATH_DEFAULT!r} (parsed size={size_b}B). "
+        "Use a <8B model for research iteration (AGENTS.md: smallest-first policy)."
     )
 
 

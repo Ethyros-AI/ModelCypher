@@ -475,6 +475,115 @@ def test_answer_mask_without_answer_start_fails_fast(tmp_path: Path):
     assert err.diagnostics["missing_answer_start_count"] == len(rows) * 2
 
 
+def test_train_from_dataset_rejects_image_samples_for_non_vl_model(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_text("{}", encoding="utf-8")
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    rows = [{"text": "<|image_pad|> describe image", "image_path": "img.jpg"}]
+    _write_jsonl(train_path, rows)
+    _write_jsonl(eval_path, rows)
+
+    service = DatasetTrainingService(adapter=_DummyAdapter(), backend=_DummyBackend())
+    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
+
+    with pytest.raises(ValueError, match="model has no vision_config"):
+        service.train_from_dataset(
+            model_path=model_dir,
+            dataset_path=train_path,
+            eval_dataset_path=eval_path,
+            no_save=True,
+        )
+
+
+def test_train_from_dataset_uses_vl_loader_and_preprocessor(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_text(
+        json.dumps({"vision_config": {"spatial_merge_size": 2}}),
+        encoding="utf-8",
+    )
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(train_path, [{"text": "<|image_pad|> train sample", "image_path": "img1.jpg"}])
+    _write_jsonl(eval_path, [{"text": "<|image_pad|> eval sample", "image_path": "img2.jpg"}])
+
+    class _NoFallbackLoadBackend(_FlowBackend):
+        def __init__(self) -> None:
+            super().__init__()
+            self.load_model_called = False
+
+        def load_model(self, _model_path: str):
+            self.load_model_called = True
+            raise AssertionError("backend.load_model should not be used for VL models")
+
+    class _FakeTokens:
+        def __init__(self, length: int) -> None:
+            self.shape = (length,)
+
+    class _FakeVLPreprocessor:
+        def __init__(self, calls: dict[str, int]) -> None:
+            self._calls = calls
+
+        def prepare_vl_dataset(self, samples: list[dict], _tokenizer) -> list[dict]:
+            self._calls["preprocess"] += 1
+            return [
+                {
+                    "tokens": _FakeTokens(65),
+                    "pixel_values": object(),
+                    "position_ids": object(),
+                    "n_text_tokens": 65,
+                    "image_token_id": 151655,
+                    "video_token_id": 151656,
+                }
+                for _ in samples
+            ]
+
+    backend = _NoFallbackLoadBackend()
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=backend)
+    _patch_lightweight_training(monkeypatch, service)
+    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
+
+    calls = {"vl_load": 0, "preprocess": 0}
+
+    def _fake_vl_loader(_model_path: str):
+        calls["vl_load"] += 1
+        return _FlowModel(), object()
+
+    monkeypatch.setattr(
+        "modelcypher.backends._mlx_qwen35_vl_encoder.is_qwen35_vl",
+        lambda _model_path: True,
+    )
+    monkeypatch.setattr(
+        "modelcypher.backends._mlx_qwen35_vl_encoder.load_qwen35_vl_model",
+        _fake_vl_loader,
+    )
+    monkeypatch.setattr(
+        "modelcypher.backends._mlx_vl_preprocessor.VLPreprocessor.from_model_path",
+        classmethod(lambda _cls, _model_path: _FakeVLPreprocessor(calls)),
+    )
+
+    result = service.train_from_dataset(
+        model_path=model_dir,
+        dataset_path=train_path,
+        eval_dataset_path=eval_path,
+        no_save=True,
+        max_iters_cap=1,
+    )
+
+    assert isinstance(result, DatasetTrainResult)
+    assert calls["vl_load"] == 1
+    assert calls["preprocess"] == 2
+    assert backend.load_model_called is False
+
+
 def test_geometry_manifest_written_with_sigma_k(tmp_path: Path):
     model_dir = tmp_path / "model"
     model_dir.mkdir()

@@ -547,7 +547,24 @@ class _MLXTrainingAdapterDiagnosticsMixin:
         from mlx.utils import tree_flatten as mlx_flatten
         from mlx_lm.tuner.trainer import default_loss, iterate_batches
 
-        loss_vg = nn.value_and_grad(model, default_loss)
+        is_vl_dataset = (
+            isinstance(train_dataset, list)
+            and len(train_dataset) > 0
+            and isinstance(train_dataset[0], dict)
+            and "tokens" in train_dataset[0]
+            and "pixel_values" in train_dataset[0]
+        )
+        if is_vl_dataset:
+            image_token_id = train_dataset[0].get("image_token_id")
+            video_token_id = train_dataset[0].get("video_token_id")
+            loss_fn = make_vl_loss(
+                image_token_id=image_token_id,
+                video_token_id=video_token_id,
+            )
+        else:
+            loss_fn = default_loss
+
+        loss_vg = nn.value_and_grad(model, loss_fn)
 
         def _norm_sq(flat_grads: dict[str, Any]) -> float:
             total = 0.0
@@ -561,10 +578,23 @@ class _MLXTrainingAdapterDiagnosticsMixin:
         mean_grad: dict[str, Any] = {}
 
         # Pass 1: accumulate mean gradient and mean norm.
-        for batch, lengths in iterate_batches(
-            train_dataset, 1, seq_length, loop=False, seed=0,
-        ):
-            (loss, _), grads = loss_vg(model, batch, lengths)
+        if is_vl_dataset:
+            pass1_iter = iterate_vl_batches(
+                train_dataset, 1, seq_length, loop=False, seed=0,
+            )
+        else:
+            pass1_iter = iterate_batches(
+                train_dataset, 1, seq_length, loop=False, seed=0,
+            )
+        for item in pass1_iter:
+            if is_vl_dataset:
+                batch, lengths, pixel_values_batch, position_ids_batch = item
+                (loss, _), grads = loss_vg(
+                    model, batch, lengths, pixel_values_batch, position_ids_batch,
+                )
+            else:
+                batch, lengths = item
+                (loss, _), grads = loss_vg(model, batch, lengths)
             mx.eval(loss)
 
             flat_grads = dict(mlx_flatten(grads))
@@ -602,10 +632,23 @@ class _MLXTrainingAdapterDiagnosticsMixin:
         # Pass 2: accumulate variance around mean gradient.
         variance_sum = 0.0
         second_count = 0
-        for batch, lengths in iterate_batches(
-            train_dataset, 1, seq_length, loop=False, seed=0,
-        ):
-            (loss, _), grads = loss_vg(model, batch, lengths)
+        if is_vl_dataset:
+            pass2_iter = iterate_vl_batches(
+                train_dataset, 1, seq_length, loop=False, seed=0,
+            )
+        else:
+            pass2_iter = iterate_batches(
+                train_dataset, 1, seq_length, loop=False, seed=0,
+            )
+        for item in pass2_iter:
+            if is_vl_dataset:
+                batch, lengths, pixel_values_batch, position_ids_batch = item
+                (loss, _), grads = loss_vg(
+                    model, batch, lengths, pixel_values_batch, position_ids_batch,
+                )
+            else:
+                batch, lengths = item
+                (loss, _), grads = loss_vg(model, batch, lengths)
             mx.eval(loss)
 
             flat_grads = dict(mlx_flatten(grads))
@@ -680,14 +723,33 @@ class _MLXTrainingAdapterDiagnosticsMixin:
         from mlx.utils import tree_flatten as mlx_flatten
         from mlx_lm.tuner.trainer import default_loss, iterate_batches
 
+        is_vl_dataset = (
+            isinstance(train_dataset, list)
+            and len(train_dataset) > 0
+            and isinstance(train_dataset[0], dict)
+            and "tokens" in train_dataset[0]
+            and "pixel_values" in train_dataset[0]
+        )
         max_candidate = min(int(logical_batch_size), len(train_dataset))
         if max_candidate <= 1:
             return 1
 
-        loss_vg = nn.value_and_grad(model, default_loss)
+        if is_vl_dataset:
+            image_token_id = train_dataset[0].get("image_token_id")
+            video_token_id = train_dataset[0].get("video_token_id")
+            loss_fn = make_vl_loss(
+                image_token_id=image_token_id,
+                video_token_id=video_token_id,
+            )
+        else:
+            loss_fn = default_loss
+        loss_vg = nn.value_and_grad(model, loss_fn)
 
         def _token_length(sample: Any) -> int:
-            tokens = sample[0]
+            if is_vl_dataset:
+                tokens = sample["tokens"]
+            else:
+                tokens = sample[0]
             shape = getattr(tokens, "shape", None)
             if shape is not None and len(shape) > 0:
                 return int(shape[0])
@@ -715,16 +777,34 @@ class _MLXTrainingAdapterDiagnosticsMixin:
                 if hasattr(self._backend, "reset_peak_memory"):
                     self._backend.reset_peak_memory()
 
-                batch, lengths = next(
-                    iterate_batches(
-                        probe_dataset,
-                        probe_size,
-                        seq_length,
-                        loop=False,
-                        seed=seed,
+                if is_vl_dataset:
+                    batch, lengths, pixel_values_batch, position_ids_batch = next(
+                        iterate_vl_batches(
+                            probe_dataset,
+                            probe_size,
+                            seq_length,
+                            loop=False,
+                            seed=seed,
+                        )
                     )
-                )
-                (loss, _), grads = loss_vg(model, batch, lengths)
+                    (loss, _), grads = loss_vg(
+                        model,
+                        batch,
+                        lengths,
+                        pixel_values_batch,
+                        position_ids_batch,
+                    )
+                else:
+                    batch, lengths = next(
+                        iterate_batches(
+                            probe_dataset,
+                            probe_size,
+                            seq_length,
+                            loop=False,
+                            seed=seed,
+                        )
+                    )
+                    (loss, _), grads = loss_vg(model, batch, lengths)
                 flat = dict(mlx_flatten(grads))
                 if flat:
                     mx.eval(loss, *flat.values())
