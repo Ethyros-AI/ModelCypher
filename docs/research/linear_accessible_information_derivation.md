@@ -248,17 +248,67 @@ floor used in the original information_bridge experiment.
 
 ---
 
-## 8. Claim-State Summary
+## 8. Results — Linear-CKA Rerun (2026-03-03)
+
+**Models:** LFM2-350M, LFM2-700M, Qwen3.5-0.8B  **Probes:** 200  **Operator:** `compute_linear_cka_from_activations`
+
+### 8.1 P1-R: CKA Depth-Distance Decay
+
+| Model | Spearman r | p-value | Pass (p<0.01) |
+|-------|-----------|---------|----------------|
+| LFM2-350M | -0.319 | 3.85e-4 | yes |
+| LFM2-700M | -0.168 | 0.066 | **no** |
+| Qwen3.5-0.8B | -0.413 | 8.21e-13 | yes |
+
+Pre-registered threshold: all 3 models at p < 0.01. Not met (2/3). Sign is consistently
+negative. Per Rule 5 (§7.5): consistent-non-significant ≠ `[DISPROVEN]`.
+
+**Classification: `[EXPLORATORY]`.**
+
+Secondary finding: geodesic CKA P1 was `[VALIDATED]` 3/3 under shared-sigma σ* calibration
+(σ*=0.928 for 350M, σ*=1.744 for 700M). Linear CKA gives p=0.066 for 700M — not significant.
+Interpretation: the geodesic shared-sigma selection amplified the distance-decay correlation
+for 700M. The original geodesic P1 `[VALIDATED]` result now requires a scope qualifier:
+"holds under geodesic RBF with calibrated σ* per model." The linear-CKA operator, which has
+no bandwidth parameter, isolates the structural signal without sigma amplification.
+
+### 8.2 P4-R: Phase Block Structure
+
+| Model | Within-phase | Cross-phase | Ratio | Pass (ratio>1) |
+|-------|-------------|-------------|-------|-----------------|
+| LFM2-350M | 0.769 | 0.759 | 1.013 | yes |
+| LFM2-700M | 0.866 | 0.845 | 1.025 | yes |
+| Qwen3.5-0.8B | 0.897 | 0.863 | 1.040 | yes |
+
+Ratio > 1 for all 3 models. Pre-registered falsifier also requires permutation p < 0.01, which
+is not reported by the current script. The ratio condition is met 3/3.
+
+**Classification: `[EMPIRICAL]`** (measured, 3 models, no permutation test in reports).
+
+Upgrade path: add permutation test to P8 evaluation in the script → `[VALIDATED]` on re-run
+if p < 0.01 across 2/3+ models.
+
+### 8.3 P2-R: Input Similarity Trajectory
+
+Not extracted in this run. `cka_matrix.json` contains the full L×L matrix; row 0 =
+CKA_linear(H_0, H_l). Requires post-processing. **Status: unmeasured.**
+
+---
+
+## 9. Claim-State Summary
 
 - `[PROVEN]` Total Shannon MI depth decay is not a valid observable in deterministic residual chains.
 - `[PROVEN]` Linear CKA is a commensurable, basis-invariant second-order overlap operator.
-- `[VALIDATED]` CKA depth-distance decay and phase block structure (current model set, geodesic CKA).
-- `[EXPLORATORY]` Linear-CKA replication of those two results (pending re-run).
+- `[VALIDATED]` CKA depth-distance decay and phase block structure (geodesic CKA, 3/3 families).
+  Scope qualifier: holds under geodesic RBF with calibrated σ* per model — see §8.1.
+- `[EXPLORATORY]` Linear-CKA depth-distance decay (P1-R): 2/3 families, direction consistent.
+- `[EMPIRICAL]` Linear-CKA phase block structure (P4-R): 3/3 families, ratio > 1.
+- `[EXPLORATORY]` P2-R input similarity trajectory: unmeasured, pending cka_matrix.json extraction.
 - `[EXPLORATORY]` Quantitative architecture and scale law for CKA slope magnitude.
 
 ---
 
-## 9. References
+## 10. References
 
 - Goldfeld, Z. et al. (2019). *Estimating Information Flow in Deep Neural Networks*.
 - Kornblith, S. et al. (2019). *Similarity of Neural Network Representations Revisited*.

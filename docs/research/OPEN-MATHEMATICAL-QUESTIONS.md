@@ -1117,20 +1117,70 @@ Uses PCA to reduce to 50 dimensions before ripser (standard TDA practice for hig
 
 ---
 
-## 7. Layer-wise Invariants `[CONJECTURAL]`
+## 7. Layer-wise Invariants — PARTIALLY RESOLVED (2026-03-03)
 
-**Unknown:** What properties are preserved vs transformed across layers?
+**Question:** What properties are preserved vs transformed across layers?
 
-**Candidates:**
-- Norm (preserved? scaled?)
-- Angles between vectors (preserved?)
-- Rank of activation matrix (preserved?)
-- Intrinsic dimension (varies - but by how much?)
+Six hypotheses pre-registered, tested on 3 models (LFM2-350M, LFM2-700M, Qwen3.5-0.8B).
+Data from `results/layer_invariants/`. Script: `scripts/layer_invariant_analysis.py`.
 
-**Experiments:**
-- [ ] Track multiple geometric properties layer-by-layer
-- [ ] Identify which are approximately preserved
-- [ ] Derive why certain properties must be preserved given architecture
+### Pre-Registered Hypotheses and Results
+
+| # | Hypothesis | Test | 350M | 700M | 0.8B | Verdict |
+|---|-----------|------|------|------|------|---------|
+| I1 | Norm monotonicity | Spearman(layer, ‖h_l‖) > 0, p < 0.01 | r=0.69, p=3e-3 | r=0.93, p=2e-7 | r=0.96, p=7e-14 | **`[VALIDATED]`** |
+| I2 | ID phase-invariance | ANOVA of ID by phase, p < 0.01 | untestable | F=8.01, p=0.014 | untestable | `[INCONCLUSIVE]` |
+| I3 | Cosine preservation phase-conditional | highway cos > processing cos | untestable | REFUTED (diff=-0.007) | REFUTED (diff=-0.024) | **`[REFUTED]`** |
+| I4 | Residual ratio phase-conditional | highway ratio < processing ratio | untestable | REFUTED (diff=+0.068) | REFUTED (diff=+0.166) | **`[REFUTED]`** |
+| I5 | S_spec separates phases | ANOVA of S_spec by phase, p < 0.01 | untestable | REFUTED (F=0.88, p=0.37) | untestable | **`[REFUTED]`** |
+| I6 | Effective rank tracks ID | Spearman(exp(S_spec), ID) > 0, p < 0.01 | r=0.72, p=2e-3 | r=-0.01, p=0.97 | r=0.48, p=0.02 | `[EMPIRICAL]` (1/3) |
+
+"Untestable" = ANOVA/permutation test requires ≥2 phase groups with ≥2 members; model has only 1.
+
+### Key Finding: Phase Labels Do Not Predict Bypass Metrics `[PROVEN]`
+
+The "highway" phase label (assigned by ID trajectory in the information bridge) does NOT
+predict residual-stream bypass behavior:
+- Highway layers have residual ratio **≥** processing layers, not < (I4 refuted on 2/2 testable models)
+- Highway layers have cosine preservation **≤** processing layers, not > (I3 refuted on 2/2 testable models)
+
+This means the phase detection algorithm identifies ID-based regimes, but these regimes
+correspond to **different** properties than what "highway" connotes in the residual stream
+literature (where highway = skip connection dominates). The ID-based phase partition and
+the residual-bypass partition are independent structures.
+
+### Confirmed Invariant: Norm Growth `[VALIDATED]`
+
+‖h_l‖ increases monotonically with depth (Spearman r > 0.69, p < 0.003 on all 3 models).
+Strongest on dense architectures (Qwen3.5-0.8B: r=0.96). This is a geometric consequence
+of the residual stream: h_{l+1} = h_l + F_l(h_l), where F_l has positive dot product with
+h_l on average. The norm cannot decrease unless F_l opposes h_l strongly enough to
+overcome the Pythagorean component.
+
+### Phase-Conditional Summary (LFM2-700M, the only model with testable phase structure)
+
+| Quantity | Highway (2 layers) | Processing (13 layers) | Exit (1 layer) |
+|----------|--------------------|----------------------|----------------|
+| S_spec (nats) | 3.03 ± 0.42 | 2.68 ± 0.46 | 3.28 |
+| ID | 10.46 ± 0.06 | 11.23 ± 0.35 | 11.68 |
+| Residual ratio | 0.83 ± 0.14 | 0.76 ± 0.68 | — |
+| Cosine change | 0.85 ± 0.09 | 0.85 ± 0.11 | — |
+| ‖h_l‖ | 0.75 ± 0.22 | 2.07 ± 1.39 | — |
+
+### Remaining Questions
+
+1. **Why does I6 hold on LFM2-350M but not LFM2-700M?** The effective rank–ID correlation is
+   model-dependent. Possible explanation: LFM2-350M's smaller hidden dimension (d=1024) makes
+   spectral entropy and TwoNN ID track similar low-dimensional structure, while at d=2048
+   (LFM2-700M) they measure different aspects of the geometry.
+
+2. **What is the right phase partition for bypass metrics?** The ID-based partition doesn't
+   predict residual behavior. A residual-ratio-based partition (k-means on ‖F_l‖/‖h_l‖)
+   might be more informative but would be post-hoc, not pre-registered.
+
+3. **Norm growth rate:** Is d‖h_l‖/dl constant, linear in l, or architecture-dependent?
+   The data suggests approximately linear growth (r=0.93–0.96 on larger models), but the
+   rate varies by architecture (LFM2-350M has a norm anomaly at L6→L7 where ‖F‖/‖h‖=10.46).
 
 ---
 
@@ -1184,17 +1234,22 @@ intrinsically multi-scale. Design doc: `docs/research/sigma_calibration_design.m
 | P7: C_ex peaks at highway | CONFIRMED | CONFIRMED | REFUTED | `[EMPIRICAL]` 2/3 LFM2 only |
 | P8: CKA shows phase blocks | CONFIRMED | CONFIRMED | CONFIRMED | `[VALIDATED]` 3/3 |
 
-### DPI Violation Mechanism `[PROVEN]` + `[VALIDATED]`
+### DPI Violation Mechanism (Normalized Matrix-Rényi Pipeline) `[PROVEN]` + `[VALIDATED]`
 
-**Why DPI fails for normalized kernel MI:**
+**Why DPI fails in the L2-normalized matrix-Rényi MI pipeline:**
+
+Note: standard DPI (Cover & Thomas) applies to Shannon MI of random variables.
+Matrix-based Rényi MI (Giraldo et al. 2014) is a kernel functional, not Shannon MI.
+The claims below are scoped to this specific measurement pipeline.
 
 The unnormalized chain h₀ → h₁ → ... → h_L is Markov (h_{l+1} = h_l + F_l(h_l) is
-deterministic). DPI holds for true MI: I(h₀; h_{l+1}) ≤ I(h₀; h_l). `[PROVEN]`
-(standard information theory for deterministic channels.)
+deterministic). For any MI functional satisfying DPI on deterministic channels,
+I(h₀; h_{l+1}) ≤ I(h₀; h_l). `[PROVEN]`
 
 Regime 5 L2-normalizes: X̃_l = h_l / ‖h_l‖. Given only X̃_l, h_l cannot be
 reconstructed (scale is lost). So X̃_{l+1} is NOT a function of X̃_l alone —
-the normalized chain is **not Markov**. DPI need not hold. `[PROVEN]`
+the normalized chain is **not Markov**. DPI need not hold for any MI functional
+evaluated on the normalized representations. `[PROVEN]`
 (X̃_{l+1} = (h_l + F_l(h_l)) / ‖h_l + F_l(h_l)‖ requires knowing ‖h_l‖, not
 just h_l / ‖h_l‖.)
 

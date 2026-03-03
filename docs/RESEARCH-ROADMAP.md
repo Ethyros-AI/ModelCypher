@@ -249,7 +249,11 @@ Why does Qwen3 have sharper attention than Qwen2.5 despite similar architecture?
 - [x] Regime 4 (L2+shared sigma) tested
 - [x] Regime 5 (calibrated sigma) tested — improves P4 but P5 split persists
 - [x] Derive protocol-compliant replacement observable for deterministic residual chains (linear-accessible information via linear CKA): `docs/research/linear_accessible_information_derivation.md`
-- [ ] Re-run depth-slope and phase-block tests with `compute_linear_cka_from_activations` to validate the replacement observable directly
+- [x] Re-run depth-slope and phase-block tests with `compute_linear_cka_from_activations` (2026-03-03, 200 probes):
+  P1-R `[EXPLORATORY]`: 2/3 (350M r=-0.32 p=3.8e-4 ✓; 700M r=-0.17 p=0.066 ✗; Qwen r=-0.41 p=8.2e-13 ✓). Direction consistent.
+  P4-R `[EMPIRICAL]`: 3/3 ratio>1 (1.013/1.025/1.040). Permutation p pending (upgrade path to `[VALIDATED]`).
+  P2-R: unmeasured — cka_matrix.json row-0 extraction needed.
+  Interaction: geodesic CKA P1 `[VALIDATED]` result carries unregistered sigma-selection term — see `docs/research/linear_accessible_information_derivation.md` §8.1.
 - [ ] Derive Shannon-compatible estimator that satisfies DPI for cross-layer comparison
 - [ ] Formalize why P5 scale-dependence is real (350M ID range >> 700M ID range → same architecture, different width)
 - [ ] Architecture-conditioned MI claim contract (required before any new MI promotion)

@@ -73,6 +73,25 @@ Three independent failure modes:
 
 **Artifacts:** `results/information_bridge/LFM2-350M/`, `LFM2-700M/`, `Qwen3.5-0.8B/` — each contains `predictions.json`, `report.md` (Regime 5 results), `trajectories.json`, `cka_matrix.json`, `renyi_mi_matrix.json`.
 
+### Linear-CKA Rerun (2026-03-03)
+
+Operator: `compute_linear_cka_from_activations` (dot-product Gram, no bandwidth parameter).
+Full protocol and results: `docs/research/linear_accessible_information_derivation.md` §7–8.
+
+| Claim | Evidence | Classification |
+|-------|----------|----------------|
+| P1-R: CKA_linear ∝ \|i-j\| | 350M r=-0.32 p=3.8e-4 ✓; 700M r=-0.17 p=0.066 ✗; Qwen r=-0.41 p=8.2e-13 ✓ | `[EXPLORATORY]` |
+| P4-R: linear CKA phase blocks | 3/3 ratio>1 (1.013, 1.025, 1.040); permutation p not reported | `[EMPIRICAL]` |
+| P2-R: CKA_linear(H₀, H_l) decay | Not extracted in this run | Pending |
+
+Interaction finding: geodesic CKA P1 was `[VALIDATED]` 3/3; linear CKA P1 is 2/3 (700M fails p<0.01).
+The 700M gap (σ*=1.744 vs 350M σ*=0.928) indicates the geodesic shared-sigma was amplifying 700M's
+distance-decay correlation. The geodesic P1 result is not invalidated but now requires scope: "holds
+under geodesic RBF with calibrated σ*." The linear-CKA operator makes this interaction visible by
+removing the bandwidth degree of freedom.
+
+**Linear-CKA artifacts:** `results/information_bridge_linear_cka/LFM2-350M/`, `LFM2-700M/`, `Qwen3.5-0.8B/`.
+
 ---
 
 ## Experiment Refutations — 5/5 H1 REFUTED (2026-02-26) `[EMPIRICAL]`
