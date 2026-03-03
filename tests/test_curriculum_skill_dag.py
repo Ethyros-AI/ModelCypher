@@ -46,13 +46,17 @@ EXPECTED_SKILL_TRAIN_FILES = {
     "modus_tollens":            "data/training/modus_tollens_train.jsonl",
     "disjunctive_syllogism":    "data/training/disj_syllogism_train.jsonl",
     "universal_instantiation":  "data/training/universal_instantiation_train.jsonl",
-    "arithmetic_add":           "data/training/arithmetic_add_train.jsonl",
+    # arithmetic_add was decomposed into three formal sub-skills:
+    "single_digit_add":         "data/training/single_digit_add_train.jsonl",
+    "carry_rule":               "data/training/carry_rule_train.jsonl",
+    "multi_digit_add":          "data/training/multi_digit_add_train.jsonl",
+    "arithmetic_multiply":      "data/training/arithmetic_multiply_train.jsonl",
     "arithmetic_divide":        "data/training/arithmetic_div_train.jsonl",
 }
 
 
 def test_five_skill_nodes_have_train_files():
-    """Each of the five previously-empty skill nodes now references a train file."""
+    """Each wired skill node references its expected train file."""
     from modelcypher.core.use_cases.curriculum.skill_dag import CURRICULUM_DAG
 
     for skill_name, expected_path in EXPECTED_SKILL_TRAIN_FILES.items():
@@ -62,6 +66,42 @@ def test_five_skill_nodes_have_train_files():
         assert expected_path in node.train_files, (
             f"Skill '{skill_name}' train_files={node.train_files!r} "
             f"does not contain '{expected_path}'"
+        )
+
+
+def test_arithmetic_add_node_removed():
+    """arithmetic_add has been decomposed — it must not exist in the DAG."""
+    from modelcypher.core.use_cases.curriculum.skill_dag import CURRICULUM_DAG
+    names = {n.name for n in CURRICULUM_DAG.nodes}
+    assert "arithmetic_add" not in names, (
+        "arithmetic_add was decomposed into single_digit_add / carry_rule / multi_digit_add "
+        "and must not exist as a node"
+    )
+    assert "single_digit_add" in names
+    assert "carry_rule" in names
+    assert "multi_digit_add" in names
+
+
+def test_arithmetic_dag_dependency_chain():
+    """single_digit_add → carry_rule → multi_digit_add → arithmetic_multiply chain holds."""
+    from modelcypher.core.use_cases.curriculum.skill_dag import CURRICULUM_DAG
+    assert "single_digit_add" in CURRICULUM_DAG.get("carry_rule").prerequisites
+    assert "carry_rule" in CURRICULUM_DAG.get("multi_digit_add").prerequisites
+    assert "multi_digit_add" in CURRICULUM_DAG.get("arithmetic_multiply").prerequisites
+    assert "multi_digit_add" in CURRICULUM_DAG.get("word_problem_1step").prerequisites
+
+
+def test_arithmetic_nodes_have_numeric_answer_mode():
+    """All arithmetic nodes use answer_mode='numeric'."""
+    from modelcypher.core.use_cases.curriculum.skill_dag import CURRICULUM_DAG
+    numeric_nodes = [
+        "single_digit_add", "carry_rule", "multi_digit_add",
+        "arithmetic_multiply", "arithmetic_divide",
+    ]
+    for name in numeric_nodes:
+        node = CURRICULUM_DAG.get(name)
+        assert node.answer_mode == "numeric", (
+            f"Expected {name}.answer_mode == 'numeric', got {node.answer_mode!r}"
         )
 
 

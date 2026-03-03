@@ -5,7 +5,7 @@ See docs/curriculum/skill_dag.md for the full specification with proof sketches.
 
 Key property: Skill B lists Skill A as a prerequisite iff the proof of B requires A.
 Training order = any topological sort of this DAG.
-Mastery criterion = auto-regime detects 'reinforce' on held-out eval for that node.
+Mastery criterion = n_correct == n_total on held-out eval set.
 """
 
 from __future__ import annotations
@@ -26,6 +26,12 @@ class SkillNode:
         train_files: Relative paths (from project root) to training JSONL files.
         eval_files: Relative paths to held-out eval JSONL files (not used in training).
         branch: 'logic' | 'math' — which branch of the DAG this belongs to.
+        answer_mode: How to compare model output to expected answer during eval.
+            'exact': expected substring must appear in generated text (default).
+            'numeric': extract last integer from both expected and generated;
+                       compare as integers. Use for arithmetic nodes whose training
+                       data includes scratchpad steps that the model may generate
+                       even when the eval item only specifies the final number.
         notes: Optional clarifications (not used by scheduler).
     """
 
@@ -35,6 +41,7 @@ class SkillNode:
     train_files: tuple[str, ...]
     eval_files: tuple[str, ...]
     branch: str
+    answer_mode: str = "exact"
     notes: str = ""
 
 
@@ -193,7 +200,7 @@ def build_curriculum_dag() -> SkillDAG:
             branch="logic",
             notes=(
                 "Proven independent of MP: proof uses disjunction elimination, not MP. "
-                "Root node (depth 0) parallel to modus_ponens and arithmetic_add."
+                "Root node (depth 0) parallel to modus_ponens and single_digit_add."
             ),
         ),
 
@@ -287,35 +294,84 @@ def build_curriculum_dag() -> SkillDAG:
         ),
 
         # ── Math Branch ───────────────────────────────────────────────────
+        # arithmetic_add is decomposed into three formal sub-skills:
+        #   single_digit_add → carry_rule → multi_digit_add
+        # Each dependency is provable: carry_rule cannot be derived from
+        # single-digit lookup alone; multi_digit_add requires applying
+        # carry_rule recursively across digit positions.
 
         SkillNode(
-            name="arithmetic_add",
-            formal_statement="Given integers A, B, compute C = A + B.",
+            name="single_digit_add",
+            formal_statement="(A, B ∈ [0,9]) ⊢ A + B = C",
             prerequisites=(),
             train_files=(
-                "data/training/arithmetic_add_train.jsonl",
+                "data/training/single_digit_add_train.jsonl",
             ),
             eval_files=(
-                "data/eval/arithmetic_add_eval.jsonl",
+                "data/eval/single_digit_add_eval.jsonl",
             ),
             branch="math",
-            notes="Primitive arithmetic operation. No prerequisites.",
+            answer_mode="numeric",
+            notes=(
+                "Enumerable: exactly 100 ordered pairs. Lookup is the correct "
+                "representation — no carry occurs within single-digit sums ≤ 18."
+            ),
+        ),
+
+        SkillNode(
+            name="carry_rule",
+            formal_statement="A + B ≥ 10 → write (A+B) mod 10, carry 1",
+            prerequisites=("single_digit_add",),
+            train_files=(
+                "data/training/carry_rule_train.jsonl",
+            ),
+            eval_files=(
+                "data/eval/carry_rule_eval.jsonl",
+            ),
+            branch="math",
+            answer_mode="numeric",
+            notes=(
+                "Cannot be derived from single_digit_add alone — requires the rule "
+                "'when sum exceeds one digit, write digit and carry 1'. "
+                "This is the bridging rule between table lookup and column arithmetic."
+            ),
+        ),
+
+        SkillNode(
+            name="multi_digit_add",
+            formal_statement="Column-wise addition with carry propagation, any digit count.",
+            prerequisites=("carry_rule",),
+            train_files=(
+                "data/training/multi_digit_add_train.jsonl",
+            ),
+            eval_files=(
+                "data/eval/multi_digit_add_eval.jsonl",
+            ),
+            branch="math",
+            answer_mode="numeric",
+            notes=(
+                "Structural recursion: apply carry_rule column-by-column from ones position. "
+                "Training on 2-digit, eval on 3-digit (OOD) verifies procedure generalization."
+            ),
         ),
 
         SkillNode(
             name="arithmetic_multiply",
-            formal_statement="Given integers A, B, compute C = A × B.",
-            prerequisites=("arithmetic_add",),
+            formal_statement="Given integers A, B (B single-digit), compute C = A × B.",
+            prerequisites=("multi_digit_add",),
             train_files=(
-                "data/training/retention_replay.jsonl",
+                "data/training/arithmetic_multiply_train.jsonl",
             ),
             eval_files=(
                 "data/eval/arithmetic_multiply_eval.jsonl",
             ),
             branch="math",
+            answer_mode="numeric",
             notes=(
-                "A × B = A added to itself B times (definition). "
-                "retention_replay.jsonl contains multiplication facts."
+                "A × B is column-by-column multiplication of each digit of A by B, "
+                "with carry propagation — same geometric trajectory as multi_digit_add. "
+                "Training: exhaustive 720 pairs (A ∈ [10,99], B ∈ [2,9]). "
+                "Eval OOD: A ∈ [100,999] tests procedure generalization."
             ),
         ),
 
@@ -326,6 +382,7 @@ def build_curriculum_dag() -> SkillDAG:
             train_files=(
                 "data/training/arithmetic_div_train.jsonl",
             ),
+            answer_mode="numeric",
             eval_files=(
                 "data/eval/arithmetic_divide_eval.jsonl",
             ),
@@ -341,7 +398,7 @@ def build_curriculum_dag() -> SkillDAG:
                 "Given a natural language description, identify the operation "
                 "and compute a single-operation answer."
             ),
-            prerequisites=("arithmetic_add", "modus_ponens"),
+            prerequisites=("multi_digit_add", "modus_ponens"),
             train_files=(
                 "data/training/gsm8k_easy_train.jsonl",
             ),

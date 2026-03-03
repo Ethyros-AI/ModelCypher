@@ -793,6 +793,83 @@ class TestProcrustesNumericalStability:
             assert result.dimension == 2
 
 
+class TestProcrustesConvergenceQuality:
+    """Tests that verify GPA actually converges to correct answers, not just metadata.
+
+    These exist because several existing tests check metadata (model_count, sample_count,
+    dimension) while ignoring whether the algorithm actually solved the alignment problem.
+    """
+
+    def test_three_identical_models_converge_with_zero_error(self) -> None:
+        """Three identical matrices → converged=True, alignment_error=0."""
+        matrix = [[1.0, 0.0], [0.0, 1.0]]
+        result = GeneralizedProcrustes().align([matrix, matrix, matrix])
+        assert result is not None
+        assert result.converged, (
+            f"GPA failed to converge on identical matrices (iterations={result.iterations})"
+        )
+        b = get_default_backend()
+        eps = _eps(b, result.alignment_error, 0.0)
+        assert abs(result.alignment_error - 0.0) <= eps, (
+            f"alignment_error={result.alignment_error} should be 0 for identical matrices"
+        )
+
+    def test_three_similar_models_actually_converge(self) -> None:
+        """Near-identical 2x2 matrices → converged=True (not just result is not None).
+
+        test_align_three_models only checks model_count/sample_count/dimension,
+        not whether GPA actually solved the problem.
+        """
+        m1 = [[1.0, 0.0], [0.0, 1.0]]
+        m2 = [[0.8, 0.2], [0.2, 0.8]]
+        m3 = [[0.9, 0.1], [0.1, 0.9]]
+        result = GeneralizedProcrustes().align([m1, m2, m3])
+        assert result is not None
+        assert result.converged, (
+            f"GPA failed to converge on near-identical matrices (iterations={result.iterations})"
+        )
+
+    def test_exact_rotation_gives_zero_alignment_error(self) -> None:
+        """m2 = m1 @ R for known rotation R → alignment_error ≈ 0 by construction.
+
+        If alignment error is nonzero here, GPA has a correctness bug, not just
+        a convergence issue.
+        """
+        import numpy as np
+        rng = np.random.default_rng(42)
+        m1 = rng.standard_normal((10, 2)).astype(np.float32)
+        theta = PI / 6  # 30 degrees
+        R = np.array(
+            [[np.cos(theta), -np.sin(theta)],
+             [np.sin(theta),  np.cos(theta)]],
+            dtype=np.float32,
+        )
+        m2 = m1 @ R
+        result = GeneralizedProcrustes().align([m1.tolist(), m2.tolist()])
+        assert result is not None
+        assert result.converged, (
+            f"GPA failed to converge for exact rotation (iterations={result.iterations})"
+        )
+        b = get_default_backend()
+        eps = _eps(b, result.alignment_error, 0.0)
+        assert result.alignment_error <= eps * 1000, (
+            f"alignment_error={result.alignment_error:.6f} too large for exact rotation — "
+            f"GPA may be computing the wrong consensus or rotation"
+        )
+
+    def test_consensus_variance_ratio_is_one_for_identical(self) -> None:
+        """Identical matrices → consensus_variance_ratio = 1.0 (all variance explained)."""
+        matrix = [[1.0, 0.0], [0.0, 1.0], [0.5, 0.5]]
+        result = GeneralizedProcrustes().align([matrix, matrix])
+        assert result is not None
+        b = get_default_backend()
+        eps = _eps(b, result.consensus_variance_ratio, 1.0)
+        assert abs(result.consensus_variance_ratio - 1.0) <= eps, (
+            f"consensus_variance_ratio={result.consensus_variance_ratio} should be 1.0 "
+            f"for identical matrices"
+        )
+
+
 class TestProcrustesRotationProperties:
     """Tests for rotation matrix properties."""
 

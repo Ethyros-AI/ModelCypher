@@ -345,6 +345,7 @@ class GeneralizedProcrustes:
         gpa_max_iterations = max(100, 10 * model_count)
         converged = False
         iterations = 0
+        prev_error = 0.0
         current_error = 0.0
 
         for iter_idx in range(gpa_max_iterations):
@@ -387,15 +388,20 @@ class GeneralizedProcrustes:
             current_error = float(self._backend.to_scalar(current_error_arr))
             total_energy = float(self._backend.to_scalar(total_energy_arr))
 
-            # Use relative residual error instead of relative change in error
-            # This is scale-invariant: same behavior regardless of input magnitude
+            # Convergence: GPA (Gower 1975) minimizes sum of squared residuals
+            # monotonically. Declare converged when improvement is negligible.
+            # Checking residual magnitude (current_error / total_energy) is WRONG
+            # for genuinely different matrices — that ratio is bounded below by the
+            # inherent variance in the data and never reaches sqrt(eps).
             eps = float(division_epsilon(self._backend, aligned_X))
-            rel_change = current_error / max(total_energy, eps)
-            if rel_change < convergence_threshold:
-                converged = True
-                consensus = new_consensus
-                break
+            if iter_idx > 0:
+                error_change = abs(current_error - prev_error)
+                if error_change / max(current_error, eps) < convergence_threshold:
+                    converged = True
+                    consensus = new_consensus
+                    break
 
+            prev_error = current_error
             consensus = new_consensus
 
         # Final outputs

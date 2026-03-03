@@ -377,6 +377,8 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         max_iters_cap: int | None = None,
         benchmark_suite: str | None = None,
         target_experts: list[str] | str | None = None,
+        # External gradient hook — composed with any internal format-projection hook
+        gradient_hook: "Callable | None" = None,
     ) -> DatasetTrainResult:
         """Train an NB-LoRA adapter from a JSONL dataset.
 
@@ -1083,6 +1085,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         )
 
         # 8.5. Format bias projection hook (optional)
+        _external_hook = gradient_hook  # from parameter — preserve before local assignment
         gradient_hook = None
         if format_projection:
             gradient_hook = self._build_format_projection_hook(
@@ -1090,6 +1093,15 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 narrow_dataset_path=narrow_dataset_path,
                 augmented_dataset_path=augmented_dataset_path,
             )
+        # Compose: format hook runs first, external hook runs second
+        if _external_hook is not None:
+            if gradient_hook is not None:
+                _fmt = gradient_hook
+                def _composed(g, _f=_fmt, _e=_external_hook):
+                    return _e(_f(g))
+                gradient_hook = _composed
+            else:
+                gradient_hook = _external_hook
 
         # 8.9. Regime-selection setup: auto mode derives online-eval + outcome flags
         effective_online_eval = online_eval

@@ -19,6 +19,21 @@ This is not a minor philosophical distinction. It is the foundation on which 8 y
 
 When you realize the foundation is wrong, you cannot trust the building. Every "standard" technique must be re-derived from the actual mechanism (geometry) or discarded. This is why ModelCypher derives every parameter from SVD, IEEE 754 machine precision, and measured data. Not because we're being difficult. Because the alternative is building on a mistake.
 
+## Bedrock Mandate: Explain Causes, Not Correlates
+
+ModelCypher does not accept correlation as explanation. We dig to bedrock: the causal mechanism and its exact mathematics.
+
+For any claim used in design or decision-making, the required chain is:
+
+1. **Causal operator** — identify the deterministic map that produces the behavior.
+2. **Formal derivation** — write the governing equation/theorem.
+3. **Direct measurement** — measure variables that test that mechanism, not proxies.
+4. **Falsification condition** — define what observation would invalidate the claim.
+
+If any link is missing, the claim is conjectural and cannot be promoted to doctrine or used as a hard threshold.
+
+Probability remains epistemic bookkeeping at readout and evaluation boundaries. It can quantify uncertainty in our observations; it does not cause model trajectories.
+
 ## "Fine" Is the Enemy of Correct
 
 A forward pass is a deterministic geometric map. Given parameters and input, there is exactly one output. There is no "fine." There is no "close enough." There is no "reasonable approximation." There is the correct answer, derived from the geometry, or there is a wrong answer you stopped questioning too early.

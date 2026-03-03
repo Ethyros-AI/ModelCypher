@@ -46,8 +46,10 @@ def _compute_alignment_metrics(
 
     if int(core_acts.shape[1]) != int(weight_before.shape[1]):
         raise DimensionMismatchError(
+            "ALIGNMENT_METRICS",
+            None,
             f"Alignment metrics require matching input dims; "
-            f"acts={int(core_acts.shape[1])}, weight_in={int(weight_before.shape[1])}"
+            f"acts={int(core_acts.shape[1])}, weight_in={int(weight_before.shape[1])}",
         )
 
     output_before = b.matmul(core_acts, b.transpose(weight_before))

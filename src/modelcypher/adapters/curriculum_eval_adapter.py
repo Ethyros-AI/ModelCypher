@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 
 from modelcypher.core.domain.statistics import clopper_pearson_interval
@@ -19,6 +20,16 @@ from modelcypher.core.use_cases.curriculum.phase_scheduler import MasteryRecord
 from modelcypher.core.use_cases.curriculum.skill_dag import SkillNode
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_last_int(text: str) -> int | None:
+    """Return the last integer appearing in text, or None if no integer found.
+
+    Used for numeric answer_mode evaluation. Handles both direct answers
+    ("15") and scratchpad-prefixed answers ("Ones: 7+8=15. Write 5... Answer: 15").
+    """
+    nums = re.findall(r"\b\d+\b", text)
+    return int(nums[-1]) if nums else None
 
 
 def evaluate_skill_mastery(
@@ -30,13 +41,22 @@ def evaluate_skill_mastery(
 ) -> MasteryRecord:
     """Evaluate mastery of a skill on its held-out eval set.
 
-    Runs inference on each problem in the eval JSONL, checks correctness via
-    substring match (case-insensitive), computes Clopper-Pearson CI, and
-    derives regime from the CI relative to chance_rate.
+    Runs inference on each problem in the eval JSONL, checks correctness,
+    computes Clopper-Pearson CI, and derives regime from the CI relative
+    to chance_rate.
+
+    Correctness check depends on skill.answer_mode:
+      'exact'  (default): expected substring must appear in generated text
+               (case-insensitive). Used for logic skills with string answers.
+      'numeric': extract last integer from both expected and generated texts;
+               compare as integers. Used for arithmetic skills whose training
+               data includes scratchpad steps (the model may generate intermediate
+               steps; only the final numeric answer is checked for mastery).
 
     Args:
         model_path: Path to the model directory.
-        skill: The skill node being evaluated.
+        skill: The skill node being evaluated (answer_mode field controls
+            how generated output is compared to expected).
         eval_jsonl_path: Path to held-out eval JSONL. Each line:
             {"text": "prompt answer"} or {"text": "...", "answer_start": N}
         chance_rate: Random-chance baseline for this problem type.
@@ -44,7 +64,8 @@ def evaluate_skill_mastery(
 
     Returns:
         MasteryRecord with regime derived from Clopper-Pearson CI.
-        regime == 'reinforce' means ci_lower > chance_rate (mastered).
+        regime == 'reinforce' means ci_lower > chance_rate.
+        Mastery requires n_correct == n_total (is_mastered()).
     """
     eval_path = Path(eval_jsonl_path)
     if not eval_path.exists():
@@ -115,9 +136,22 @@ def evaluate_skill_mastery(
 
         try:
             result = engine.run(model=model_path, prompt=prompt, max_tokens=None)
-            predicted = result.response.strip().lower()
-            if expected and expected in predicted:
-                n_correct += 1
+            predicted = result.response.strip()
+
+            if skill.answer_mode == "numeric":
+                # Extract last integer from both sides. Handles direct answers
+                # ("15") and scratchpad-prefixed answers ("...Answer: 15") equally.
+                expected_int = _extract_last_int(expected)
+                predicted_int = _extract_last_int(predicted)
+                if (
+                    expected_int is not None
+                    and predicted_int is not None
+                    and expected_int == predicted_int
+                ):
+                    n_correct += 1
+            else:
+                if expected and expected.lower() in predicted.lower():
+                    n_correct += 1
         except Exception:
             logger.debug(
                 "Inference failed for a problem in skill '%s'", skill.name, exc_info=True

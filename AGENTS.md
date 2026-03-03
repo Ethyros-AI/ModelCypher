@@ -74,6 +74,24 @@ This is not optional. This is the operating methodology of this entire codebase.
 
 ---
 
+## Bedrock Standard: Causality Over Correlation
+
+ModelCypher does not stop at "X correlates with Y." Correlation is a clue, not an explanation.
+
+Every accepted claim must reach bedrock:
+- **Mechanism**: What exact deterministic map or operator causes the effect?
+- **Math**: What equation or theorem shows that mechanism?
+- **Measurement**: What observable quantity tests the mechanism directly?
+- **Falsifier**: What result would prove the claim wrong?
+
+If any of these are missing, the claim is conjecture and must not be used as a decision boundary.
+
+Probability language is strictly observer-side bookkeeping. It may summarize uncertainty in our measurements, but it is never accepted as the causal explanation of model behavior. "It works in practice" is not evidence of cause.
+
+Scale is not a substitute for understanding. More parameters and more data cannot rescue a wrong causal model.
+
+---
+
 ## The Foundational Premise
 
 **LLMs are not black boxes. They are high-dimensional geometry.**
