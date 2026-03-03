@@ -134,8 +134,30 @@ transcoders, causal graphs). This is micro-level; our work is macro-level. Compl
 Tooling: TransformerLens v3, NNSight, nnterp (2025, 50+ model families). We built our own
 for MLX — fine for our purposes but not competing with this ecosystem.
 
-"Belief State Geometry in Residual Streams" (NeurIPS 2024) — Bayesian framing of residual
-stream. Complementary to our geometric view.
+**"The Bayesian Geometry of Transformer Attention" (Agarwal, Dalal, Misra — arXiv:2512.22471v3,
+Jan 2026)** — Highly relevant. Uses "Bayesian wind tunnels" (controlled tasks with known
+analytic posteriors, memorization provably impossible) to show transformers implement Bayesian
+inference geometrically. Key findings:
+- Theorem 1: CE minimizer = Bayesian posterior predictive (architecture-agnostic).
+- Layer 0: orthogonal key bases (37% more orthogonal than random; p<0.001). Single frame
+  head is catastrophically important — ablating it disrupts calibration.
+- Progressive QK sharpening: each layer provides non-interchangeable suppression step;
+  ablating any single layer causes >10× error increase.
+- Value manifold at final checkpoint: 1D, coordinate = posterior entropy. Frame-precision
+  dissociation: attention routing stable through training, value manifold unfurls continuously.
+- Mamba: 5-cluster geometry (one per HMM state); R²=0.40 for entropy prediction (vs LSTM
+  0.004); outperforms transformer on belief transport (0.024 vs 0.049 bits MAE).
+- Architecture comparison: Transformer 3/3 inference primitives, Mamba 2.5/3, LSTM 1/3, MLP 0/3.
+
+Alignment to ModelCypher: directly formalizes entropy→curvature→ID chain. Their "value
+manifold parameterized by posterior entropy" is the theoretical interpretation of our
+empirically measured entropy→Δcurvature (r=0.507) and cumulative curvature→ID (r=0.821).
+Their "progressive QK sharpening" = our QK alignment measurements. Their Mamba findings
+explain LFM2 rank-1 attention (SSM handles transport, attention degenerates to routing-only).
+Full mapping: `docs/research/bayesian_geometry_connection.md`.
+
+"Belief State Geometry in Residual Streams" (NeurIPS 2024) — Earlier Bayesian framing.
+Complementary. See 2512.22471 for the more complete 2026 version.
 
 ### 4. Spectral Analysis of Activations
 
