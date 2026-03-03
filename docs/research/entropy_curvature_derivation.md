@@ -3,6 +3,8 @@
 **Status:** `[EMPIRICAL]` — mechanism partially validated, architecture term identified
 **Date:** 2026-03-03
 **Prerequisite:** `docs/research/bayesian_geometry_connection.md` (Agarwal 2026 mapping)
+**Companion:** `docs/research/entropy-curvature-derivation.md` — formal population-level
+derivation (covariance pushforward, small-angle expansion, rank envelopes, falsifiers F1-F5)
 
 ---
 
@@ -337,6 +339,11 @@ The entropy → curvature link remains `[EXPLORATORY, r=0.507]` but with refined
 
 - Agarwal, Dalal & Misra (2026). "The Bayesian Geometry of Transformer Attention."
   arXiv:2512.22471v3. Full mapping: `docs/research/bayesian_geometry_connection.md`.
+- `docs/research/entropy-curvature-derivation.md`: Formal population-level derivation
+  (Σ_α → Σ_y → projected orthogonal energy → θ², with rank envelope bounds and
+  E_mix proxy). Contains falsifiers F1-F5 and pre-registered predictions P-EC1 through
+  P-EC4. This document provides the theoretical framework; the present document
+  provides the empirical validation and architecture-dependence findings.
 - Section 5 of OPEN-MATHEMATICAL-QUESTIONS.md: MLP nonlinearity geometry (gate × up
   bilinear form as curvature source).
 - `results/entropy_curvature/entropy_curvature_results.json`: Raw experimental data.

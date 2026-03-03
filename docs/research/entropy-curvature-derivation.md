@@ -301,13 +301,28 @@ Until F1-F5 are executed and passed, this bridge remains `[EXPLORATORY]`.
 
 This document is a derivation contract, not a promotion claim.
 
+**Empirical status from companion document** (`entropy_curvature_derivation.md`):
+- P1 (sign opposition): REFUTED as universal — LFM2-only (1/3 pass)
+- P4 (MLP gain varies): VALIDATED 3/3 (CV 0.177–0.739)
+- Attention weight entropy shows no significant correlation with curvature on standard
+  transformers (Qwen2.5-3B: r=-0.036, p=0.835). The causal chain's r=0.507 uses logit
+  entropy (Entropy-Lens), a different quantity.
+- F3 qualified to LFM2-only based on these results.
+
 ---
 
 ## References
 
 - Facco et al. (2017), TwoNN intrinsic dimension estimator.
 - Agarwal, Dalal, Misra (2026), arXiv:2512.22471 / 2512.22473 / 2512.23752.
+- `docs/research/entropy_curvature_derivation.md`: Empirical validation companion.
+  Contains P1-P6 prediction outcomes on 3 models (LFM2-700M, Qwen3.5-0.8B, Qwen2.5-3B),
+  the logit-vs-attention entropy distinction, architecture-dependent sublayer sign tables,
+  MLP gain variation data, and contrast with Codex falsifier tests. This document provides
+  the empirical findings; the present document provides the formal derivation framework.
+- `docs/research/bayesian_geometry_connection.md`: Agarwal 2026 alignment with causal chain.
 - Curvature operator implementation:
   `scripts/curvature_accumulation_analysis.py` (`angular_change = arccos(cosine_similarity)`).
 - TwoNN implementation:
   `src/modelcypher/core/domain/geometry/intrinsic_dimension.py`.
+- Empirical data: `results/entropy_curvature/entropy_curvature_results.json`.
