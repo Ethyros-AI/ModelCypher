@@ -214,13 +214,9 @@ class MLXBackend(_MLXBackendActivationMixin, Backend):
             # We always want compact SVD, so compute_uv=True
             compute_uv = True
 
-        # MLX SVD supports batched inputs; use device stream when available.
-        try:
-            result = self.mx.linalg.svd(array, compute_uv=compute_uv)
-        except Exception as exc:
-            if "not yet supported on the GPU" not in str(exc):
-                raise
-            result = self.mx.linalg.svd(array, compute_uv=compute_uv, stream=self.mx.cpu)
+        # Always use CPU stream: MLX SVD has no VJP and OOMs on GPU for large
+        # weight matrices (e.g. MLP projections in 2B+ models).
+        result = self.mx.linalg.svd(array, compute_uv=compute_uv, stream=self.mx.cpu)
         if compute_uv:
             u, s, vt = result
             self.mx.eval(u, s, vt)

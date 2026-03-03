@@ -165,6 +165,14 @@ def _precompute_tail_bases(backend, model_loader, model_path: str,
         if shape is None or len(shape) != 2:
             continue
 
+        # Skip embedding tables and other over-sized matrices.
+        # LAPACK SVD workspace ∝ max(M,N)²; embeddings have vocab_size dim
+        # (100K–300K) which exhausts all available Metal memory (~86GB).
+        # All NB-LoRA adapter layers (attn, mlp projections) have max dim ≤ 16K
+        # for any model under 100B parameters. 2^15 = 32768 is a safe ceiling.
+        if max(shape) > 32_768:
+            continue
+
         tensor = _resolve_svd_weight_tensor(
             backend, model_loader, model_path, layer_name, tensor, quant_cfg
         )

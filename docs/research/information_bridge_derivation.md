@@ -14,37 +14,31 @@ with theorem and reference, or (c) explicitly marked `[EMPIRICAL]` or `[CONJECTU
 
 ## 1. Why Shannon MI Fails
 
-### 1.1 Theorem (Measure-Theoretic)
+### 1.1 Shannon MI Is Not Operationally Defined for Deterministic Continuous Maps
 
-**For a deterministic bijective map f: R^d -> R^d, I(X; f(X)) = H(X).**
+**For a deterministic map f: R^d -> R^d with continuous input X, the Shannon mutual
+information I(X; f(X)) is infinite.**
 
-Proof:
+There are two ways to see this:
 
-1. H(f(X)|X) = 0 because f is deterministic: given X, f(X) is fixed.
+**Via KL divergence (measure-theoretic).** MI is defined as the KL divergence between
+the joint distribution P_{X, f(X)} and the product of marginals P_X x P_{f(X)}. For
+deterministic f, the joint is supported on the d-dimensional graph {(x, f(x))} embedded
+in 2d-dimensional space. This is a singular measure with respect to the product of
+marginals (which has full 2d-dimensional support). The KL divergence between a singular
+measure and an absolutely continuous measure is +infinity.
 
-2. I(X; f(X)) = H(f(X)) - H(f(X)|X) = H(f(X)) - 0 = H(f(X)).
+**Via differential entropy (heuristic argument — illustrates the issue).** If we
+formally write I(X; f(X)) = h(f(X)) - h(f(X)|X), the conditional distribution of
+f(X) given X=x is a point mass delta_{f(x)}. The differential entropy of a point mass
+is -infinity (it has zero variance in every direction). So I = h(f(X)) - (-infinity) = +infinity.
+Note: this argument is informal because h(Y|X) for singular conditionals requires
+the measure-theoretic definition above. We include it only to build intuition.
 
-3. For bijective f with continuous density p_X, the change-of-variables formula gives:
-   ```
-   H(f(X)) = H(X) + E[log |det J_f(X)|]
-   ```
-   where J_f is the Jacobian of f.
-
-4. For transformer layers, the Jacobian is near-identity (Section 1 of
-   OPEN-MATHEMATICAL-QUESTIONS.md: all singular values ~ 1.0 when measured correctly
-   at float32, eps=1e-3 to 1e-4). Therefore |det J_f| ~ 1 and log|det J_f| ~ 0.
-
-5. For a composition of L layers: I(X_0; X_L) = H(X_0) + sum_l E[log|det J_l|].
-   Each layer contributes ~ 0 to the log-determinant. The MI is approximately H(X_0).
-
-6. For continuous X with unbounded support, H(X) is the differential entropy, which
-   is typically infinite (e.g., Gaussian: H = d/2 * log(2*pi*e) + 1/2 * log|det Sigma|,
-   which is finite but grows with d). For high-dimensional activations (d=1024-4096),
-   H(X_0) is enormous and uninformative.
-
-**Conclusion:** Shannon MI between layers of a deterministic transformer is either
-infinite (continuous) or trivially equal to H(input) (discrete). It tells us nothing
-about what the layers do.
+**Conclusion:** Shannon MI between layers of a deterministic network is either
++infinity (continuous activations, the actual case) or trivially equal to H(input)
+(discrete activations, a modeling choice that introduces arbitrary binning).
+Either way, it tells us nothing about what the layers do.
 
 **Citation:** Goldfeld et al. (2019), "Estimating Information Flow in Deep Neural
 Networks," ICML 2019. arXiv:1810.05728. They prove: "for deterministic networks,
@@ -102,59 +96,84 @@ At sigma -> infinity: K -> 11^T/N (all entries equal). All points identical. Min
   S_2 -> 0 because A = 11^T/(N^2), tr(A^2) = N^2 * (1/N^2)^2 * ... = 1, S_2 = 0.
   (More precisely: A has one eigenvalue = 1 and rest = 0, so tr(A^2) = 1.)
 
-At sigma = data-derived gap scale (existing _derive_rbf_sigma_from_values in cka.py):
+At sigma = data-derived gap scale (existing gap-scale derivation in cka.py):
   The kernel resolves the actual geometric structure in the data. This is the natural
   measurement resolution.
 
+### 2.3 Three Sigma Regimes (Experimental Protocol)
+
+There are three valid ways to set sigma, each answering a different question:
+
+**Regime 1: Per-layer sigma (default).** Each layer l gets sigma_l derived from its
+own geodesic distance statistics via `rbf_gram_matrix()`. This measures each layer's
+information content at its natural geometric scale. Marginals K_X and K_Y use
+different sigmas. The product kernel K_X (hadamard) K_Y is still valid (PSD by Schur,
+infinitely divisible by Section 3.3).
+
+**Regime 2: Shared sigma (CKA-matching).** For pairwise MI(i,j), derive sigma from
+both layers' distance statistics, matching CKA's `_shared_rbf_sigma()`. Both marginals
+use the same sigma. This makes MI and CKA use identical kernel matrices, enabling
+direct comparison (Prediction P3). The Euclidean RBF identity (Section 3.1) would
+hold if we used Euclidean distances — with geodesic distances, the product kernel
+interpretation still applies (Section 3.3).
+
+**Regime 3: Fixed sigma (DPI trajectory).** Fix sigma = sigma_0 from the input layer
+across ALL layers. This measures MI at a single resolution, making I_2(X_0, X_l) for
+different l commensurable. Required for DPI testing (Prediction P6), because DPI is a
+statement about consistent measurement scale.
+
+The experiment (Step 6 of plan) runs Regime 1 (natural scale MI), Regime 2 (CKA
+comparison), and Regime 3 (DPI test) separately. Each answers a different question.
+
 ---
 
-## 3. The Tensor Product Kernel Identity
+## 3. The Product Kernel via Hadamard Product
 
-### 3.1 Theorem (Algebraic)
+### 3.1 Theorem: Euclidean RBF Identity (Pure Algebra)
 
-**For RBF kernels with bandwidth sigma:**
+**For Euclidean RBF kernels K(x,y) = exp(-||x-y||_2^2 / 2*sigma^2) with shared
+bandwidth sigma:**
 ```
-(K_X (hadamard) K_Y)_ij = exp(-||(x_i,y_i) - (x_j,y_j)||^2 / 2*sigma^2)
+(K_X (hadamard) K_Y)_ij = exp(-||(x_i,y_i) - (x_j,y_j)||_2^2 / 2*sigma^2)
 ```
 
-The Hadamard (elementwise) product of marginal RBF Gram matrices IS the RBF Gram
-matrix on the joint space (X,Y) concatenated.
+The Hadamard product of marginal Euclidean RBF Gram matrices IS the Euclidean RBF
+kernel on the concatenated space (X,Y).
 
 **Proof:**
 
 Step 1 (Definition):
 ```
-(K_X)_ij * (K_Y)_ij = exp(-||x_i - x_j||^2 / 2*sigma^2) * exp(-||y_i - y_j||^2 / 2*sigma^2)
+(K_X)_ij * (K_Y)_ij = exp(-||x_i - x_j||_2^2 / 2*sigma^2) * exp(-||y_i - y_j||_2^2 / 2*sigma^2)
 ```
 
 Step 2 (Exponential addition law): exp(a) * exp(b) = exp(a + b)
 ```
-= exp(-(||x_i - x_j||^2 + ||y_i - y_j||^2) / 2*sigma^2)
+= exp(-(||x_i - x_j||_2^2 + ||y_i - y_j||_2^2) / 2*sigma^2)
 ```
 
-Step 3 (Pythagorean decomposition on orthogonal subspaces):
-For z_i = (x_i, y_i) in the direct sum space X + Y:
+Step 3 (Pythagorean decomposition on orthogonal Euclidean subspaces):
+For z_i = (x_i, y_i) in the direct sum R^{d_x} + R^{d_y}:
 ```
-||z_i - z_j||^2 = ||x_i - x_j||^2 + ||y_i - y_j||^2
+||z_i - z_j||_2^2 = ||x_i - x_j||_2^2 + ||y_i - y_j||_2^2
 ```
 because the X and Y subspaces are orthogonal in the concatenation (cross terms vanish).
 
 Therefore:
 ```
-(K_X (hadamard) K_Y)_ij = exp(-||z_i - z_j||^2 / 2*sigma^2) = K_Z(z_i, z_j)
+(K_X (hadamard) K_Y)_ij = exp(-||z_i - z_j||_2^2 / 2*sigma^2) = K_Z(z_i, z_j)
 ```
-where Z = (X, Y) is the concatenated space. QED.
+where Z = (X, Y) is the concatenated Euclidean space. QED.
 
-**This is exact. No approximation, no limiting argument. Three algebraic facts:**
-1. exp(a) * exp(b) = exp(a+b)
-2. ||a||^2 + ||b||^2 = ||(a,b)||^2 for orthogonal subspaces
-3. Definition of the RBF kernel
+**Critical scope limitation:** This identity requires EUCLIDEAN distances and SHARED
+sigma. It does NOT hold for geodesic distances, because geodesic distances on curved
+manifolds do not satisfy the Pythagorean decomposition:
+```
+d_geo^2(z_i, z_j) ≠ d_geo^2(x_i, x_j) + d_geo^2(y_i, y_j)   [in general]
+```
+The curvature of each manifold prevents additive decomposition of distances.
 
-### 3.2 Generality (Schur Product Theorem)
-
-The identity at the Gram matrix level (Hadamard product of marginals = Gram matrix of
-tensor product kernel) holds for ALL positive definite kernels. This is guaranteed by
-the Schur product theorem:
+### 3.2 What Holds for ALL PSD Kernels: Schur Product Theorem
 
 **Theorem (Schur 1911).** If A and B are positive semidefinite matrices, then their
 Hadamard product A (hadamard) B is also positive semidefinite.
@@ -162,19 +181,53 @@ Hadamard product A (hadamard) B is also positive semidefinite.
 Reference: Schur, I. (1911). "Bemerkungen zur Theorie der beschrankten
 Bilinearformen." J. reine angew. Math. 140, 1-28, Theorem VII.
 
-What's special about RBF: the tensor product kernel stays within the RBF family on
-the concatenated space. For non-exponential kernels, the product kernel exists (Schur
-guarantees PSD) but may not have a simple parametric form.
+**Consequence:** For ANY two PSD kernel Gram matrices K_X and K_Y (regardless of the
+kernel type, distance metric, or bandwidth), K_X (hadamard) K_Y is a valid PSD Gram
+matrix. It defines a **product kernel** that captures the joint structure of X and Y.
 
-### 3.3 Why This Matters for MI
+In kernel theory, this is the **tensor product kernel** (Shawe-Taylor & Cristianini,
+Ch. 3): k_{XY}((x,y), (x',y')) = k_X(x,x') * k_Y(y,y'). The Gram matrix of the
+tensor product kernel is exactly the Hadamard product of the marginal Gram matrices.
 
-The Hadamard product K_X (hadamard) K_Y computes the joint kernel WITHOUT ever explicitly
-concatenating feature vectors. This means:
+### 3.3 Application to ModelCypher's Geodesic RBF Kernels
 
-- S_2(A_XY) where A_XY = (K_X (hadamard) K_Y) / tr(K_X (hadamard) K_Y) is the Renyi
-  entropy of the RBF kernel on the joint (X,Y) space.
-- The MI decomposition I_2 = S_2(X) + S_2(Y) - S_2(X,Y) applies directly.
-- Computation is O(N^2) — elementwise multiply of N x N matrices.
+ModelCypher enforces geometry domain classification (geometry_domain.py):
+- **Activation space: CURVED** — geodesic distances, Riemannian geometry
+- **Weight space: EUCLIDEAN** — SVD, Procrustes, Frobenius norm
+
+The Rényi MI module operates on activation-space kernel matrices. These use geodesic
+distances:
+```
+K(x, y) = exp(-d_geo^2(x, y) / 2*sigma^2)
+```
+
+The Hadamard product K_X (hadamard) K_Y:
+- **IS** a valid PSD kernel matrix (Schur, proven)
+- **IS** the Gram matrix of the tensor product kernel k_X * k_Y (Shawe-Taylor, proven)
+- **IS NOT** the geodesic RBF kernel on the concatenated space (Pythagorean fails)
+- **IS** infinitely divisible if both marginals are infinitely divisible (the entrywise
+  product of infinitely divisible kernels is infinitely divisible)
+
+The last point follows because (K_X (hadamard) K_Y)^{1/n} = K_X^{1/n} (hadamard) K_Y^{1/n},
+and both factors are PSD (each marginal is infinitely divisible), so the Hadamard product
+is PSD (Schur). Therefore the product kernel satisfies the Giraldo axioms.
+
+### 3.4 Why This Is Sufficient for MI
+
+The MI decomposition requires:
+1. S_2(A_X), S_2(A_Y): marginal entropies from individual kernel matrices.
+2. S_2(A_XY): joint entropy from the product kernel A_XY = (K_X (hadamard) K_Y) / tr(...).
+3. The joint kernel must be PSD and from an infinitely divisible kernel.
+
+All three hold. The MI I_2 = S_2(A_X) + S_2(A_Y) - S_2(A_XY) measures the dependence
+between X and Y as captured by the product of their kernel structures. The non-negativity
+guarantee (Giraldo et al. 2014, Theorem 3) requires only infinite divisibility and PSD,
+both of which hold.
+
+**What we lose** by not having the Euclidean identity: the "joint space RBF" geometric
+interpretation. The product kernel captures dependence but cannot be interpreted as
+"the RBF kernel evaluated on concatenated points." This is an interpretive limitation,
+not a computational one — the MI values are still valid.
 
 ---
 
@@ -372,11 +425,15 @@ characterizes full dependence, so HSIC ~ MI. But this is not a proof.
 ### 7.1 Definition
 
 ```
-C_ex(l) = S_spec(l) - log_2(ID(l))
+C_ex(l) = S_spec(l) - ln(ID(l))
 ```
 
-where S_spec is the Shannon spectral entropy (from EffectiveRank) and ID is the
-intrinsic dimension (from TwoNN).
+where S_spec is the Shannon spectral entropy in **nats** (from EffectiveRank.compute(),
+which uses natural log) and ln(ID) is the natural log of intrinsic dimension (from
+TwoNN). Both terms are in nats for unit consistency.
+
+Note: EffectiveRank.compute() returns spectral_entropy using `b.log()` (natural log),
+not log_2. All C_ex computations must use nats throughout.
 
 ### 7.2 Theorem (Differential Geometry)
 
@@ -401,18 +458,20 @@ measurement scale.
 C_ex measures how much the manifold "winds through" more global dimensions than it
 has local degrees of freedom:
 
-- A 1D curve winding through 18D space: ID = 1, eff_rank ~ 18, C_ex ~ 4.2 bits.
-  The curve has only one local degree of freedom, but it traces a path through 18
-  independent global directions.
+- A 1D curve winding through 18D space: ID = 1, S_spec ~ ln(18) ~ 2.89 nats,
+  C_ex ~ 2.89 - ln(1) = 2.89 nats. The curve has only one local degree of freedom,
+  but it traces a path through 18 independent global directions.
 
-- A flat 18D subspace: ID = 18, eff_rank = 18, C_ex = 0.
-  Local and global complexity match.
+- A flat 18D subspace: ID = 18, S_spec ~ ln(18) ~ 2.89 nats,
+  C_ex ~ ln(18) - ln(18) = 0 nats. Local and global complexity match.
 
 ### 7.5 Prediction: C_ex Peaks at Highway `[CONJECTURE]`
 
 From existing data (Qwen3-8B, Section 4 of OPEN-MATHEMATICAL-QUESTIONS.md):
-- Highway (layers 16-33): ID ~ 2-3, eff_rank ~ 18 -> C_ex ~ 2.8 bits
-- Exit (layer 35): ID ~ 6.2, eff_rank ~ 18 -> C_ex ~ 1.5 bits
+- Highway (layers 16-33): ID ~ 2-3, S_spec ~ ln(18) ~ 2.89 nats,
+  C_ex ~ 2.89 - ln(2.5) ~ 1.97 nats
+- Exit (layer 35): ID ~ 6.2, S_spec ~ ln(18) ~ 2.89 nats,
+  C_ex ~ 2.89 - ln(6.2) ~ 1.07 nats
 
 Geometric argument (NOT a proof): Highway layers have low ID (manifold compression)
 but inherited high effective rank from entry layers. The global structure hasn't been
@@ -461,23 +520,32 @@ measurement, not multi-scale proxies.
 
 **These predictions are registered BEFORE any measurement. Each states its basis.**
 
+**Threshold derivation:** All correlation thresholds use standard statistical testing.
+For Spearman correlations, we compute the exact p-value under the null hypothesis of
+no monotonic association. A prediction is CONFIRMED when the correlation has the
+predicted sign AND p < 0.01. A prediction is REFUTED when either the sign is wrong OR
+p >= 0.05. Intermediate cases are INCONCLUSIVE. For non-correlation predictions (P4,
+P6, P7, P8), we use permutation null models: shuffle layer labels 10000 times and
+compute the test statistic under the null, then check whether the observed statistic
+falls outside the 99% null interval.
+
 | # | Prediction | Basis | Test | Criterion |
 |---|-----------|-------|------|-----------|
-| P1 | CKA(i,j) decays with \|i-j\| | Geometric: near-identity Jacobians -> nearby layers similar. Cumulative curvature -> distant layers differ. Not a proof. | Spearman(\|i-j\|, CKA) | < -0.5 all 3 models |
-| P2 | Renyi MI(i,j) decays with \|i-j\| | Same geometric argument as P1, applied to Hadamard product kernels. | Spearman(\|i-j\|, I_2) | < -0.5 all 3 models |
-| P3 | CKA and I_2 correlate | `[CONJECTURE]`: both kernel-based, same inputs, same dependence direction. No proof exists. | Spearman(CKA, I_2) all pairs | > 0.7 all 3 models |
-| P4 | Highway = I_2(X_0, .) minimum | Geometric: low ID -> fewer kernel dimensions -> less shared structure with input. Not a proof. | Highway layers in bottom 25% of I_2(X_0, .) | >= 75% of highway layers |
-| P5 | ID tracks MI with input | Geometric: low ID -> simple manifold -> kernel structure from layer 0 poorly preserved. | Spearman(ID(l), I_2(X_0, X_l)) | > 0.5 all 3 models |
-| P6 | DPI holds at fixed sigma | `[EMPIRICAL TEST ONLY]`: DPI NOT proven for matrix-based Renyi MI. | I_2^sigma_fixed(X_0, X_l) non-increasing | No violations > 0.1 * max(I_2) |
-| P7 | C_ex peaks at highway | `[CONJECTURE]`: ID drops before eff_rank does. Geometric argument, not proof. | max(C_ex) location | In highway-classified layers |
-| P8 | CKA heatmap shows phase blocks | Geometric: near-identity Jacobians -> within-phase similarity > cross-phase. | within-phase / cross-phase mean CKA | Ratio > 1.2 |
+| P1 | CKA(i,j) decays with \|i-j\| | Geometric: near-identity Jacobians -> nearby layers similar. Cumulative curvature -> distant layers differ. Not a proof. | Spearman(\|i-j\|, CKA) | Negative, p < 0.01, all 3 models |
+| P2 | Renyi MI(i,j) decays with \|i-j\| | Same geometric argument as P1, applied to product kernels. | Spearman(\|i-j\|, I_2) | Negative, p < 0.01, all 3 models |
+| P3 | CKA and I_2 correlate | `[CONJECTURE]`: both kernel-based, same inputs, same dependence direction. No proof exists. | Spearman(CKA, I_2) all pairs | Positive, p < 0.01, all 3 models |
+| P4 | Highway = I_2(X_0, .) minimum | Geometric: low ID -> fewer kernel dimensions -> less shared structure with input. Not a proof. | Highway layers' I_2(X_0,.) ranks | Below median of permutation null (p < 0.01) |
+| P5 | ID tracks MI with input | Geometric: low ID -> simple manifold -> kernel structure from layer 0 poorly preserved. | Spearman(ID(l), I_2(X_0, X_l)) | Positive, p < 0.01, all 3 models |
+| P6 | DPI holds at fixed sigma | `[EMPIRICAL TEST ONLY]`: DPI NOT proven for matrix-based Renyi MI. | I_2^sigma_fixed(X_0, X_l) non-increasing | No violations outside permutation null 99% CI |
+| P7 | C_ex peaks at highway | `[CONJECTURE]`: ID drops before eff_rank does. Geometric argument, not proof. | max(C_ex) location | In highway-classified layers (permutation p < 0.01) |
+| P8 | CKA heatmap shows phase blocks | Geometric: near-identity Jacobians -> within-phase similarity > cross-phase. | within-phase / cross-phase mean CKA ratio | Ratio exceeds permutation null 99th percentile |
 
 ### Falsification Protocol
 
 3 models x 8 predictions = 24 tests.
-- **CONFIRMED:** 3/3 pass.
-- **REFUTED:** 2/3 or 3/3 fail.
-- **INCONCLUSIVE:** 1/3 fail.
+- **CONFIRMED:** 3/3 pass (p < 0.01 with correct sign/direction).
+- **REFUTED:** 2/3 or 3/3 fail (wrong sign, or p >= 0.05).
+- **INCONCLUSIVE:** 1/3 fail, or p between 0.01 and 0.05.
 
 ### Models
 
@@ -493,14 +561,21 @@ N = 200 probes (50 math, 50 narrative, 50 factual, 50 code).
 ## 10. Summary: What Is Derived vs. What Is Empirical
 
 ### Algebraically Proven (bedrock)
-- Shannon MI is infinite/trivial for deterministic invertible maps (Sec. 1)
-- RBF Hadamard product = RBF on joint space (Sec. 3)
+- Shannon MI is +infinity for deterministic continuous maps (Sec. 1)
+- Hadamard product of PSD kernels is PSD (Schur 1911) (Sec. 3.2)
+- Hadamard of infinitely divisible kernels is infinitely divisible (Sec. 3.3)
+- Euclidean RBF Hadamard = RBF on joint space (Sec. 3.1, Euclidean only)
 - RBF is infinitely divisible -> Giraldo axioms hold (Sec. 4.3)
 - Spectral entropy = alpha->1 Renyi entropy for linear kernels (Sec. 5.1)
 - C_ex >= 0, = 0 iff flat manifold (Sec. 7.2-7.3)
 - S_2 bounds: 0 <= S_2 <= log_2(N) (Sec. 4.4)
 - I_2 >= 0 for infinitely divisible kernels (Sec. 4.4)
 - I_2 = 0 iff independence for characteristic kernels (Sec. 4.4)
+
+### NOT proven (corrected from earlier draft)
+- Geodesic RBF Hadamard ≠ geodesic RBF on joint space (Pythagorean fails for
+  geodesic distances). Product kernel is still valid via Schur, just not
+  interpretable as "joint-space RBF." (Sec. 3.3)
 
 ### Cited Theorems
 - Schur product theorem (1911): Hadamard of PSD is PSD

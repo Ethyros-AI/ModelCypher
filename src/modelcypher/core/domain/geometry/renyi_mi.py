@@ -15,14 +15,16 @@ algebra — no arbitrary constants, no heuristics.
 
 Mathematical foundations (see docs/research/information_bridge_derivation.md):
 
-1. Shannon MI is infinite for deterministic invertible maps (Goldfeld et al. 2019).
+1. Shannon MI is +infinity for deterministic continuous maps (Goldfeld et al. 2019).
    Kernel bandwidth sigma creates a finite measurement resolution.
 
-2. For RBF kernels, the Hadamard product K_X * K_Y IS the RBF kernel on the joint
-   space (X,Y) concatenated. Proof: exp(a)*exp(b) = exp(a+b) + Pythagorean
-   decomposition on orthogonal subspaces. (Section 3 of derivation.)
+2. The Hadamard product K_X * K_Y defines a valid PSD product kernel (Schur 1911).
+   For geodesic RBF kernels (used in ModelCypher), this is NOT the RBF kernel on
+   the concatenated space (Pythagorean decomposition fails for geodesic distances),
+   but the product kernel is still valid for MI computation. (Section 3 of derivation.)
 
-3. The Gaussian RBF kernel is infinitely divisible, satisfying the requirements
+3. The Gaussian RBF kernel is infinitely divisible, and the Hadamard product of
+   infinitely divisible kernels is infinitely divisible, satisfying the requirements
    for Giraldo et al.'s (2014) matrix-based Renyi entropy axioms.
 
 References:
@@ -102,12 +104,11 @@ def compute_renyi_joint_entropy_alpha2(
     where A_XY = (K_X * K_Y) / tr(K_X * K_Y) and * is the Hadamard
     (elementwise) product.
 
-    The Hadamard product K_X * K_Y IS the RBF kernel on the joint space (X,Y).
-    Proof (Section 3 of derivation): exp(a)*exp(b) = exp(a+b) applied to
-    RBF kernel entries, plus Pythagorean decomposition ||z||^2 = ||x||^2 + ||y||^2
-    on orthogonal subspaces.
-
-    Guaranteed PSD by Schur's theorem (1911).
+    The Hadamard product K_X * K_Y defines the product kernel (tensor product
+    kernel in Shawe-Taylor & Cristianini Ch. 3). Guaranteed PSD by Schur's
+    theorem (1911). For geodesic RBF kernels, this is NOT the RBF kernel on
+    the concatenated space, but it is a valid PSD kernel from infinitely
+    divisible components, satisfying the Giraldo axioms for MI computation.
 
     Args:
         gram_x: [N, N] kernel Gram matrix for X.
@@ -117,7 +118,7 @@ def compute_renyi_joint_entropy_alpha2(
     Returns:
         Joint Renyi alpha=2 entropy in bits.
     """
-    # Hadamard product = tensor product kernel Gram matrix
+    # Hadamard product = product kernel Gram matrix (PSD by Schur)
     hadamard = gram_x * gram_y
 
     # Normalize: A_XY = hadamard / tr(hadamard)
