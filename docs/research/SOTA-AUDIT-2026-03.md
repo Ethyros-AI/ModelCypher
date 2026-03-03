@@ -224,7 +224,15 @@ SVD/IEEE 754/data. No other group claims zero tunable hyperparameters.
 | **Full chain end-to-end** | **No one** | **ModelCypher** |
 
 Closest competitor: Bayesian geometry group (3 papers, Jan 2026). They cover the middle of
-the chain (QK alignment → entropy) with rigorous Bayesian formalization. Read immediately.
+the chain (QK alignment → entropy) with rigorous Bayesian formalization. **Read (2026-03-03).**
+Key findings: Theorem 1 (CE minimizer = Bayesian posterior, architecture-agnostic); value manifold
+1D parameterized by posterior entropy at final checkpoint; frame-precision dissociation (attention
+routing stable, value manifold improves with training); Mamba R²=0.40 entropy prediction vs LSTM
+0.004. Full mapping: `docs/research/bayesian_geometry_connection.md`.
+**What they do NOT cover:** GQA cross-architecture variation (fixed small model), no scaling laws,
+no signed curvature measure, no hybrid SSM/attention architectures. The `entropy → curvature`
+derivation gap remains open; their value manifold result formalizes the direction but does not
+provide the curvature calculation.
 
 ### 8. DPI and Normalization
 
@@ -242,7 +250,7 @@ is lost) appears to be original. Scoped to matrix-Rényi, not Shannon DPI.
 
 | # | Paper | arXiv/Venue | Why |
 |---|-------|-------------|-----|
-| 1 | Bayesian Geometry of Transformer Attention (3 papers) | 2512.22471, 2512.22473, 2512.23752 | May formalize our entropy → curvature link |
+| ~~1~~ | ~~Bayesian Geometry of Transformer Attention (3 papers)~~ | ~~2512.22471, 2512.22473, 2512.23752~~ | **Read 2026-03-03.** Formalizes QK→entropy middle chain. `entropy→curvature` gap remains open. See `bayesian_geometry_connection.md`. |
 | 2 | Emergence of High-Dimensional Abstraction Phase | 2405.15471 (ICLR 2025) | ID phases — cite and position relative to |
 | 3 | Neural Feature Geometry as Discrete Ricci Flow | 2509.22362 | Curvature across 20K networks |
 | 4 | Null-Space Filtering for Continual Merging | 2509.21413 | Compare merge approach |
