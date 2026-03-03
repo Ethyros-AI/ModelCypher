@@ -103,6 +103,8 @@ Required before any cross-model claim:
 - Write the scale-conditioned equation (depth/width/parameter dependence).
 - Prove measurement commensurability for the chosen operator.
 - Pre-register directional prediction and falsifier.
+- Use claim form: `observable = f(geometry_state, architecture_state, scale_state, measurement_operator)`.
+- Apply and cite `docs/research/FIRST_PRINCIPLES_REVIEW_PROTOCOL.md`.
 
 If any item is missing, the work is exploratory only and must not be promoted in roadmap,
 mission, or doctrine docs.

@@ -48,6 +48,9 @@ Vision statements must remain downstream of:
 - measurement commensurability proof,
 - pre-registered falsification.
 
+Canonical enforcement contract:
+- `docs/research/FIRST_PRINCIPLES_REVIEW_PROTOCOL.md`
+
 ## What Already Exists
 
 Each piece of this architecture has a foundation in ModelCypher today:

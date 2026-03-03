@@ -39,6 +39,9 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain.geometry.renyi_mi import compute_renyi_mi_alpha2
 
 if TYPE_CHECKING:
+    from modelcypher.core.domain.geometry.sigma_calibration import (
+        CalibrationResult,
+    )
     from modelcypher.ports.backend import Array, Backend
 
 
@@ -273,23 +276,23 @@ def compute_normalized_mi_trajectory(
 
 def compute_normalized_all_pairs_mi(
     layer_activations: list["Array"], backend: "Backend"
-) -> tuple[list[list[float]], float]:
+) -> tuple[list[list[float]], float, "CalibrationResult | None"]:
     """Compute L×L matrix of pairwise Rényi MI with normalized activations.
 
-    Same Regime 4 normalization as compute_normalized_mi_trajectory:
-    L2-normalize, shared sigma, commensurable MI values.
+    Same Regime 5 normalization as compute_normalized_mi_trajectory:
+    L2-normalize, calibrated sigma, commensurable MI values.
 
     Args:
         layer_activations: List of [N, D] activation matrices per layer.
         backend: Backend for tensor operations.
 
     Returns:
-        Tuple of (mi_matrix, sigma) where mi_matrix is L×L.
+        Tuple of (mi_matrix, sigma, calibration_result) where mi_matrix is L×L.
     """
     if not layer_activations:
-        return [], 0.0
+        return [], 0.0, None
 
-    grams, sigma = _normalize_and_build_grams(layer_activations, backend)
+    grams, sigma, cal_result = _normalize_and_build_grams(layer_activations, backend)
 
     num_layers = len(grams)
     mi_matrix = [[0.0] * num_layers for _ in range(num_layers)]
@@ -300,4 +303,4 @@ def compute_normalized_all_pairs_mi(
             mi_matrix[i][j] = mi
             mi_matrix[j][i] = mi  # symmetric
 
-    return mi_matrix, sigma
+    return mi_matrix, sigma, cal_result

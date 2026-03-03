@@ -1081,149 +1081,91 @@ Uses PCA to reduce to 50 dimensions before ripser (standard TDA practice for hig
 
 ---
 
-## 9. Information-Theoretic Characterization — RESOLVED (2026-03-03) `[EMPIRICAL]`
+## 9. Information-Theoretic Characterization — NOT RESOLVED (2026-03-03) `[MEASUREMENT_INVALID]`
 
-**Question:** What is the mutual information between layers?
+**Question:** What information-theoretic invariant is preserved across layers and across
+architectures?
 
-**Framework:** Matrix-based Rényi α=2 MI (Giraldo et al. 2014) using RBF Gram matrices.
-Shannon MI is +∞ for deterministic continuous maps. Kernel bandwidth σ creates finite
-measurement resolution. Full derivation: `docs/research/information_bridge_derivation.md`.
+### Bedrock Diagnosis
 
-**Implementation:** `src/modelcypher/core/domain/geometry/renyi_mi.py` (Rényi entropy, joint
-entropy, MI), `src/modelcypher/core/domain/geometry/information_bridge.py` (curvature excess,
-all-pairs MI, MI trajectories, normalized MI). 19/19 unit tests passing (11 bridge + 8 Rényi).
+This thread is **not resolved**. The prior mixed-model outcomes were a protocol failure:
+cross-model claims were made before proving measurement commensurability.
 
-### Sigma Regimes
+Current status by claim type:
 
-All MI measurements depend on kernel bandwidth σ. Four regimes were tested:
+1. **Geometric similarity signal (CKA):** stable and cross-model consistent.
+2. **Rényi MI cross-layer comparisons:** not promotable across models under current sigma derivation.
+3. **Highway/phase MI claims:** not promotable until both phase labeling and MI operator validity are fixed.
 
-| Regime | Method | Intra-model comparable? | Problem |
-|--------|--------|------------------------|---------|
-| 1: Per-layer σ | Each layer's own median heuristic | No | Values swing 0.6–7.3 bits between adjacent layers |
-| 3: Fixed σ₀ | Input layer's σ for all layers | Yes | σ₀ too small for deep layers → K_l → I → MI saturates at S₂(K₀) |
-| 4: L2 norm + shared σ | L2-normalize to unit sphere, one σ from all layers' geodesic distances | Yes | σ depends on model-specific distance distribution (see below) |
+### What Is Valid Right Now
 
-Regime 4 was implemented to fix the commensurability problem. L2 normalization projects all
-layers to S^{D-1}, and a single shared σ derived from ALL layers' combined geodesic distance
-statistics provides uniform measurement resolution. Scale invariance verified by TDD test:
-`[X, 10X, 100X]` produces identical MI trajectory to `[X, X, X]` after normalization.
+1. **P1 remains validated:** CKA decays with layer distance on all tested models.
+2. **P7 remains empirically useful:** `C_ex` peaks at highway for LFM2 family (not universal yet).
 
-**Regime 4 limitation — sigma derivation is model-dependent.** The gap-based sigma heuristic
-(`_derive_rbf_sigma_from_values`) operates on geodesic distances and finds the largest relative
-gap in the sorted distribution. Different models produce different distance distributions on the
-unit sphere, yielding wildly different sigmas:
+These two signals can be used for mechanism-building because they are not currently blocked by
+the same kernel commensurability failure that affects Rényi MI promotion.
 
-| Model | shared_sigma | MI range | Diagnosis |
-|-------|-------------|----------|-----------|
-| LFM2-350M | 3.51 | 0.000–0.047 | Smooth Grams, good layer differentiation |
-| LFM2-700M | 0.037 | 7.28–7.64 | **SATURATED.** σ too small → K_l ≈ I → MI ≈ S₂(K₀) |
-| Qwen3.5-0.8B | 2.72 | 0.028–0.239 | Reasonable spread |
+### Why Rényi MI Promotion Failed
 
-LFM2-700M's sigma=0.037 creates kernel values exp(-d²/(2×0.037²)) ≈ 0 for geodesic
-distances > 0.1, collapsing all Gram matrices to near-identity. This is the Regime 3 saturation
-problem reproduced inside Regime 4. **Consequence: LFM2-700M Regime 4 results are unreliable
-for P2–P5 (sigma-dependent predictions).**
+The estimator uses RBF kernels with bandwidth `sigma`. If compared layers/models are calibrated
+to incompatible bandwidth regimes, `I_2(X_0, X_l)` is dominated by kernel-scale artifacts.
 
-### Results (3 models, Regime 4 where applicable)
+Observed failure pattern:
 
-| # | Prediction | 350M | 700M | Qwen 0.8B | Verdict |
-|---|-----------|------|------|-----------|---------|
-| P1 | CKA decays with \|i-j\| | r=-0.61*** | r=-0.64*** | r=-0.42*** | **CONFIRMED 3/3** |
-| P2 | Rényi MI decays with \|i-j\| | r=+0.17 | r=+0.19* (sat.) | r=+0.30*** | **REFUTED 3/3** |
-| P3 | CKA-MI correlate | r=0.01 | r=-0.03 (sat.) | r=0.22*** | **REFUTED 2/3** |
-| P4 | Highway = MI minimum | min=L8 | min=L7 (sat.) | min=L12 | **REFUTED 3/3** |
-| P5 | ID tracks MI with input | **r=0.84***| r=0.02 (sat.) | r=0.51* | **CONFIRMED 1/3** |
-| P6 | DPI holds at fixed σ | 11 viol. | 2 sig. viol. | 10 sig. viol. | **REFUTED 3/3** |
-| P7 | C_ex peaks at highway | pass | pass | fail | **CONFIRMED 2/3** |
-| P8 | CKA shows phase blocks | fail | pass | fail | **REFUTED 2/3** |
+1. Per-layer sigma caused incommensurable values across layers.
+2. Fixed sigma from layer 0 saturated deeper layers.
+3. Shared sigma after L2 normalization improved intra-model behavior but remained model-dependent.
 
-Significance: \*p<0.05, \*\*p<0.01, \*\*\*p<0.001. "(sat.)" = LFM2-700M sigma saturation
-makes that result unreliable.
+Large sigma-ratio swings across adjacent layers (especially in hybrid architectures) show that the
+operator is currently sensitive to architecture-specific geometry seams, so cross-model MI claims
+are invalid under the present derivation.
 
-### Answers to Original Questions
+### Architecture Seam Hypothesis (Open Mechanism)
 
-**I(layer_i; layer_j) as function of |i-j|:** CKA decays with layer distance (r≈-0.55,
-p<1e-12, all 3 models). Rényi MI does NOT decay — correlation is near zero or positive.
-CKA measures geometric similarity (Hilbert-Schmidt norm); MI measures statistical dependence.
-These are fundamentally different quantities. Layers CHANGE their geometry with depth while
-retaining similar information content.
+Sigma discontinuities are treated as architecture signals, not as \"information loss\" by default.
+Working hypothesis:
 
-**Does MI decay exponentially?** No. Robust across all models and all sigma regimes. The naive
-expectation that "deeper layers lose information about the input" is wrong for this MI estimator.
+1. Certain operator transitions induce qualitative changes in activation distance geometry.
+2. Gap-derived sigma tracks these regime boundaries.
+3. MI instability appears where kernel calibration crosses those boundaries without equivalence proof.
 
-**Is there an information bottleneck at the highway?** No. Highway layers do not consistently
-show MI minima (P4 REFUTED 3/3). Moreover, DPI — the theoretical foundation of information
-bottleneck theory — does NOT hold for matrix-based Rényi MI (P6 REFUTED 3/3, predicted by
-Section 8.2 of derivation). Without DPI, the bottleneck framework does not apply.
+This is a mechanism hypothesis, not a promoted conclusion.
 
-**Does low ID = low MI with input?** Partially. On LFM2-350M where Regime 4 sigma produces
-non-saturated measurements, the correlation is strong: r=0.844, p=3.93e-5. This was HIDDEN
-by the per-layer sigma artifact in the first pass (which showed r=-0.33, sign-reversed).
-On Qwen3.5-0.8B: r=0.51, p=0.012 (marginal). LFM2-700M is unreliable (sigma saturation).
-**Provisional conclusion: ID tracks MI when measurement is non-degenerate, but the sigma
-derivation heuristic can produce degenerate measurements.**
+### Required Contract Before Any New MI Claim
 
-### Key Discoveries
+No new MI claim is promotable unless all are written and satisfied:
 
-1. **CKA ≠ Rényi MI.** Qualitatively different behavior: CKA decays with depth, MI does not.
-   Weak or zero correlation between them (r=0.01 to r=0.22 across models). They answer
-   different questions — geometric similarity vs statistical dependence.
+1. `observable = f(geometry_state, architecture_state, scale_state, measurement_operator)`
+2. Architecture-conditioned term (explicit operator-family dependence)
+3. Scale-conditioned term (depth/width/parameter dependence)
+4. Commensurability proof for the kernel operator
+5. Directional prediction registered before execution
+6. Explicit falsifier
 
-2. **DPI fails empirically for matrix-based Rényi MI** (3/3 models, multiple violations each).
-   Confirms the theoretical gap in the derivation. Information bottleneck arguments cannot be
-   made with this estimator.
+Contract source of truth: `docs/research/FIRST_PRINCIPLES_REVIEW_PROTOCOL.md`.
 
-3. **Sigma regime is the dominant measurement artifact.** Per-layer σ (Regime 1) gives wild
-   incommensurable swings. Fixed σ₀ (Regime 3) saturates at S₂(K₀). Normalized σ (Regime 4)
-   fixes intra-model commensurability but the gap-based σ derivation is model-dependent and
-   can produce pathological values (LFM2-700M σ=0.037 → saturation). **The MI measurement
-   apparatus is not yet model-independent.**
+### Immediate Research Tasks
 
-4. **P5 (ID tracks MI) has genuine signal when sigma doesn't saturate.** The first pass showed
-   r=-0.33 (sign-reversed artifact from per-layer sigma). Regime 4 with non-degenerate sigma
-   recovers r=0.844 on LFM2-350M — a strong correlation masked by measurement error.
-
-5. **Phase classification limits prediction testing.** P4, P7, P8 depend on phase labels from
-   `classify_phases()`. When only layer 0 is classified as highway, phase-dependent predictions
-   are underpowered. The spectral entropy trajectory shows clear compression regions that the
-   classifier misses.
-
-### Open Problem: Model-Independent Sigma
-
-The gap-based heuristic (`_derive_rbf_sigma_from_values`) produces σ values spanning 100×
-across models (0.037 to 3.51). For MI measurements to be model-independent, sigma must be
-derived from a principle that gives consistent measurement resolution regardless of the
-model's geodesic distance distribution.
-
-Candidates:
-- **Fixed percentile of geodesic distance distribution** (e.g., median) — simple but arbitrary
-- **Spectral gap of the distance matrix** — principled but may have same model-dependence
-- **Cross-validation of kernel bandwidth** — expensive, no closed form
-- **Accept model-dependence**: MI is only meaningful within a model, not across models
-
-This is an open measurement problem, not a math error.
+1. Derive a sigma calibration that is provably commensurable across compared layers/models, or
+   explicitly restrict MI claims to within-model domains.
+2. Add architecture-labeled seam tests: predict where sigma regime changes should occur from
+   operator schedule, then falsify.
+3. Re-run MI predictions only after commensurability proof is attached.
+4. Keep CKA and `C_ex` as the active bedrock chain until MI operator validity is restored.
 
 ### Status Tags
 
-- [PROVEN] Hadamard product of PSD kernels is PSD (Schur 1911)
-- [PROVEN] S₂ bounds: 0 ≤ S₂ ≤ log₂(N) (Giraldo et al. 2014)
-- [PROVEN] I₂ ≥ 0 for infinitely divisible kernels (Giraldo et al. 2014)
-- [PROVEN] CKA decays with layer distance (3/3 models, p<1e-12)
-- [PROVEN] CKA ≠ Rényi MI — fundamentally different quantities
-- [EMPIRICAL] C_ex = S_spec - ln(ID) ≥ 0 (clamped, 2/3 models peak at highway)
-- [EMPIRICAL] ID tracks MI when sigma is non-degenerate (r=0.84 on 350M)
-- [REFUTED] MI does NOT decay with layer distance (3/3 models, all regimes)
-- [REFUTED] DPI does NOT hold for matrix-based Rényi MI (3/3 models)
-- [REFUTED] No information bottleneck at highway
-- [OPEN] Model-independent sigma derivation for commensurable MI
-- [NOT PROVEN] Hadamard product ≠ joint-space RBF for geodesic distances
+- `[VALIDATED]` CKA depth-distance decay (cross-model)
+- `[EMPIRICAL]` `C_ex` highway peak in LFM2 family
+- `[MEASUREMENT_INVALID]` cross-model Rényi MI promotion with current sigma derivation
+- `[OPEN]` architecture-conditioned sigma regime derivation
+- `[OPEN]` commensurable MI operator for heterogeneous layer families
 
-### Data
+### Data and Artifacts
 
-Full results: `results/information_bridge/{LFM2-350M,LFM2-700M,Qwen3.5-0.8B}/`
-Experiment script: `scripts/information_bridge_experiment.py`
-Each model directory contains: `predictions.json`, `trajectories.json`, `report.md`,
-`cka_matrix.json`, `renyi_mi_matrix.json`, `renyi_mi_matrix_normalized.json`
+- Results: `results/information_bridge/{LFM2-350M,LFM2-700M,Qwen3.5-0.8B}/`
+- Script: `scripts/information_bridge_experiment.py`
+- Derivation notes: `docs/research/information_bridge_derivation.md`
 
 ---
 

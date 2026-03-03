@@ -738,22 +738,30 @@ def main():
         layer_acts_list, backend, sigma_0
     )
 
-    # --- Step 9b: Normalized MI (Regime 4) ---
-    logger.info("Step 9b: Computing normalized MI (L2 norm + shared sigma)...")
+    # --- Step 9b: Normalized MI (Regime 5: calibrated sigma) ---
+    logger.info("Step 9b: Computing normalized MI (L2 norm + calibrated sigma)...")
     t0 = time.time()
     from modelcypher.core.domain.geometry.information_bridge import (
         compute_normalized_all_pairs_mi,
         compute_normalized_mi_trajectory,
     )
 
-    normalized_mi_traj, shared_sigma = compute_normalized_mi_trajectory(
+    normalized_mi_traj, shared_sigma, cal_result = compute_normalized_mi_trajectory(
         layer_acts_list, backend
     )
-    normalized_mi_matrix, _ = compute_normalized_all_pairs_mi(
+    normalized_mi_matrix, _, _ = compute_normalized_all_pairs_mi(
         layer_acts_list, backend
     )
-    logger.info("  Normalized MI in %.1fs (shared_sigma=%.6f)",
-                time.time() - t0, shared_sigma)
+    if cal_result and not cal_result.is_multi_scale:
+        logger.info("  Calibrated sigma in %.1fs (σ*=%.6f, feasible=[%.6f, %.6f])",
+                    time.time() - t0, shared_sigma,
+                    cal_result.feasible_lower, cal_result.feasible_upper)
+    elif cal_result and cal_result.is_multi_scale:
+        logger.warning("  Model is intrinsically multi-scale — fell back to gap heuristic "
+                       "(sigma=%.6f) in %.1fs", shared_sigma, time.time() - t0)
+    else:
+        logger.info("  Normalized MI in %.1fs (shared_sigma=%.6f)",
+                    time.time() - t0, shared_sigma)
 
     # --- Step 10: Test predictions ---
     logger.info("Step 10: Testing predictions P1-P9...")
@@ -844,6 +852,14 @@ def main():
         "input_mi_normalized": normalized_mi_traj,
         "sigma_0": sigma_0,
         "shared_sigma_normalized": shared_sigma,
+        "calibration": {
+            "sigma_star": cal_result.sigma_star if cal_result else None,
+            "feasible_lower": cal_result.feasible_lower if cal_result else None,
+            "feasible_upper": cal_result.feasible_upper if cal_result else None,
+            "is_multi_scale": cal_result.is_multi_scale if cal_result else None,
+            "per_layer_entropy_at_sigma_star": cal_result.per_layer_entropy if cal_result else [],
+            "per_layer_ci": [list(ci) for ci in cal_result.per_layer_ci] if cal_result and cal_result.per_layer_ci else None,
+        },
     }
     with open(output_dir / "trajectories.json", "w") as f:
         json.dump(trajectories, f, indent=2)
@@ -856,7 +872,8 @@ def main():
         f"**Probes:** {len(probes)}",
         f"**Layers:** {num_layers}",
         f"**Sigma_0:** {sigma_0:.6f}",
-        f"**Shared_sigma (Regime 4):** {shared_sigma:.6f}",
+        f"**Shared_sigma (Regime 5):** {shared_sigma:.6f}",
+        f"**Calibration:** {'σ*=' + f'{cal_result.sigma_star:.6f}, feasible=[{cal_result.feasible_lower:.6f}, {cal_result.feasible_upper:.6f}]' if cal_result and not cal_result.is_multi_scale else 'MULTI-SCALE (gap heuristic fallback)' if cal_result else 'N/A'}",
         "",
         "## Phase Classification",
         "",

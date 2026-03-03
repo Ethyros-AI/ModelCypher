@@ -289,7 +289,7 @@ def test_normalized_mi_trajectory_nonnegative(any_backend):
         backend.array([[v * 1000.0 for v in row] for row in base]),
     ]
 
-    trajectory, sigma = compute_normalized_mi_trajectory(layers, backend)
+    trajectory, sigma, _ = compute_normalized_mi_trajectory(layers, backend)
 
     assert sigma > 0.0, f"Shared sigma must be positive. Got {sigma}"
 
@@ -334,8 +334,8 @@ def test_normalized_mi_trajectory_scale_invariant(any_backend):
         backend.array(base),
     ]
 
-    traj_a, _ = compute_normalized_mi_trajectory(layers_a, backend)
-    traj_b, _ = compute_normalized_mi_trajectory(layers_b, backend)
+    traj_a, _, _ = compute_normalized_mi_trajectory(layers_a, backend)
+    traj_b, _, _ = compute_normalized_mi_trajectory(layers_b, backend)
 
     eps = _div_eps(backend)
     for l in range(len(traj_a)):
@@ -368,8 +368,8 @@ def test_normalized_mi_shared_sigma_consistent(any_backend):
         backend.array([[float(n - i), float(i * 4 + 2)] for i in range(n)]),
     ]
 
-    _, sigma_traj = compute_normalized_mi_trajectory(layers, backend)
-    _, sigma_pairs = compute_normalized_all_pairs_mi(layers, backend)
+    _, sigma_traj, _ = compute_normalized_mi_trajectory(layers, backend)
+    _, sigma_pairs, _ = compute_normalized_all_pairs_mi(layers, backend)
 
     assert sigma_traj > 0.0, f"Trajectory sigma must be positive. Got {sigma_traj}"
     assert sigma_pairs > 0.0, f"All-pairs sigma must be positive. Got {sigma_pairs}"
@@ -403,7 +403,7 @@ def test_normalized_all_pairs_mi_symmetric(any_backend):
         backend.array([[float(n - i) * 100, float(i * 4 + 2) * 100] for i in range(n)]),
     ]
 
-    mi_matrix, sigma = compute_normalized_all_pairs_mi(layers, backend)
+    mi_matrix, sigma, _ = compute_normalized_all_pairs_mi(layers, backend)
 
     assert sigma > 0.0, f"Shared sigma must be positive. Got {sigma}"
 

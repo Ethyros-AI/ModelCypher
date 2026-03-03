@@ -12,6 +12,7 @@ All major claims in this roadmap are governed by:
 - `docs/research/GEOMETRIC-CONJECTURES-FALSIFICATION-PROTOCOL.md`
 - `docs/research/deep_research_integration_2026_02.md` (canonical integration log for external deep-research reports)
 - `docs/research/FIRST_PRINCIPLES_REVIEW_PROTOCOL.md` (claim-level bedrock audit contract)
+- `docs/research/FIRST_PRINCIPLES_REVIEW_LEDGER.md` (audit log of reviewed doctrine/research files)
 
 Status labels and promotion rules (`[CONJECTURAL]`, `[VALIDATED]`, `[DISPROVEN]`, etc.) are
 defined in `docs/EVIDENCE-TAXONOMY.md` and apply to every thread below.
@@ -21,6 +22,11 @@ A claim cannot be promoted if it is confirmed on some models and refuted on othe
 without an explicit architecture-conditioned and scale-conditioned derivation.
 Such outcomes are classified as mechanism underspecification or measurement invalidity,
 not partial confirmation.
+
+**Documentation enforcement (2026-03-03):**
+Every research-facing document must complete a first-principles claim audit using
+`docs/research/FIRST_PRINCIPLES_REVIEW_PROTOCOL.md`. Any promoted claim missing
+architecture terms, scale terms, or commensurability proof is downgraded until fixed.
 
 ---
 
@@ -231,6 +237,16 @@ Why does Qwen3 have sharper attention than Qwen2.5 despite similar architecture?
 - [ ] Derive architecture-conditioned MI measurement model before testing outcomes
 - [ ] Prove kernel commensurability conditions across compared layers/models
 - [ ] Separate measurement artifacts from causal geometry changes at layer seams
+- [ ] Block roadmap/mission promotion of MI claims until commensurability proof exists
+
+### Q5: Repository-Wide First-Principles Doc Rework
+**Source:** `FIRST_PRINCIPLES_REVIEW_PROTOCOL.md`
+
+- [ ] Audit every research/doctrine doc for promotable claims
+- [ ] Attach claim-form fields (operator, equation, architecture term, scale term, operator validity, falsifier)
+- [ ] Downgrade unsupported claims to `[EXPLORATORY]`, `[MECHANISM_UNDERSPECIFIED]`, or `[MEASUREMENT_INVALID]`
+- [ ] Add explicit next falsification experiment for each downgraded claim
+- [ ] Keep a ledger of audited files and claim state transitions
 
 ### Q4: Geometry from Architecture (Fundamental)
 **Source:** `OPEN-MATHEMATICAL-QUESTIONS.md` §10

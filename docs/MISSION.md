@@ -64,6 +64,18 @@ With explicit declarations:
 
 No experiment starts until this contract is written in the experiment doc.
 
+## Documentation Contract (Required Before Any Claim Promotion)
+
+No claim can be promoted into mission/vision/roadmap language unless it passes
+`docs/research/FIRST_PRINCIPLES_REVIEW_PROTOCOL.md`.
+
+This applies to all promoted statements, not just new experiments.
+Retroactive doctrine cleanup is mandatory whenever a claim is found to lack:
+1. architecture terms,
+2. scale terms,
+3. measurement commensurability proof,
+4. explicit falsifier.
+
 ## "Fine" Is the Enemy of Correct
 
 A forward pass is a deterministic geometric map. Given parameters and input, there is exactly one output. There is no "fine." There is no "close enough." There is no "reasonable approximation." There is the correct answer, derived from the geometry, or there is a wrong answer you stopped questioning too early.
