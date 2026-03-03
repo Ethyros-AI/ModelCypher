@@ -252,6 +252,16 @@ satisfied. Claims missing architecture/scale terms or commensurability proofs ar
                output spans more local directions → higher curvature. Geometrically
                motivated but not formalized from attention + MLP mechanics.
                Architecture term: MISSING. Scale term: MISSING.
+               Theoretical grounding (Agarwal et al. 2026, arXiv:2512.22471v3):
+               In transformers that track Bayesian posteriors (which Theorem 1 proves
+               is the CE minimizer), the value manifold at the final checkpoint is 1D,
+               parameterized by posterior entropy. Lower entropy = manifold closer to 1D
+               = lower curvature. Higher entropy = higher-dimensional manifold = higher
+               curvature. The entropy→curvature direction follows from this: entropy IS
+               the coordinate of the value manifold. The causal mechanism (diffuse
+               attention → mixed value directions → higher-D manifold) is now
+               interpretable as: more uncertain posterior → manifold must span more
+               dimensions to represent the residual hypothesis set.
                     ↓
 [EXPLORATORY, r=0.821] Cumulative curvature → ID
                Measured correlation. Mechanism: accumulated directional change →
@@ -259,6 +269,11 @@ satisfied. Claims missing architecture/scale terms or commensurability proofs ar
                Relationship between known curvature transformations and TwoNN estimator
                behavior: NOT DERIVED.
                Architecture term: MISSING. Scale term: MISSING.
+               Theoretical grounding: same Bayesian manifold interpretation applies —
+               cumulative curvature accumulation = progressive Bayesian suppression steps
+               (each layer ablation causes >10× error increase in wind-tunnel tasks), and
+               the final ID corresponds to the dimension of the posterior-entropy-
+               parameterized value manifold.
                     ↓
 [PROVEN]       ID → Phases
                Phases are defined by ID trajectory shape (minima = highway,
@@ -686,6 +701,14 @@ Intrinsic Dimension (MLE estimator from nearest neighbor ratios)
 **Why entropy predicts Δcurvature:**
 - Diffuse attention (entropy ≈ 1): Mixes many token representations → output spans many local directions → curvature increases
 - Selective attention (entropy < 0.3): Focuses on few tokens → output constrained to subspace → curvature decreases
+
+**Theoretical grounding (Agarwal et al. 2026, arXiv:2512.22471v3):**
+In transformers that minimize cross-entropy (Theorem 1: CE minimizer = Bayesian posterior
+predictive), the value manifold's dimensionality is parameterized by posterior entropy — at
+the final checkpoint representations lie on a 1D manifold with entropy as coordinate. The
+entropy→Δcurvature direction follows directly: entropy = how uncertain the posterior is =
+how many dimensions the value manifold needs = how much curvature accumulates per layer.
+Full technical mapping: `docs/research/bayesian_geometry_connection.md`.
 
 ---
 
