@@ -671,12 +671,12 @@ A curved manifold can have:
 
 ### Intrinsic Dimension: Complete Causal Chain (2026-02-03)
 
-**ID is determined by cumulative curvature, which is determined by attention entropy.**
+**ID is determined by cumulative curvature, which is determined by logit entropy (Entropy-Lens).**
 
 **Correlations found:**
 | Relationship | Correlation |
 |--------------|-------------|
-| Attention entropy → Δcurvature | r = 0.507 |
+| Logit entropy → Δcurvature | r = 0.507 |
 | Cumulative curvature → ID | r = 0.821 |
 
 **The mechanism:**
@@ -696,7 +696,7 @@ Layer position
       ↓
 QK alignment (learned, correlates with GQA)
       ↓
-Attention entropy = -Σ p log p / log(T)  [measurable]
+Logit entropy (Entropy-Lens: project h_l → unembedding → softmax → Shannon H)  [measurable]
       ↓
 Δcurvature = curvature(attn_out) - curvature(attn_in)  [measurable]
       ↓  (r = 0.507)
@@ -705,9 +705,13 @@ Cumulative curvature = 1 - (top-2 variance fraction in local neighborhoods)
 Intrinsic Dimension (MLE estimator from nearest neighbor ratios)
 ```
 
-**Why entropy predicts Δcurvature:**
-- Diffuse attention (entropy ≈ 1): Mixes many token representations → output spans many local directions → curvature increases
-- Selective attention (entropy < 0.3): Focuses on few tokens → output constrained to subspace → curvature decreases
+**Why logit entropy predicts Δcurvature (Bayesian manifold mechanism):**
+- High logit entropy (uncertain posterior): Representation spans many dimensions of the value
+  manifold → higher curvature accumulation per layer
+- Low logit entropy (certain posterior): Representation near 1D value manifold → low-dimensional
+  → less curvature accumulation
+- Note: This is NOT direct attention mixing. Attention weight entropy is upstream and
+  architecture-dependent in its effect on curvature (see `entropy_curvature_derivation.md`).
 
 **Critical clarification (2026-03-03):** The "entropy" in this chain is **logit entropy**
 (Entropy-Lens), NOT attention weight entropy. Sublayer decomposition experiments show

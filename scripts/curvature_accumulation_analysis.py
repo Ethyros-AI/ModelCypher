@@ -328,6 +328,58 @@ def try_compute_attn_entropy(self_attn, normed: "mx.array") -> float | None:
         return None
 
 
+def try_compute_logit_entropy(model, base, h_out_last: "mx.array") -> float | None:
+    """Compute logit entropy H_logit for a layer hidden state.
+
+    Projects h_out_last (last token, shape [1, d]) through the model's final norm and
+    unembedding matrix, then computes Shannon entropy over the vocabulary distribution.
+    This is the Entropy-Lens quantity (H_logit) — distinct from attention-weight entropy
+    H_attn. See entropy-curvature-derivation.md for the operator distinction.
+
+    Returns float in nats, or None if computation fails.
+    """
+    import mlx.core as mx
+
+    try:
+        # Apply final layer norm before unembedding.
+        # LFM2 uses embedding_norm; standard transformers use norm.
+        final_norm = getattr(base, "embedding_norm", None) or getattr(base, "norm", None)
+        h_normed = final_norm(h_out_last) if final_norm is not None else h_out_last
+
+        # Project through unembedding matrix.
+        lm_head = getattr(model, "lm_head", None)
+        embed_tokens = getattr(base, "embed_tokens", None)
+        if lm_head is not None:
+            logits = lm_head(h_normed)  # [1, vocab]
+        elif embed_tokens is not None and hasattr(embed_tokens, "as_linear"):
+            logits = embed_tokens.as_linear(h_normed)  # LFM2 tied unembedding
+        elif embed_tokens is not None and hasattr(embed_tokens, "weight"):
+            logits = h_normed @ embed_tokens.weight.T  # weight-tied fallback
+        else:
+            return None
+
+        mx.eval(logits)
+
+        # Convert to numpy — handle [1, vocab] or [1, T, vocab]
+        logits_np = np.array(logits.tolist(), dtype=np.float64)
+        if logits_np.ndim == 3:
+            logits_np = logits_np[0, -1, :]
+        elif logits_np.ndim == 2:
+            logits_np = logits_np[0, :]
+        else:
+            logits_np = logits_np.ravel()
+
+        # Numerically stable softmax + Shannon entropy (nats)
+        logits_np -= logits_np.max()
+        exp_l = np.exp(logits_np)
+        probs = exp_l / exp_l.sum()
+        eps = 1e-12
+        entropy = float(-np.sum(probs * np.log(probs + eps)))
+        return entropy
+    except Exception:
+        return None
+
+
 def collect_sublayer_activations(
     model, tokenizer, prompts: list[str], num_layers: int, backend
 ) -> list[dict]:
@@ -354,6 +406,7 @@ def collect_sublayer_activations(
     layer_h_post_attn = [[] for _ in range(num_layers)]
     layer_h_out = [[] for _ in range(num_layers)]
     layer_h_attn_entropy = [[] for _ in range(num_layers)]
+    layer_h_logit_entropy = [[] for _ in range(num_layers)]
 
     for prompt in prompts:
         tokens = tokenizer.encode(prompt)
@@ -446,6 +499,11 @@ def collect_sublayer_activations(
             # Entropy stored per-prompt (None for SSM/non-standard layers)
             layer_h_attn_entropy[i].append(attn_entropy)
 
+            # Logit entropy (Entropy-Lens) — project h_out through unembedding.
+            # h_out_last is shape [1, d] (mlx array, already eval'd).
+            logit_entropy = try_compute_logit_entropy(model, base, h_out_last)
+            layer_h_logit_entropy[i].append(logit_entropy)
+
             hidden = h_out
 
         mx.eval(hidden)
@@ -460,6 +518,7 @@ def collect_sublayer_activations(
             "h_post_attn": np.stack(layer_h_post_attn[i]) if has_decomposition else None,
             "has_decomposition": has_decomposition,
             "h_attn_entropy": layer_h_attn_entropy[i],
+            "h_logit_entropy": layer_h_logit_entropy[i],
         })
 
     return result
@@ -507,10 +566,15 @@ def compute_curvature_decomposition(
             except Exception:
                 id_val = float("nan")
 
-        # Attention entropy: mean over non-None probe values
+        # Attention entropy H_attn: mean over non-None probe values
         raw_ent = act.get("h_attn_entropy", [])
         valid_ent = [e for e in raw_ent if e is not None and not np.isnan(e)]
         mean_h_attn = float(np.mean(valid_ent)) if valid_ent else None
+
+        # Logit entropy H_logit (Entropy-Lens): mean over non-None probe values
+        raw_logit_ent = act.get("h_logit_entropy", [])
+        valid_logit_ent = [e for e in raw_logit_ent if e is not None and not np.isnan(e)]
+        mean_h_logit = float(np.mean(valid_logit_ent)) if valid_logit_ent else None
 
         layer_result = {
             "layer_idx": i,
@@ -518,6 +582,7 @@ def compute_curvature_decomposition(
             "mean_alpha": mean_alpha,
             "id_two_nn": id_val,
             "mean_h_attn": mean_h_attn,
+            "mean_h_logit": mean_h_logit,
             "attn_curvature": None,
             "mlp_curvature": None,
             "attn_fraction": None,

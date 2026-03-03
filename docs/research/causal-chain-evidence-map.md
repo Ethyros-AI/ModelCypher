@@ -21,14 +21,21 @@ QK alignment (L0)
     ↓ [EXPLORATORY]
 Attention selectivity
     ↓ [PROVEN]
-Entropy
-    ↓ [EXPLORATORY] ← KEY DERIVATION GAP
-Δcurvature (r=0.507)
+H_attn (attention weight entropy)
+    ↓ [EXPLORATORY] ← OPERATOR RECONCILIATION NEEDED
+H_logit (logit entropy / Entropy-Lens)
+    ↓ [EXPLORATORY, r=0.507] ← KEY DERIVATION GAP
+Δcurvature
     ↓ [EXPLORATORY]
 Cumulative curvature → ID (r=0.821)
     ↓ [PROVEN]
 Phases (highway / processing / exit)
 ```
+
+**Operator note:** The `[PROVEN]` link to H_attn is definitional (attention selectivity = Shannon
+entropy of QK softmax weights). The empirically measured r=0.507 uses H_logit (Entropy-Lens:
+project h_l through unembedding, compute token distribution entropy). Whether H_attn and H_logit
+proxy the same underlying posterior uncertainty is open (CR-EC-001). See ACT-016.
 
 ---
 
@@ -98,11 +105,11 @@ depth. Each step is computable from the attention operator.
 
 ---
 
-### Attention selectivity ↔ Entropy  `[PROVEN]`
+### Attention selectivity ↔ H_attn  `[PROVEN]`
 
-`H = -Σ α_i log α_i` where α_i are softmax attention weights.
+`H_attn = -Σ α_i log α_i` where α_i are softmax attention weights (QK^T / √d_k).
 
-Selectivity (concentration of α) and entropy are definitionally equivalent. No empirical
+Selectivity (concentration of α) and H_attn are definitionally equivalent. No empirical
 test needed. This is Shannon entropy evaluated on the attention distribution.
 
 Trilogy contribution: **none needed**. Theorem 1 (arXiv 2512.22471) confirms CE minimizers
@@ -111,9 +118,33 @@ definitional equivalence does not require the paper.
 
 ---
 
-### Entropy → Δcurvature  `[EXPLORATORY]` ← **KEY DERIVATION GAP**
+### H_attn ↔ H_logit  `[EXPLORATORY]` ← **OPERATOR RECONCILIATION NEEDED**
 
-**Measured:** r = 0.507 (Entropy → Δcurvature, cross-family).
+**H_logit** (Entropy-Lens): project the layer's output hidden state `h_l` through the model's
+final norm and unembedding matrix, compute Shannon entropy of the resulting token distribution.
+
+**H_attn** and **H_logit** are distinct operators measuring different things:
+- H_attn: concentration of attention over input tokens (architectural routing)
+- H_logit: uncertainty about the next output token (posterior uncertainty)
+
+**Open question:** Are they proxies for the same underlying posterior uncertainty? If
+correlated (r > 0.7 per family), the derivation in `entropy-curvature-derivation.md`
+(which is written for H_attn) is valid in spirit. If uncorrelated (r < 0.3), the derivation
+path must be reframed around H_logit.
+
+**Empirical evidence:** Qwen2.5-3B: r(H_attn, curvature) = -0.036, p=0.835 — not significant.
+The r=0.507 reported in the causal chain uses H_logit (Entropy-Lens), not H_attn.
+ACT-016 requires: run corr(H_attn, H_logit) per family and per-layer, report per-family.
+
+**What promotes this to `[VALIDATED]`:** Run ACT-016. Report corr(H_attn, H_logit)
+per family in `results/entropy_curvature_operator_split/<model>/`.
+
+---
+
+### H_logit → Δcurvature  `[EXPLORATORY]` ← **KEY DERIVATION GAP**
+
+**Measured:** r = 0.507 (H_logit → Δcurvature, cross-family). Operator: Entropy-Lens
+(logit entropy), NOT attention weight entropy H_attn.
 
 **Proposed mechanism:** Diffuse attention → output = mean(V) → output directions span the
 convex hull of V columns → higher-D local patch → higher curvature. Concentrated attention
@@ -148,7 +179,9 @@ attention operator that would let us predict curvature from entropy without meas
 families — partial support for generalization. Does not close the derivation gap.
 
 **What promotes this to `[VALIDATED]`:**
-Derive from the population map `x → α(x) → y(x) = W_O V α(x)`:
+First, reconcile the operator (ACT-016): determine whether H_attn ≈ H_logit or whether
+H_logit is the correct quantity to derive from. Then derive from the population map
+`x → α(x) → y(x) = W_O V α(x)`:
 1. `Cov[y]` spectrum as a function of `H(α)` via `k_eff = exp(H(α))`
 2. Local output dimensionality bounds from V and α
 3. Angle-based curvature and TwoNN response as functions of `Cov[y]` spectrum
@@ -209,11 +242,27 @@ Trilogy contribution: **none needed**. Definitions are not empirical claims.
 
 ---
 
-## The Open Derivation Gap: Entropy → Curvature
+## The Open Derivation Gap: H_logit → Curvature (with Operator Reconciliation)
 
-This is the key step needed to close the chain theoretically.
+This is the key step needed to close the chain theoretically. It has two sub-problems.
 
-**What we have:** r=0.507, directional theoretical grounding from Bayesian value manifold.
+### Sub-problem 1: Operator Reconciliation (ACT-016)
+
+**What we have:** r=0.507 (H_logit → curvature), but r=-0.036 p=0.835 (H_attn → curvature,
+Qwen2.5-3B). The derivation in `entropy-curvature-derivation.md` uses H_attn (H(α)).
+
+**What is needed:** Measure corr(H_attn, H_logit) per family (LFM2, Qwen, Llama). If correlated
+(r > 0.7), the derivation is valid in spirit. If not, reframe around H_logit.
+
+**Required artifact:** `results/entropy_curvature_operator_split/<model>/` with:
+- Per-family corr(H_attn, H_logit) across layers
+- Per-operator F1 falsifier outcome
+- Per-family sign table for both operators
+
+### Sub-problem 2: The Derivation Gap
+
+**What we have:** r=0.507 (H_logit → curvature), directional theoretical grounding
+from Bayesian value manifold.
 
 **What is missing:** A derivation of the form:
 
@@ -263,8 +312,9 @@ Formal derivation target: `entropy-curvature-derivation.md`.
 | GQA → K capacity | `[PROVEN]` | — |
 | Training regime → subspace allocation | `[EXPLORATORY]` | Gradient signal causal operator |
 | QK alignment → selectivity → highway | `[EXPLORATORY]` | Formal derivation: alignment → expected crossing depth |
-| Attention selectivity ↔ Entropy | `[PROVEN]` | — |
-| Entropy → Δcurvature | `[EXPLORATORY]` | Derive: H(α), V → expected ID/curvature of output distribution |
+| Attention selectivity ↔ H_attn | `[PROVEN]` | — |
+| H_attn ↔ H_logit | `[EXPLORATORY]` | ACT-016: corr(H_attn, H_logit) per family; determine if proxies |
+| H_logit → Δcurvature | `[EXPLORATORY]` | ACT-016 + derive: H(α), V → expected ID/curvature of output distribution |
 | Cumulative curvature → ID | `[EXPLORATORY]` | Derive: TwoNN behavior under curvature transformations |
 | ID → Phases | `[PROVEN]` | — |
 
