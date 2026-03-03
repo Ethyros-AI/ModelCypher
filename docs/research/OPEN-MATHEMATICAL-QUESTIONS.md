@@ -220,7 +220,7 @@ Each link is labeled with its claim state. `[VALIDATED]` requires all eight prot
 satisfied. Claims missing architecture/scale terms or commensurability proofs are `[EXPLORATORY]`.
 
 ```
-[DERIVED]     GQA (architecture) → K capacity
+[PROVEN]      GQA (architecture) → K capacity
               K_dim = Q_dim / GQA. Architectural identity. No empirical test needed.
                     ↓
 [EXPLORATORY] Training regime → Subspace allocation
@@ -241,10 +241,10 @@ satisfied. Claims missing architecture/scale terms or commensurability proofs ar
               Architecture term: not conditioned on hybrid vs pure-attention families.
               Scale term: MISSING.
                     ↓
-[DEFINITIONAL] Attention selectivity ↔ Entropy
+[PROVEN]       Attention selectivity ↔ Entropy
                Entropy = -Σ p_i log p_i. Selective weights → concentrated distribution
-               → low entropy. Definitional once "selectivity" is defined by weight
-               concentration. No free assumption.
+               → low entropy. By definition of Shannon entropy once "selectivity" is
+               defined as weight concentration. No free assumption.
                     ↓
 [EXPLORATORY, r=0.507] Entropy → Δcurvature
                Measured correlation only. Causal operator: NOT DERIVED.
@@ -260,9 +260,9 @@ satisfied. Claims missing architecture/scale terms or commensurability proofs ar
                behavior: NOT DERIVED.
                Architecture term: MISSING. Scale term: MISSING.
                     ↓
-[DEFINITIONAL] ID → Phases
+[PROVEN]       ID → Phases
                Phases are defined by ID trajectory shape (minima = highway,
-               accumulation = processing, stabilization = exit). Definitional.
+               accumulation = processing, stabilization = exit). True by construction.
                     ↓
 [EXPLORATORY, LFM2-only] Highway location → C_ex peak
                Measured: LFM2-350M and LFM2-700M confirm.

@@ -231,13 +231,27 @@ Why does Qwen3 have sharper attention than Qwen2.5 despite similar architecture?
 - [ ] Identify architectural differences
 - [ ] Analytical relationship between config and attention rank
 
-### Q3: Information-Theoretic Characterization
+### Q3: Information-Theoretic Characterization `[MEASUREMENT_INVALID]`
 **Source:** `OPEN-MATHEMATICAL-QUESTIONS.md` §9
 
-- [ ] Derive architecture-conditioned MI measurement model before testing outcomes
-- [ ] Prove kernel commensurability conditions across compared layers/models
-- [ ] Separate measurement artifacts from causal geometry changes at layer seams
-- [ ] Block roadmap/mission promotion of MI claims until commensurability proof exists
+**Status (2026-03-03):** Experiment ran across 3 models (LFM2-350M, LFM2-700M, Qwen3.5-0.8B). Two calibration regimes tested (Regime 4: L2+shared sigma; Regime 5: calibrated sigma). 3-4/9 predictions confirmed depending on model; cross-model results diverge. Root cause is dual:
+
+**Layer 1 (measurement):** Per-layer RBF sigma grows with depth due to residual stream scale accumulation (Spearman = 0.76–0.92 across models). Mixing kernels calibrated at different scales makes `I₂(X_0, X_l)` dominated by bandwidth artifacts, not causal geometry. Regime 5 (calibrated sigma, σ*=0.93–1.74) improved commensurability — P4 CONFIRMED for LFM2-700M with correct calibration.
+
+**Layer 2 (structural):** The Rényi α=2 MI estimator does NOT satisfy DPI. We were testing Shannon MI predictions (P2: MI decays; P4: highway = MI minimum) with an estimator that provably cannot satisfy them. Moreover, the residual stream identity `h_l = h_0 + Σ_{k<l} δ_k` means h_0 is a literal summand of every h_l: the map h_0 → h_l is injective for fixed weights, so Shannon MI(h_0; h_l) = H(h_0) (constant) by the data processing inequality in reverse. Monotone Shannon MI decay is structurally impossible in residual networks.
+
+**P5 cross-model split:** With Regime 5 sigma, P5 (ID tracks MI with input) CONFIRMED for LFM2-350M (r=0.847, p=3.47e-5) but REFUTED for LFM2-700M (r=0.309, p=0.244). ID variation in 700M is narrower (range 1.56 units vs 3.04 in 350M), making the correlation weaker. Per protocol: [MECHANISM_UNDERSPECIFIED] — no pre-registered scale term predicted this divergence.
+
+**What is solid:** P1 (CKA decays with |i-j|) — validated all 3 models, r=-0.42 to -0.64, p<1e-12. `C_ex` highway peak — confirmed LFM2 both models, refuted Qwen (phase classifier architecture term missing).
+
+**Pending work:**
+- [x] Per-layer sigma incommensurability identified (depth dominant, not architecture)
+- [x] Regime 4 (L2+shared sigma) tested
+- [x] Regime 5 (calibrated sigma) tested — improves P4 but P5 split persists
+- [ ] Derive Shannon-compatible estimator that satisfies DPI for cross-layer comparison
+- [ ] Formalize why P5 scale-dependence is real (350M ID range >> 700M ID range → same architecture, different width)
+- [ ] Architecture-conditioned MI claim contract (required before any new MI promotion)
+- [ ] Cross-model MI promotion remains blocked until commensurability proof exists
 
 ### Q5: Repository-Wide First-Principles Doc Rework
 **Source:** `FIRST_PRINCIPLES_REVIEW_PROTOCOL.md`

@@ -4,30 +4,28 @@ Extracted from `OPEN-MATHEMATICAL-QUESTIONS.md` to keep each file one-shot revie
 
 ## Information Bridge Experiment — MEASUREMENT FAILURE (2026-03-03) `[MEASUREMENT_INVALID]`
 
-**8 pre-registered predictions (P1–P8) tested across 3 models (LFM2-350M, LFM2-700M, Qwen3.5-0.8B).**
+**8 pre-registered predictions (P1–P8) tested across 3 models (LFM2-350M, LFM2-700M, Qwen3.5-0.8B), two calibration regimes (Regime 4: L2+shared sigma; Regime 5: calibrated σ*).**
 
-**Confirmed (survived):**
-- **P1** — CKA decays with |i-j|: all 3 models, r ≈ -0.42 to -0.64, p < 1e-12. Solid.
+**Solid signal (validated cross-model):**
+- **P1** — CKA decays with |i-j|: all 3 models, r ≈ -0.42 to -0.64, p < 1e-12.
+- **P7** — C_ex peaks at highway: confirmed LFM2-350M and LFM2-700M. Refuted for Qwen (peak C_ex at late processing layer 19). Cross-family claim is [MECHANISM_UNDERSPECIFIED] — architecture/scale terms missing for Qwen.
+
+**Family-level signal (LFM2 only):**
 - **P3** — CKA and Rényi MI correlate: confirmed for 350M and Qwen (r ≈ 0.29–0.30, p < 0.01). INCONCLUSIVE for 700M (p=0.038).
-- **P7** — C_ex peaks at highway: confirmed for both LFM2 models. Refuted for Qwen (peak C_ex at late processing layer 19, not highway).
 
-**Refuted (5 predictions): P2, P4, P5, P6, P8.**
+**Refuted: P2, P4, P5, P6, P8.** (Detailed below.)
 
-**Root cause: per-layer RBF sigma creates incommensurable kernels.**
+---
 
-The sigma derivation uses the maximum relative gap in the sorted pairwise distance distribution — a valid data-derived scale for a single distribution, but one that produces wildly different values across heterogeneous layer types. Sigma logging confirmed:
+### Root Cause Layer 1 (Measurement): Per-layer sigma incommensurability
+
+The Regime 4 sigma derivation uses the maximum relative gap in the sorted pairwise distance distribution — valid for a single distribution, but produces wildly different values across heterogeneous layer types. Sigma logging confirmed:
 
 | Model | sigma_0 | max sigma | max/min ratio | Worst jump |
 |-------|---------|-----------|---------------|------------|
 | LFM2-350M | 0.0485 | 3.886 | 124× | L13→L14: 23.97× |
 
-Layer 14 in LFM2-350M is a full attention layer; its activation distribution produces sigma_l = 3.25 vs sigma_0 = 0.049. The Hadamard product K₀ ⊙ K₁₄ mixes kernels calibrated at completely different length scales. The result is not mutual information — it's a bandwidth mismatch artifact.
-
-**What the I₂ drops mean:** Layers 14-15 in LFM2-350M (I₂ = 1.03, 1.09 bits from a baseline of ~7) and layers 8-13 in Qwen3.5-0.8B (I₂ = 0.59–0.74 bits) correlate with specific architectural layer types. Whether these drops are real information compression events or pure bandwidth artifact cannot be determined with the current measurement. The fixed-sigma I₂_fixed fails in the opposite direction (monotone non-decreasing) because sigma_0 is too small for later layers.
-
-**P4 also had a test design error:** the original test checked `fraction_below_median` rather than actual global minimum. Fixed to check whether highway layers contain the global I₂ minimum. Refuted 3/3 under the correct test: the global minimum is at late processing layers (L14 for 350M), not at the highway.
-
-**Chain extension confirmed:** C_ex peaks at highway for LFM2 (2/3 models). The validated chain gains: `→ C_ex peak → Highway`. Qwen failure may reflect the phase classifier not being tuned to Qwen's architecture.
+Layer 14 in LFM2-350M (full attention) produces sigma_l = 3.25 vs sigma_0 = 0.049. The Hadamard product K₀ ⊙ K₁₄ mixes kernels at completely different length scales — bandwidth mismatch artifact, not mutual information.
 
 **Root cause confirmed: sigma grows with depth (residual stream scale accumulation).**
 
@@ -35,13 +33,45 @@ Layer 14 in LFM2-350M is a full attention layer; its activation distribution pro
 - LFM2-700M: Spearman(depth, sigma) = 0.915, p = 7e-7
 - Qwen3.5-0.8B: Spearman(depth, sigma) = 0.476, p = 0.019 (marginal; L19 outlier sigma=13.2)
 
-S_spec and attention type are NOT the drivers. Spearman(sigma, S_spec): 0.04, 0.34, -0.22 across the three models — no consistent signal. P9 (attention type predicts sigma): REFUTED (Qwen geometric ratio=1.563, p=0.578). Boundary-local transition test: one-sided p=0.066, not significant at p<0.01, and not independent of the depth trend.
+Architecture type (attention vs SSM) is NOT the primary driver. Spearman(sigma, S_spec): 0.04, 0.34, -0.22 — no consistent signal. Depth is dominant.
 
-**Fix for MI measurement:** L2-normalize activations before computing kernels. This removes depth-driven scale while preserving directional structure (geometry). Per-layer sigma comparison becomes valid when all activation vectors have unit norm. Run this before adding further predictions.
+**Regime 5 (calibrated σ*) results:** A single shared sigma derived from the full joint pairwise distance distribution (σ*=0.928 for 350M, σ*=1.744 for 700M). Eliminated saturation artifacts. Under Regime 5:
+- P4 CONFIRMED for LFM2-700M: global I₂ minimum at L1 (the highway), not late layers.
+- P4 REFUTED for LFM2-350M: global minimum at L8, not highway L0.
+- P5 split persists: CONFIRMED for LFM2-350M (r=0.847, p=3.47e-5), REFUTED for LFM2-700M (r=0.309, p=0.244).
 
-**Verdict for Rényi MI as cross-layer measure:** NOT suitable with per-layer RBF kernels on raw activations. The depth-driven scale makes sigmas incommensurable by construction. L2-normalize activations first, then retest P2/P4/P5/P6. CKA is the reliable tool in the interim.
+The P5 cross-model split under correct calibration is not a sigma artifact. LFM2-700M has ID variation range 1.56 units (10.40–11.96) vs LFM2-350M's 3.04 units (8.71–11.75). Narrower ID variation in the wider model means the same mechanism produces weaker correlation. This is [MECHANISM_UNDERSPECIFIED]: no pre-registered scale term predicted this divergence.
 
-**Artifacts:** `results/information_bridge/LFM2-350M/`, `LFM2-700M/`, `Qwen3.5-0.8B/` — each contains `predictions.json`, `report.md` (with kernel bandwidth diagnostics table and layer type column), `trajectories.json`, `cka_matrix.json`, `renyi_mi_matrix.json`.
+---
+
+### Root Cause Layer 2 (Structural): Estimator mismatch + residual stream
+
+Even with commensurable sigma, the predictions as written are wrong by construction:
+
+**The estimator does not satisfy DPI.** We tested P2 (Rényi MI decays with layer depth), P4 (highway = MI minimum), P6 (DPI holds at fixed σ) — all derived from the data processing inequality. The Rényi α=2 MI estimator `I₂ = S₂(K_X) + S₂(K_Y) - S₂(K_X ⊙ K_Y)` does NOT satisfy DPI. Testing a DPI consequence with a non-DPI estimator is a test design error, not a measurement failure. P6 was registered as "empirical only" precisely because we knew this. But P2 and P4 were registered as if they would hold — without checking whether the estimator would satisfy them.
+
+**The residual stream makes Shannon MI decay impossible by construction.** `h_l = h_0 + Σ_{k<l} δ_k`. For fixed weights, the map h_0 → h_l is injective (each δ_k is a deterministic function of h_0). An injective map preserves all information: Shannon MI(h_0; h_l) = H(h_0) for all l. Monotone Shannon MI decay cannot occur in residual networks — it would require the map to discard information, which injectivity prohibits. P2 was testing something structurally impossible.
+
+These are not measurement issues. They are prediction design errors. The predictions were imported from information bottleneck theory (non-residual networks, stochastic maps) without re-deriving them for:
+- residual architectures (injective layer maps)
+- the specific estimator (Rényi α=2, non-DPI)
+
+**P4 also had a test design error:** the original test checked `fraction_below_median` rather than actual global minimum. Fixed to check whether highway layers contain the global I₂ minimum. With correct test + Regime 5 sigma: CONFIRMED for 700M, REFUTED for 350M. The P4 result is calibration-sensitive.
+
+---
+
+### Verdict
+
+Three independent failure modes:
+1. Sigma incommensurability (measurement) — partially fixed by Regime 5. Residual: 350M/700M use different σ*, making cross-model I₂ comparison still invalid.
+2. Estimator mismatch (prediction design) — Rényi MI cannot test Shannon MI predictions. Requires a DPI-satisfying estimator or different predictions.
+3. Residual stream structure (causal) — Shannon MI decay predictions are structurally impossible in residual architectures. Must replace P2 with a prediction derived for injective maps.
+
+**What remains blocked:** Any cross-layer or cross-model MI claim until (a) a DPI-satisfying estimator is derived, (b) predictions are re-derived for injective residual stream maps, and (c) sigma commensurability proof is provided across compared layers and models.
+
+**What is solid:** P1 (CKA depth-distance decay), C_ex highway peak for LFM2. Both survive all three failure modes.
+
+**Artifacts:** `results/information_bridge/LFM2-350M/`, `LFM2-700M/`, `Qwen3.5-0.8B/` — each contains `predictions.json`, `report.md` (Regime 5 results), `trajectories.json`, `cka_matrix.json`, `renyi_mi_matrix.json`.
 
 ---
 

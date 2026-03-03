@@ -561,8 +561,9 @@ def test_calibrated_grams_are_nondegenerate(any_backend):
     assert not result.is_multi_scale, "Prerequisite: calibration must succeed"
     assert result.per_layer_entropy is not None
 
-    eps = _div_eps(backend)
-    sqrt_eps = eps ** 0.5
+    # division_epsilon already returns sqrt(machine_eps), which is the threshold
+    # used by compute_calibrated_sigma for non-degeneracy constraints
+    sqrt_eps = _div_eps(backend)
     log2_n = math.log2(n)
 
     for l, s2 in enumerate(result.per_layer_entropy):

@@ -93,7 +93,9 @@ The base model is commodity infrastructure. The adapter is the relationship. The
 
 ## The Separation That Matters
 
-Intelligence converges on invariant structures regardless of the architecture it runs on. ModelCypher's cross-family validation (LFM2 + Qwen) already demonstrates this — weight space is Euclidean, the geometry transfers. Hardware is the variable. Geometry is the constant.
+**[VALIDATED]** Weight space is Euclidean (P ≈ I, Fisher degenerate — cross-family falsification on LFM2 + Qwen, 2026-02-23). The geometry transfers across architectures because the activation-space alignment is done via CKA and null-space projection, not weight-space interpolation. Hardware is the variable. Geometry is the constant.
+
+**[EXPLORATORY]** Whether intelligence in general converges on architecture-invariant structures (the Platonic Representation Hypothesis) is a deeper claim that our cross-family validation does not confirm. Our validation shows weight-space Euclidean structure is shared across LFM2 and Qwen. Generalization to all architectures requires the full Platonic Hypothesis machinery and is not demonstrated here.
 
 This means the identity layer — the personal adapter — is not tied to any specific model, company, or device. It is a geometric object that persists across substrates.
 
