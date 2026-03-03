@@ -700,21 +700,21 @@ def main():
             ratio,
         )
 
-    # --- Step 7: CKA matrix ---
-    logger.info("Step 7: Computing L×L CKA matrix...")
+    # --- Step 7: CKA matrix (linear CKA — dot-product Gram, no bandwidth) ---
+    logger.info("Step 7: Computing L×L linear CKA matrix...")
     t0 = time.time()
-    from modelcypher.core.domain.geometry.cka import compute_cka
+    from modelcypher.core.domain.geometry.cka import compute_linear_cka_from_activations
 
     cka_matrix = [[0.0] * num_layers for _ in range(num_layers)]
     for i in range(num_layers):
         for j in range(i, num_layers):
-            result = compute_cka(
+            cka_val = compute_linear_cka_from_activations(
                 layer_activations[sorted_layers[i]],
                 layer_activations[sorted_layers[j]],
                 backend,
             )
-            cka_matrix[i][j] = result.best
-            cka_matrix[j][i] = result.best
+            cka_matrix[i][j] = cka_val
+            cka_matrix[j][i] = cka_val
     logger.info("  CKA matrix in %.1fs", time.time() - t0)
 
     # --- Step 8: MI matrix (Regime 1) ---

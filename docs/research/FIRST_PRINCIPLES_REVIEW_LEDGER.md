@@ -20,6 +20,7 @@ Tracks doctrine and research documents audited under
 | 2026-03-03 | `docs/EVIDENCE-TAXONOMY.md` | Updated | Expanded to canonical 8-label system, added migration map for legacy tags |
 | 2026-03-03 | `docs/research/OPEN-MATHEMATICAL-QUESTIONS-REFUTATIONS.md` | Updated | Replaced legacy status tags with canonical evidence tags |
 | 2026-03-03 | `docs/research/information_bridge_derivation.md` | Updated | Normalized `CONJECTURE` tags to `CONJECTURAL` |
+| 2026-03-03 | `docs/research/linear_accessible_information_derivation.md` | Created | Q3 frontier artifact: protocol-compliant replacement of invalid MI-depth claims with linear-accessible observable |
 | 2026-03-03 | `docs/research/quantization_geometry_deep_dive.md` | Updated | Normalized `MEASURED` tags to `EMPIRICAL` |
 | 2026-03-03 | `docs/research/geometric_hyperparameter_rosetta_stone.md` | Updated | Removed `SUPERSEDED` evidence tags; kept supersession as prose metadata |
 

@@ -1179,8 +1179,8 @@ intrinsically multi-scale. Design doc: `docs/research/sigma_calibration_design.m
 | Prediction | LFM2-350M | LFM2-700M | Qwen3.5-0.8B | Verdict |
 |------------|-----------|-----------|---------------|---------|
 | P1: CKA decays with \|i-j\| | CONFIRMED | CONFIRMED | CONFIRMED | `[VALIDATED]` 3/3 |
-| P2: Rényi MI decays with \|i-j\| | REFUTED | REFUTED | REFUTED | `[REFUTED]` 0/3 |
-| P6: DPI holds at fixed σ | REFUTED | REFUTED | REFUTED | `[REFUTED]` 0/3 (explained below) |
+| P2: Rényi MI decays with \|i-j\| | REFUTED | REFUTED | REFUTED | `[DISPROVEN]` 0/3 |
+| P6: DPI holds at fixed σ | REFUTED | REFUTED | REFUTED | `[DISPROVEN]` 0/3 (explained below) |
 | P7: C_ex peaks at highway | CONFIRMED | CONFIRMED | REFUTED | `[EMPIRICAL]` 2/3 LFM2 only |
 | P8: CKA shows phase blocks | CONFIRMED | CONFIRMED | CONFIRMED | `[VALIDATED]` 3/3 |
 
@@ -1219,8 +1219,8 @@ of MI change is not predicted by bypass strength, only magnitude).
 - `[PROVEN]` Unnormalized chain is Markov → DPI holds for true MI
 - `[PROVEN]` L2 normalization breaks Markov property → DPI violations are genuine
 - `[EMPIRICAL]` C_ex highway peak (P7, LFM2 family only, 2/3)
-- `[REFUTED]` Rényi MI decays with layer distance (P2, 0/3)
-- `[REFUTED]` DPI holds for normalized kernel MI (P6, 0/3, mechanism explained)
+- `[DISPROVEN]` Rényi MI decays with layer distance (P2, 0/3)
+- `[DISPROVEN]` DPI holds for normalized kernel MI (P6, 0/3, mechanism explained)
 
 ### Remaining Open Questions
 
@@ -1238,6 +1238,7 @@ of MI change is not predicted by bypass strength, only magnitude).
 - Scripts: `scripts/information_bridge_experiment.py`, `scripts/dpi_violation_analysis.py`
 - Calibration design: `docs/research/sigma_calibration_design.md`
 - Derivation: `docs/research/information_bridge_derivation.md`
+- Replacement observable derivation: `docs/research/linear_accessible_information_derivation.md`
 
 ---
 
