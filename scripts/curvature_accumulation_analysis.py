@@ -1277,6 +1277,7 @@ def run_falsifier_tests(all_results: list[dict], n_permutations: int = 500) -> d
 
             per_family = {}
             sign_mismatch = 0
+            sign_mismatch_all = 0
             significant_families = 0
             families = sorted({p["family"] for p in pool_sign_law})
             for fam in families:
@@ -1300,6 +1301,8 @@ def run_falsifier_tests(all_results: list[dict], n_permutations: int = 500) -> d
                 b_p = b_n - b_d
 
                 sign_match = np.sign(b_t) == np.sign(b_p) or abs(b_t) < 1e-12 or abs(b_p) < 1e-12
+                if not sign_match:
+                    sign_mismatch_all += 1
                 if p_t < 0.05:
                     significant_families += 1
                     if not sign_match:
@@ -1332,6 +1335,7 @@ def run_falsifier_tests(all_results: list[dict], n_permutations: int = 500) -> d
                 "per_family": per_family,
                 "n_significant_families": significant_families,
                 "n_sign_mismatches": sign_mismatch,
+                "n_sign_mismatches_all": sign_mismatch_all,
                 "passes": passes_sign_law,
                 "derivation_prediction": "sign(beta_theta_total_log) = sign(beta_numerator_log - beta_denominator_log)",
                 "fail_criterion": "sign mismatch in any significant family",
@@ -1575,6 +1579,39 @@ def run_experiment(args: argparse.Namespace) -> None:
             )
     else:
         logger.info(f"  operator_correlation: {op_corr.get('status', 'no result')}")
+
+    logger.info("  -- F5 frontier: sign-law decomposition (H_logit -> θ_total) --")
+    sign_law = falsifier_results.get("f5_sign_law_decomposition", {})
+    if "error" in sign_law:
+        logger.warning(f"  f5_sign_law_decomposition: ERROR — {sign_law['error']}")
+    elif "global" in sign_law:
+        g = sign_law["global"]
+        status = "PASS" if sign_law.get("passes", False) else "FAIL"
+        logger.info(
+            "  F5_sign_law [%s]: beta_theta=%.4f, beta_num=%.4f, beta_den=%.4f, beta_pred=%.4f, "
+            "sig_families=%s, mismatches=%s",
+            status,
+            g.get("beta_theta_total_log", 0.0),
+            g.get("beta_numerator_log", 0.0),
+            g.get("beta_denominator_log", 0.0),
+            g.get("beta_predicted_num_minus_den", 0.0),
+            sign_law.get("n_significant_families", 0),
+            sign_law.get("n_sign_mismatches", 0),
+        )
+        for fam, vals in sign_law.get("per_family", {}).items():
+            logger.info(
+                "    %s: beta_theta=%.4f (p=%.4f), beta_pred=%.4f, sign_match=%s",
+                fam,
+                vals.get("beta_theta_total_log", 0.0),
+                vals.get("p_theta_total_log", 1.0),
+                vals.get("beta_predicted_num_minus_den", 0.0),
+                vals.get("sign_match", False),
+            )
+    else:
+        logger.info(
+            "  f5_sign_law_decomposition: %s",
+            sign_law.get("status", "no result"),
+        )
 
     # Save results
     output_dir = Path(args.output)
