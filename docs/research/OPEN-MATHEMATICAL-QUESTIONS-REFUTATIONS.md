@@ -2,6 +2,39 @@
 
 Extracted from `OPEN-MATHEMATICAL-QUESTIONS.md` to keep each file one-shot reviewable.
 
+## Information Bridge Experiment — MEASUREMENT FAILURE (2026-03-03) `[CLOSED]`
+
+**8 pre-registered predictions (P1–P8) tested across 3 models (LFM2-350M, LFM2-700M, Qwen3.5-0.8B).**
+
+**Confirmed (survived):**
+- **P1** — CKA decays with |i-j|: all 3 models, r ≈ -0.42 to -0.64, p < 1e-12. Solid.
+- **P3** — CKA and Rényi MI correlate: confirmed for 350M and Qwen (r ≈ 0.29–0.30, p < 0.01). INCONCLUSIVE for 700M (p=0.038).
+- **P7** — C_ex peaks at highway: confirmed for both LFM2 models. Refuted for Qwen (peak C_ex at late processing layer 19, not highway).
+
+**Refuted (5 predictions): P2, P4, P5, P6, P8.**
+
+**Root cause: per-layer RBF sigma creates incommensurable kernels.**
+
+The sigma derivation uses the maximum relative gap in the sorted pairwise distance distribution — a valid data-derived scale for a single distribution, but one that produces wildly different values across heterogeneous layer types. Sigma logging confirmed:
+
+| Model | sigma_0 | max sigma | max/min ratio | Worst jump |
+|-------|---------|-----------|---------------|------------|
+| LFM2-350M | 0.0485 | 3.886 | 124× | L13→L14: 23.97× |
+
+Layer 14 in LFM2-350M is a full attention layer; its activation distribution produces sigma_l = 3.25 vs sigma_0 = 0.049. The Hadamard product K₀ ⊙ K₁₄ mixes kernels calibrated at completely different length scales. The result is not mutual information — it's a bandwidth mismatch artifact.
+
+**What the I₂ drops mean:** Layers 14-15 in LFM2-350M (I₂ = 1.03, 1.09 bits from a baseline of ~7) and layers 8-13 in Qwen3.5-0.8B (I₂ = 0.59–0.74 bits) correlate with specific architectural layer types. Whether these drops are real information compression events or pure bandwidth artifact cannot be determined with the current measurement. The fixed-sigma I₂_fixed fails in the opposite direction (monotone non-decreasing) because sigma_0 is too small for later layers.
+
+**P4 also had a test design error:** the original test checked `fraction_below_median` rather than actual global minimum. Fixed to check whether highway layers contain the global I₂ minimum. Refuted 3/3 under the correct test: the global minimum is at late processing layers (L14 for 350M), not at the highway.
+
+**Chain extension confirmed:** C_ex peaks at highway for LFM2 (2/3 models). The validated chain gains: `→ C_ex peak → Highway`. Qwen failure may reflect the phase classifier not being tuned to Qwen's architecture.
+
+**Verdict for Rényi MI as cross-layer measure:** NOT suitable with per-layer RBF kernels in heterogeneous models. Options if MI is needed: (a) shared sigma calibrated to one reference layer, (b) activation normalization before kernel computation, (c) use CKA as the MI proxy (P3 shows r≈0.3 correlation). CKA is the reliable tool; MI does not add reliable signal beyond it.
+
+**Artifacts:** `results/information_bridge/LFM2-350M/`, `LFM2-700M/`, `Qwen3.5-0.8B/` — each contains `predictions.json`, `report.md` (with kernel bandwidth diagnostics table), `trajectories.json`, `cka_matrix.json`, `renyi_mi_matrix.json`.
+
+---
+
 ## Experiment Refutations — 5/5 H1 REFUTED (2026-02-26) `[EMPIRICAL]`
 
 Five experiments tested whether external theories (mean-field, RMT, scaling ratios, TDA, SPS) could predict the geometry of trained networks. All five refuted. **The unifying root cause: all five theories were derived for random/initialized networks and do not apply to trained networks.**

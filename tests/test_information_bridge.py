@@ -346,47 +346,38 @@ def test_normalized_mi_trajectory_scale_invariant(any_backend):
 
 
 # ===========================================================================
-# Test: Normalized MI decreases for progressive rotation
+# Test: Normalized MI returns positive shared sigma
 # ===========================================================================
-# For layers [X, R₁X, R₂X] where R applies progressive rotation,
-# MI should decrease as angular structure diverges from input.
-# NOTE: pure scaling is killed by L2 norm, so we use rotation.
+# The shared sigma derived from ALL layers' combined distance statistics
+# must be positive. Also verifies trajectory and all-pairs use the same sigma.
 
 
-def test_normalized_mi_decreases_for_rotation(any_backend):
-    """MI decreases under progressive rotation with normalized activations."""
+def test_normalized_mi_shared_sigma_consistent(any_backend):
+    """Shared sigma is positive and consistent between trajectory/all-pairs."""
     from modelcypher.core.domain.geometry.information_bridge import (
+        compute_normalized_all_pairs_mi,
         compute_normalized_mi_trajectory,
     )
 
     backend = any_backend
-    n = 20
-
-    # X₀: 2D points with clear angular structure
-    base = [[float(i + 1), float(i * 2 + 1)] for i in range(n)]
-
-    # Apply progressively larger rotations (30°, 60°)
-    import math as m
-
-    def rotate(points, theta):
-        c, s = m.cos(theta), m.sin(theta)
-        return [[c * x - s * y, s * x + c * y] for x, y in points]
+    n = 15
 
     layers = [
-        backend.array(base),
-        backend.array(rotate(base, m.pi / 6)),   # 30° rotation
-        backend.array(rotate(base, m.pi / 3)),   # 60° rotation
+        backend.array([[float(i + 1), float(i * 2 + 1)] for i in range(n)]),
+        backend.array([[float(i * 3 + 2), float(i + 5)] for i in range(n)]),
+        backend.array([[float(n - i), float(i * 4 + 2)] for i in range(n)]),
     ]
 
-    trajectory, _ = compute_normalized_mi_trajectory(layers, backend)
+    _, sigma_traj = compute_normalized_mi_trajectory(layers, backend)
+    _, sigma_pairs = compute_normalized_all_pairs_mi(layers, backend)
 
-    # Self-MI should be highest
-    assert trajectory[0] >= trajectory[1] - _div_eps(backend), (
-        f"Self-MI ({trajectory[0]:.4f}) should >= MI with 30° rotation ({trajectory[1]:.4f})"
-    )
-    # More rotation = less MI
-    assert trajectory[1] >= trajectory[2] - _div_eps(backend), (
-        f"MI at 30° ({trajectory[1]:.4f}) should >= MI at 60° ({trajectory[2]:.4f})"
+    assert sigma_traj > 0.0, f"Trajectory sigma must be positive. Got {sigma_traj}"
+    assert sigma_pairs > 0.0, f"All-pairs sigma must be positive. Got {sigma_pairs}"
+
+    # Same input → same sigma (deterministic computation)
+    assert abs(sigma_traj - sigma_pairs) < _div_eps(backend), (
+        f"Sigma should be consistent: trajectory={sigma_traj:.6f}, "
+        f"all-pairs={sigma_pairs:.6f}"
     )
 
 

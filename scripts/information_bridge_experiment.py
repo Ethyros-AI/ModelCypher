@@ -267,8 +267,9 @@ def test_predictions(
     cka_matrix, mi_matrix, input_mi_traj, fixed_mi_traj,
     spectral_entropies, intrinsic_dims, curvature_excess,
     phases, num_layers,
+    normalized_mi_matrix=None, normalized_mi_traj=None,
 ):
-    """Test P1-P8. Returns dict of results."""
+    """Test P1-P8. Uses Regime 4 (normalized) MI for P2/P4/P5/P6 when available."""
     from scipy import stats
 
     results = {}
@@ -288,11 +289,12 @@ def test_predictions(
                   "REFUTED" if (r_p1 >= 0 or p_p1 >= 0.05) else "INCONCLUSIVE",
     }
 
-    # --- P2: MI decays with |i-j| ---
+    # --- P2: MI decays with |i-j| (use normalized MI if available) ---
+    p2_matrix = normalized_mi_matrix if normalized_mi_matrix is not None else mi_matrix
     mi_values = []
     for i in range(num_layers):
         for j in range(i + 1, num_layers):
-            mi_values.append(mi_matrix[i][j])
+            mi_values.append(p2_matrix[i][j])
     r_p2, p_p2 = stats.spearmanr(distances, mi_values)
     results["P2"] = {
         "prediction": "Renyi MI decays with |i-j|",
@@ -312,16 +314,17 @@ def test_predictions(
                   "REFUTED" if (r_p3 <= 0 or p_p3 >= 0.05) else "INCONCLUSIVE",
     }
 
-    # --- P4: Highway = I₂(X₀,·) global minimum ---
+    # --- P4: Highway = I₂(X₀,·) global minimum (use normalized MI if available) ---
+    p4_traj = normalized_mi_traj if normalized_mi_traj is not None else input_mi_traj
     highway_indices = [i for i, p in enumerate(phases) if p == "highway"]
-    if highway_indices and len(input_mi_traj) > 1:
-        min_idx = min(range(len(input_mi_traj)), key=lambda i: input_mi_traj[i])
-        min_val = input_mi_traj[min_idx]
+    if highway_indices and len(p4_traj) > 1:
+        min_idx = min(range(len(p4_traj)), key=lambda i: p4_traj[i])
+        min_val = p4_traj[min_idx]
         highway_min_idx = min(
             highway_indices,
-            key=lambda i: input_mi_traj[i],
+            key=lambda i: p4_traj[i],
         )
-        highway_min_val = input_mi_traj[highway_min_idx]
+        highway_min_val = p4_traj[highway_min_idx]
         is_global_min_in_highway = min_idx in highway_indices
         results["P4"] = {
             "prediction": "Highway = MI minimum",
@@ -340,9 +343,10 @@ def test_predictions(
             "note": "No highway layers classified",
         }
 
-    # --- P5: ID tracks MI with input ---
-    valid_ids = [(intrinsic_dims[i], input_mi_traj[i])
-                 for i in range(min(len(intrinsic_dims), len(input_mi_traj)))
+    # --- P5: ID tracks MI with input (use normalized MI if available) ---
+    p5_traj = normalized_mi_traj if normalized_mi_traj is not None else input_mi_traj
+    valid_ids = [(intrinsic_dims[i], p5_traj[i])
+                 for i in range(min(len(intrinsic_dims), len(p5_traj)))
                  if not math.isnan(intrinsic_dims[i])]
     if len(valid_ids) >= 3:
         ids_list, mi_list = zip(*valid_ids)
@@ -361,14 +365,15 @@ def test_predictions(
             "note": "Insufficient valid ID values",
         }
 
-    # --- P6: DPI at fixed sigma ---
-    if len(fixed_mi_traj) > 1:
+    # --- P6: DPI (use normalized MI if available — cleanest DPI test) ---
+    p6_traj = normalized_mi_traj if normalized_mi_traj is not None else fixed_mi_traj
+    if len(p6_traj) > 1:
         violations = []
-        for i in range(len(fixed_mi_traj) - 1):
-            increase = fixed_mi_traj[i + 1] - fixed_mi_traj[i]
+        for i in range(len(p6_traj) - 1):
+            increase = p6_traj[i + 1] - p6_traj[i]
             if increase > 0:
                 violations.append((i, i + 1, increase))
-        max_mi = max(fixed_mi_traj) if fixed_mi_traj else 1.0
+        max_mi = max(p6_traj) if p6_traj else 1.0
         significant_violations = [v for v in violations if v[2] > 0.01 * max_mi]
         results["P6"] = {
             "prediction": "DPI holds at fixed sigma",
@@ -596,12 +601,31 @@ def main():
         layer_acts_list, backend, sigma_0
     )
 
+    # --- Step 9b: Normalized MI (Regime 4) ---
+    logger.info("Step 9b: Computing normalized MI (L2 norm + shared sigma)...")
+    t0 = time.time()
+    from modelcypher.core.domain.geometry.information_bridge import (
+        compute_normalized_all_pairs_mi,
+        compute_normalized_mi_trajectory,
+    )
+
+    normalized_mi_traj, shared_sigma = compute_normalized_mi_trajectory(
+        layer_acts_list, backend
+    )
+    normalized_mi_matrix, _ = compute_normalized_all_pairs_mi(
+        layer_acts_list, backend
+    )
+    logger.info("  Normalized MI in %.1fs (shared_sigma=%.6f)",
+                time.time() - t0, shared_sigma)
+
     # --- Step 10: Test predictions ---
     logger.info("Step 10: Testing predictions P1-P8...")
     predictions = test_predictions(
         cka_matrix, mi_matrix, input_mi_traj, fixed_mi_traj,
         spectral_entropies, intrinsic_dims, curvature_excess,
         phase_names, num_layers,
+        normalized_mi_matrix=normalized_mi_matrix,
+        normalized_mi_traj=normalized_mi_traj,
     )
 
     # Print results
@@ -659,6 +683,9 @@ def main():
     with open(output_dir / "renyi_mi_matrix.json", "w") as f:
         json.dump(mi_matrix, f, indent=2)
 
+    with open(output_dir / "renyi_mi_matrix_normalized.json", "w") as f:
+        json.dump(normalized_mi_matrix, f, indent=2)
+
     trajectories = {
         "layers": sorted_layers,
         "spectral_entropy_nats": spectral_entropies,
@@ -671,7 +698,9 @@ def main():
         "adjacent_sigma_ratio": adjacent_sigma_ratios,
         "input_mi_per_layer_sigma": input_mi_traj,
         "input_mi_fixed_sigma": fixed_mi_traj,
+        "input_mi_normalized": normalized_mi_traj,
         "sigma_0": sigma_0,
+        "shared_sigma_normalized": shared_sigma,
     }
     with open(output_dir / "trajectories.json", "w") as f:
         json.dump(trajectories, f, indent=2)
@@ -684,6 +713,7 @@ def main():
         f"**Probes:** {len(probes)}",
         f"**Layers:** {num_layers}",
         f"**Sigma_0:** {sigma_0:.6f}",
+        f"**Shared_sigma (Regime 4):** {shared_sigma:.6f}",
         "",
         "## Phase Classification",
         "",
@@ -728,14 +758,15 @@ def main():
         "",
         "## Per-Layer Trajectories",
         "",
-        "| Layer | Phase | S_spec (nats) | ID | C_ex (nats) | I₂(X₀,·) bits | I₂_fixed bits |",
-        "|-------|-------|--------------|-----|-------------|---------------|---------------|",
+        "| Layer | Phase | S_spec (nats) | ID | C_ex (nats) | I₂ per-σ | I₂ fixed | I₂ norm |",
+        "|-------|-------|--------------|-----|-------------|----------|----------|---------|",
     ])
     for i in range(num_layers):
         report_lines.append(
             f"| {sorted_layers[i]} | {phase_names[i]} | {spectral_entropies[i]:.3f} | "
             f"{intrinsic_dims[i]:.2f} | {curvature_excess[i]:.3f} | "
-            f"{input_mi_traj[i]:.3f} | {fixed_mi_traj[i]:.3f} |"
+            f"{input_mi_traj[i]:.3f} | {fixed_mi_traj[i]:.3f} | "
+            f"{normalized_mi_traj[i]:.3f} |"
         )
 
     with open(output_dir / "report.md", "w") as f:

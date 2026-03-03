@@ -223,11 +223,19 @@ Training regime → Subspace allocation (how Q/K partition inputs)
 Subspace overlap → ||W_q @ W_k^T|| interaction strength
               ↓
 QK alignment → Attention selectivity timing → Highway location
+              ↓
+Highway location → C_ex peak (curvature excess maximum at highway)  ← confirmed 2/3 models (2026-03-03)
 ```
+
+**C_ex at highway — CONFIRMED for LFM2 (2/3 models, 2026-03-03):**
+Information bridge experiment P7: LFM2-350M max C_ex at layer 0 (highway, 1.135 nats). LFM2-700M max C_ex at highway layers. Qwen3.5-0.8B: max C_ex at layer 19 (late processing, 0.735 nats) — phase classifier may not capture Qwen's highway correctly.
+
+C_ex = S_spec - log(ID). It peaks where spectral entropy is high relative to intrinsic dimension — the model uses many spectral directions but the representation manifold hasn't expanded. This is exactly what a highway layer does: preserves information in all directions without compressing to a lower-dimensional structure.
 
 **Remaining questions:**
 - [ ] What training hyperparameters determine subspace allocation?
 - [ ] Can we predict subspace overlap from training recipe?
+- [ ] Why does Qwen3.5-0.8B have peak C_ex at a late processing layer rather than the highway? Is the phase classifier miscalibrated, or is Qwen's highway function distributed differently?
 
 ---
 
