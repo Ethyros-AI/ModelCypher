@@ -664,13 +664,17 @@ class _MLXTrainingAdapterCoreMixin:
         # Walk model tree and unfreeze A_tilde, B_tilde, S_raw in each NBLoRALinear
         for _, nb_lora in self._iter_nb_lora_modules(model):
             nb_lora.unfreeze(keys=["A_tilde", "B_tilde", "S_raw"])
-        # Qwen3.5 GatedDeltaNet: @mx.compile on the ops-path step function blocks
-        # value_and_grad. Patch to uncompiled equivalents before training.
+        # Qwen3.5 GatedDeltaNet: mlx-lm loads models with training=False (eval
+        # mode), so GatedDeltaNet uses use_kernel=True (Metal kernel) — which has
+        # no VJP. Fix: (1) set model.train() so use_kernel=False → ops path,
+        # (2) patch the @mx.compile'd ops-path functions to uncompiled equivalents
+        # so autograd can differentiate through them.
         from modelcypher.backends._mlx_qwen35_compat import (  # noqa: PLC0415
             _is_qwen35,
             apply_qwen35_training_patch,
         )
         if _is_qwen35(model):
+            model.train()  # training=True → use_kernel=False → ops path
             apply_qwen35_training_patch()
 
     def run_train_probe_step(

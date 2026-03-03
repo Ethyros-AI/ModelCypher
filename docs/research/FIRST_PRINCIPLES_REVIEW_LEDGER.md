@@ -17,6 +17,11 @@ Tracks doctrine and research documents audited under
 | 2026-03-03 | `docs/RESEARCH-ROADMAP.md` | Updated | Added repo-wide doc rework thread and promotion block for MI claims |
 | 2026-03-03 | `docs/research/OPEN-MATHEMATICAL-QUESTIONS.md` (§9) | Reclassified | Changed from "resolved" to `[MEASUREMENT_INVALID]` pending commensurable MI operator |
 | 2026-03-03 | `CLAUDE.md` | Updated | Removed fixed-percentage gating language; added mixed-model enforcement |
+| 2026-03-03 | `docs/EVIDENCE-TAXONOMY.md` | Updated | Expanded to canonical 8-label system, added migration map for legacy tags |
+| 2026-03-03 | `docs/research/OPEN-MATHEMATICAL-QUESTIONS-REFUTATIONS.md` | Updated | Replaced legacy status tags with canonical evidence tags |
+| 2026-03-03 | `docs/research/information_bridge_derivation.md` | Updated | Normalized `CONJECTURE` tags to `CONJECTURAL` |
+| 2026-03-03 | `docs/research/quantization_geometry_deep_dive.md` | Updated | Normalized `MEASURED` tags to `EMPIRICAL` |
+| 2026-03-03 | `docs/research/geometric_hyperparameter_rosetta_stone.md` | Updated | Removed `SUPERSEDED` evidence tags; kept supersession as prose metadata |
 
 ---
 

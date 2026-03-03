@@ -21,7 +21,7 @@ Quantization is the dominant deployment strategy for large models, yet its geome
 
 ---
 
-## Part 1: Base Model Quantization Geometry `[MEASURED]`
+## Part 1: Base Model Quantization Geometry `[EMPIRICAL]`
 
 ### 1.1 Quantization as Structured Perturbation
 
@@ -207,7 +207,7 @@ Gradients flow through the dequantized weight. The gradient landscape the optimi
 The standard QLoRA adds a third error source that dominates both:
 3. The scale is wrong (alpha/rank ≈ 2.0): contributes 600-2700x × sigma_k
 
-### 2.2 How ModelCypher Handles Quantized Bases `[MEASURED]`
+### 2.2 How ModelCypher Handles Quantized Bases `[EMPIRICAL]`
 
 The training pipeline already handles quantized bases correctly. The chain:
 
@@ -308,7 +308,7 @@ The answer depends on the quantization scheme:
 
 This is exactly what RMT signal separation is designed to measure.
 
-### 3.2 RMT Signal Separation Applied to Quantization Error `[MEASURED]`
+### 3.2 RMT Signal Separation Applied to Quantization Error `[EMPIRICAL]`
 
 The existing `separate_signal_noise()` function applies the Marchenko-Pastur distribution to separate eigenvalues of a matrix's spectrum into signal (above MP bulk edge) and noise (within bulk).
 
@@ -484,7 +484,7 @@ Gate criterion: 95% bootstrap CI lower bound for mean(signal_rank) > 0 ✓ AND m
 **Data:** [`results/rmt_quantization_error/20260226T001044Z/`](../../results/rmt_quantization_error/20260226T001044Z/) (1.7B), [`results/rmt_quantization_error/20260226T002308Z/`](../../results/rmt_quantization_error/20260226T002308Z/) (8B)
 **Script:** [`scripts/rmt_quantization_error.py`](../../scripts/rmt_quantization_error.py)
 
-#### Experiment 1b: Activation-Weighted RMT `[MEASURED]`
+#### Experiment 1b: Activation-Weighted RMT `[EMPIRICAL]`
 
 Raw SVD of E_q measures weight-space structure. Activation-weighted SVD measures **functional error** — the error in directions the model actually uses during inference.
 
@@ -764,7 +764,7 @@ This means the f*-corrected baseline is already near-optimal for this training b
 **Data:** [`results/stacked_corrective_recovery/20260226T134604Z/`](../../results/stacked_corrective_recovery/20260226T134604Z/)
 **Script:** [`scripts/stacked_corrective_recovery.py`](../../scripts/stacked_corrective_recovery.py)
 
-#### 4b: Bedrock Finding — Correction Is Compensation, Not Recovery `[MEASURED]`
+#### 4b: Bedrock Finding — Correction Is Compensation, Not Recovery `[EMPIRICAL]`
 
 The LoRA correction does NOT reduce weight-space error. It adds compensatory perturbations that improve activation similarity while leaving (or slightly increasing) weight error.
 

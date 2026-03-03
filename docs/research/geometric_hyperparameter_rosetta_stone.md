@@ -34,7 +34,7 @@ This document maps each traditional hyperparameter to its geometric replacement.
 | | **Optimizer** | | | | |
 | 1 | Learning Rate | `1e-4` (grid search) | MASS step-size controller | `η_step = min(η_ceiling, η_sps, η_weyl)` | Implemented |
 | 2 | Adam Epsilon | `1e-8` (never questioned) | Spectral noise floor | `max(sigma_k^2, sqrt(eps) * sigma_max^2)` | Implemented |
-| 3 | Adam/Momentum | `0.9 / 0.999` | **Cayley-Stiefel** retraction | Orthogonality constraint on NB-LoRA factors | [SUPERSEDED] ScaledGD by Cayley-Stiefel |
+| 3 | Adam/Momentum | `0.9 / 0.999` | **Cayley-Stiefel** retraction | Orthogonality constraint on NB-LoRA factors | Superseded: ScaledGD by Cayley-Stiefel |
 | 4 | Weight Decay | `0.01` (uniform) | Condition-aware scaling | `sigma_k / sigma_max` | Implemented |
 | 5 | Gradient Clipping | `clip=1.0` | **REMOVED** | Cayley-Stiefel retraction + MASS budget monitoring prevent explosion | Removed |
 | | **Training Loop** | | | | |
@@ -109,7 +109,7 @@ Two floors, take the larger:
 
 ---
 
-### 3. Adam / Momentum (Beta1/Beta2) -> ScaledGD `[SUPERSEDED]`
+### 3. Adam / Momentum (Beta1/Beta2) -> ScaledGD (Superseded)
 
 > **Superseded (2026-02-23):** For NB-LoRA, Cayley-Stiefel retraction replaced ScaledGD. The Cayley constraint enforces orthogonality on NB-LoRA factors directly, making preconditioning unnecessary (weight space is Euclidean — P = MM^T ≈ I, Fisher degenerate). ScaledGD remains mathematically valid for standard LoRA but is not used in the active training pipeline. See `geometric_optimizer.py` docstring.
 

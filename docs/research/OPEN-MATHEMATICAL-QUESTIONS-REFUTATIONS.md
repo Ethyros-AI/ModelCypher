@@ -2,7 +2,7 @@
 
 Extracted from `OPEN-MATHEMATICAL-QUESTIONS.md` to keep each file one-shot reviewable.
 
-## Information Bridge Experiment — MEASUREMENT FAILURE (2026-03-03) `[CLOSED]`
+## Information Bridge Experiment — MEASUREMENT FAILURE (2026-03-03) `[MEASUREMENT_INVALID]`
 
 **8 pre-registered predictions (P1–P8) tested across 3 models (LFM2-350M, LFM2-700M, Qwen3.5-0.8B).**
 
@@ -56,7 +56,7 @@ GQA → K capacity → QK alignment → Attention selectivity → Entropy → Cu
 Training → Exit convergence → Gap → Decay → Effective rank → Recovery ratio
 ```
 
-### R1: Mean-Field α²χ Phase Classification — REFUTED `[CLOSED]`
+### R1: Mean-Field α²χ Phase Classification — REFUTED `[DISPROVEN]`
 
 **Hypothesis:** Mean-field signal propagation (De & Smith 2020) predicts α²χ ≈ 0 at highway layers and α²χ > 0 at processing layers, with Spearman(α²χ, ID_gradient) > 0.5.
 
@@ -76,7 +76,7 @@ Training → Exit convergence → Gap → Decay → Effective rank → Recovery 
 
 **Correct framework:** Phase boundaries are determined by cumulative curvature driven by attention entropy (§2: selectivity → compression). This is the existing causal chain, not a random-initialization theory.
 
-### R2: RMT Marchenko-Pastur Spectral Gap — REFUTED `[CLOSED]`
+### R2: RMT Marchenko-Pastur Spectral Gap — REFUTED `[DISPROVEN]`
 
 **Hypothesis:** Marchenko-Pastur (Noci et al. 2024) predicts attention spectral gap σ₁/σ₂ from architecture parameters (d_head, seq_len, QK-Norm). Models with similar gap distributions have similar attention geometry.
 
@@ -95,7 +95,7 @@ Training → Exit convergence → Gap → Decay → Effective rank → Recovery 
 
 **Correct framework:** The spectral gap is a consequence of attention selectivity (§2: QK alignment → entropy). It carries no independent information beyond what entropy already measures.
 
-### R3: L/d Ratio Scaling — REFUTED `[CLOSED]`
+### R3: L/d Ratio Scaling — REFUTED `[DISPROVEN]`
 
 **Hypothesis:** ID trajectory similarity is governed by L/d ratio, not L or d independently. Models with similar L/d should have similar expansion ratios and Procrustes-aligned ID trajectories.
 
@@ -115,7 +115,7 @@ Training → Exit convergence → Gap → Decay → Effective rank → Recovery 
 
 **Correct framework:** L (depth) determines number of curvature accumulation steps. Architecture family determines attention selectivity pattern (§2). Their interaction determines ID trajectory shape. The ratio L/d is a meaningless composite.
 
-### R4: Zigzag Persistence Phase Detection — PARTIALLY REFUTED `[CLOSED]`
+### R4: Zigzag Persistence Phase Detection — MIXED OUTCOME `[EMPIRICAL]`
 
 **Hypothesis:** VR persistence detects topological phase boundaries aligned with ID inflection points, and math prompts produce higher H1 (loop) persistence than narrative prompts.
 
@@ -135,7 +135,7 @@ Training → Exit convergence → Gap → Decay → Effective rank → Recovery 
 
 **Root cause:** Topological features (H1 loops) are a consequence of the ID trajectory, not a cause or independent predictor. High-ID layers have more room for stable loops; low-ID layers do not.
 
-### R5: SPS f* from Measured Geometry — UNTESTABLE `[OPERATIONAL FAILURE]`
+### R5: SPS f* from Measured Geometry — UNTESTABLE `[MEASUREMENT_INVALID]`
 
 **Hypothesis:** Three geometric methods (RMT noise floor, exponential tail fit, signal propagation highway fraction) agree on f* within 10×, and f*>0 causes SPS to bind >10% of final-quarter iterations with better CKA.
 
@@ -166,7 +166,7 @@ SPS binds ~100% at both f*=0 and f*=0.002. CKA identical. Loss difference within
 
 ---
 
-### Curvature Accumulation Decomposition (2026-02-26) `[NEW ANALYSIS]`
+### Curvature Accumulation Decomposition (2026-02-26) `[EMPIRICAL]`
 
 **Goal:** Strengthen the entropy→curvature weak link (r=0.507, only 25% variance explained) by decomposing per-layer curvature into attention and MLP contributions.
 
@@ -240,11 +240,11 @@ LFM2 models have 0/16 layers with decomposition (hybrid attention-convolution, n
 - ✗ ~~Original GQA formula (highway% = f(GQA))~~ `[DISPROVEN]` - too simplistic
 - ✗ ~~RoPE theta hypothesis (similar locality despite 10x difference)~~ `[DISPROVEN]`
 - ✗ ~~attention_bias hypothesis (Llama has no bias but early highway)~~ `[DISPROVEN]`
-- ✗ ~~Mean-field α²χ phase prediction~~ `[REFUTED 2026-02-26]` - Spearman 0/5, theory for initialization not trained nets (§R1)
-- ✗ ~~Marchenko-Pastur spectral gap prediction~~ `[REFUTED 2026-02-26]` - gap varies 2200×, MP constant (§R2)
-- ✗ ~~L/d ratio scaling hypothesis~~ `[REFUTED 2026-02-26]` - partial r=0.018 p=0.96, L alone works (§R3)
-- ✗ ~~Task-type loop ordering (math > narrative H1)~~ `[REFUTED 2026-02-26]` - inverted in 2/3 models (§R4)
-- ✗ ~~β₁ as reasoning predictor~~ `[REFUTED]` - 3/6 FAIL, now 0/3 on task ordering
+- ✗ ~~Mean-field α²χ phase prediction~~ `[DISPROVEN: 2026-02-26]` - Spearman 0/5, theory for initialization not trained nets (§R1)
+- ✗ ~~Marchenko-Pastur spectral gap prediction~~ `[DISPROVEN: 2026-02-26]` - gap varies 2200×, MP constant (§R2)
+- ✗ ~~L/d ratio scaling hypothesis~~ `[DISPROVEN: 2026-02-26]` - partial r=0.018 p=0.96, L alone works (§R3)
+- ✗ ~~Task-type loop ordering (math > narrative H1)~~ `[DISPROVEN: 2026-02-26]` - inverted in 2/3 models (§R4)
+- ✗ ~~β₁ as reasoning predictor~~ `[DISPROVEN]` - 3/6 FAIL, now 0/3 on task ordering
 
 **The complete geometric chain:**
 ```

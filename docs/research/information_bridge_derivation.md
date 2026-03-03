@@ -8,7 +8,7 @@ information-theoretic quantity the field wanted but never correctly formalized: 
 information between layers of a deterministic network.
 
 **Approach:** Theory-first. Every claim is either (a) algebraically proven, (b) cited
-with theorem and reference, or (c) explicitly marked `[EMPIRICAL]` or `[CONJECTURE]`.
+with theorem and reference, or (c) explicitly marked `[EMPIRICAL]` or `[CONJECTURAL]`.
 
 ---
 
@@ -347,7 +347,7 @@ transforms the spectrum.
 is a monotonic function of the "geometric complexity" of the point cloud (loosely: more
 spread-out, higher-dimensional point clouds have higher entropy). The ordering is
 preserved: if spectral entropy of X > spectral entropy of Y, then S_2(A_X^rbf) >
-S_2(A_Y^rbf) for the same sigma. `[CONJECTURE: monotonicity unproven for all cases]`
+S_2(A_Y^rbf) for the same sigma. `[CONJECTURAL: monotonicity unproven for all cases]`
 
 **What we cannot derive:** The exact numerical relationship between S_2(A_lin) and
 S_2(A_rbf). The non-linear feature map is sigma-dependent and does not preserve
@@ -413,7 +413,7 @@ quantitative relationship is unknown. HSIC measures the squared Hilbert-Schmidt 
 of the cross-covariance operator; MI measures KL divergence between joint and product
 marginals. These use incommensurable metrics on distribution space.
 
-**Whether CKA(i,j) and I_2(i,j) are monotonically related is a `[CONJECTURE]`.** The
+**Whether CKA(i,j) and I_2(i,j) are monotonically related is a `[CONJECTURAL]`.** The
 heuristic argument: for smooth manifolds with RBF kernels, kernel smoothing makes
 distributions approximately Gaussian, and for Gaussian distributions covariance
 characterizes full dependence, so HSIC ~ MI. But this is not a proof.
@@ -465,7 +465,7 @@ has local degrees of freedom:
 - A flat 18D subspace: ID = 18, S_spec ~ ln(18) ~ 2.89 nats,
   C_ex ~ ln(18) - ln(18) = 0 nats. Local and global complexity match.
 
-### 7.5 Prediction: C_ex Peaks at Highway `[CONJECTURE]`
+### 7.5 Prediction: C_ex Peaks at Highway `[CONJECTURAL]`
 
 From existing data (Qwen3-8B, Section 4 of OPEN-MATHEMATICAL-QUESTIONS.md):
 - Highway (layers 16-33): ID ~ 2-3, S_spec ~ ln(18) ~ 2.89 nats,
@@ -533,11 +533,11 @@ falls outside the 99% null interval.
 |---|-----------|-------|------|-----------|
 | P1 | CKA(i,j) decays with \|i-j\| | Geometric: near-identity Jacobians -> nearby layers similar. Cumulative curvature -> distant layers differ. Not a proof. | Spearman(\|i-j\|, CKA) | Negative, p < 0.01, all 3 models |
 | P2 | Renyi MI(i,j) decays with \|i-j\| | Same geometric argument as P1, applied to product kernels. | Spearman(\|i-j\|, I_2) | Negative, p < 0.01, all 3 models |
-| P3 | CKA and I_2 correlate | `[CONJECTURE]`: both kernel-based, same inputs, same dependence direction. No proof exists. | Spearman(CKA, I_2) all pairs | Positive, p < 0.01, all 3 models |
+| P3 | CKA and I_2 correlate | `[CONJECTURAL]`: both kernel-based, same inputs, same dependence direction. No proof exists. | Spearman(CKA, I_2) all pairs | Positive, p < 0.01, all 3 models |
 | P4 | Highway = I_2(X_0, .) minimum | Geometric: low ID -> fewer kernel dimensions -> less shared structure with input. Not a proof. | Highway layers' I_2(X_0,.) ranks | Below median of permutation null (p < 0.01) |
 | P5 | ID tracks MI with input | Geometric: low ID -> simple manifold -> kernel structure from layer 0 poorly preserved. | Spearman(ID(l), I_2(X_0, X_l)) | Positive, p < 0.01, all 3 models |
 | P6 | DPI holds at fixed sigma | `[EMPIRICAL TEST ONLY]`: DPI NOT proven for matrix-based Renyi MI. | I_2^sigma_fixed(X_0, X_l) non-increasing | No violations outside permutation null 99% CI |
-| P7 | C_ex peaks at highway | `[CONJECTURE]`: ID drops before eff_rank does. Geometric argument, not proof. | max(C_ex) location | In highway-classified layers (permutation p < 0.01) |
+| P7 | C_ex peaks at highway | `[CONJECTURAL]`: ID drops before eff_rank does. Geometric argument, not proof. | max(C_ex) location | In highway-classified layers (permutation p < 0.01) |
 | P8 | CKA heatmap shows phase blocks | Geometric: near-identity Jacobians -> within-phase similarity > cross-phase. | within-phase / cross-phase mean CKA ratio | Ratio exceeds permutation null 99th percentile |
 
 ### Falsification Protocol

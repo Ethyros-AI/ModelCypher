@@ -4,7 +4,7 @@
 
 ---
 
-## Mission-Closure Questions (2026-02-27) `[OPEN]`
+## Mission-Closure Questions (2026-02-27) `[CONJECTURAL]`
 
 These are the active gate-closure questions for G3/G4/G5:
 
@@ -214,28 +214,101 @@ LATE highway (compression delayed)
 - Qwen: Q and K read from **orthogonal input directions** (0.43-0.58 overlap)
 - This is a **training regime effect**, not an architectural parameter
 
-**The complete causal chain:**
+**Causal chain — protocol audit per `docs/research/FIRST_PRINCIPLES_REVIEW_PROTOCOL.md`:**
+
+Each link is labeled with its claim state. `[VALIDATED]` requires all eight protocol fields
+satisfied. Claims missing architecture/scale terms or commensurability proofs are `[EXPLORATORY]`.
+
 ```
-GQA (architecture) → K capacity constraint
-              ↓
-Training regime → Subspace allocation (how Q/K partition inputs)
-              ↓
-Subspace overlap → ||W_q @ W_k^T|| interaction strength
-              ↓
-QK alignment → Attention selectivity timing → Highway location
-              ↓
-Highway location → C_ex peak (curvature excess maximum at highway)  ← confirmed 2/3 models (2026-03-03)
+[DERIVED]     GQA (architecture) → K capacity
+              K_dim = Q_dim / GQA. Architectural identity. No empirical test needed.
+                    ↓
+[EXPLORATORY] Training regime → Subspace allocation
+              Observed: subspace overlap correlates with QK alignment (r=0.93).
+              Mechanism for WHY training produces these allocations: NOT DERIVED.
+              Architecture term: MISSING. Scale term: MISSING.
+                    ↓
+[EXPLORATORY] Subspace overlap → QK alignment (r=0.93, 4 models, 3 families)
+              Geometry argument: overlapping Q/K subspaces → higher inner product →
+              higher alignment scores. Argument is geometrically motivated.
+              Formal derivation from attention mechanics: MISSING.
+              Scale term: 3B–8B only.
+                    ↓
+[EXPLORATORY] QK alignment → Attention selectivity → Highway location
+              Geometry argument: near-orthogonal Q,K → near-zero QK scores → uniform
+              softmax → diffuse attention → late ID compression → late highway.
+              Argument is derivable from the attention operator but has NOT been formalized.
+              Architecture term: not conditioned on hybrid vs pure-attention families.
+              Scale term: MISSING.
+                    ↓
+[DEFINITIONAL] Attention selectivity ↔ Entropy
+               Entropy = -Σ p_i log p_i. Selective weights → concentrated distribution
+               → low entropy. Definitional once "selectivity" is defined by weight
+               concentration. No free assumption.
+                    ↓
+[EXPLORATORY, r=0.507] Entropy → Δcurvature
+               Measured correlation only. Causal operator: NOT DERIVED.
+               Proposed mechanism: diffuse attention mixes many token directions →
+               output spans more local directions → higher curvature. Geometrically
+               motivated but not formalized from attention + MLP mechanics.
+               Architecture term: MISSING. Scale term: MISSING.
+                    ↓
+[EXPLORATORY, r=0.821] Cumulative curvature → ID
+               Measured correlation. Mechanism: accumulated directional change →
+               higher local manifold dimensionality (TwoNN). Geometrically motivated.
+               Relationship between known curvature transformations and TwoNN estimator
+               behavior: NOT DERIVED.
+               Architecture term: MISSING. Scale term: MISSING.
+                    ↓
+[DEFINITIONAL] ID → Phases
+               Phases are defined by ID trajectory shape (minima = highway,
+               accumulation = processing, stabilization = exit). Definitional.
+                    ↓
+[EXPLORATORY, LFM2-only] Highway location → C_ex peak
+               Measured: LFM2-350M and LFM2-700M confirm.
+               Qwen3.5-0.8B: C_ex peaks at layer 19 (late processing), not highway.
+               Architecture term: LFM2 SSM-dominated entry phase only.
+               Cross-family divergence NOT predicted by a pre-registered architecture/scale
+               term → MECHANISM_UNDERSPECIFIED for cross-family claim.
 ```
 
-**C_ex at highway — CONFIRMED for LFM2 (2/3 models, 2026-03-03):**
-Information bridge experiment P7: LFM2-350M max C_ex at layer 0 (highway, 1.135 nats). LFM2-700M max C_ex at highway layers. Qwen3.5-0.8B: max C_ex at layer 19 (late processing, 0.735 nats) — phase classifier may not capture Qwen's highway correctly.
+**What C_ex = S_spec - log(ID) measures (geometric description, not derivation):**
+High where spectral entropy is large relative to intrinsic dimension — many active spectral
+directions but a compact local manifold. Whether this NECESSARILY peaks at the highway or
+merely does so for LFM2's SSM-dominated entry phase requires a formal derivation from SSM
+operator properties. Without that, C_ex at highway is an LFM2 observation, not a universal
+chain extension.
 
-C_ex = S_spec - log(ID). It peaks where spectral entropy is high relative to intrinsic dimension — the model uses many spectral directions but the representation manifold hasn't expanded. This is exactly what a highway layer does: preserves information in all directions without compressing to a lower-dimensional structure.
+**What needs formal derivation before any link is promoted to `[VALIDATED]`:**
 
-**Remaining questions:**
+1. **Entropy → curvature** (weakest link): Derive from the attention operator. Given uniform
+   attention weights α_ij = 1/T (diffuse), output_i = mean(V). Given concentrated weights
+   (α_ij ≈ δ_{jk}), output_i ≈ V_k. How does the geometry of {output_i}_i over the input
+   distribution change between these cases? This is computable from attention mechanics.
+
+2. **Cumulative curvature → ID**: Derive the TwoNN estimator's behavior under known curvature
+   transformations. The TwoNN estimator is built on the manifold hypothesis — its response to
+   accumulated directional change has a theoretical derivation that has not been worked out.
+
+3. **QK alignment → highway timing**: Formalize the geometry argument. Given alignment = 0.04
+   (Qwen) vs 0.18 (Llama), derive the expected depth at which cumulative curvature crosses the
+   ID inflection threshold. Requires: alignment → per-layer entropy → curvature accumulation
+   formula → crossing depth. Each step derivable in principle.
+
+4. **C_ex at highway for SSM (Mamba)**: SSM is a linear recurrence in fixed-dimensional state,
+   qualitatively different from attention. Derive why the SSM-dominated highway phase (LFM2
+   layers 0–1) produces high S_spec relative to ID. The mechanism differs from the attention
+   argument and requires separate derivation.
+
+**Open questions (protocol-framed):**
 - [ ] What training hyperparameters determine subspace allocation?
+      (Required before promotable: causal operator identifying which gradient signals drive
+       Q/K subspace separation toward or away from alignment)
 - [ ] Can we predict subspace overlap from training recipe?
-- [ ] Why does Qwen3.5-0.8B have peak C_ex at a late processing layer rather than the highway? Is the phase classifier miscalibrated, or is Qwen's highway function distributed differently?
+      (Required: architecture × training_duration × data_domain terms in the prediction form)
+- [ ] Why does Qwen3.5-0.8B C_ex peak at layer 19 rather than highway?
+      (Required: pre-registered architecture/scale prediction distinguishing LFM2 from Qwen
+       before the claim becomes cross-family)
 
 ---
 
@@ -1088,84 +1161,67 @@ architectures?
 
 ### Bedrock Diagnosis
 
-This thread is **not resolved**. The prior mixed-model outcomes were a protocol failure:
-cross-model claims were made before proving measurement commensurability.
+This thread is not resolved. The prior mixed outcomes were promoted too early.
+Cross-model MI conclusions remain blocked until measurement commensurability is proven.
 
-Current status by claim type:
+Current split:
 
-1. **Geometric similarity signal (CKA):** stable and cross-model consistent.
-2. **Rényi MI cross-layer comparisons:** not promotable across models under current sigma derivation.
-3. **Highway/phase MI claims:** not promotable until both phase labeling and MI operator validity are fixed.
+1. **Stable signal:** CKA depth-distance decay is validated cross-model.
+2. **Family-level signal:** `C_ex` highway peak appears in LFM2, not universal.
+3. **Blocked signal:** Rényi MI cross-model promotion is measurement-invalid under current
+   bandwidth calibration assumptions.
 
-### What Is Valid Right Now
+### Why the MI Claims Are Blocked
 
-1. **P1 remains validated:** CKA decays with layer distance on all tested models.
-2. **P7 remains empirically useful:** `C_ex` peaks at highway for LFM2 family (not universal yet).
+Kernel MI uses bandwidth `sigma`. When `sigma` calibration is not commensurable across compared
+layers/models, `I_2(X_0, X_l)` becomes dominated by bandwidth regime artifacts rather than causal
+geometry.
 
-These two signals can be used for mechanism-building because they are not currently blocked by
-the same kernel commensurability failure that affects Rényi MI promotion.
+Observed mechanism from current runs:
 
-### Why Rényi MI Promotion Failed
+1. Depth strongly predicts sigma growth (dominant term in multiple models).
+2. Architecture transitions can create local residual jumps, but these are secondary once depth
+   scale is accounted for.
+3. Claims that ignore this decomposition mix causal terms and measurement terms.
 
-The estimator uses RBF kernels with bandwidth `sigma`. If compared layers/models are calibrated
-to incompatible bandwidth regimes, `I_2(X_0, X_l)` is dominated by kernel-scale artifacts.
+This means the right model is not "architecture only" and not "noise only"; it is a coupled
+depth + architecture measurement problem that must be specified before interpretation.
 
-Observed failure pattern:
+### Required Claim Contract (Before Any New MI Promotion)
 
-1. Per-layer sigma caused incommensurable values across layers.
-2. Fixed sigma from layer 0 saturated deeper layers.
-3. Shared sigma after L2 normalization improved intra-model behavior but remained model-dependent.
-
-Large sigma-ratio swings across adjacent layers (especially in hybrid architectures) show that the
-operator is currently sensitive to architecture-specific geometry seams, so cross-model MI claims
-are invalid under the present derivation.
-
-### Architecture Seam Hypothesis (Open Mechanism)
-
-Sigma discontinuities are treated as architecture signals, not as \"information loss\" by default.
-Working hypothesis:
-
-1. Certain operator transitions induce qualitative changes in activation distance geometry.
-2. Gap-derived sigma tracks these regime boundaries.
-3. MI instability appears where kernel calibration crosses those boundaries without equivalence proof.
-
-This is a mechanism hypothesis, not a promoted conclusion.
-
-### Required Contract Before Any New MI Claim
-
-No new MI claim is promotable unless all are written and satisfied:
+No MI claim is promotable without:
 
 1. `observable = f(geometry_state, architecture_state, scale_state, measurement_operator)`
-2. Architecture-conditioned term (explicit operator-family dependence)
-3. Scale-conditioned term (depth/width/parameter dependence)
-4. Commensurability proof for the kernel operator
-5. Directional prediction registered before execution
-6. Explicit falsifier
+2. Explicit depth/scale term
+3. Explicit architecture/operator-family term
+4. Commensurability proof for kernel calibration
+5. Directional prediction registered before run
+6. Falsifier
 
-Contract source of truth: `docs/research/FIRST_PRINCIPLES_REVIEW_PROTOCOL.md`.
+Source of truth: `docs/research/FIRST_PRINCIPLES_REVIEW_PROTOCOL.md`.
 
-### Immediate Research Tasks
+### Immediate Next Tests
 
-1. Derive a sigma calibration that is provably commensurable across compared layers/models, or
-   explicitly restrict MI claims to within-model domains.
-2. Add architecture-labeled seam tests: predict where sigma regime changes should occur from
-   operator schedule, then falsify.
-3. Re-run MI predictions only after commensurability proof is attached.
-4. Keep CKA and `C_ex` as the active bedrock chain until MI operator validity is restored.
+1. L2-normalize activations before kernel construction and re-run full prediction set.
+2. Fit depth-only vs depth+architecture sigma models; reject architecture-only narratives unless
+   residual variance requires architecture terms.
+3. Treat boundary-local effects as residual diagnostics, not primary causal claims, unless they
+   survive depth-controlled falsification.
+4. Keep CKA + `C_ex` as active bedrock diagnostics while MI commensurability remains unresolved.
 
 ### Status Tags
 
 - `[VALIDATED]` CKA depth-distance decay (cross-model)
-- `[EMPIRICAL]` `C_ex` highway peak in LFM2 family
-- `[MEASUREMENT_INVALID]` cross-model Rényi MI promotion with current sigma derivation
-- `[OPEN]` architecture-conditioned sigma regime derivation
-- `[OPEN]` commensurable MI operator for heterogeneous layer families
+- `[EMPIRICAL]` `C_ex` highway peak (LFM2 family)
+- `[MEASUREMENT_INVALID]` cross-model Rényi MI promotion under current calibration assumptions
+- `[CONJECTURAL]` architecture-conditioned sigma regime derivation
+- `[CONJECTURAL]` commensurable MI operator for heterogeneous layer families
 
 ### Data and Artifacts
 
 - Results: `results/information_bridge/{LFM2-350M,LFM2-700M,Qwen3.5-0.8B}/`
 - Script: `scripts/information_bridge_experiment.py`
-- Derivation notes: `docs/research/information_bridge_derivation.md`
+- Derivation: `docs/research/information_bridge_derivation.md`
 
 ---
 
@@ -1236,7 +1292,7 @@ Attention utilization = eff_rank / (0.63 × n)
   < 0.2 → likely ordered phase (highway)
   > 0.4 → active processing
 
-Signal propagation: α²·χ per layer [REFUTED — see §R1]
+Signal propagation: α²·χ per layer [DISPROVEN: see §R1]
   Mean-field theory does not apply to trained networks.
   α²·χ has no predictive power for phase classification (Spearman 0/5 pass).
 ```
@@ -1256,7 +1312,7 @@ The Granite vs Qwen difference correlates with:
 - **Attention rank**: Know QK-Norm + training duration affect it (Qwen3 vs Qwen2.5), but no formula
 - **Expansion ratio variance**: Architectural (hybrid vs transformer), not quality-related
 
-### ~~Depth/Width Ratio Hypothesis (2026-02-22)~~ `[REFUTED — see §R3]`
+### ~~Depth/Width Ratio Hypothesis (2026-02-22)~~ `[DISPROVEN: see §R3]`
 
 **TESTED 2026-02-26.** 5 models, 60 probes, 10 pairwise comparisons. Partial Spearman(L/d | L) = 0.018, p = 0.96. L alone (r = 0.515) predicts ID trajectory shape; the ratio L/d adds zero information after controlling for depth. Family effects dominate (same-family Procrustes = 0.18 vs cross-family = 1.38).
 
