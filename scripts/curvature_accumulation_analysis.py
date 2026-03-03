@@ -51,6 +51,15 @@ logger = logging.getLogger(__name__)
 
 MODELS_BASE = os.environ.get("MC_MODELS_BASE", "/Volumes/CodeCypher/models")
 
+
+def _resolve_existing_path(*candidates: str) -> str:
+    """Return the first existing path from candidates, else the first candidate."""
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return candidates[0]
+
+
 MODEL_REGISTRY = {
     "LFM2-350M": {
         "path": f"{MODELS_BASE}/mlx-community/LFM2-350M-MLX-bf16",
@@ -68,7 +77,10 @@ MODEL_REGISTRY = {
         "architecture": "qwen2.5",
     },
     "Qwen3-8B": {
-        "path": f"{MODELS_BASE}/mlx-community/Qwen3-8B-bf16",
+        "path": _resolve_existing_path(
+            f"{MODELS_BASE}/mlx-community/Qwen3-8B-bf16",
+            f"{MODELS_BASE}/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16",
+        ),
         "L": 36, "d": 4096,
         "architecture": "qwen3",
     },
@@ -221,13 +233,21 @@ def try_compute_attn_entropy(self_attn, normed: "mx.array") -> float | None:
         q = q.reshape(1, T, n_heads, head_dim).transpose(0, 2, 1, 3)
         k = k.reshape(1, T, n_kv_heads, head_dim).transpose(0, 2, 1, 3)
 
+        # Match model forward pass: apply RoPE before attention scoring when available.
+        rope = getattr(self_attn, "rope", None)
+        if rope is not None:
+            q = rope(q)
+            k = rope(k)
+
         # GQA: repeat k heads to match q heads
         if n_kv_heads < n_heads:
+            if n_heads % n_kv_heads != 0:
+                return None
             reps = n_heads // n_kv_heads
             k = mx.repeat(k, reps, axis=1)
 
         # Scaled dot-product: [1, n_heads, T, T]
-        scale = 1.0 / math.sqrt(float(head_dim))
+        scale = float(getattr(self_attn, "scale", 1.0 / math.sqrt(float(head_dim))))
         scores = mx.matmul(q, k.transpose(0, 1, 3, 2)) * scale
 
         # Causal mask: upper triangle = -inf (last token attends to all previous)

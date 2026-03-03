@@ -135,6 +135,92 @@ def shannon_entropy(weights: np.ndarray, axis: int = -1) -> np.ndarray:
 # =============================================================================
 
 
+def _resolve_backbone(model):
+    """Resolve model backbone to the level with embed_tokens and layers.
+
+    Handles:
+        - Standard: model.model (LFM2, Qwen2.5, Llama)
+        - Qwen3.5: model.language_model.model
+    """
+    # Try model.model
+    base = getattr(model, "model", None)
+    if base is not None:
+        if getattr(base, "layers", None) is not None and getattr(base, "embed_tokens", None) is not None:
+            return base
+        # Try model.model.language_model.model (Qwen3.5 nesting)
+        lm = getattr(base, "language_model", None)
+        if lm is not None:
+            inner = getattr(lm, "model", None)
+            if inner is not None and getattr(inner, "layers", None) is not None:
+                return inner
+            if getattr(lm, "layers", None) is not None:
+                return lm
+    # Try model.language_model.model
+    lm = getattr(model, "language_model", None)
+    if lm is not None:
+        inner = getattr(lm, "model", None)
+        if inner is not None and getattr(inner, "layers", None) is not None:
+            return inner
+        if getattr(lm, "layers", None) is not None:
+            return lm
+    return model
+
+
+def _get_head_config(model, attn_module):
+    """Get n_heads, n_kv_heads, head_dim from module or model config.
+
+    Priority: module attributes > norm weight size > config values.
+    The norm weight size is the most reliable for head_dim since
+    config values may refer to different layer types (e.g., linear attention).
+    """
+    # Try module attributes first (LFM2 has these)
+    n_heads = getattr(attn_module, "n_heads", None)
+    n_kv_heads = getattr(attn_module, "n_kv_heads", None)
+
+    if n_heads is not None and n_kv_heads is not None:
+        q_out = attn_module.q_proj.weight.shape[0]
+        head_dim = q_out // n_heads
+        return n_heads, n_kv_heads, head_dim
+
+    # Infer head_dim from q_norm/k_norm weight size (most reliable)
+    head_dim = None
+    for norm_name in ("q_norm", "q_layernorm"):
+        qn = getattr(attn_module, norm_name, None)
+        if qn is not None and hasattr(qn, "weight"):
+            head_dim = qn.weight.shape[0]
+            break
+
+    q_out = attn_module.q_proj.weight.shape[0]
+    k_out = attn_module.k_proj.weight.shape[0]
+
+    if head_dim is not None:
+        # Derive head counts from weight shapes and norm-inferred head_dim
+        n_heads = q_out // head_dim
+        n_kv_heads = k_out // head_dim
+        return n_heads, n_kv_heads, head_dim
+
+    # Fall back to model config
+    args = getattr(model, "args", getattr(model, "config", None))
+    if args is not None:
+        tc = getattr(args, "text_config", None)
+        if isinstance(tc, dict):
+            n_heads = tc.get("num_attention_heads")
+            n_kv_heads = tc.get("num_key_value_heads", n_heads)
+            head_dim = tc.get("head_dim")
+        else:
+            n_heads = getattr(args, "num_attention_heads", None)
+            n_kv_heads = getattr(args, "num_key_value_heads", n_heads)
+            head_dim = getattr(args, "head_dim", None)
+
+    if n_heads is not None and head_dim is None:
+        head_dim = q_out // n_heads
+
+    if n_heads is None:
+        return None, None, None
+
+    return n_heads, n_kv_heads or n_heads, head_dim
+
+
 def _get_pre_norm(layer):
     """Find the pre-attention normalization layer."""
     for name in ("input_layernorm", "operator_norm", "attention_norm"):
@@ -156,7 +242,7 @@ def _is_full_attention_layer(layer) -> bool:
     return hasattr(attn, "q_proj") and hasattr(attn, "k_proj")
 
 
-def compute_attention_entropy(layer, h_in, seq_len: int):
+def compute_attention_entropy(layer, h_in, seq_len: int, model=None):
     """Compute Shannon entropy of attention weights for one layer.
 
     Manually computes softmax(QK^T / sqrt(d_k)) since MLX fused kernels
@@ -178,20 +264,22 @@ def compute_attention_entropy(layer, h_in, seq_len: int):
     if pre_norm is None:
         return None
 
+    n_heads, n_kv_heads, head_dim = _get_head_config(model, attn)
+    if n_heads is None:
+        logger.debug("Cannot determine head config for layer")
+        return None
+
     try:
         normed = pre_norm(h_in)
         q = attn.q_proj(normed)
         k = attn.k_proj(normed)
 
-        n_heads = attn.n_heads
-        n_kv_heads = getattr(attn, "n_kv_heads", n_heads)
-        head_dim = q.shape[-1] // n_heads
-
         B, L, _ = q.shape
 
-        # Reshape to [B, n_heads, L, head_dim]
+        # Reshape to [B, L, n_heads, head_dim]
         q = q.reshape(B, L, n_heads, head_dim)
-        k = k.reshape(B, L, n_kv_heads, head_dim)
+        k_head_dim = k.shape[-1] // n_kv_heads
+        k = k.reshape(B, L, n_kv_heads, k_head_dim)
 
         # Post-projection layernorm (LFM2, some Qwen variants)
         for qn_name in ("q_layernorm", "q_norm"):
@@ -206,7 +294,7 @@ def compute_attention_entropy(layer, h_in, seq_len: int):
                 break
 
         q = q.transpose(0, 2, 1, 3)  # [B, nh, L, hd]
-        k = k.transpose(0, 2, 1, 3)  # [B, nkv, L, hd]
+        k = k.transpose(0, 2, 1, 3)  # [B, nkv, L, k_hd]
 
         # RoPE
         rope_fn = getattr(attn, "rope", getattr(attn, "rotary_emb", None))
@@ -220,7 +308,7 @@ def compute_attention_entropy(layer, h_in, seq_len: int):
             k = mx.repeat(k, n_rep, axis=1)
 
         # Attention scores = QK^T / sqrt(d_k)
-        scale = getattr(attn, "scale", 1.0 / math.sqrt(head_dim))
+        scale = getattr(attn, "scale", 1.0 / math.sqrt(k_head_dim))
         scores = (q @ mx.transpose(k, (0, 1, 3, 2))) * scale
 
         # Causal mask
@@ -263,6 +351,7 @@ def compute_attention_entropy(layer, h_in, seq_len: int):
 
 def collect_layer_data(
     model, tokenizer, prompts: list[str], num_layers: int, backend,
+    top_model=None,
 ) -> list[dict]:
     """Collect sublayer activations and attention entropy per layer.
 
@@ -369,8 +458,8 @@ def collect_layer_data(
             else:
                 layer_h_post_attn[i].append(None)
 
-            # Attention entropy (only for first probe on first pass to get shape)
-            ent_result = compute_attention_entropy(layer, h_in, seq_len)
+            # Attention entropy
+            ent_result = compute_attention_entropy(layer, h_in, seq_len, model=top_model)
             if ent_result is not None:
                 layer_entropy[i].append(ent_result["layer_entropy"])
             else:
@@ -641,9 +730,7 @@ def run_single_model(
     logger.info("Loading model: %s from %s", model_name, model_info["path"])
     model, tokenizer = backend.load_model(model_info["path"])
 
-    base = getattr(model, "model", model)
-    if hasattr(base, "language_model"):
-        base = base.language_model
+    base = _resolve_backbone(model)
     layers = getattr(base, "layers", None)
     num_layers = len(layers) if layers else 0
     d_model = model_info.get("d", 0)
@@ -651,7 +738,7 @@ def run_single_model(
     logger.info("Model loaded: %d layers, d=%d", num_layers, d_model)
 
     t0 = time.time()
-    layer_data = collect_layer_data(model, tokenizer, probes, num_layers, backend)
+    layer_data = collect_layer_data(model, tokenizer, probes, num_layers, backend, top_model=model)
     logger.info("Data collection: %.1fs", time.time() - t0)
 
     n_with_entropy = sum(1 for d in layer_data if d["has_entropy"])
