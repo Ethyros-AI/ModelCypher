@@ -912,6 +912,281 @@ def run_falsifier_tests(all_results: list[dict], n_permutations: int = 500) -> d
     except Exception as e:
         out["f5_scale_family_falsifier"] = {"error": str(e), "passes": False}
 
+    # =========================================================================
+    # H_logit (Entropy-Lens) parallel falsifiers and operator correlation.
+    # These test the actually-measured r=0.507 operator against curvature and
+    # compare it to H_attn. See entropy-curvature-derivation.md ACT-016.
+    # =========================================================================
+
+    # Build logit pool: rows with H_logit + both sublayer curvatures.
+    pool_logit = []
+    # Build operator-correlation pool: rows with both H_attn and H_logit.
+    pool_both = []
+    for r in all_results:
+        family = r["architecture"]
+        n_layers = r["num_layers"]
+        for m in r["measurements"]:
+            h_logit = m.get("mean_h_logit")
+            h_attn_val = m.get("mean_h_attn")
+            theta_attn = m.get("attn_curvature")
+            theta_mlp = m.get("mlp_curvature")
+            theta_total = m.get("total_curvature")
+            depth_frac = m["layer_idx"] / max(n_layers - 1, 1)
+
+            has_logit = h_logit is not None and not np.isnan(h_logit)
+            has_attn_ent = h_attn_val is not None and not np.isnan(h_attn_val)
+            has_curv = (
+                theta_attn is not None and not np.isnan(theta_attn)
+                and theta_mlp is not None and not np.isnan(theta_mlp)
+            )
+
+            row = {
+                "H_logit": h_logit,
+                "H_attn": h_attn_val,
+                "theta_attn": theta_attn,
+                "theta_mlp": theta_mlp,
+                "theta_total": theta_total or 0.0,
+                "theta_attn_sq": (theta_attn ** 2) if theta_attn is not None else None,
+                "depth_frac": depth_frac,
+                "family": family,
+                "model": r["model_name"],
+                "layer": m["layer_idx"],
+            }
+
+            if has_logit and has_curv:
+                pool_logit.append(row)
+            if has_logit and has_attn_ent:
+                pool_both.append(row)
+
+    n_pool_logit = len(pool_logit)
+    n_pool_both = len(pool_both)
+    out["n_observations_logit"] = n_pool_logit
+    out["n_observations_both"] = n_pool_both
+
+    # -------------------------------------------------------------------------
+    # F1_logit: Sign falsifier with H_logit as predictor.
+    # Derivation prediction: slope >= 0 and significant.
+    # Expected to pass based on r=0.507 baseline.
+    # -------------------------------------------------------------------------
+    if n_pool_logit >= 10:
+        try:
+            H_lg = np.array([p["H_logit"] for p in pool_logit])
+            theta_sq_lg = np.array([p["theta_attn_sq"] for p in pool_logit])
+            depth_lg = np.array([p["depth_frac"] for p in pool_logit])
+
+            H_lg_res = residualize(H_lg, depth_lg)
+            theta_sq_lg_res = residualize(theta_sq_lg, depth_lg)
+
+            slope_lg, _, r_lg, p_lg, _ = stats.linregress(H_lg_res, theta_sq_lg_res)
+            r_sp_lg, p_sp_lg = stats.spearmanr(H_lg_res, theta_sq_lg_res)
+            passes_f1_lg = float(slope_lg) >= 0 and float(p_lg) < 0.05
+            out["f1_sign_logit"] = {
+                "slope_H_logit_on_theta_attn_sq": float(slope_lg),
+                "r_squared_ols": float(r_lg ** 2),
+                "spearman_r": float(r_sp_lg),
+                "p_value_ols": float(p_lg),
+                "passes": passes_f1_lg,
+                "derivation_prediction": "slope >= 0 (higher H_logit -> higher theta_attn^2)",
+                "operator": "H_logit (Entropy-Lens)",
+            }
+        except Exception as e:
+            out["f1_sign_logit"] = {"error": str(e), "passes": False}
+    else:
+        out["f1_sign_logit"] = {"status": f"INSUFFICIENT_DATA: need >=10, have {n_pool_logit}"}
+
+    # -------------------------------------------------------------------------
+    # F3_logit_vs_attn: Which entropy operator correlates more strongly with curvature?
+    # Per-family comparison of |corr(H_logit, theta_attn)| vs |corr(H_attn, theta_attn)|.
+    # Resolves which operator is the empirically correct predictor.
+    # -------------------------------------------------------------------------
+    if n_pool_logit >= 10:
+        try:
+            H_lg = np.array([p["H_logit"] for p in pool_logit])
+            theta_attn_lg = np.array([p["theta_attn"] for p in pool_logit])
+            theta_mlp_lg = np.array([p["theta_mlp"] for p in pool_logit])
+
+            r_logit_attn, p_logit_attn = stats.spearmanr(H_lg, theta_attn_lg)
+            r_logit_mlp, p_logit_mlp = stats.spearmanr(H_lg, theta_mlp_lg)
+
+            per_family_f3: dict = {}
+            families = sorted({p["family"] for p in pool_logit})
+            for fam in families:
+                fam_rows = [p for p in pool_logit if p["family"] == fam]
+                if len(fam_rows) < 5:
+                    continue
+                h_f = np.array([p["H_logit"] for p in fam_rows])
+                ta_f = np.array([p["theta_attn"] for p in fam_rows])
+                tm_f = np.array([p["theta_mlp"] for p in fam_rows])
+                r_a, p_a = stats.spearmanr(h_f, ta_f)
+                r_m, p_m = stats.spearmanr(h_f, tm_f)
+                per_family_f3[fam] = {
+                    "spearman_H_logit_vs_theta_attn": float(r_a),
+                    "p_H_logit_vs_theta_attn": float(p_a),
+                    "spearman_H_logit_vs_theta_mlp": float(r_m),
+                    "p_H_logit_vs_theta_mlp": float(p_m),
+                    "dominant_sublayer": "attention" if abs(float(r_a)) > abs(float(r_m)) else "mlp_or_tie",
+                    "n_layers": len(fam_rows),
+                }
+
+            out["f3_logit_vs_attn_operator"] = {
+                "spearman_H_logit_vs_theta_attn": float(r_logit_attn),
+                "p_H_logit_vs_theta_attn": float(p_logit_attn),
+                "spearman_H_logit_vs_theta_mlp": float(r_logit_mlp),
+                "p_H_logit_vs_theta_mlp": float(p_logit_mlp),
+                "per_family": per_family_f3,
+                "note": "H_logit (Entropy-Lens) operator; compare to f3_attn_vs_mlp for H_attn",
+            }
+        except Exception as e:
+            out["f3_logit_vs_attn_operator"] = {"error": str(e)}
+
+    # -------------------------------------------------------------------------
+    # F4_logit: Permutation falsifier with H_logit.
+    # Same structure as F4 but using H_logit. Should pass if H_logit drives curvature.
+    # -------------------------------------------------------------------------
+    if n_pool_logit >= 10:
+        try:
+            H_lg = np.array([p["H_logit"] for p in pool_logit])
+            theta_sq_lg = np.array([p["theta_attn_sq"] for p in pool_logit])
+            depth_lg = np.array([p["depth_frac"] for p in pool_logit])
+
+            H_lg_res = residualize(H_lg, depth_lg)
+            theta_sq_lg_res = residualize(theta_sq_lg, depth_lg)
+
+            real_stat_lg = abs(float(stats.spearmanr(H_lg_res, theta_sq_lg_res)[0]))
+            depth_strata_lg = np.digitize(
+                depth_lg, np.quantile(depth_lg, [0.2, 0.4, 0.6, 0.8])
+            )
+            rng_lg = np.random.default_rng(seed=1)  # Different seed from F4
+            perm_stats_lg = []
+            for _ in range(n_permutations):
+                H_perm = H_lg_res.copy()
+                for stratum in range(5):
+                    idx = np.where(depth_strata_lg == stratum)[0]
+                    if len(idx) > 1:
+                        H_perm[idx] = rng_lg.permutation(H_perm[idx])
+                r_p, _ = stats.spearmanr(H_perm, theta_sq_lg_res)
+                perm_stats_lg.append(abs(float(r_p)))
+
+            perm_arr_lg = np.array(perm_stats_lg)
+            pct_in_null_lg = float(np.mean(perm_arr_lg <= real_stat_lg)) * 100
+            passes_f4_lg = pct_in_null_lg >= 95.0
+            out["f4_permutation_logit"] = {
+                "real_abs_spearman": real_stat_lg,
+                "null_mean": float(np.mean(perm_arr_lg)),
+                "null_95th_pct": float(np.percentile(perm_arr_lg, 95)),
+                "percentile_in_null": pct_in_null_lg,
+                "n_permutations": n_permutations,
+                "passes": passes_f4_lg,
+                "derivation_prediction": "real |r| beyond 95th percentile of permutation null",
+                "operator": "H_logit (Entropy-Lens)",
+            }
+        except Exception as e:
+            out["f4_permutation_logit"] = {"error": str(e), "passes": False}
+
+    # -------------------------------------------------------------------------
+    # F5_logit: Family sign consistency with H_logit.
+    # Same structure as F5 but using H_logit. Derivation prediction: same sign.
+    # -------------------------------------------------------------------------
+    if n_pool_logit >= 10:
+        try:
+            families = list({p["family"] for p in pool_logit})
+            fam_results_lg: dict = {}
+            sign_flips_lg = 0
+
+            for fam in families:
+                fam_rows = [p for p in pool_logit if p["family"] == fam]
+                if len(fam_rows) < 5:
+                    continue
+
+                H_f = np.array([p["H_logit"] for p in fam_rows])
+                theta_sq_f = np.array([p["theta_attn_sq"] for p in fam_rows])
+                depth_f = np.array([p["depth_frac"] for p in fam_rows])
+
+                H_f_res = residualize(H_f, depth_f)
+                theta_sq_f_res = residualize(theta_sq_f, depth_f)
+
+                if np.std(H_f_res) < 1e-10 or np.std(theta_sq_f_res) < 1e-10:
+                    continue
+
+                slope_f, _, _, p_f, _ = stats.linregress(H_f_res, theta_sq_f_res)
+                r_f, _ = stats.spearmanr(H_f_res, theta_sq_f_res)
+                fam_results_lg[fam] = {
+                    "slope": float(slope_f),
+                    "spearman_r": float(r_f),
+                    "p_value": float(p_f),
+                    "n_layers": len(fam_rows),
+                }
+                if float(slope_f) < 0 and float(p_f) < 0.05:
+                    sign_flips_lg += 1
+
+            passes_f5_lg = sign_flips_lg < 2
+            out["f5_family_logit"] = {
+                "per_family": fam_results_lg,
+                "n_significant_sign_flips": sign_flips_lg,
+                "passes": passes_f5_lg,
+                "derivation_prediction": "same sign of H_logit coefficient across families",
+                "fail_criterion": "sign flips in >=2 families -> claim is MECHANISM_UNDERSPECIFIED",
+                "operator": "H_logit (Entropy-Lens)",
+            }
+        except Exception as e:
+            out["f5_family_logit"] = {"error": str(e), "passes": False}
+
+    # -------------------------------------------------------------------------
+    # Operator correlation: per-family Spearman(H_attn, H_logit).
+    # Directly answers: are the two operators proxies for posterior uncertainty?
+    # r > 0.7 -> proxies; 0.3-0.7 -> partial; r < 0.3 -> different quantities.
+    # -------------------------------------------------------------------------
+    if n_pool_both >= 10:
+        try:
+            H_attn_b = np.array([p["H_attn"] for p in pool_both])
+            H_logit_b = np.array([p["H_logit"] for p in pool_both])
+            r_global, p_global = stats.spearmanr(H_attn_b, H_logit_b)
+
+            per_family_corr: dict = {}
+            families = sorted({p["family"] for p in pool_both})
+            for fam in families:
+                fam_rows = [p for p in pool_both if p["family"] == fam]
+                if len(fam_rows) < 5:
+                    continue
+                ha_f = np.array([p["H_attn"] for p in fam_rows])
+                hl_f = np.array([p["H_logit"] for p in fam_rows])
+                r_f, p_f = stats.spearmanr(ha_f, hl_f)
+                per_family_corr[fam] = {
+                    "spearman_H_attn_vs_H_logit": float(r_f),
+                    "p_value": float(p_f),
+                    "n_layers": len(fam_rows),
+                    "interpretation": (
+                        "proxies (r>0.7)" if abs(float(r_f)) > 0.7
+                        else "partial (0.3<r<0.7)" if abs(float(r_f)) > 0.3
+                        else "different quantities (r<0.3)"
+                    ),
+                }
+
+            out["operator_correlation"] = {
+                "spearman_H_attn_vs_H_logit_global": float(r_global),
+                "p_global": float(p_global),
+                "n_observations_both": n_pool_both,
+                "per_family": per_family_corr,
+                "interpretation": (
+                    "proxies (r>0.7) -> derivation (H(alpha)->Cov[y]->curvature) valid in spirit"
+                    if abs(float(r_global)) > 0.7
+                    else "partial overlap -> flag two separate chain links; family conditioning needed"
+                    if abs(float(r_global)) > 0.3
+                    else "different quantities -> reframe derivation around H_logit; H_attn is wrong proxy"
+                ),
+                "threshold_table": {
+                    "r>0.7": "both proxy posterior uncertainty; derivation valid in spirit",
+                    "0.3<r<0.7": "partial overlap; flag two separate links; note family conditioning",
+                    "r<0.3": "different quantities; reframe derivation around H_logit",
+                },
+            }
+        except Exception as e:
+            out["operator_correlation"] = {"error": str(e)}
+    else:
+        out["operator_correlation"] = {
+            "status": f"INSUFFICIENT_DATA: need >=10 observations with both H_attn and H_logit, have {n_pool_both}"
+        }
+
     return out
 
 
@@ -1031,26 +1306,33 @@ def run_experiment(args: argparse.Namespace) -> None:
 
     for r in all_results:
         c = r["correlations"]
-        n_ent = sum(
-            1 for m in r["measurements"]
-            if m.get("mean_h_attn") is not None
-        )
+        n_attn_ent = sum(1 for m in r["measurements"] if m.get("mean_h_attn") is not None)
+        n_logit_ent = sum(1 for m in r["measurements"] if m.get("mean_h_logit") is not None)
         logger.info(
             f"  {r['model_name']:20s}: "
             f"cum_curv↔ID r={c.get('spearman_cum_total_vs_id', 0):.3f}, "
             f"attn_frac={c.get('mean_attn_fraction', 0):.3f}, "
             f"attn↔dID r={c.get('spearman_attn_curv_vs_id_gradient', 0):.3f}, "
             f"mlp↔dID r={c.get('spearman_mlp_curv_vs_id_gradient', 0):.3f}, "
-            f"entropy_layers={n_ent}/{r['num_layers']}"
+            f"H_attn_layers={n_attn_ent}/{r['num_layers']}, "
+            f"H_logit_layers={n_logit_ent}/{r['num_layers']}"
         )
 
-    # Run F1/F3/F4/F5 falsifier tests
+    # Run falsifier tests (H_attn + H_logit + operator correlation)
     logger.info(f"\n{'='*60}")
-    logger.info("ENTROPY-CURVATURE FALSIFIER TESTS (F1, F3, F4, F5)")
+    logger.info("ENTROPY-CURVATURE FALSIFIER TESTS (H_attn + H_logit operators)")
     logger.info(f"{'='*60}")
     falsifier_results = run_falsifier_tests(all_results)
-    n_obs = falsifier_results.get("n_observations", 0)
-    logger.info(f"  Pool: {n_obs} (model, layer) observations with entropy+decomp")
+
+    n_attn_obs = falsifier_results.get("n_observations", 0)
+    n_logit_obs = falsifier_results.get("n_observations_logit", 0)
+    n_both_obs = falsifier_results.get("n_observations_both", 0)
+    logger.info(
+        f"  Pool: {n_attn_obs} H_attn obs, {n_logit_obs} H_logit obs, "
+        f"{n_both_obs} both-operator obs"
+    )
+
+    logger.info("  -- H_attn falsifiers (attention weight entropy) --")
     for key in ("f1_sign_falsifier", "f3_attn_vs_mlp", "f4_permutation_falsifier",
                 "f5_scale_family_falsifier"):
         f = falsifier_results.get(key, {})
@@ -1060,29 +1342,80 @@ def run_experiment(args: argparse.Namespace) -> None:
             status = "PASS" if f["passes"] else "FAIL"
             if key == "f1_sign_falsifier":
                 logger.info(
-                    f"  F1 [{status}]: slope={f.get('slope_H_on_theta_attn_sq', 0):.4f}, "
+                    f"  F1_attn [{status}]: slope={f.get('slope_H_on_theta_attn_sq', 0):.4f}, "
                     f"spearman_r={f.get('spearman_r', 0):.3f}, p={f.get('p_value_ols', 1):.4f}"
                 )
             elif key == "f3_attn_vs_mlp":
                 logger.info(
-                    f"  F3 [{status}]: r(H,θ_attn)={f.get('spearman_H_vs_theta_attn', 0):.3f} "
-                    f"vs r(H,θ_mlp)={f.get('spearman_H_vs_theta_mlp', 0):.3f} "
-                    f"(LFM2-qualified)"
+                    f"  F3_attn [{status}]: r(H_attn,θ_attn)={f.get('spearman_H_vs_theta_attn', 0):.3f} "
+                    f"vs r(H_attn,θ_mlp)={f.get('spearman_H_vs_theta_mlp', 0):.3f} (LFM2-qualified)"
                 )
             elif key == "f4_permutation_falsifier":
                 logger.info(
-                    f"  F4 [{status}]: real |r|={f.get('real_abs_spearman', 0):.3f}, "
+                    f"  F4_attn [{status}]: real |r|={f.get('real_abs_spearman', 0):.3f}, "
                     f"null 95th={f.get('null_95th_pct', 0):.3f}, "
                     f"pct={f.get('percentile_in_null', 0):.1f}%"
                 )
             elif key == "f5_scale_family_falsifier":
                 logger.info(
-                    f"  F5 [{status}]: sign_flips={f.get('n_significant_sign_flips', 0)}, "
+                    f"  F5_attn [{status}]: sign_flips={f.get('n_significant_sign_flips', 0)}, "
                     f"families={list(f.get('per_family', {}).keys())}"
                 )
         else:
             logger.info(f"  {key}: {f.get('status', 'no result')}")
     logger.info(f"  F2: {falsifier_results.get('f2_status', 'unknown')}")
+
+    logger.info("  -- H_logit falsifiers (Entropy-Lens / logit entropy) --")
+    for key in ("f1_sign_logit", "f4_permutation_logit", "f5_family_logit"):
+        f = falsifier_results.get(key, {})
+        if not f:
+            continue
+        if "error" in f:
+            logger.warning(f"  {key}: ERROR — {f['error']}")
+        elif "passes" in f:
+            status = "PASS" if f["passes"] else "FAIL"
+            if key == "f1_sign_logit":
+                logger.info(
+                    f"  F1_logit [{status}]: slope={f.get('slope_H_logit_on_theta_attn_sq', 0):.4f}, "
+                    f"spearman_r={f.get('spearman_r', 0):.3f}, p={f.get('p_value_ols', 1):.4f}"
+                )
+            elif key == "f4_permutation_logit":
+                logger.info(
+                    f"  F4_logit [{status}]: real |r|={f.get('real_abs_spearman', 0):.3f}, "
+                    f"null 95th={f.get('null_95th_pct', 0):.3f}, "
+                    f"pct={f.get('percentile_in_null', 0):.1f}%"
+                )
+            elif key == "f5_family_logit":
+                logger.info(
+                    f"  F5_logit [{status}]: sign_flips={f.get('n_significant_sign_flips', 0)}, "
+                    f"families={list(f.get('per_family', {}).keys())}"
+                )
+        else:
+            logger.info(f"  {key}: {f.get('status', 'no result')}")
+
+    f3_lg = falsifier_results.get("f3_logit_vs_attn_operator", {})
+    if f3_lg and "error" not in f3_lg:
+        logger.info(
+            f"  F3_logit: r(H_logit,θ_attn)={f3_lg.get('spearman_H_logit_vs_theta_attn', 0):.3f} "
+            f"vs r(H_logit,θ_mlp)={f3_lg.get('spearman_H_logit_vs_theta_mlp', 0):.3f}"
+        )
+
+    logger.info("  -- Operator correlation: corr(H_attn, H_logit) --")
+    op_corr = falsifier_results.get("operator_correlation", {})
+    if "error" in op_corr:
+        logger.warning(f"  operator_correlation: ERROR — {op_corr['error']}")
+    elif "spearman_H_attn_vs_H_logit_global" in op_corr:
+        r_op = op_corr["spearman_H_attn_vs_H_logit_global"]
+        interp = op_corr.get("interpretation", "")
+        logger.info(f"  corr(H_attn, H_logit) global r={r_op:.3f} -> {interp}")
+        per_fam = op_corr.get("per_family", {})
+        for fam, vals in per_fam.items():
+            logger.info(
+                f"    {fam}: r={vals.get('spearman_H_attn_vs_H_logit', 0):.3f} "
+                f"({vals.get('interpretation', '')})"
+            )
+    else:
+        logger.info(f"  operator_correlation: {op_corr.get('status', 'no result')}")
 
     # Save results
     output_dir = Path(args.output)

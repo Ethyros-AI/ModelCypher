@@ -315,21 +315,84 @@ def collect_logit_entropy(model, tokenizer, prompts: list[str], num_layers: int,
 
     Returns list of length num_layers, each entry is the mean logit entropy
     across all probes at that layer, or None if measurement failed.
+
+    Handles Qwen3.5's nested architecture by manually computing logit entropy
+    via the resolved backbone when LayerEntropyProjector can't find unembedding.
     """
+    import mlx.core as mx
     from modelcypher.core.domain.entropy.layer_entropy_projector import LayerEntropyProjector
 
     projector = LayerEntropyProjector(backend=backend)
-    projector.set_unembedding_matrix(model)
 
-    profile = projector.profile_model(
-        model, tokenizer, prompts,
-        target_layers=set(range(num_layers)),
-    )
+    # Try standard set_unembedding_matrix first
+    try:
+        projector.set_unembedding_matrix(model)
+    except ValueError:
+        # Qwen3.5: model.model.language_model.embed_tokens
+        # Resolve backbone and manually set unembedding from embed_tokens
+        base = _resolve_backbone(model)
+        embed = getattr(base, "embed_tokens", None)
+        if embed is None:
+            raise RuntimeError("Cannot find embed_tokens on resolved backbone")
+        weight = embed.weight
+        projector._unembedding_matrix = backend.astype(weight, "float32")
+        projector._vocab_size = weight.shape[0]
+        projector._hidden_dim = weight.shape[1]
+        projector._unembedding_source = "embed_tokens_transposed"
+        logger.info("Using resolved backbone embed_tokens: vocab=%d, hidden=%d",
+                     projector._vocab_size, projector._hidden_dim)
+
+    # Manual per-layer forward pass (works with all architectures)
+    base = _resolve_backbone(model)
+    embed = getattr(base, "embed_tokens", None)
+    layers = getattr(base, "layers", None)
+    if layers is None or embed is None:
+        raise RuntimeError("Cannot resolve model backbone for logit entropy")
+
+    layer_entropies = [[] for _ in range(num_layers)]
+
+    for pi, prompt in enumerate(prompts):
+        tokens = tokenizer.encode(prompt)
+        input_ids = mx.array([tokens])
+        hidden = embed(input_ids)
+
+        try:
+            mask = backend.create_causal_mask(input_ids.shape[1], hidden.dtype)
+        except Exception:
+            mask = None
+
+        for i, layer in enumerate(layers):
+            if i >= num_layers:
+                break
+
+            if hasattr(layer, "is_attention_layer"):
+                layer_mask = "causal" if layer.is_attention_layer else None
+            else:
+                layer_mask = mask
+
+            try:
+                hidden = layer(hidden, mask=layer_mask)
+            except (TypeError, ValueError):
+                try:
+                    hidden = layer(hidden, layer_mask)
+                except (TypeError, ValueError):
+                    hidden = layer(hidden)
+
+            if isinstance(hidden, tuple):
+                hidden = hidden[0]
+
+            # Compute logit entropy at this layer
+            h_last = hidden[:, -1, :].astype(mx.float32)
+            mx.eval(h_last)
+            entropy, _ = projector.compute_layer_entropy(h_last)
+            layer_entropies[i].append(entropy)
+
+        mx.eval(hidden)
 
     result = []
     for i in range(num_layers):
-        if i in profile.layer_results:
-            result.append(profile.layer_results[i].mean_entropy)
+        if layer_entropies[i]:
+            result.append(float(np.mean(layer_entropies[i])))
         else:
             result.append(None)
 
