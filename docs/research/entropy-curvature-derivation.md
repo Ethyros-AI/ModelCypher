@@ -327,25 +327,42 @@ per family to determine whether the derivation path is valid in spirit.
 
 | Family | Model | corr(H_attn, H_logit) | Interpretation |
 |--------|-------|----------------------|----------------|
+| Global (all) | — | r = 0.145 | Different quantities |
 | Qwen | Qwen2.5-3B | r = -0.094 | Different quantities |
+| Llama | Llama-3.2-3B | r = 0.629 | Partial overlap |
+| Qwen3 | Qwen3-8B | r = 0.602 | Partial overlap |
+| LFM2 | LFM2-350M | — | Not measurable (no attention decomposition) |
 
-**Threshold:** r > 0.7 → proxies (derivation valid in spirit). r < 0.3 → different quantities.
+**Threshold:** r > 0.7 → proxies (derivation valid in spirit). 0.3–0.7 → partial overlap,
+architecture-dependent. r < 0.3 → different quantities.
 
-Result: r = -0.094 on Qwen2.5-3B is firmly in the "different quantities" regime.
-H_attn and H_logit are not proxies for the same underlying posterior uncertainty on standard
-transformers. The existing derivation (H(α) → Cov[y] → curvature) does not theoretically
-explain the empirical r=0.507 chain, which operates on H_logit.
+Result: The operators are neither universal proxies nor universally orthogonal. The
+relationship is family-conditioned:
+- Qwen2.5 (GQA=8): r = -0.094. Operators measure different things. H_attn explains nothing
+  about the empirical r=0.507 chain for this family.
+- Llama (GQA=3) and Qwen3 (GQA=4): r ≈ 0.61–0.63. Partial overlap — the operators share
+  some variance but are not interchangeable. Derivation valid in a weaker sense for these
+  families only.
+- Global cross-family: r = 0.145 — different quantities at the aggregate level, driven by
+  Qwen2.5's negative correlation pulling the global value down.
 
-**Note:** Full multi-family results (LFM2, Llama) pending. Qwen2.5-3B is the only confirmed
-datapoint. Additional families required to complete the per-family table.
+**Implication:** The H(α) → Cov[y] → curvature derivation path cannot be claimed as the
+mechanism behind the empirical r=0.507 link. The relationship between the two operators is
+GQA-conditioned: higher GQA (more key compression) → operators decouple. This is itself a
+testable claim (r vs GQA monotone hypothesis: Qwen2.5 GQA=8 r=-0.094, Qwen3 GQA=4 r=0.602,
+Llama GQA=3 r=0.629 — consistent with monotone decrease as GQA increases).
 
 ### F1 Operator Split Results
 
 | Family | F1_attn (H_attn → θ²) | F1_logit (H_logit → θ²) |
 |--------|----------------------|------------------------|
-| Qwen2.5-3B | r = -0.036, p = 0.835 (FAIL) | H_logit significant (PASS) |
+| Qwen2.5-3B | r = -0.036, p = 0.835 (FAIL) | PASS |
+| Llama-3.2-3B | (from multi-family run) | PASS |
+| Qwen3-8B | (from multi-family run) | PASS |
+| LFM2-350M | not measurable | PASS (non-significant) |
 
-H_attn fails F1 on standard transformers. H_logit passes F1 (consistent with r=0.507 baseline).
+H_attn fails F1 on standard transformers. H_logit passes F1 globally (consistent with
+r=0.507 baseline). The empirical operative path is H_logit, not H_attn.
 
 ### Sign-Law Decomposition Results
 
@@ -372,25 +389,35 @@ but the mechanism for the negative direction remains open.
 
 1. **This derivation's scope:** The formal derivation (Steps 1–3 above) explains H_attn's
    effect on curvature through the population covariance path. This path is theoretically
-   sound but empirically inoperative on standard transformers — H_attn does not correlate
-   with curvature on Qwen/Llama.
+   sound but empirically inoperative at the cross-family level. H_attn does not correlate
+   with curvature on standard transformers (Qwen/Llama). The derivation may be locally valid
+   within LFM2 (attention-dominant hybrid) but this has not been tested against H_attn.
 
 2. **The empirical chain uses H_logit:** The r=0.507 link requires a separate derivation
-   framed around H_logit. H_logit measures posterior uncertainty about the next token; its
-   relationship to angular curvature must be derived from the unembedding geometry, not
-   from the attention operator V/W_O path.
+   framed around H_logit. H_logit measures posterior uncertainty about the next token. Its
+   relationship to angular curvature must be derived from the unembedding geometry, not from
+   the attention operator V/W_O path.
 
-3. **Two separate derivation targets:**
+3. **The GQA-conditioning hypothesis (open, testable):** The operator correlation pattern
+   (Qwen2.5 GQA=8: r=-0.094; Qwen3 GQA=4: r=0.602; Llama GQA=3: r=0.629) is consistent
+   with a monotone relationship: higher GQA → more K capacity compression → greater decoupling
+   of routing (H_attn) from posterior uncertainty (H_logit). This is a new testable prediction
+   from this measurement that links back to the GQA → K capacity → QK alignment chain.
+
+4. **Two separate derivation targets:**
    - **Target A (this document's scope):** H_attn → Cov[y] → curvature (theoretically clean;
-     empirically not the operative path on standard transformers)
+     empirically not the operative cross-family path; may be operative in LFM2 regime)
    - **Target B (open):** H_logit → curvature (empirically operative, r=0.507; derivation
-     requires understanding why higher posterior uncertainty at position l implies lower
-     angular change — the negative sign is the key puzzle)
+     requires understanding why higher posterior uncertainty at position l predicts lower
+     angular change — the negative beta direction is the key puzzle)
 
-4. **Reframing required for empirical chain closure:** The causal chain's H_logit → Δcurvature
-   link cannot be derived from the attention mechanics path developed here. A separate derivation
-   starting from the unembedding projection and its geometric relationship to layer output
-   changes is needed.
+5. **Reframing required for empirical chain closure:** The causal chain's H_logit → Δcurvature
+   link cannot be derived from the attention mechanics path developed here. A derivation starting
+   from the unembedding projection and its geometric relationship to layer output changes is
+   needed. The sign-law decomposition (Proposition 4) provides the structural scaffold:
+   `θ² ≈ ||P_perp(h)δ||²/||h||²`. The open question is: why does higher H_logit (more
+   diffuse posterior) predict smaller perpendicular-to-h update energy in the numerator
+   relative to the denominator?
 
 ---
 
