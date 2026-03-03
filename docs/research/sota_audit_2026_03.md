@@ -16,16 +16,17 @@ ModelCypher should adapt external work in three places:
 2. **LoRA theorem-conditioned failure diagnostics** from 2025 proof-level results.
 3. **Benchmark methodology for mission closure** (contamination-aware rolling eval and leakage quantification).
 
-Frontier work remains open in three places:
+Frontier work remains open in four places:
 1. **Signed DPI-violation direction law** (current model explains magnitude but not sign).
 2. **Quantization frontier equation** (Weyl crossing severity to CKA floor, architecture terms explicit).
 3. **Unused-subspace residual causal mechanism** for degeneration reduction.
+4. **Entropy-curvature mechanism split** (logit entropy vs attention entropy, architecture-conditioned sublayer effects).
 
 ## Comparative Verdicts
 
-- `CUTTING_EDGE`: 9 claims
+- `CUTTING_EDGE`: 8 claims
 - `ADAPT_OTHERS`: 5 claims
-- `PUSH_FURTHER`: 5 claims
+- `PUSH_FURTHER`: 6 claims
 - `DEPRIORITIZE`: 2 claims
 
 Detailed per-claim decisions are in:
@@ -97,6 +98,11 @@ Action:
 ### 3) Unused-subspace residual causality
 - Current status: empirical and promising but not causal-closed.
 - Needed: intervention protocol and falsifier-driven conclusion.
+
+### 4) Entropy operator and architecture dependence
+- Current status: directional grounding exists externally (Bayesian geometry trilogy), but internal mechanism remains unresolved across entropy operators and families.
+- Needed: explicit split between logit-entropy and attention-entropy operators, plus architecture-conditioned sublayer mechanism law.
+- New claim record: `CR-EC-001` (`[INCONCLUSIVE]`, `PUSH_FURTHER`).
 
 ## Threads To Retire
 

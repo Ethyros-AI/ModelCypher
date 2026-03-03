@@ -481,6 +481,30 @@ class _MLXTrainingAdapterCoreMixin:
             "Streaming geometry analysis complete: %d matrices from %d layers",
             analyzed, n_layers,
         )
+
+        # Extend to visual encoder merger layers for Qwen3.5-VL models.
+        # These are the only visual layers with null space (tail_dims > 0).
+        # model.visual is attached by load_qwen35_vl_model() — absent for text models.
+        visual = getattr(model, "visual", None)
+        if visual is not None:
+            merger = getattr(visual, "merger", None)
+            if merger is not None:
+                for proj_name in ("linear_fc1", "linear_fc2"):
+                    proj = getattr(merger, proj_name, None)
+                    if proj is None or not hasattr(proj, "weight"):
+                        continue
+                    key = f"model.visual.merger.{proj_name}.weight"
+                    self._analyze_projection_geometry(
+                        key=key,
+                        proj=proj,
+                        use_randomized=use_randomized,
+                        rng_kwargs=rng_kwargs,
+                        geometries=geometries,
+                        compute_layer_geometry=compute_layer_geometry,
+                        compute_layer_geometry_randomized=compute_layer_geometry_randomized,
+                    )
+                    logger.info("Visual merger %s added to geometry map", proj_name)
+
         return geometries
 
     def analyze_weight_geometries_for_keys_streaming(
@@ -661,6 +685,13 @@ class _MLXTrainingAdapterCoreMixin:
     def freeze_and_apply_lora(self, model) -> None:
         """Freeze entire model, then unfreeze only NB-LoRA parameters."""
         model.freeze()
+        # Also freeze visual encoder if present (Qwen3.5-VL).
+        # model.freeze() only covers model's own parameters. For VL models loaded
+        # via load_qwen35_vl_model(), model.visual is attached separately and must
+        # be frozen explicitly before selective unfreezing below.
+        visual = getattr(model, "visual", None)
+        if visual is not None:
+            visual.freeze()
         # Walk model tree and unfreeze A_tilde, B_tilde, S_raw in each NBLoRALinear
         for _, nb_lora in self._iter_nb_lora_modules(model):
             nb_lora.unfreeze(keys=["A_tilde", "B_tilde", "S_raw"])

@@ -211,27 +211,83 @@ def try_compute_attn_entropy(self_attn, normed: "mx.array") -> float | None:
     if q_proj is None or k_proj is None:
         return None
 
-    # Handle different naming conventions across Qwen/Llama/etc.
-    n_heads = getattr(self_attn, "n_heads", None) or getattr(self_attn, "num_heads", None)
-    n_kv_heads = (
-        getattr(self_attn, "n_kv_heads", None)
-        or getattr(self_attn, "num_key_value_heads", None)
-        or n_heads
-    )
-    if n_heads is None:
-        return None
-
     try:
         q = q_proj(normed)  # [1, T, n_heads * head_dim]
         k = k_proj(normed)  # [1, T, n_kv_heads * head_dim]
         mx.eval(q, k)
 
         T = q.shape[1]
-        head_dim = q.shape[-1] // n_heads
+        q_out = int(q.shape[-1])
+        k_out = int(k.shape[-1])
 
-        # Reshape to [1, n_heads, T, head_dim]
-        q = q.reshape(1, T, n_heads, head_dim).transpose(0, 2, 1, 3)
-        k = k.reshape(1, T, n_kv_heads, head_dim).transpose(0, 2, 1, 3)
+        def _infer_head_dim_from_norm(module_names: tuple[str, ...]) -> int | None:
+            for name in module_names:
+                mod = getattr(self_attn, name, None)
+                if mod is None:
+                    continue
+                w = getattr(mod, "weight", None)
+                if w is None:
+                    continue
+                if len(w.shape) == 0:
+                    continue
+                # Some implementations store [head_dim], others [n_heads, head_dim].
+                dim = int(w.shape[-1])
+                if dim > 0:
+                    return dim
+            return None
+
+        # Robust head config resolution:
+        # 1) q_norm/k_norm weight shape (most reliable on Qwen variants)
+        # 2) explicit module head_dim
+        # 3) n_heads attributes fallback
+        inferred_head_dim = _infer_head_dim_from_norm(("q_norm", "q_layernorm"))
+        if inferred_head_dim is None:
+            inferred_head_dim = int(getattr(self_attn, "head_dim", 0) or 0) or None
+
+        n_heads_attr = getattr(self_attn, "n_heads", None) or getattr(self_attn, "num_heads", None)
+        n_kv_heads_attr = (
+            getattr(self_attn, "n_kv_heads", None)
+            or getattr(self_attn, "num_key_value_heads", None)
+            or n_heads_attr
+        )
+
+        if inferred_head_dim is not None and inferred_head_dim > 0:
+            if q_out % inferred_head_dim != 0 or k_out % inferred_head_dim != 0:
+                return None
+            n_heads = q_out // inferred_head_dim
+            n_kv_heads = k_out // inferred_head_dim
+            head_dim = inferred_head_dim
+        else:
+            if n_heads_attr is None:
+                return None
+            n_heads = int(n_heads_attr)
+            n_kv_heads = int(n_kv_heads_attr or n_heads)
+            if n_heads <= 0 or n_kv_heads <= 0:
+                return None
+            if q_out % n_heads != 0:
+                return None
+            head_dim = q_out // n_heads
+
+        if k_out % n_kv_heads != 0:
+            return None
+        k_head_dim = k_out // n_kv_heads
+        if k_head_dim != head_dim:
+            return None
+
+        # Reshape to [1, T, n_heads, head_dim] before optional post-projection norms.
+        q = q.reshape(1, T, n_heads, head_dim)
+        k = k.reshape(1, T, n_kv_heads, k_head_dim)
+
+        # Apply post-projection norm layers when present (Qwen/LFM2 variants).
+        q_norm = getattr(self_attn, "q_norm", None) or getattr(self_attn, "q_layernorm", None)
+        k_norm = getattr(self_attn, "k_norm", None) or getattr(self_attn, "k_layernorm", None)
+        if callable(q_norm):
+            q = q_norm(q)
+        if callable(k_norm):
+            k = k_norm(k)
+
+        q = q.transpose(0, 2, 1, 3)  # [1, n_heads, T, head_dim]
+        k = k.transpose(0, 2, 1, 3)  # [1, n_kv_heads, T, head_dim]
 
         # Match model forward pass: apply RoPE before attention scoring when available.
         rope = getattr(self_attn, "rope", None)
@@ -564,6 +620,8 @@ def run_falsifier_tests(all_results: list[dict], n_permutations: int = 500) -> d
     """Run falsifier tests F1, F3, F4, F5 from entropy-curvature-derivation.md.
 
     F2 (geometry-conditioned, requires E_mix proxy) is not yet implemented.
+    Note: H in these tests is attention-weight entropy from QK softmax weights, not
+    output-logit entropy. These operators should not be conflated.
 
     Args:
         all_results: list of per-model result dicts from run_single_model.
@@ -654,23 +712,51 @@ def run_falsifier_tests(all_results: list[dict], n_permutations: int = 500) -> d
         out["f1_sign_falsifier"] = {"error": str(e), "passes": False}
 
     # -------------------------------------------------------------------------
-    # F3: Attention-vs-MLP falsifier
-    # Derivation prediction: |corr(H, θ_attn)| > |corr(H, θ_mlp)|.
-    # Fail: MLP correlation consistently >= attention correlation.
+    # F3: Attention-vs-MLP falsifier (architecture-qualified)
+    # Qualified prediction:
+    #   - LFM2 family: |corr(H, θ_attn)| > |corr(H, θ_mlp)| is expected.
+    #   - Other families: no universal dominance direction is assumed.
     # -------------------------------------------------------------------------
     try:
         r_h_attn, p_h_attn = stats.spearmanr(H, theta_attn)
         r_h_mlp, p_h_mlp = stats.spearmanr(H, theta_mlp)
-        passes_f3 = abs(float(r_h_attn)) > abs(float(r_h_mlp))
+        family_results: dict = {}
+        lfm2_checks: list[bool] = []
+
+        families = sorted({p["family"] for p in pool})
+        for fam in families:
+            fam_pool = [p for p in pool if p["family"] == fam]
+            if len(fam_pool) < 5:
+                continue
+            h_f = np.array([p["H"] for p in fam_pool])
+            ta_f = np.array([p["theta_attn"] for p in fam_pool])
+            tm_f = np.array([p["theta_mlp"] for p in fam_pool])
+            r_attn_f, p_attn_f = stats.spearmanr(h_f, ta_f)
+            r_mlp_f, p_mlp_f = stats.spearmanr(h_f, tm_f)
+
+            dom = "attention" if abs(float(r_attn_f)) > abs(float(r_mlp_f)) else "mlp_or_tie"
+            family_results[fam] = {
+                "spearman_H_vs_theta_attn": float(r_attn_f),
+                "p_H_vs_theta_attn": float(p_attn_f),
+                "spearman_H_vs_theta_mlp": float(r_mlp_f),
+                "p_H_vs_theta_mlp": float(p_mlp_f),
+                "dominant_sublayer": dom,
+                "n_layers": len(fam_pool),
+            }
+            if fam == "lfm2":
+                lfm2_checks.append(dom == "attention")
+
+        passes_f3 = bool(lfm2_checks) and all(lfm2_checks)
         out["f3_attn_vs_mlp"] = {
             "spearman_H_vs_theta_attn": float(r_h_attn),
             "p_H_vs_theta_attn": float(p_h_attn),
             "spearman_H_vs_theta_mlp": float(r_h_mlp),
             "p_H_vs_theta_mlp": float(p_h_mlp),
-            "attention_dominates": passes_f3,
+            "per_family": family_results,
+            "lfm2_attention_dominates": passes_f3,
             "passes": passes_f3,
-            "derivation_prediction": "|corr(H, theta_attn)| > |corr(H, theta_mlp)|",
-            "fail_criterion": "MLP correlation consistently >= attention correlation",
+            "derivation_prediction": "LFM2-qualified: |corr(H, theta_attn)| > |corr(H, theta_mlp)| only for lfm2 family",
+            "fail_criterion": "Any lfm2 run with |corr(H,theta_attn)| <= |corr(H,theta_mlp)|; non-lfm2 direction is unresolved",
         }
     except Exception as e:
         out["f3_attn_vs_mlp"] = {"error": str(e), "passes": False}
@@ -915,7 +1001,8 @@ def run_experiment(args: argparse.Namespace) -> None:
             elif key == "f3_attn_vs_mlp":
                 logger.info(
                     f"  F3 [{status}]: r(H,θ_attn)={f.get('spearman_H_vs_theta_attn', 0):.3f} "
-                    f"vs r(H,θ_mlp)={f.get('spearman_H_vs_theta_mlp', 0):.3f}"
+                    f"vs r(H,θ_mlp)={f.get('spearman_H_vs_theta_mlp', 0):.3f} "
+                    f"(LFM2-qualified)"
                 )
             elif key == "f4_permutation_falsifier":
                 logger.info(

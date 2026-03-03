@@ -13,6 +13,10 @@ Pre-registered hypotheses:
     I5: Spectral entropy separates phases — ANOVA F-test across phases
     I6: Effective rank tracks ID — exp(S_spec) correlates with TwoNN ID
 
+Scope boundary:
+    I3/I4 are falsifier tests only. This script must not be used to operationalize
+    "highway implies bypass dominance" as a control or routing prior.
+
 Usage:
     poetry run python scripts/layer_invariant_analysis.py \
         --models LFM2-350M LFM2-700M Qwen3.5-0.8B \
@@ -216,7 +220,10 @@ def test_i2_id_phase_invariance(traj_data: dict) -> dict:
 
 
 def test_i3_cosine_phase_conditional(traj_data: dict, dpi_data: dict) -> dict:
-    """I3: Cosine preservation phase-conditional — highway cos > processing cos."""
+    """I3 falsifier: test whether highway cos > processing cos.
+
+    This is hypothesis testing only, not an operational predictor.
+    """
     phases = traj_data["phases"]
     cosine = dpi_data["bypass_metrics"]["cosine_change"]
 
@@ -257,7 +264,10 @@ def test_i3_cosine_phase_conditional(traj_data: dict, dpi_data: dict) -> dict:
 
 
 def test_i4_residual_ratio_phase_conditional(traj_data: dict, dpi_data: dict) -> dict:
-    """I4: Residual ratio phase-conditional — highway ratio < processing ratio."""
+    """I4 falsifier: test whether highway ratio < processing ratio.
+
+    This is hypothesis testing only, not an operational predictor.
+    """
     phases = traj_data["phases"]
     ratios = dpi_data["bypass_metrics"]["residual_ratio"]
 

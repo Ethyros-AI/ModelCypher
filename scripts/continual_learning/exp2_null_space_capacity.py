@@ -313,7 +313,28 @@ def _parse_args() -> argparse.Namespace:
                         help="Run identifier for output directory")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT_DEFAULT)
+    parser.add_argument(
+        "--target-layers",
+        choices=["all", "text", "vision"],
+        default="all",
+        help=(
+            "Which layer group to probe. 'vision' restricts to model.visual.* "
+            "layers (NB-LoRA-targetable in Qwen3.5-VL). 'text' probes text model "
+            "layers only. 'all' probes everything with tail_dims > 0 (default)."
+        ),
+    )
     return parser.parse_args()
+
+
+def _filter_adapted_keys(adapted_keys: set, target_layers: str) -> set:
+    """Filter the candidate layer set by --target-layers flag."""
+    if target_layers == "all":
+        return adapted_keys
+    if target_layers == "vision":
+        return {k for k in adapted_keys if "visual" in k}
+    if target_layers == "text":
+        return {k for k in adapted_keys if "visual" not in k}
+    return adapted_keys
 
 
 def main() -> None:
@@ -343,8 +364,10 @@ def main() -> None:
     # For packed 4-bit models the capacity service SVDs the packed uint tensor and
     # reports null_space_dim_f32=0 for all layers, so filtering on that value here
     # would produce an empty adapted_keys set and a capacity_total of 0 (wrong).
-    adapted_keys = {r.layer_name for r in capacity_report.layer_reports}
-    print(f"Candidate layers: {len(adapted_keys)}")
+    all_adapted_keys = {r.layer_name for r in capacity_report.layer_reports}
+    adapted_keys = _filter_adapted_keys(all_adapted_keys, args.target_layers)
+    print(f"Candidate layers: {len(all_adapted_keys)} total, "
+          f"{len(adapted_keys)} after --target-layers={args.target_layers}")
 
     # 2. Precompute V_tail bases (dequantizes packed weights, authoritative source)
     print("\nPrecomputing tail bases from base model SVD...")
@@ -395,17 +418,32 @@ def main() -> None:
             "cumulative_union_rank": cumulative_ranks.get(name, 0),
         }
 
+    # Split capacity into text vs vision for interpretability.
+    # text_capacity and vision_capacity come from _precompute_tail_bases output,
+    # which is authoritative (SVD on dequantized weights, IEEE 754 threshold).
+    text_capacity = sum(
+        td for name, (_, td) in tail_bases.items() if "visual" not in name
+    )
+    vision_capacity = sum(
+        td for name, (_, td) in tail_bases.items() if "visual" in name
+    )
+
     output = {
         "run_id": args.run_id,
         "model_id": model_id,
         "model_path": model_path,
         "task_path": str(args.task_path),
         "n_probe_steps": args.n_probe_steps,
+        "target_layers": args.target_layers,
         "eps": eps,
         "capacity_total": capacity_total,
+        "text_capacity": text_capacity,
+        "vision_capacity": vision_capacity,
         "per_layer": per_layer_out,
         "summary": {
             "total_tail_dims": capacity_total,
+            "text_capacity": text_capacity,
+            "vision_capacity": vision_capacity,
             "total_cumulative_union_rank": total_cumulative_rank,
             "max_nights_lower_bound": max_nights,
             "grad_rank_fraction": (
@@ -419,8 +457,10 @@ def main() -> None:
     print(f"\nSaved to {out_file}")
 
     s = output["summary"]
-    print(f"\n=== Summary ===")
+    print(f"\n=== Summary (target_layers={args.target_layers}) ===")
     print(f"  Capacity total:           {s['total_tail_dims']} tail dims")
+    print(f"    text_capacity:          {s['text_capacity']} tail dims")
+    print(f"    vision_capacity:        {s['vision_capacity']} tail dims")
     print(f"  Cumulative grad rank:     {s['total_cumulative_union_rank']} dims")
     print(f"  Grad rank fraction:       {s['grad_rank_fraction']:.2%}")
     print(f"  Max nights (lower bound): {s['max_nights_lower_bound']}")

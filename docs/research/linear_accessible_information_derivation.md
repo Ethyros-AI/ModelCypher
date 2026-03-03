@@ -272,6 +272,12 @@ for 700M. The original geodesic P1 `[VALIDATED]` result now requires a scope qua
 "holds under geodesic RBF with calibrated σ* per model." The linear-CKA operator, which has
 no bandwidth parameter, isolates the structural signal without sigma amplification.
 
+Additional scope qualifier (sampling regime): this rerun does not yet apply sparse/high-dim
+sampling-bias corrections for linear CKA estimators. Therefore, the 700M non-significant
+result is currently confounded by two unresolved factors: (1) operator/sigma interaction and
+(2) potential sparse-sampling bias. Keep P1-R as `[EXPLORATORY]` until ACT-007-style debiased
+re-estimation is completed across all three models.
+
 ### 8.2 P4-R: Phase Block Structure
 
 | Model | Within-phase | Cross-phase | Ratio | Pass (ratio>1) |

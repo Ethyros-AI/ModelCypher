@@ -218,6 +218,19 @@ class _MLXTrainingAdapterDiagnosticsMixin:
                             )
                             yield key, proj
 
+        # Visual encoder merger layers (Qwen3.5-VL).
+        # model.visual is attached by load_qwen35_vl_model(). Only the merger
+        # layers have null space (tail_dims > 0); block layers are full rank.
+        visual = getattr(model, "visual", None)
+        if visual is not None:
+            merger = getattr(visual, "merger", None)
+            if merger is not None:
+                for proj_name in ("linear_fc1", "linear_fc2"):
+                    proj = getattr(merger, proj_name, None)
+                    if isinstance(proj, NBLoRALinear):
+                        key = f"model.visual.merger.{proj_name}.weight"
+                        yield key, proj
+
     def _compute_topological_metrics(
         self,
         model,

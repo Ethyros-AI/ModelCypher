@@ -214,8 +214,10 @@ These are not post-hoc interpretations; each is tied to the derivation structure
    `∂ E[θ^2 | layer] / ∂ H >= 0`.
 2. **P-EC2 (Geometry dependence):** At fixed entropy, layers with larger effective value
    subspace rank (`rank((W_O V)_S)` proxy) show higher curvature.
-3. **P-EC3 (Operator split):** Entropy correlates more strongly with attention curvature
-   (`h_in -> h_post_attn`) than with MLP curvature (`h_post_attn -> h_out`).
+3. **P-EC3 (Operator split, architecture-qualified):** Relative dominance between
+   `corr(H, θ_attn)` and `corr(H, θ_mlp)` is family-dependent (e.g., hybrid LFM2 may show
+   attention-dominant coupling while standard transformer families may show MLP-dominant or
+   mixed coupling). No universal dominance direction is assumed.
 4. **P-EC4 (ID response):** Layers with larger entropy-driven projected covariance trace
    have higher TwoNN ID after controlling for norm scale.
 
@@ -247,10 +249,12 @@ Interpretation: if violated, `V/W_O` geometry term is unnecessary in the model.
 ### F3: Attention-vs-MLP Falsifier (Operator Decomposition)
 
 **Test:** Compare `corr(H, θ_attn)` vs `corr(H, θ_mlp)` using decomposition script.  
-**Derivation prediction:** attention-side correlation dominates.  
-**Failure criterion:** MLP correlation consistently >= attention correlation.
+**Derivation prediction:** LFM2-qualified only: attention-side correlation dominates in LFM2;
+no universal dominance sign is assumed for non-LFM2 families.  
+**Failure criterion:** any LFM2 run with `|corr(H, θ_attn)| <= |corr(H, θ_mlp)|`.
 
-Interpretation: if violated, claimed attention path is not primary.
+Interpretation: if violated, even the qualified attention-path claim fails; if non-LFM2
+families diverge, treat as architecture-term requirement, not refutation.
 
 ### F4: Permutation Falsifier (Coincidence Check)
 

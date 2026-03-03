@@ -246,22 +246,25 @@ satisfied. Claims missing architecture/scale terms or commensurability proofs ar
                → low entropy. By definition of Shannon entropy once "selectivity" is
                defined as weight concentration. No free assumption.
                     ↓
-[EXPLORATORY, r=0.507] Entropy → Δcurvature
-               Measured correlation only. Causal operator: NOT DERIVED.
-               Proposed mechanism: diffuse attention mixes many token directions →
-               output spans more local directions → higher curvature. Geometrically
-               motivated but not formalized from attention + MLP mechanics.
-               Architecture term: MISSING. Scale term: MISSING.
+[EXPLORATORY, r=0.507] Logit Entropy → Δcurvature
+               **The "entropy" in this link is logit entropy (Entropy-Lens), NOT
+               attention weight entropy.** Logit entropy measures posterior certainty
+               about the next token at depth l (project h_l through unembedding).
+               Attention weight entropy (Shannon entropy of softmax weights) shows NO
+               significant correlation with curvature on standard transformers
+               (Qwen2.5-3B: r=-0.036, p=0.835). Correlation appears only on LFM2
+               hybrid architecture (r=+0.829 for θ_attn, p=0.042).
+               Architecture term: ARCHITECTURE-DEPENDENT. Sublayer sign opposition
+               (P1: r(H,θ_attn) opposite sign from r(H,θ_mlp)) holds for LFM2 only.
+               MLP gain varies 2-43× within models (CV 0.177-0.739, validated 3/3).
+               Scale term: MISSING.
                Theoretical grounding (Agarwal et al. 2026, arXiv:2512.22471v3):
-               In transformers that track Bayesian posteriors (which Theorem 1 proves
-               is the CE minimizer), the value manifold at the final checkpoint is 1D,
-               parameterized by posterior entropy. Lower entropy = manifold closer to 1D
-               = lower curvature. Higher entropy = higher-dimensional manifold = higher
-               curvature. The entropy→curvature direction follows from this: entropy IS
-               the coordinate of the value manifold. The causal mechanism (diffuse
-               attention → mixed value directions → higher-D manifold) is now
-               interpretable as: more uncertain posterior → manifold must span more
-               dimensions to represent the residual hypothesis set.
+               Value manifold parameterized by posterior entropy. Logit entropy (which
+               captures posterior state) connects to curvature through manifold
+               dimensionality. Attention weight entropy is an upstream variable that
+               does not directly predict curvature on standard transformers.
+               Full sublayer analysis: `docs/research/entropy_curvature_derivation.md`.
+               Data: `results/entropy_curvature/entropy_curvature_results.json`.
                     ↓
 [EXPLORATORY, r=0.821] Cumulative curvature → ID
                Measured correlation. Mechanism: accumulated directional change →
@@ -296,10 +299,14 @@ chain extension.
 
 **What needs formal derivation before any link is promoted to `[VALIDATED]`:**
 
-1. **Entropy → curvature** (weakest link): Derive from the attention operator. Given uniform
-   attention weights α_ij = 1/T (diffuse), output_i = mean(V). Given concentrated weights
-   (α_ij ≈ δ_{jk}), output_i ≈ V_k. How does the geometry of {output_i}_i over the input
-   distribution change between these cases? This is computable from attention mechanics.
+1. **Logit entropy → curvature** (weakest link): The correlation (r=0.507) uses logit
+   entropy, not attention weight entropy. Sublayer decomposition (2026-03-03) shows:
+   attention weight entropy has NO significant correlation with curvature on standard
+   transformers (Qwen2.5-3B: r=-0.036). MLP gain varies 2-43× within models. The
+   mechanism is Bayesian manifold dimensionality (Agarwal 2026): logit entropy
+   parameterizes value manifold dimension → curvature. Next step: replicate logit
+   entropy → curvature with sublayer decomposition on ≥3 families.
+   See `docs/research/entropy_curvature_derivation.md`.
 
 2. **Cumulative curvature → ID**: Derive the TwoNN estimator's behavior under known curvature
    transformations. The TwoNN estimator is built on the manifold hypothesis — its response to
@@ -702,12 +709,21 @@ Intrinsic Dimension (MLE estimator from nearest neighbor ratios)
 - Diffuse attention (entropy ≈ 1): Mixes many token representations → output spans many local directions → curvature increases
 - Selective attention (entropy < 0.3): Focuses on few tokens → output constrained to subspace → curvature decreases
 
+**Critical clarification (2026-03-03):** The "entropy" in this chain is **logit entropy**
+(Entropy-Lens), NOT attention weight entropy. Sublayer decomposition experiments show
+attention weight entropy has NO significant correlation with angular curvature on standard
+transformers (Qwen2.5-3B: r=-0.036, p=0.835). The mechanism is architecture-dependent:
+sign opposition between attention and MLP sublayer correlations holds only for LFM2
+hybrid architecture. MLP angular gain varies 2-43× within models (validated 3/3).
+Full analysis: `docs/research/entropy_curvature_derivation.md`.
+
 **Theoretical grounding (Agarwal et al. 2026, arXiv:2512.22471v3):**
 In transformers that minimize cross-entropy (Theorem 1: CE minimizer = Bayesian posterior
 predictive), the value manifold's dimensionality is parameterized by posterior entropy — at
 the final checkpoint representations lie on a 1D manifold with entropy as coordinate. The
-entropy→Δcurvature direction follows directly: entropy = how uncertain the posterior is =
+logit entropy→Δcurvature direction follows: logit entropy measures posterior certainty =
 how many dimensions the value manifold needs = how much curvature accumulates per layer.
+Attention weight entropy is upstream and architecture-dependent in its effect.
 Full technical mapping: `docs/research/bayesian_geometry_connection.md`.
 
 ---
