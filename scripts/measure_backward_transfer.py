@@ -77,6 +77,24 @@ logger = logging.getLogger(__name__)
 # Per-item inference
 # ---------------------------------------------------------------------------
 
+def _resolve_model_and_adapter(model_path: str) -> tuple[str, str | None]:
+    """Resolve model path to (base_model_path, adapter_path_or_None).
+
+    If model_path is an NB-LoRA adapter directory (has adapter_config.json but
+    no config.json), reads the base_model_path from metadata and returns
+    (base_model_path, model_path) so the inference engine can load both.
+    """
+    p = Path(model_path)
+    if (p / "adapter_config.json").exists() and not (p / "config.json").exists():
+        with open(p / "adapter_config.json") as f:
+            cfg = json.load(f)
+        base = cfg.get("metadata", {}).get("base_model_path")
+        if base:
+            logger.info("Detected adapter directory; base model: %s", base)
+            return base, str(p)
+    return model_path, None
+
+
 def _run_item_inference(
     model_path: str,
     eval_file: Path,
@@ -85,6 +103,10 @@ def _run_item_inference(
 
     Returns list of dicts: {prompt, expected, predicted, correct}.
     Uses the same prompt-extraction logic as evaluate_skill_mastery.
+
+    model_path may be a full model directory or an NB-LoRA adapter directory.
+    Adapter directories are detected by the presence of adapter_config.json
+    without config.json; the base model path is read from adapter metadata.
     """
     from modelcypher.core.domain._backend import get_default_backend
 
@@ -97,6 +119,8 @@ def _run_item_inference(
 
     from modelcypher.adapters.inference_engine import get_inference_engine
     engine = get_inference_engine()
+
+    base_model, adapter = _resolve_model_and_adapter(model_path)
 
     problems = []
     with eval_file.open() as f:
@@ -126,7 +150,7 @@ def _run_item_inference(
         predicted = ""
         correct = False
         try:
-            result = engine.run(model=model_path, prompt=prompt, max_tokens=None)
+            result = engine.run(model=base_model, adapter=adapter, prompt=prompt, max_tokens=None)
             predicted = result.response.strip().lower()
             correct = bool(expected and expected in predicted)
         except Exception:

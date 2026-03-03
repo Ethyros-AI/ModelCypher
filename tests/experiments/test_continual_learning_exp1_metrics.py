@@ -24,9 +24,11 @@ if str(_EXP1_PATH) not in sys.path:
     sys.path.insert(0, str(_EXP1_PATH))
 
 from exp1_sequential_forgetting import (  # noqa: E402
+    _compute_sigma_k_ref,
     _cumulative_utilization_by_layer,
     _precompute_tail_bases,
     _rank_eps,
+    _spectral_norm,
     _read_quant_config,
 )
 
@@ -291,3 +293,84 @@ def test_precompute_tail_bases_missing_scales_raises() -> None:
             _precompute_tail_bases(
                 backend, loader, tmp, {"layer.weight"}, eps
             )
+
+
+@pytest.mark.mlx
+def test_compute_sigma_k_ref_ignores_non_weight_entries() -> None:
+    """sigma_k_ref must come from a 2D .weight tensor, not .biases/.scales."""
+    backend = _get_backend()
+    W = backend.array([[3.0, 0.0], [0.0, 4.0]], dtype="float32")
+    b = backend.array([1.0, 2.0], dtype="float32")
+    backend.eval(W, b)
+
+    loader = _FakeModelLoader(
+        {
+            "layer.biases": b,
+            "layer.weight": W,
+        }
+    )
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        layer_name, sigma = _compute_sigma_k_ref(backend, loader, tmp)
+
+    assert layer_name == "layer.weight"
+    assert sigma == pytest.approx(4.0, abs=1e-6)
+
+
+@pytest.mark.mlx
+def test_compute_sigma_k_ref_quantized_matches_dequantized_weight() -> None:
+    """Quantized reference must dequantize before spectral norm."""
+    backend = _get_backend()
+
+    # 2×64 is valid for MLX quantize(group_size=64).
+    W_fp = backend.array(
+        [[float((i % 7) + 1) for i in range(64)],
+         [float(((i + 3) % 7) + 1) for i in range(64)]],
+        dtype="float32",
+    )
+    backend.eval(W_fp)
+    w_q, scales, biases = backend.quantize(W_fp, group_size=64, bits=4, mode="affine")
+    backend.eval(w_q, scales)
+    if biases is not None:
+        backend.eval(biases)
+
+    weights: dict = {
+        "layer.scales": scales,
+        "layer.weight": w_q,
+    }
+    if biases is not None:
+        weights["layer.biases"] = biases
+
+    import json, tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg_path = Path(tmp) / "config.json"
+        cfg_path.write_text(
+            json.dumps({"quantization": {"bits": 4, "group_size": 64, "mode": "affine"}})
+        )
+
+        loader = _FakeModelLoader(weights)
+        layer_name, sigma = _compute_sigma_k_ref(backend, loader, tmp)
+
+    W_deq = backend.dequantize(w_q, scales, biases, group_size=64, bits=4, mode="affine")
+    backend.eval(W_deq)
+    expected = _spectral_norm(backend, W_deq)
+
+    assert layer_name == "layer.weight"
+    assert sigma == pytest.approx(expected, rel=1e-5, abs=1e-6)
+
+
+@pytest.mark.mlx
+def test_compute_sigma_k_ref_quantized_missing_scales_raises() -> None:
+    """Missing scales on quantized reference must fail closed."""
+    backend = _get_backend()
+    W_fp = backend.array([[float(i % 8 + 1) for i in range(64)]], dtype="float32")
+    backend.eval(W_fp)
+    w_q, _scales, _biases = backend.quantize(W_fp, group_size=64, bits=4, mode="affine")
+    backend.eval(w_q)
+
+    loader = _FakeModelLoader({"layer.weight": w_q})
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        with pytest.raises(RuntimeError, match="sigma_k_ref"):
+            _compute_sigma_k_ref(backend, loader, tmp)

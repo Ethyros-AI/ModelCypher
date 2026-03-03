@@ -147,6 +147,85 @@ def _read_quant_config(model_path: str) -> dict:
         return {}
 
 
+def _resolve_svd_weight_tensor(
+    backend,
+    model_loader,
+    model_path: str,
+    layer_name: str,
+    tensor,
+    quant_cfg: dict,
+):
+    """Return a float-domain weight tensor suitable for SVD.
+
+    For quantized MLX weights (packed uint), this finds matching
+    ``.scales``/``.biases`` and dequantizes so spectral norms are computed
+    in the same [out, in] space as adapter deltas.
+    """
+    dtype_str = str(getattr(tensor, "dtype", "")).lower()
+    if "uint" not in dtype_str or "float" in dtype_str:
+        return tensor
+
+    scales_key = layer_name.replace(".weight", ".scales")
+    biases_key = layer_name.replace(".weight", ".biases")
+    scales = None
+    biases = None
+    for name, q_tensor in model_loader.iter_weights(model_path):
+        if name == biases_key:
+            biases = q_tensor
+        elif name == scales_key:
+            scales = q_tensor
+
+    if scales is None:
+        raise RuntimeError(
+            f"Quantized reference weight {layer_name!r} has no scales tensor. "
+            "Cannot compute sigma_k_ref from packed geometry."
+        )
+
+    shape = getattr(tensor, "shape", None)
+    if shape is None or len(shape) != 2:
+        raise RuntimeError(f"Reference weight {layer_name!r} is not 2D; cannot compute sigma_k_ref.")
+
+    bits = quant_cfg.get("bits", 4)
+    in_full = shape[1] * (32 // bits)
+    group_size = quant_cfg.get("group_size") or (in_full // scales.shape[1])
+    mode = quant_cfg.get("mode", "affine")
+    tensor = backend.dequantize(
+        tensor,
+        scales,
+        biases,
+        group_size=group_size,
+        bits=bits,
+        mode=mode,
+    )
+    backend.eval(tensor)
+    return tensor
+
+
+def _compute_sigma_k_ref(backend, model_loader, model_path: str) -> tuple[str, float]:
+    """Compute MASS spectral reference from the first actual 2D weight tensor."""
+    quant_cfg = _read_quant_config(model_path)
+
+    for layer_name, tensor in model_loader.iter_weights(model_path):
+        if not layer_name.endswith(".weight"):
+            continue
+
+        shape = getattr(tensor, "shape", None)
+        if shape is None or len(shape) != 2:
+            continue
+
+        tensor_for_svd = _resolve_svd_weight_tensor(
+            backend,
+            model_loader,
+            model_path,
+            layer_name,
+            tensor,
+            quant_cfg,
+        )
+        return layer_name, _spectral_norm(backend, tensor_for_svd)
+
+    return "unknown", 1.0
+
+
 def _precompute_tail_bases(backend, model_loader, model_path: str,
                            adapted_keys: set[str], eps: float) -> dict:
     """Precompute V_tail basis for each adapted layer from base model SVD.
@@ -474,14 +553,12 @@ def main() -> None:
 
     current_model_path = args.model_path
 
-    # Spectral reference from first weight layer
-    weight_items = model_loader.iter_weights(str(current_model_path))
-    try:
-        first_layer_name, first_tensor = next(weight_items)
-        sigma_k_ref = _spectral_norm(backend, first_tensor)
-    except StopIteration:
-        first_layer_name = "unknown"
-        sigma_k_ref = 1.0
+    # Spectral reference from first 2D weight layer (dequantized if packed).
+    first_layer_name, sigma_k_ref = _compute_sigma_k_ref(
+        backend,
+        model_loader,
+        str(current_model_path),
+    )
     print(f"sigma_k_ref from {first_layer_name}: {sigma_k_ref:.4f}")
 
     # Base model null-space capacity (once, before training)
