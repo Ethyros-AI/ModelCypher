@@ -156,10 +156,10 @@ app.add_typer(train_commands.train_app, name="train", help="Train LoRA adapters"
 app.add_typer(merge_commands.merge_app, name="merge", help="Geometric model merging")
 app.add_typer(infer_commands.app, name="infer", help="Run inference")
 app.add_typer(analyze_commands.app, name="analyze", help="Model analysis (geometry, safety, entropy)")
-app.add_typer(model_commands.app, name="model", help="Model registry")
+app.add_typer(model_commands.app, name="model", help="Model operations: info, capacity, quantize (bf16→4bit), moe-profile")
 app.add_typer(system_commands.app, name="system", help="System status")
 app.add_typer(adapter_commands.app, name="adapter", help="LoRA adapter analysis")
-app.add_typer(quantize_commands.quantize_app, name="quantize", help="Quantization correction")
+app.add_typer(quantize_commands.quantize_app, name="quantize", help="Post-quantization Tikhonov spectral correction (not for initial quantization; use: mc model quantize)")
 
 
 def _context(ctx: typer.Context) -> CLIContext:

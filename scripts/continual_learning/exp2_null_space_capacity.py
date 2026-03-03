@@ -331,20 +331,19 @@ def main() -> None:
         checkpoint_path=run_dir / "capacity_checkpoint.json",
         resume=True,
     )
-    adapted_keys = {
-        r.layer_name for r in capacity_report.layer_reports
-        if r.null_space_dim_f32 > 0
-    }
-    capacity_total = sum(
-        r.null_space_dim_f32 for r in capacity_report.layer_reports
-        if r.null_space_dim_f32 > 0
-    )
-    print(f"Adapted layers: {len(adapted_keys)}, capacity_total: {capacity_total} tail dims")
+    # Use all layer names as candidates — _precompute_tail_bases is authoritative.
+    # For packed 4-bit models the capacity service SVDs the packed uint tensor and
+    # reports null_space_dim_f32=0 for all layers, so filtering on that value here
+    # would produce an empty adapted_keys set and a capacity_total of 0 (wrong).
+    adapted_keys = {r.layer_name for r in capacity_report.layer_reports}
+    print(f"Candidate layers: {len(adapted_keys)}")
 
-    # 2. Precompute V_tail bases
+    # 2. Precompute V_tail bases (dequantizes packed weights, authoritative source)
     print("\nPrecomputing tail bases from base model SVD...")
     tail_bases = _precompute_tail_bases(backend, model_loader, model_path, adapted_keys, eps)
-    print(f"Tail bases computed for {len(tail_bases)} layers")
+    # Derive capacity_total from dequantized tail_bases, not from capacity report.
+    capacity_total = sum(td for _, td in tail_bases.values())
+    print(f"Tail bases computed for {len(tail_bases)} layers, capacity_total: {capacity_total} tail dims")
 
     # 3. Build gradient rank hook
     hook, step_data = _build_grad_rank_hook(backend, tail_bases, args.n_probe_steps, eps)

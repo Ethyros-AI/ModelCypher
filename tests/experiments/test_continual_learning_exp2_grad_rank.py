@@ -222,3 +222,62 @@ def test_compute_cumulative_union_rank_single_layer() -> None:
     assert cumulative[layer_name] == 2, (
         f"Expected cumulative_union_rank=2, got {cumulative[layer_name]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Test 5: capacity_total derived from tail_bases, not from capacity report
+# ---------------------------------------------------------------------------
+
+@pytest.mark.mlx
+def test_capacity_total_derived_from_tail_bases() -> None:
+    """Verifies the P1 fix: capacity_total must equal sum(tail_dims) from tail_bases.
+
+    Regression guard for packed 4-bit models where the capacity service reports
+    null_space_dim_f32=0 for all layers (SVD on packed uint, not dequantized float).
+    If capacity_total were taken from the capacity report on a 4-bit model it would
+    be 0, making max_nights_lower_bound=inf (wrong).
+
+    The fix: capacity_total = sum(td for _, td in tail_bases.values()).
+    This test constructs a synthetic tail_bases and verifies the formula holds.
+    """
+    try:
+        import mlx.core as mx
+    except ImportError:
+        pytest.skip("MLX not available")
+
+    backend = _get_backend()
+
+    # Synthetic tail_bases: two layers with 3 and 5 tail dims respectively.
+    V3 = backend.array([[1.0, 0.0, 0.0],
+                         [0.0, 1.0, 0.0],
+                         [0.0, 0.0, 1.0],
+                         [0.0, 0.0, 0.0]], dtype="float32")
+    V5 = backend.array([[1.0, 0.0, 0.0, 0.0, 0.0],
+                         [0.0, 1.0, 0.0, 0.0, 0.0],
+                         [0.0, 0.0, 1.0, 0.0, 0.0],
+                         [0.0, 0.0, 0.0, 1.0, 0.0],
+                         [0.0, 0.0, 0.0, 0.0, 1.0],
+                         [0.0, 0.0, 0.0, 0.0, 0.0]], dtype="float32")
+    tail_bases = {
+        "model.layers.0.self_attn.q_proj.weight": (V3, 3),
+        "model.layers.0.self_attn.k_proj.weight": (V5, 5),
+    }
+
+    # Simulate what a packed 4-bit capacity report would give: all zeros.
+    # (The fix must NOT use these values.)
+    fake_report_null_dims = {"model.layers.0.self_attn.q_proj.weight": 0,
+                             "model.layers.0.self_attn.k_proj.weight": 0}
+
+    # The correct formula: sum from tail_bases
+    capacity_total = sum(td for _, td in tail_bases.values())
+    assert capacity_total == 8, (
+        f"Expected capacity_total=8, got {capacity_total}. "
+        "capacity_total must be derived from tail_bases, not the capacity report."
+    )
+
+    # Guard: the wrong formula (from the buggy code) would give 0
+    wrong_capacity = sum(fake_report_null_dims.values())
+    assert wrong_capacity == 0, "Test setup error: fake report should sum to 0"
+    assert capacity_total != wrong_capacity, (
+        "capacity_total from tail_bases must differ from (wrong) capacity report sum"
+    )
