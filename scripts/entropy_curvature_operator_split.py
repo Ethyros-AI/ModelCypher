@@ -15,6 +15,8 @@ Measurements per layer:
     4. theta_mlp: angular change h_post_core -> h_out
     5. theta_total: angular change h_in -> h_out
     6. G_mlp: MLP angular gain = theta_mlp / theta_core
+    7. E_core, E_mlp, E_mix: update-energy decomposition
+       ||delta_total||^2 = ||delta_core||^2 + ||delta_mlp||^2 + 2<delta_core, delta_mlp>
 
 Analysis:
     - Per-model Spearman correlations for both operators vs all curvature measures
@@ -111,6 +113,12 @@ MODEL_REGISTRY = {
         "L": 24, "d": 1024,
         "architecture": "qwen3.5",
         "gqa_ratio": 4,
+    },
+    "Qwen2.5-3B": {
+        "path": f"{MODELS_BASE}/mlx-community/Qwen2.5-3B-Instruct-bf16",
+        "L": 36, "d": 2048,
+        "architecture": "qwen2.5",
+        "gqa_ratio": 8,
     },
     "Qwen3.5-4B": {
         "path": f"{MODELS_BASE}/mlx-community/Qwen3.5-4B-bf16",
@@ -836,6 +844,10 @@ def compute_measurements(data: dict, num_layers: int) -> list[dict]:
 
         total_angles = [angular_change(h_in[j], h_out[j]) for j in range(n_probes)]
         theta_total = float(np.mean(total_angles))
+        h_in_norm_sq = float(np.mean(np.sum(h_in * h_in, axis=1)))
+        h_out_norm_sq = float(np.mean(np.sum(h_out * h_out, axis=1)))
+        delta_total = h_out - h_in
+        E_total = float(np.mean(np.sum(delta_total * delta_total, axis=1)))
 
         layer_result = {
             "layer_idx": i,
@@ -850,6 +862,14 @@ def compute_measurements(data: dict, num_layers: int) -> list[dict]:
             "attn_fraction": None,
             "core_fraction": None,
             "G_mlp": None,
+            "h_in_norm_sq": h_in_norm_sq,
+            "h_out_norm_sq": h_out_norm_sq,
+            "E_total": E_total,
+            "E_total_decomp": None,
+            "E_core": None,
+            "E_mlp": None,
+            "E_mix": None,
+            "E_closure_error": None,
             "H_logit": logit_entropy[i],
             "H_attn": sd["attn_entropy"],
             "is_attention_layer": sd["is_attention_layer"],
@@ -863,6 +883,14 @@ def compute_measurements(data: dict, num_layers: int) -> list[dict]:
             n_core = h_post_core.shape[0]
             core_angles = [angular_change(h_in_core[j], h_post_core[j]) for j in range(n_core)]
             mlp_angles = [angular_change(h_post_core[j], h_out_core[j]) for j in range(n_core)]
+            delta_core = h_post_core - h_in_core
+            delta_mlp = h_out_core - h_post_core
+            delta_total_core = h_out_core - h_in_core
+            E_core = float(np.mean(np.sum(delta_core * delta_core, axis=1)))
+            E_mlp = float(np.mean(np.sum(delta_mlp * delta_mlp, axis=1)))
+            E_mix = float(np.mean(2.0 * np.sum(delta_core * delta_mlp, axis=1)))
+            E_total_decomp = float(np.mean(np.sum(delta_total_core * delta_total_core, axis=1)))
+            E_closure_error = E_total_decomp - (E_core + E_mlp + E_mix)
 
             theta_core = float(np.mean(core_angles))
             theta_mlp = float(np.mean(mlp_angles))
@@ -877,6 +905,11 @@ def compute_measurements(data: dict, num_layers: int) -> list[dict]:
             layer_result["G_mlp"] = (
                 theta_mlp / theta_core if theta_core > 1e-10 else float("nan")
             )
+            layer_result["E_total_decomp"] = E_total_decomp
+            layer_result["E_core"] = E_core
+            layer_result["E_mlp"] = E_mlp
+            layer_result["E_mix"] = E_mix
+            layer_result["E_closure_error"] = E_closure_error
             if sd.get("core_operator") == "attention":
                 layer_result["theta_attn"] = theta_core
                 layer_result["attn_fraction"] = layer_result["core_fraction"]
@@ -931,9 +964,15 @@ def compute_operator_correlations(measurements: list[dict]) -> dict:
     if len(logit_layers) >= 4:
         H_logit = [m["H_logit"] for m in logit_layers]
         theta_total_l = [m["theta_total"] for m in logit_layers]
+        h_out_norm_sq_l = [m["h_out_norm_sq"] for m in logit_layers]
+        E_total_l = [m["E_total"] for m in logit_layers]
 
         r, p = safe_spearman(H_logit, theta_total_l)
         result["H_logit_vs_theta_total"] = {"r": r, "p": p}
+        r_hn, p_hn = safe_spearman(H_logit, h_out_norm_sq_l)
+        result["H_logit_vs_h_out_norm_sq"] = {"r": r_hn, "p": p_hn}
+        r_et, p_et = safe_spearman(H_logit, E_total_l)
+        result["H_logit_vs_E_total"] = {"r": r_et, "p": p_et}
 
         # Core decomposition subset (attention or conv core)
         logit_decomp = [m for m in logit_layers if m["theta_core"] is not None]
@@ -942,14 +981,26 @@ def compute_operator_correlations(measurements: list[dict]) -> dict:
             theta_core_ld = [m["theta_core"] for m in logit_decomp]
             theta_mlp_ld = [m["theta_mlp"] for m in logit_decomp]
             G_mlp_ld = [m["G_mlp"] for m in logit_decomp]
+            E_core_ld = [m["E_core"] for m in logit_decomp]
+            E_mlp_ld = [m["E_mlp"] for m in logit_decomp]
+            E_mix_ld = [m["E_mix"] for m in logit_decomp]
+            E_total_decomp_ld = [m["E_total_decomp"] for m in logit_decomp]
 
             r_lc, p_lc = safe_spearman(H_ld, theta_core_ld)
             r_lm, p_lm = safe_spearman(H_ld, theta_mlp_ld)
             r_lg, p_lg = safe_spearman(H_ld, G_mlp_ld)
+            r_ec, p_ec = safe_spearman(H_ld, E_core_ld)
+            r_em, p_em = safe_spearman(H_ld, E_mlp_ld)
+            r_ex, p_ex = safe_spearman(H_ld, E_mix_ld)
+            r_ed, p_ed = safe_spearman(H_ld, E_total_decomp_ld)
 
             result["H_logit_vs_theta_core"] = {"r": r_lc, "p": p_lc}
             result["H_logit_vs_theta_mlp"] = {"r": r_lm, "p": p_lm}
             result["H_logit_vs_G_mlp"] = {"r": r_lg, "p": p_lg}
+            result["H_logit_vs_E_core"] = {"r": r_ec, "p": p_ec}
+            result["H_logit_vs_E_mlp"] = {"r": r_em, "p": p_em}
+            result["H_logit_vs_E_mix"] = {"r": r_ex, "p": p_ex}
+            result["H_logit_vs_E_total_decomp"] = {"r": r_ed, "p": p_ed}
             result["core_decomp_coverage"] = float(len(logit_decomp) / len(logit_layers))
 
             # Legacy attention-only correlation for continuity with prior artifacts.
@@ -1000,6 +1051,45 @@ def compute_depth_controlled_correlations(measurements: list[dict]) -> dict:
     """
     result = {}
 
+    def depth_controlled_ols(x, y, depth):
+        """OLS on depth-residualized variables."""
+        x_arr = np.asarray(x, dtype=float)
+        y_arr = np.asarray(y, dtype=float)
+        d_arr = np.asarray(depth, dtype=float)
+        mask = np.isfinite(x_arr) & np.isfinite(y_arr) & np.isfinite(d_arr)
+        if mask.sum() < 4:
+            return {
+                "slope": float("nan"),
+                "intercept": float("nan"),
+                "r_value": float("nan"),
+                "p_value": float("nan"),
+                "std_err": float("nan"),
+                "r_squared": float("nan"),
+                "n": int(mask.sum()),
+            }
+        x_res = _residualize_ols(x_arr[mask], d_arr[mask])
+        y_res = _residualize_ols(y_arr[mask], d_arr[mask])
+        if np.std(x_res) < 1e-15 or np.std(y_res) < 1e-15:
+            return {
+                "slope": float("nan"),
+                "intercept": float("nan"),
+                "r_value": float("nan"),
+                "p_value": float("nan"),
+                "std_err": float("nan"),
+                "r_squared": float("nan"),
+                "n": int(mask.sum()),
+            }
+        slope, intercept, r_value, p_value, std_err = sp_stats.linregress(x_res, y_res)
+        return {
+            "slope": float(slope),
+            "intercept": float(intercept),
+            "r_value": float(r_value),
+            "p_value": float(p_value),
+            "std_err": float(std_err),
+            "r_squared": float(r_value * r_value),
+            "n": int(mask.sum()),
+        }
+
     def partial_spearman(x, y, z):
         """Partial Spearman r(X,Y|Z)."""
         r_xy, _ = safe_spearman(x, y)
@@ -1017,11 +1107,66 @@ def compute_depth_controlled_correlations(measurements: list[dict]) -> dict:
     if len(logit_layers) >= 4:
         H_logit = [m["H_logit"] for m in logit_layers]
         theta_total = [m["theta_total"] for m in logit_layers]
+        h_out_norm_sq = [m["h_out_norm_sq"] for m in logit_layers]
+        E_total = [m["E_total"] for m in logit_layers]
         depth = [m["depth_fraction"] for m in logit_layers]
 
         result["partial_H_logit_vs_theta_total_given_depth"] = partial_spearman(
             H_logit, theta_total, depth
         )
+        result["ols_H_logit_to_theta_total_given_depth"] = depth_controlled_ols(
+            H_logit, theta_total, depth,
+        )
+        result["ols_H_logit_to_h_out_norm_sq_given_depth"] = depth_controlled_ols(
+            H_logit, h_out_norm_sq, depth,
+        )
+        result["ols_H_logit_to_E_total_given_depth"] = depth_controlled_ols(
+            H_logit, E_total, depth,
+        )
+
+        decomp_layers = [
+            m for m in logit_layers
+            if m.get("E_core") is not None
+            and m.get("E_mlp") is not None
+            and m.get("E_mix") is not None
+        ]
+        if len(decomp_layers) >= 4:
+            H_decomp = [m["H_logit"] for m in decomp_layers]
+            depth_decomp = [m["depth_fraction"] for m in decomp_layers]
+            result["ols_H_logit_to_E_core_given_depth"] = depth_controlled_ols(
+                H_decomp, [m["E_core"] for m in decomp_layers], depth_decomp,
+            )
+            result["ols_H_logit_to_E_mlp_given_depth"] = depth_controlled_ols(
+                H_decomp, [m["E_mlp"] for m in decomp_layers], depth_decomp,
+            )
+            result["ols_H_logit_to_E_mix_given_depth"] = depth_controlled_ols(
+                H_decomp, [m["E_mix"] for m in decomp_layers], depth_decomp,
+            )
+            result["ols_H_logit_to_E_total_decomp_given_depth"] = depth_controlled_ols(
+                H_decomp, [m["E_total_decomp"] for m in decomp_layers], depth_decomp,
+            )
+
+            by_operator = {}
+            operators = sorted({m.get("core_operator") for m in decomp_layers if m.get("core_operator")})
+            for op in operators:
+                op_rows = [m for m in decomp_layers if m.get("core_operator") == op]
+                if len(op_rows) < 4:
+                    continue
+                H_op = [m["H_logit"] for m in op_rows]
+                depth_op = [m["depth_fraction"] for m in op_rows]
+                by_operator[op] = {
+                    "ols_H_logit_to_h_out_norm_sq_given_depth": depth_controlled_ols(
+                        H_op, [m["h_out_norm_sq"] for m in op_rows], depth_op,
+                    ),
+                    "ols_H_logit_to_E_total_decomp_given_depth": depth_controlled_ols(
+                        H_op, [m["E_total_decomp"] for m in op_rows], depth_op,
+                    ),
+                    "ols_H_logit_to_E_mix_given_depth": depth_controlled_ols(
+                        H_op, [m["E_mix"] for m in op_rows], depth_op,
+                    ),
+                }
+            if by_operator:
+                result["ols_H_logit_by_core_operator"] = by_operator
 
     # H_attn vs theta_total | depth (attention layers only)
     attn_layers = [m for m in measurements if m["H_attn"] is not None]
@@ -1043,9 +1188,10 @@ def compute_depth_controlled_correlations(measurements: list[dict]) -> dict:
 
 
 def compute_falsifier_table(all_model_results: list[dict]) -> dict:
-    """Run falsifier tests F1, F3 (LFM2-qualified), F5.
+    """Run falsifier tests F1, F2, F3 (LFM2-qualified), F5.
 
     F1: Sign of H_logit -> theta_attn^2 coefficient (depth-controlled), per family
+    F2: Geometry-conditioned effect corr(theta_total, E_mix | H_logit, depth)
     F3: |corr(H_logit, theta_attn)| > |corr(H_logit, theta_mlp)| — LFM2-qualified
     F5: Same sign of H_logit coefficient across families
     """
@@ -1068,6 +1214,108 @@ def compute_falsifier_table(all_model_results: list[dict]) -> dict:
         "pass_count": f1_pass_count,
         "total": len(f1_results),
         "status": "PASS" if f1_pass_count == len(f1_results) else "FAIL",
+    }
+
+    # --- F2: Geometry-conditioned effect via E_mix at fixed H_logit + depth ---
+    # Prediction: curvature varies with geometry proxy E_mix after entropy matching.
+    f2_results = {}
+    for mr in all_model_results:
+        model_name = mr["model_name"]
+        rows = []
+        for m_row in mr.get("measurements", []):
+            h_v = m_row.get("H_logit")
+            e_mix_v = m_row.get("E_mix")
+            th_v = m_row.get("theta_total")
+            d_v = m_row.get("depth_fraction")
+            if (
+                h_v is not None and e_mix_v is not None and th_v is not None and d_v is not None
+                and math.isfinite(h_v) and math.isfinite(e_mix_v)
+                and math.isfinite(th_v) and math.isfinite(d_v)
+            ):
+                rows.append((float(h_v), float(e_mix_v), float(th_v), float(d_v)))
+
+        if len(rows) < 6:
+            f2_results[model_name] = {
+                "status": "INSUFFICIENT_DATA",
+                "n": len(rows),
+            }
+            continue
+
+        h = np.array([r[0] for r in rows], dtype=float)
+        e_mix = np.array([r[1] for r in rows], dtype=float)
+        th = np.array([r[2] for r in rows], dtype=float)
+        depth = np.array([r[3] for r in rows], dtype=float)
+
+        X = np.column_stack([np.ones(len(rows)), h, depth])
+        th_res = th - X @ np.linalg.lstsq(X, th, rcond=None)[0]
+        e_mix_res = e_mix - X @ np.linalg.lstsq(X, e_mix, rcond=None)[0]
+
+        if np.std(th_res) < 1e-15 or np.std(e_mix_res) < 1e-15:
+            f2_results[model_name] = {
+                "status": "DEGENERATE_RESIDUALS",
+                "n": len(rows),
+            }
+            continue
+
+        pearson_r = float(np.corrcoef(e_mix_res, th_res)[0, 1])
+        rho_s, p_s = sp_stats.spearmanr(e_mix_res, th_res)
+        rho_s = float(rho_s)
+        p_s = float(p_s)
+
+        n_eff_em, rho1_em = _effective_df(e_mix_res)
+        n_eff_th, rho1_th = _effective_df(th_res)
+        if abs(rho1_em) >= abs(rho1_th):
+            n_eff_used, rho1_used, rho_src = n_eff_em, rho1_em, "E_mix_residuals"
+        else:
+            n_eff_used, rho1_used, rho_src = n_eff_th, rho1_th, "theta_total_residuals"
+        mde = _minimum_detectable_effect(n_eff_used, n_controls=2)
+        obs_abs_r = abs(pearson_r) if math.isfinite(pearson_r) else 0.0
+        resolvable = obs_abs_r > mde
+
+        if math.isfinite(pearson_r) and len(rows) > 4:
+            df = len(rows) - 4  # two controls (H_logit, depth) + intercept
+            denom_sq = max(1e-15, 1 - pearson_r ** 2)
+            t_stat = pearson_r * math.sqrt(df) / math.sqrt(denom_sq)
+            p_val = float(2 * sp_stats.t.sf(abs(t_stat), df))
+        else:
+            p_val = float("nan")
+
+        f2_results[model_name] = {
+            "status": "OK",
+            "n": len(rows),
+            "pearson_partial_r": pearson_r,
+            "pearson_partial_p_approx": p_val,
+            "spearman_partial_r": rho_s,
+            "spearman_partial_p": p_s,
+            "detection_floor": {
+                "n_raw": len(rows),
+                "rho_1_used": rho1_used,
+                "rho_1_source": rho_src,
+                "n_eff": n_eff_used,
+                "mde": mde,
+                "observed_abs_r": obs_abs_r,
+                "resolvable": resolvable,
+            },
+        }
+
+    f2_testable = [k for k, v in f2_results.items() if v.get("status") == "OK"]
+    f2_detected = [
+        k for k in f2_testable
+        if f2_results[k].get("detection_floor", {}).get("resolvable", False)
+    ]
+    if not f2_testable:
+        f2_status = "INCONCLUSIVE"
+    elif f2_detected:
+        f2_status = "PASS"
+    else:
+        f2_status = "BELOW_MEASUREMENT_RESOLUTION"
+
+    falsifiers["F2_geometry_conditioned_E_mix"] = {
+        "test": "corr(theta_total, E_mix | H_logit, depth) with Fisher-SE MDE floor",
+        "per_model": f2_results,
+        "testable_models": f2_testable,
+        "geometry_effect_detected_models": f2_detected,
+        "status": f2_status,
     }
 
     # --- F3: |corr(H_logit, theta_attn)| > |corr(H_logit, theta_mlp)| (LFM2-qualified) ---
@@ -1269,7 +1517,22 @@ def run_single_model(
             logger.info("  %s: r=%.3f, p=%.3f", key, val["r"], val["p"])
 
     for key, val in depth_controlled.items():
-        logger.info("  %s: %.3f", key, val)
+        if isinstance(val, (int, float)):
+            logger.info("  %s: %.3f", key, val)
+        elif isinstance(val, dict):
+            if "r_value" in val and "r_squared" in val:
+                logger.info(
+                    "  %s: r=%.3f, r2=%.3f, p=%.3f, n=%d",
+                    key,
+                    val.get("r_value", float("nan")),
+                    val.get("r_squared", float("nan")),
+                    val.get("p_value", float("nan")),
+                    val.get("n", 0),
+                )
+            else:
+                logger.info("  %s: %s", key, json.dumps(val, default=str))
+        else:
+            logger.info("  %s: %s", key, val)
 
     del model, tokenizer, data
     gc.collect()
@@ -1307,6 +1570,10 @@ def build_cross_model_summary(all_results: list[dict]) -> dict:
             "r_H_logit_theta_total": corrs.get("H_logit_vs_theta_total", {}).get("r"),
             "r_H_attn_theta_total": corrs.get("H_attn_vs_theta_total", {}).get("r"),
             "r_H_logit_vs_H_attn": corrs.get("H_logit_vs_H_attn", {}).get("r"),
+            "r_H_logit_h_out_norm_sq": corrs.get("H_logit_vs_h_out_norm_sq", {}).get("r"),
+            "r_H_logit_E_core": corrs.get("H_logit_vs_E_core", {}).get("r"),
+            "r_H_logit_E_mlp": corrs.get("H_logit_vs_E_mlp", {}).get("r"),
+            "r_H_logit_E_mix": corrs.get("H_logit_vs_E_mix", {}).get("r"),
             "core_decomp_coverage": corrs.get("core_decomp_coverage"),
         }
 
@@ -1390,7 +1657,22 @@ def run_experiment(args: argparse.Namespace) -> None:
     for model, dc in cross_summary["depth_controlled"].items():
         logger.info("  %s:", model)
         for k, v in dc.items():
-            logger.info("    %s: %.3f", k, v)
+            if isinstance(v, (int, float)):
+                logger.info("    %s: %.3f", k, v)
+            elif isinstance(v, dict):
+                if "r_value" in v and "r_squared" in v:
+                    logger.info(
+                        "    %s: r=%.3f, r2=%.3f, p=%.3f, n=%d",
+                        k,
+                        v.get("r_value", float("nan")),
+                        v.get("r_squared", float("nan")),
+                        v.get("p_value", float("nan")),
+                        v.get("n", 0),
+                    )
+                else:
+                    logger.info("    %s: %s", k, json.dumps(v, default=str))
+            else:
+                logger.info("    %s: %s", k, v)
 
     logger.info("\nOperator comparison:")
     for model, comp in cross_summary.get("operator_comparison", {}).items():

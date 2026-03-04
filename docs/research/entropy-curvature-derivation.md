@@ -246,6 +246,18 @@ Interpretation: if violated, entropy is not the causal driver under this operato
 
 Interpretation: if violated, `V/W_O` geometry term is unnecessary in the model.
 
+**Update (2026-03-04, 6-model operator-split run): PASS.**
+
+Implemented test: `corr(theta_total, E_mix | H_logit, depth)` with Fisher-SE MDE
+and Bretherton autocorrelation correction for resolvability.
+
+- Resolvable geometry effect detected: Qwen2.5-3B (`|r|=0.379 > MDE=0.175`),
+  Llama-3.2-3B (`|r|=0.221 > MDE=0.201`)
+- Below measurement floor (not failures): LFM2-350M, LFM2-700M, Qwen3.5-0.8B,
+  Mistral-7B
+
+Source: `results/entropy_curvature_operator_split/falsifier_outcomes.json`
+
 ### F3: Attention-vs-MLP Falsifier (Operator Decomposition)
 
 **Test:** Compare `corr(H, θ_attn)` vs `corr(H, θ_mlp)` using decomposition script.  
@@ -601,6 +613,15 @@ Evidence:
   (|β_num/β_den|=1.01). LFM2's conv layers couple norm and entropy similarly in both
   components, producing high R² for the denominator but zero net effect on θ².
 
+**Operator-stratified evidence inside Qwen3.5-0.8B (same model, fixed GQA=4):**
+- Full-attention layers: `r(H_logit -> E_mix | depth) = -0.970`, `R²=0.941`,
+  `p=0.0013`, `n=6`
+- Linear-attention layers: `r(H_logit -> E_mix | depth) = +0.179`, `R²=0.032`,
+  `p=0.476`, `n=18`
+
+This isolates architecture type (core operator) as an active term at fixed GQA.
+The same-GQA divergence is therefore not explainable by GQA alone.
+
 **The two-variable structure is consistent with the broader sign split investigation:**
 Hybrid architectures (Qwen3.5, LFM2) handle the norm-entropy relationship differently
 than pure-attention architectures, even at the same GQA. This is the same observation
@@ -637,7 +658,7 @@ measurement    = depth-controlled OLS on log-transformed components
 | Scale term | NOT CHARACTERIZED | Qwen3.5 scale series shows transition, no functional form |
 | Measurement operator | Depth-controlled OLS on log components | bf16 only for sublayer; 4-bit safe for aggregate |
 | Commensurability | Log-transform valid for component magnitudes | Component signs not commensurable across families |
-| Directional prediction | β_total < 0 (8/8 CONSISTENT_SIGN) | Component signs are family-dependent |
+| Directional prediction | β_total < 0 among resolvable models (7/10 CONSISTENT_SIGN) | Component signs are family-dependent |
 | Falsifier | Any resolvable model with β_total > 0 | Refutes CONSISTENT_SIGN |
 
 **Overall status: [EMPIRICAL].** The provable decomposition (B1-B3) is a genuine advance:
@@ -826,37 +847,42 @@ Depth-residualized Spearman correlations (H_logit → component):
 | Qwen2.5-3B | -0.599 | 0.000 | -0.198 | 0.246 | -0.429 | 0.009 |
 | Qwen3-8B | +0.366 | 0.028 | +0.655 | 0.000 | +0.004 | 0.983 |
 
-### GQA controls the cancellation pattern
+### GQA + Core Operator Control the Cancellation Pattern
 
-The cancellation is not architecture-random — it is predicted by the same GQA axis that
-controls operator correlation (ACT-016). The governing quantity is
-R²(H_logit → log||h||² | depth): how much of the representation norm's non-depth variance
-is explained by posterior entropy.
+The cancellation pattern is not architecture-random, but it is also not a 1D monotone
+function of GQA alone. The governing quantity is
+R²(H_logit -> log||h||² | depth): how much of the representation norm's non-depth variance
+is explained by posterior entropy, conditioned by both GQA and core operator type.
 
 | Model | GQA | R²(H → ||h||²) | Cancels? |
 |-------|----:|---------------:|----------|
 | Llama-3.2-3B | 3 | 0.826 | Yes — denominator tracks numerator |
 | Qwen3-8B | 4 | 0.274 | Yes — denominator partially tracks |
+| Qwen3.5-0.8B | 4 | 0.000 | No — denominator decoupled (hybrid linear-attn) |
 | Qwen2.5-3B | 8 | 0.035 | No — denominator independent |
 | LFM2-350M | — | 0.721 | Yes — near-perfect (β ratio 1.01) |
 
-Spearman(GQA, R²) = -1.000 on n=3 attention-based families. Perfect monotone: higher GQA →
-lower norm-entropy coupling → less cancellation. This is the same GQA axis that controls
-the operator correlation (higher GQA → H_attn and H_logit decouple, ACT-016).
+Updated attention-family test (n=4: Llama, Qwen3, Qwen3.5, Qwen2.5):
+Spearman(GQA, R²) = -0.632, permutation p = 0.250. **NON_MONOTONE.**
 
-**Mechanism hypothesis (n=3, not derived):** Higher GQA compresses the key space, which
+Critical counterexample: Qwen3 and Qwen3.5 both have `GQA=4` but
+`R²=0.274` vs `R²=0.000`. This same-GQA split falsifies the strict monotone-GQA hypothesis
+and requires an architecture-type term.
+
+**Mechanism hypothesis (n=4, not derived):** Higher GQA compresses the key space, which
 decouples the attention routing pattern from the representation norm trajectory. When routing
 (which drives H_logit through the unembedding projection) is decoupled from norm, the
 denominator ||h||² has independent variance that does not cancel the numerator signal.
 
 When GQA is low (Llama, GQA=3), routing and norm are tightly coupled (R²=0.826) — H_logit
-predicts ||h||² so strongly that the angular curvature ratio normalizes away the entropy
-signal. When GQA is high (Qwen2.5, GQA=8), routing and norm are decoupled (R²=0.035) — the
-numerator signal passes through uncancelled to produce the significant θ² effect (r=-0.429).
+predicts ||h||² strongly, so the angular curvature ratio normalizes away much of the signal.
+When GQA is high (Qwen2.5, GQA=8), routing and norm are decoupled (R²=0.035). At mid GQA,
+architecture splits the regime: Qwen3 (pure attention) retains moderate coupling, while
+Qwen3.5 (hybrid linear/full attention) is fully decoupled.
 
-**This is not an "exception."** It is a GQA-conditioned regime boundary. The question is
+**This is not an "exception."** It is a GQA-conditioned and architecture-conditioned regime boundary. The question is
 whether this regime boundary can be derived from the key compression geometry, or whether it
-is itself an empirical coincidence at n=3.
+is itself an empirical coincidence at n=4.
 
 ### What this means for the entropy-curvature link
 
@@ -937,10 +963,10 @@ relationship.
    CONSISTENT_SIGN in θ-space (among resolvable models) reflects the residual leakage
    from incomplete cancellation.
 
-5. **Sublayer decomposition (8-model operator_split + f5_sign_law, 2026-03-04):**
+5. **Sublayer decomposition (historical 8-model snapshot, 2026-03-04):**
 
    Full θ²_total = θ²_core + θ²_mlp + cross_energy decomposition. All depth-controlled
-   β_total are NEGATIVE (CONSISTENT_SIGN status, 8/8). The component-level "POS/NEG" from
+   β_total are NEGATIVE in this 8-model snapshot (8/8). The component-level "POS/NEG" from
    curvature_accumulation is a different metric (raw Spearman on unnormalized components);
    the operator_split depth-controlled OLS is the definitive sign.
 
@@ -1129,7 +1155,7 @@ dependence, but the *residual stream* norm (before LayerNorm) carries informatio
 how the network has accumulated evidence.
 
 The sign and strength of this coupling depends on how tightly the norm trajectory is
-bound to the entropy trajectory — which is architecture-dependent:
+bound to the entropy trajectory — which is architecture-conditioned (GQA + core operator):
 
 - **Llama (GQA=3), LFM2:** Strong coupling (R²=0.72–0.83). The attention routing
   pattern (which drives the hidden state norm through value accumulation) is tightly
@@ -1137,11 +1163,13 @@ bound to the entropy trajectory — which is architecture-dependent:
   concentrates on informative keys, both ||h||² grows (value accumulation) and H_logit
   drops (sharper posterior). The coupling is near-deterministic.
 
-- **Qwen2.5 (GQA=8), Qwen3.5 (GQA=4):** Weak coupling (R²=0.00–0.04). The compressed
-  key space decouples routing from norm trajectory. Higher GQA forces more tokens to
-  share key representations, which means the routing pattern (attention weights) has
-  less influence on which value vectors accumulate into h. The norm trajectory becomes
-  driven by MLP processing rather than attention routing, breaking the coupling.
+- **Qwen3 (GQA=4, pure attention):** Moderate coupling (R²=0.274). Norm still tracks
+  entropy enough to partially cancel numerator signal.
+
+- **Qwen2.5 (GQA=8), Qwen3.5 (GQA=4, hybrid):** Weak coupling (R²=0.00-0.04). In Qwen2.5,
+  high GQA key compression is consistent with decoupling. In Qwen3.5, the same-GQA
+  comparison to Qwen3 indicates hybrid linear-attention architecture adds an independent
+  decoupling mechanism.
 
 ### Proposition 8: H_logit Predicts Perpendicular Update Energy [EXPLORATORY]
 

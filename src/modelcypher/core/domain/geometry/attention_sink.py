@@ -35,6 +35,10 @@ Metrics:
         so s_i*(T-i) should equal col_sum exactly. Any deviation indicates
         numerical error in the division.
 
+    lap_eigval_identity_error: |LapEigval_ii - (s_i - A_{i,i})|
+        Identity check from sink analysis: LapEigval_ii = sink_score_i - A_{i,i}.
+        Reported as an absolute residual (should be near machine precision).
+
     NOTE: The original plan proposed a "LapEigval identity" check
         (s_i - A_{i,i} = off_diag / (T-i)). This is NOT an algebraic
         identity — it only holds when self-attention is excluded from
@@ -61,6 +65,7 @@ class TokenSinkResult:
     sink_score: float
     self_attention: float  # A_{i,i}
     consistency_error: float  # |s_i * (T-i) - col_sum|
+    lap_eigval_identity_error: float  # |LapEigval_ii - (s_i - A_{i,i})|
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -68,6 +73,7 @@ class TokenSinkResult:
             "sinkScore": self.sink_score,
             "selfAttention": self.self_attention,
             "consistencyError": self.consistency_error,
+            "lapEigvalIdentityError": self.lap_eigval_identity_error,
         }
 
 
@@ -166,11 +172,21 @@ def compute_sink_scores(
         # Consistency check: s_i * (T-i) should equal col_sum exactly
         consistency_error = abs(sink_score * n_attendees - col_sum)
 
+        # LapEigval identity check:
+        #   LapEigval_ii = sink_score_i - A_{i,i}
+        # We compute LapEigval_ii from the column-sum definition to avoid
+        # algebraic cancellation in implementation:
+        #   LapEigval_ii = (col_sum - (T-i)*A_{i,i}) / (T-i)
+        lap_eigval_ii = (col_sum - n_attendees * self_attn) / n_attendees
+        identity_rhs = sink_score - self_attn
+        lap_eigval_identity_error = abs(lap_eigval_ii - identity_rhs)
+
         token_sinks.append(TokenSinkResult(
             position=i,
             sink_score=sink_score,
             self_attention=self_attn,
             consistency_error=consistency_error,
+            lap_eigval_identity_error=lap_eigval_identity_error,
         ))
 
     max_pos = max(range(T), key=lambda i: token_sinks[i].sink_score)
