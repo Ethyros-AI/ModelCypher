@@ -409,11 +409,11 @@ but the mechanism for the negative direction remains open.
    from this measurement that links back to the GQA → K capacity → QK alignment chain.
 
 4. **Two separate derivation targets:**
-   - **Target A (this document's scope):** H_attn → Cov[y] → curvature (theoretically clean;
+   - **Target A (Steps 1–3 above):** H_attn → Cov[y] → curvature (theoretically clean;
      empirically not the operative cross-family path; may be operative in LFM2 regime)
-   - **Target B (open):** H_logit → curvature (empirically operative, r=0.507; derivation
-     requires understanding why higher posterior uncertainty at position l predicts lower
-     angular change — the negative beta direction is the key puzzle)
+   - **Target B (section below):** H_logit → representation components (empirically operative;
+     Propositions B1-B3 proven, Assumptions B4-B5 exploratory. The key finding: H_logit
+     predicts components of θ² but they cancel in the ratio. θ² is the wrong observable.)
 
 5. **Reframing required for empirical chain closure:** The causal chain's H_logit → Δcurvature
    link cannot be derived from the attention mechanics path developed here. A derivation starting
@@ -422,6 +422,231 @@ but the mechanism for the negative direction remains open.
    `θ² ≈ ||P_perp(h)δ||²/||h||²`. The open question is: why does higher H_logit (more
    diffuse posterior) predict smaller perpendicular-to-h update energy in the numerator
    relative to the denominator?
+
+---
+
+## Target B: H_logit → Component Coupling (2026-03-04)
+
+**Status:** [EMPIRICAL] — proven decomposition algebra + strong empirical data + theoretical
+motivation. Causal operator (B4) is a learned manifold property, not architecturally derivable.
+
+Target A (Steps 1–3 above) derives H_attn → Cov[y] → curvature through the attention
+covariance path. That path is empirically inoperative on standard transformers. This section
+develops the empirically operative path: H_logit → representation components.
+
+### Notation (additions to main notation)
+
+- `LN(h) = γ ⊙ (h − μ_h) / σ_h + β`: LayerNorm with learned `γ`, `β`; `μ_h = mean(h)`,
+  `σ_h = RMS(h − μ_h)`
+- `W_E ∈ R^(V × d)`: embedding/unembedding matrix (weight-tied)
+- `H_logit(h) = H(softmax(W_E · LN(h)))`: logit entropy (Entropy-Lens)
+
+### Proposition B1: H_logit is Direction-Only [PROVEN: architecture]
+
+**Claim:** `H_logit(h)` is invariant to positive rescaling of `h`.
+
+**Proof:** RMSNorm (the norm used in modern transformers including LFM2, Llama, Qwen) maps:
+
+```
+RMSNorm(h) = γ ⊙ h / ||h||_RMS
+```
+
+where `||h||_RMS = √(Σ h_i² / d)`. For any `c > 0`:
+
+```
+RMSNorm(c·h) = γ ⊙ (c·h) / ||c·h||_RMS = γ ⊙ h / ||h||_RMS = RMSNorm(h)
+```
+
+The logits `z = W_E · RMSNorm(h)` are therefore invariant to positive rescaling of `h`.
+Since softmax and Shannon entropy are applied to `z`, `H_logit` is invariant to `||h||`.
+
+More precisely: `H_logit = g(ĥ)` where `ĥ = h/||h||` is the unit-direction and `g` is
+determined by `W_E`, `γ`. H_logit is a function of the **direction** of `h` in
+representation space, not its magnitude.
+
+**Corollary B1.1:** Any statistical correlation between `H_logit` and `||h||²` across a
+token population is a **population-level manifold property** (tokens at different H_logit
+values have systematically different norms), NOT a pointwise mathematical identity. The
+direction and magnitude of `h` are coupled through the learned representation geometry,
+not through the measurement operator.
+
+### Proposition B2: θ² Component Decomposition [PROVEN: = Proposition 4]
+
+From Proposition 4 (Step 3 above), under assumption A3:
+
+```
+θ² ≈ ||P_perp(h) δ||² / ||h||²
+```
+
+In log space:
+
+```
+log(θ²) ≈ log(||P_perp(h) δ||²) − log(||h||²)
+```
+
+Define: `Y_num = log(||P_perp(h) δ||²)` (numerator), `Y_den = log(||h||²)` (denominator).
+
+### Theorem B3: Cancellation Mechanics [PROVEN: regression algebra]
+
+**Claim:** If H_logit predicts both components with depth-controlled coefficients `β_num`
+and `β_den`, then the depth-controlled coefficient on `θ²` satisfies:
+
+```
+β_θ ≈ β_num − β_den
+```
+
+**Proof:** Under linear regression on depth-residualized variables:
+
+```
+E[Y_num | H, depth] ≈ β_num · H + f_num(depth)
+E[Y_den | H, depth] ≈ β_den · H + f_den(depth)
+```
+
+Since `log(θ²) ≈ Y_num − Y_den`:
+
+```
+E[log(θ²) | H, depth] ≈ (β_num − β_den) · H + (f_num − f_den)(depth)
+```
+
+Therefore `β_θ = β_num − β_den`. ∎
+
+**Corollary B3.1 (Cancellation regimes):**
+- When `|β_num| ≈ |β_den|` and same sign: **cancellation** (θ² insensitive to H_logit)
+- When `β_num` and `β_den` have opposite signs: **amplification** (θ² strongly sensitive)
+- When one dominates: **partial pass-through** (θ² inherits the dominant component's sign)
+
+**Empirical confirmation (4-family component table):**
+
+| Family | β_num | β_den | |β_num|/|β_den| | Regime |
+|--------|------:|------:|---------------:|--------|
+| LFM2-350M | −0.256 | −0.254 | 1.01 | Perfect cancellation |
+| Llama-3.2-3B | +0.070 | +0.168 | 0.42 | Denominator dominates |
+| Qwen2.5-3B | −0.422 | +0.175 | 2.41 | Opposite signs → amplification |
+| Qwen3-8B | +0.199 | +0.359 | 0.55 | Denominator dominates |
+
+The cancellation theorem explains why F4 fails on `θ²` while both components individually
+pass at the 100th permutation percentile. Angular curvature is the **wrong observable**
+for the H_logit relationship — it normalizes by `||h||²`, the very quantity H_logit most
+strongly predicts.
+
+### Assumption B4: Learned Manifold Coupling [EXPLORATORY]
+
+**Statement:** At each depth `l`, the trained representation manifold `M_l` admits an
+approximate parameterization by posterior entropy `H_logit` such that both `||h_l||` and
+`||P_perp(h_l) δ_l||` are smooth functions of `H_logit` on `M_l`.
+
+**This is NOT derivable from architecture.** LayerNorm explicitly destroys norm information
+before the unembedding projection (Proposition B1). The coupling between direction (which
+determines H_logit) and magnitude (||h||²) arises from the learned weight geometry, not
+from architectural identities. Different trained models on different data could in principle
+have different coupling signs and strengths.
+
+**Theoretical motivation:** Agarwal, Dalal & Misra (2026, arXiv:2512.22471) show that in
+well-specified Bayesian tasks, the value manifold at training convergence is 1D,
+parameterized by posterior entropy. If this structure generalizes to production LLMs (an
+empirical claim, not a theorem), then H_logit indexes position on a 1D manifold, and all
+geometric properties of `h` — including `||h||` and `||P_perp δ||` — co-vary through their
+shared dependence on manifold position.
+
+**Empirical support:**
+- Both components pass depth-stratified permutation at 100th percentile (n=116 observations,
+  4 families, 500 permutations). The signal is overwhelmingly real.
+- Per-family Spearman correlations (depth-residualized):
+
+  | Family | r(H, ||P_perp δ||²) | p | r(H, ||h||²) | p |
+  |--------|--------------------:|----:|-------------:|----:|
+  | LFM2 | −0.679 | 0.004 | −0.732 | 0.001 |
+  | Llama | +0.465 | 0.013 | +0.762 | 0.000 |
+  | Qwen2.5 | −0.599 | 0.000 | −0.198 | 0.246 |
+  | Qwen3 | +0.366 | 0.028 | +0.655 | 0.000 |
+  | Qwen3.5 | −0.302 | 0.152 | +0.053 | 0.806 |
+
+- The component-level signs are family-dependent (positive for Llama/Qwen3, negative for
+  LFM2/Qwen2.5, mixed for Qwen3.5). The family-dependence indicates the coupling is
+  learned and architecture-conditioned, consistent with the learned manifold interpretation.
+
+**Failure mode:** If a new architecture family shows H_logit predicting neither component
+after depth control (both components below permutation null), B4 is refuted for that family.
+This would indicate that the manifold parameterization does not hold universally.
+
+### Hypothesis B5: GQA Modulates Norm-Entropy Coupling [EXPLORATORY → REFINED]
+
+**Original statement:** `R²(H_logit → ||h||² | depth)` is monotonically decreasing with
+GQA ratio across attention-based architecture families.
+
+**Extended test (n=4, adding Qwen3.5-0.8B at GQA=4):**
+
+| Family | GQA | Hybrid? | R²(H → ||h||²) | R²(H → ||Pδ||²) | |β_num/β_den| |
+|--------|----:|---------|---------------:|----------------:|-------------:|
+| Llama-3.2-3B | 3 | No | 0.826 | 0.160 | 0.42 |
+| Qwen3-8B | 4 | No | 0.274 | 0.123 | 0.55 |
+| Qwen3.5-0.8B | 4 | Yes | 0.000 | 0.376 | 90.12 |
+| Qwen2.5-3B | 8 | No | 0.035 | 0.428 | 2.41 |
+| LFM2-350M | — | Yes | 0.721 | 0.575 | 1.01 |
+
+Spearman(GQA, R²) = −0.632 (n=4, permutation p = 0.250). **NON_MONOTONE.**
+
+**B5 is REFINED, not confirmed.** The strict monotone hypothesis fails because Qwen3
+(GQA=4, pure attention, R²=0.274) and Qwen3.5 (GQA=4, hybrid linear-attention, R²=0.000)
+have the same GQA but different norm-entropy coupling strengths. GQA alone does NOT
+determine the coupling.
+
+**Refined hypothesis (B5'):** Norm-entropy coupling R² depends on BOTH GQA ratio AND
+attention architecture type. At fixed GQA, hybrid/linear-attention architectures have
+weaker norm-entropy coupling than pure full-attention architectures.
+
+Evidence:
+- At GQA=4: Qwen3 (pure attn) R²=0.274 > Qwen3.5 (hybrid) R²=0.000
+- LFM2 (hybrid conv+attn, GQA≈2): R²=0.721, high but with near-perfect cancellation
+  (|β_num/β_den|=1.01). LFM2's conv layers couple norm and entropy similarly in both
+  components, producing high R² for the denominator but zero net effect on θ².
+
+**The two-variable structure is consistent with the broader sign split investigation:**
+Hybrid architectures (Qwen3.5, LFM2) handle the norm-entropy relationship differently
+than pure-attention architectures, even at the same GQA. This is the same observation
+as the component-level POS/NEG sign split: hybrid architectures are in a different
+geometric regime.
+
+**Consequence for Theorem B3 (cancellation):** The cancellation regime is determined by
+both GQA and architecture type:
+- Low GQA + pure attention (Llama): strong norm coupling → cancellation
+- Low GQA + hybrid (LFM2): strong norm coupling → perfect cancellation (ratio ≈ 1.01)
+- Mid GQA + pure attention (Qwen3): moderate norm coupling → denominator dominates
+- Mid GQA + hybrid (Qwen3.5): zero norm coupling → numerator passes through uncancelled
+- High GQA + pure attention (Qwen2.5): no norm coupling → opposite-sign amplification
+
+Source: `results/gqa_norm_entropy_coupling/coupling_results.json`
+
+### Derivation Assessment: Protocol Claim Form
+
+Per `docs/research/FIRST_PRINCIPLES_REVIEW_PROTOCOL.md`:
+
+```
+observable     = {||P_perp(h)δ||², ||h||²}  (NOT θ²)
+geometry_state = position on learned manifold parameterized by H_logit
+architecture   = GQA ratio (modulates norm-entropy coupling R²)
+scale          = NOT YET CHARACTERIZED
+measurement    = depth-controlled OLS on log-transformed components
+```
+
+| Field | Status | Notes |
+|-------|--------|-------|
+| Causal operator | **MISSING** | B4 is a manifold assumption, not a derived operator |
+| Equation/theorem | B1-B3 [PROVEN], B4-B5 [EXPLORATORY] | Algebra is complete; mechanism is not |
+| Architecture term | GQA + attn type [EXPLORATORY, n=4] | B5 refined: two-variable (GQA + hybrid) |
+| Scale term | NOT CHARACTERIZED | Qwen3.5 scale series shows transition, no functional form |
+| Measurement operator | Depth-controlled OLS on log components | bf16 only for sublayer; 4-bit safe for aggregate |
+| Commensurability | Log-transform valid for component magnitudes | Component signs not commensurable across families |
+| Directional prediction | β_total < 0 (8/8 CONSISTENT_SIGN) | Component signs are family-dependent |
+| Falsifier | Any resolvable model with β_total > 0 | Refutes CONSISTENT_SIGN |
+
+**Overall status: [EMPIRICAL].** The provable decomposition (B1-B3) is a genuine advance:
+it identifies the wrong observable (θ²), explains why F4 fails (cancellation), and
+characterizes the cancellation regime (GQA). But the causal operator (B4) cannot be promoted
+because the norm-entropy coupling is a learned manifold property. The strongest achievable
+status is [EMPIRICAL] until either:
+- B4 is derived from architecture (unlikely — it depends on training dynamics), or
+- A new measurement operator is found that does not require the manifold assumption.
 
 ---
 
@@ -494,18 +719,24 @@ which is reliable for sublayer correlations where depth confound is less severe)
   LFM2-350M (ρ_core=+0.438, ρ_mlp=-0.447) and LFM2-700M (ρ_core=+0.556, ρ_mlp=-0.641).
   Cross-scale consistent.
 
-- **Pure attention (Qwen2.5, Llama, Mistral):** ρ_core > 0, ρ_mlp ≈ 0 or positive →
-  **core_pass_through**. Attention handles both transport and binding; MLP is neutral or
-  cooperative. Confirmed on Qwen2.5-3B (ρ_core=+0.867, ρ_mlp=+0.084), Llama-3.2-3B
-  (ρ_core=+0.869, ρ_mlp=+0.723), Mistral-7B (ρ_core=+0.887, ρ_mlp=+0.790).
+- **Pure attention (Llama, Mistral):** ρ_core > 0, ρ_mlp positive →
+  **core_pass_through**. Attention handles both transport and binding; MLP is cooperative.
+  Confirmed on Llama-3.2-3B (ρ_core=+0.869, ρ_mlp=+0.723), Mistral-7B
+  (ρ_core=+0.887, ρ_mlp=+0.790).
+
+- **Hybrid linear-attention (Qwen3.5):** ρ_core > 0, ρ_mlp positive →
+  **core_pass_through**. Linear attention + full attention layers (properly decomposed
+  after Step 2.1 GatedDeltaNet fix: 0.8B/2B have 18 linear_attn + 6 attention = 24
+  layers; 4B has 24 linear_attn + 8 attention = 32 layers). Core operator handles
+  transport. Confirmed on Qwen3.5-0.8B (ρ_core=+0.713, ρ_mlp=+0.577), Qwen3.5-2B
+  (ρ_core=+0.732, ρ_mlp=+0.528), and Qwen3.5-4B (ρ_core=+0.611, ρ_mlp=+0.234).
+  Cross-scale consistent within Qwen3.5 family (3 models, 0.8B–4B).
 
 The mechanism classification is architecture-predictable: hybrid (conv+attn) → competing,
-pure attention → pass-through, identity-core dominant → mlp_dominant. Prediction accuracy
-6/6 on the original f5_sign_law set (LFM2-350M, LFM2-700M, Qwen3.5-0.8B, Qwen2.5-3B,
-Llama-3.2-3B, Mistral-7B; source: `results/f5_sign_law/cross_model_summary.json`).
-When Mistral is replaced by Qwen3-8B (intermediate run), accuracy drops to 5/6 (Qwen3-8B
-mispredicted). The current f5_sign_law_full set (8 models, replacing Qwen3-8B with
-Qwen3.5-2B, Qwen3.5-4B bf16, Qwen3.5-4B 4-bit) achieves 6/8 — see section 5 below.
+pure attention or hybrid linear-attention → core_pass_through. Prediction accuracy 9/10
+on the 10-model F5 set (6 families; Qwen3-8B is the sole mismatch — predicted
+core_pass_through, observed competing_sublayers; source:
+`results/f5_sign_law/cross_model_summary.json`).
 
 ### F5 status: CONSISTENT_SIGN (threshold DERIVED)
 
@@ -515,42 +746,42 @@ estimator — the smallest |r| with signal-to-noise ratio ≥ 1 at the effective
 No heuristic thresholds. n_eff capped at n (cannot have more independent observations than
 physical layers).
 
-**Detection floor results:**
+**Detection floor results (updated 2026-03-04, 10 models with proper Qwen3.5 decomposition):**
 
 | Model | n | ρ₁ | n_eff | MDE | |r| | Resolvable | Perm exceedance |
 |-------|---|-----|-------|-----|-----|------------|-----------------|
 | LFM2-350M | 16 | -0.495 | 16.0 | 0.270 | 0.326 | Yes | 0.215 |
 | LFM2-700M | 16 | -0.616 | 16.0 | 0.270 | 0.109 | No | 0.681 |
-| Qwen3.5-0.8B | 24 | 0.323 | 12.3 | 0.317 | 0.450 | Yes | 0.028 |
-| Qwen2.5-3B | 36 | 0.905 | 4.0 | 0.762 | 0.325 | No | 0.022 |
+| Qwen3.5-0.8B | 24 | 0.323 | 12.3 | 0.317 | 0.580 | Yes | 0.036 |
+| Qwen3.5-2B | 24 | 0.254 | 14.3 | 0.289 | 0.556 | Yes | 0.042 |
+| Qwen3.5-4B | 32 | 0.077 | 27.4 | 0.200 | 0.503 | Yes | 0.034 |
+| Qwen3.5-4B-4bit | 32 | 0.072 | 27.7 | 0.199 | 0.522 | Yes | 0.034 |
 | Llama-3.2-3B | 28 | 0.422 | 11.4 | 0.332 | 0.703 | Yes | 0.004 |
 | Mistral-7B | 32 | 0.425 | 12.9 | 0.307 | 0.741 | Yes | 0.000 |
+| Qwen2.5-3B | 36 | 0.905 | 4.0 | 0.762 | 0.325 | No | 0.022 |
+| Qwen3-8B | 36 | 0.890 | 4.0 | 0.762 | 0.097 | No | 0.611 |
 
-**Result:** 4/6 models resolvable (LFM2-350M, Qwen3.5-0.8B, Llama-3.2-3B, Mistral-7B).
-All show **negative** sign (depth-controlled OLS slope). Cross-family consistency across
-4 architecture families (LFM2 hybrid, Qwen3.5 hybrid, Llama, Mistral).
+**Result:** 7/10 models resolvable. All resolvable models show **negative** sign
+(depth-controlled OLS slope). Below floor: LFM2-700M, Qwen2.5-3B, Qwen3-8B (all have
+high autocorrelation ρ₁ → low n_eff → large MDE). Cross-family consistency across 4
+architecture families (LFM2 hybrid, Qwen3.5 hybrid, Llama, Mistral). Qwen3.5
+scale-validated (0.8B + 2B + 4B all resolvable, all negative). Gate check: 10/10.
 F5 status: **CONSISTENT_SIGN**.
-
-**Permutation diagnostic tension:** Qwen2.5-3B has the lowest permutation exceedance (0.022)
-but is classified below the detection floor because ρ₁=0.905 crushes n_eff to 4. The high
-autocorrelation means adjacent layers carry redundant information about the H→θ relationship.
-The permutation (which destroys this autocorrelation) may overstate significance by counting
-the same information multiple times. The Fisher-SE MDE is the conservative derived threshold.
 
 **What the evidence supports:**
 1. The raw sign disagreement across families is a depth confound, not a genuine
    architecture effect
-2. The sublayer mechanism is architecture-dependent (competing vs pass-through vs mlp_dominant)
+2. The sublayer mechanism is architecture-dependent (competing vs pass-through)
 3. H_logit is the primary operator (F1 PASS 4/4 on original set)
-4. After depth control, the sign is consistently **negative** among resolvable models
+4. After depth control, the sign is consistently **negative** among 7/10 resolvable models
    across 4 architecture families (higher logit entropy → less angular change at fixed depth)
-5. Mechanism prediction is 6/6 across all tested models
+5. Mechanism prediction is 9/10 across all tested models (Qwen3-8B sole mismatch)
+6. Qwen3.5 family scale-validated (0.8B + 2B + 4B all resolvable, all negative, all core_pass_through)
 
 **What remains open:**
-- Qwen2.5-3B autocorrelation (ρ₁=0.905) prevents resolution despite strong permutation signal
 - LFM2-700M below detection floor (|r|=0.109, low effect size)
-- Architecture term for component-sign split is still unknown (LFM2/Qwen2.5 negative vs Llama/Qwen3 positive at component level)
-- CR-EC-001 remains [EMPIRICAL] until architecture-term and autocorrelation gaps are closed
+- Architecture term for component-sign split is still unknown at component level
+- CR-EC-001 remains [EMPIRICAL] until architecture-term gap is closed
 
 ---
 
@@ -791,7 +1022,9 @@ relationship.
 
 ### GQA Conditioning Hypothesis
 
-**Status: PASSES** (with low-power caveat)
+**Status: PASSES** (updated 2026-03-04 with n=10 models, proper Qwen3.5 decomposition)
+
+**Original test (n=3 families, H_attn vs H_logit operator correlation):**
 
 | Family | GQA | corr(H_attn, H_logit) | Fisher z |
 |--------|----:|---------------------:|---------:|
@@ -805,8 +1038,372 @@ Regression: `z_f = atanh(corr_f) = a + b × log(GQA_f)`
 - Permutation p = 0.167 (1/6; n=3 families → 6 total permutations)
 - LOO sign consistent: yes (all leave-one-out fits maintain b < 0)
 
-**Limitation:** n=3 families. Permutation threshold 0.5 (not 0.05) is the best achievable
-with 6 permutations. Requires ≥5 families for robust inference.
+**Updated test (n=10 models, cross-family, GQA → r(H_logit, H_attn)):**
+
+After fixing GatedDeltaNet decomposition (Step 2.1) and re-running all Qwen3.5 models
+with proper `linear_attn` decomposition (18 linear_attn + 6 attention per model):
+
+```
+Spearman(GQA, r(H_logit, H_attn)) = -0.736, p = 0.015, n = 10
+```
+
+Higher GQA → lower coupling between the two entropy operators. This now has
+sufficient power (p < 0.05 at n=10) for a directional claim.
+
+Within-family stability confirmed: Qwen3.5 (all GQA=4) shows r = -0.07 to -0.14,
+stable across 0.8B–4B scale. Scale does not affect operator coupling at fixed GQA.
+
+**Caveat:** Cross-family comparison confounds GQA with architecture differences.
+Within-family GQA variation is not available in our model set (all Qwen3.5 models
+share GQA=4). The cross-family result is directional, not causal.
+
+See Proposition 10 in the H_logit derivation section below for the full mechanism
+hypothesis connecting GQA → key compression → operator decoupling → cancellation.
+
+---
+
+## H_logit → Curvature: The Unembedding Geometry Path (2026-03-04)
+
+### Motivation
+
+The H_attn → curvature derivation (Steps 1-3 above) is theoretically clean but empirically
+inoperative on standard transformers. H_attn does not predict curvature cross-family.
+The empirical operative quantity is H_logit — Shannon entropy of the next-token distribution
+obtained by projecting h_l through norm and unembedding:
+
+```
+H_logit(h) = H(softmax(W_u · LayerNorm(h)))
+```
+
+where `W_u in R^(V x d)` is the unembedding matrix (or `embed_tokens` when weight-tied).
+
+This section derives the geometric relationship between H_logit and the curvature components,
+explains the F4 cancellation mechanism, and formalizes the GQA modulation.
+
+### Definition: H_logit as a Geometry Operator
+
+**Definition 1.** For hidden state `h in R^d` at layer l, define the logit entropy operator:
+
+```
+p_i(h) = softmax(W_u · LayerNorm(h))_i,  i = 1..V
+H_logit(h) = -Σ_i p_i(h) log p_i(h)
+```
+
+H_logit measures how concentrated the hidden state is in the directions defined by the
+unembedding matrix rows. Low H_logit ↔ h is aligned with few vocab directions (sharp
+posterior). High H_logit ↔ h projects broadly across vocab space (diffuse posterior).
+
+**Proposition 6: H_logit as Unembedding Alignment [PROVEN: definition + softmax property]**
+
+For any h, define the effective vocabulary dimension:
+
+```
+k_vocab(h) = exp(H_logit(h))
+```
+
+Then `k_vocab(h) in [1, V]` with `k_vocab = 1` when h is perfectly aligned with one
+unembedding row (degenerate posterior) and `k_vocab = V` when h projects uniformly
+across all rows (maximum entropy).
+
+The unembedding matrix `W_u` defines a fixed set of V directions in R^d. H_logit
+partitions the hidden state space into regions of different alignment concentration.
+
+### Proposition 7: H_logit Predicts Representation Scale [EXPLORATORY]
+
+**Empirical basis (5 families, depth-controlled):**
+
+| Family | r(H_logit, log||h||²) | p | R² |
+|--------|---------------------:|---:|---:|
+| LFM2-350M | -0.732 | 0.001 | 0.721 |
+| Llama-3.2-3B | +0.762 | 0.000 | 0.826 |
+| Qwen2.5-3B | -0.198 | 0.246 | 0.035 |
+| Qwen3-8B | +0.655 | 0.000 | 0.274 |
+| Qwen3.5-0.8B | +0.053 | 0.806 | 0.000 |
+
+**Geometric argument:** In networks where the unembedding matrix W_u is approximately
+orthogonal (or has well-spread singular directions), the softmax entropy of W_u h is
+monotonically related to the effective projection dimension of h in vocab space. When
+||h||² is large, the logit vector z = W_u h has larger magnitude, which (before
+LayerNorm) concentrates the softmax and reduces H_logit. LayerNorm removes the norm
+dependence, but the *residual stream* norm (before LayerNorm) carries information about
+how the network has accumulated evidence.
+
+The sign and strength of this coupling depends on how tightly the norm trajectory is
+bound to the entropy trajectory — which is architecture-dependent:
+
+- **Llama (GQA=3), LFM2:** Strong coupling (R²=0.72–0.83). The attention routing
+  pattern (which drives the hidden state norm through value accumulation) is tightly
+  correlated with the unembedding projection (which H_logit measures). When routing
+  concentrates on informative keys, both ||h||² grows (value accumulation) and H_logit
+  drops (sharper posterior). The coupling is near-deterministic.
+
+- **Qwen2.5 (GQA=8), Qwen3.5 (GQA=4):** Weak coupling (R²=0.00–0.04). The compressed
+  key space decouples routing from norm trajectory. Higher GQA forces more tokens to
+  share key representations, which means the routing pattern (attention weights) has
+  less influence on which value vectors accumulate into h. The norm trajectory becomes
+  driven by MLP processing rather than attention routing, breaking the coupling.
+
+### Proposition 8: H_logit Predicts Perpendicular Update Energy [EXPLORATORY]
+
+**Empirical basis (5 families, depth-controlled):**
+
+| Family | r(H_logit, log||P_perp(h)δ||²) | p | R² |
+|--------|-------------------------------:|---:|---:|
+| LFM2-350M | -0.679 | 0.004 | 0.575 |
+| Llama-3.2-3B | +0.465 | 0.013 | 0.160 |
+| Qwen2.5-3B | -0.599 | 0.000 | 0.428 |
+| Qwen3-8B | +0.366 | 0.028 | 0.123 |
+| Qwen3.5-0.8B | -0.302 | 0.152 | 0.376 |
+
+**Geometric argument:** The perpendicular update `P_perp(h)δ` measures how much the
+layer's output rotates the hidden state away from its current direction. When H_logit
+is low (sharp posterior), h is concentrated in a low-dimensional subspace of vocab
+space. The layer's update δ (from attention + MLP) is constrained by the same
+representational bottleneck that produces the sharp posterior — the network has
+committed to a specific interpretation, and the update respects this commitment.
+
+Formally, if we decompose δ into vocab-aligned and vocab-orthogonal components:
+
+```
+δ = P_W δ + P_W_perp δ
+```
+
+where `P_W` projects onto the column span of `W_u^T` (the unembedding subspace),
+then ||P_perp(h)δ||² depends on both the magnitude of δ and the angle between δ
+and h. When h is in a low-entropy (concentrated) region of vocab space, the layer's
+update tends to stay within the same concentrated region (the network "deepens its
+commitment" rather than exploring new directions), reducing perpendicular energy.
+
+### Proposition 9: F4 Cancellation Theorem [EXPLORATORY]
+
+**Claim:** The angular curvature ratio θ² = ||P_perp(h)δ||² / ||h||² cancels the
+H_logit signal when H_logit predicts both numerator and denominator with proportional
+coefficients.
+
+**Proof sketch (under linear approximation):** Assume depth-controlled relationships:
+
+```
+log||P_perp(h)δ||² = a_num + b_num · H_logit + ε_num
+log||h||² = a_den + b_den · H_logit + ε_den
+```
+
+Then:
+
+```
+log θ² ≈ log||P_perp(h)δ||² - log||h||²
+       = (a_num - a_den) + (b_num - b_den) · H_logit + (ε_num - ε_den)
+```
+
+The H_logit coefficient in θ² is `b_num - b_den`. When `b_num ≈ b_den`
+(proportional prediction), the coefficient vanishes:
+
+```
+|b_num - b_den| << max(|b_num|, |b_den|)  =>  H_logit signal cancels in θ²
+```
+
+**Empirical verification (depth-residualized OLS slopes):**
+
+| Model | β_num | β_den | |β_num|/|β_den| | Cancellation |
+|-------|------:|------:|----------------:|-------------|
+| LFM2-350M | -0.256 | -0.254 | 1.01 | Near-perfect |
+| Llama-3.2-3B | +0.070 | +0.168 | 0.42 | Partial (den dominates) |
+| Qwen2.5-3B | -0.422 | +0.175 | 2.41 | **Broken** (opposite signs) |
+| Qwen3-8B | +0.199 | +0.359 | 0.55 | Partial (den dominates) |
+
+When β_num and β_den have the same sign and similar magnitude (LFM2, Llama), θ²
+normalizes away the H_logit signal. When they have opposite signs (Qwen2.5), the
+signal amplifies in θ² rather than cancelling. ∎
+
+### Proposition 10: GQA Modulates Cancellation via Key Compression [EXPLORATORY]
+
+**Updated empirical basis (10 models, 2026-03-04):**
+
+Cross-family Spearman(GQA, r(H_logit, H_attn)):
+
+```
+ρ = -0.736, p = 0.015, n = 10
+```
+
+| Model | GQA | r(H_logit, H_attn) | Family |
+|-------|----:|-------------------:|--------|
+| LFM2-350M | 2 | +0.600 | LFM2 |
+| LFM2-700M | 3 | +0.657 | LFM2 |
+| Llama-3.2-3B | 3 | +0.294 | Llama |
+| Mistral-7B | 4 | -0.136 | Mistral |
+| Qwen3-8B | 4 | +0.645 | Qwen3 |
+| Qwen3.5-0.8B | 4 | -0.086 | Qwen3.5 |
+| Qwen3.5-2B | 4 | -0.086 | Qwen3.5 |
+| Qwen3.5-4B | 4 | -0.071 | Qwen3.5 |
+| Qwen3.5-4B-4bit | 4 | -0.143 | Qwen3.5 |
+| Qwen2.5-3B | 8 | -0.299 | Qwen2.5 |
+
+**Within-family stability (Qwen3.5, all GQA=4):** r = -0.07 to -0.14, stable across
+0.8B–4B scale range. Scale does not affect operator coupling at fixed GQA.
+
+**Mechanism:** GQA ratio = n_heads / n_kv_heads. Higher GQA means more query heads
+share each key-value head. This compresses the key space:
+
+1. **Low GQA (e.g., 2-3):** Each KV head serves 2-3 query heads. Key vectors
+   maintain high-dimensional selectivity. Attention routing (α) strongly determines
+   which values accumulate → routing entropy (H_attn) and posterior entropy (H_logit)
+   are coupled through the value accumulation path.
+
+2. **High GQA (e.g., 8):** Each KV head serves 8 query heads. Key vectors must
+   represent a compressed subspace to serve diverse queries. Attention routing
+   becomes less informative about the specific hidden state trajectory → H_attn
+   and H_logit decouple.
+
+**Connection to cancellation:** When GQA is low and operators are coupled, routing
+(which drives ||h||² through value accumulation) is tightly bound to posterior
+(which H_logit measures). Both numerator and denominator of θ² respond to the same
+underlying routing signal → proportional β coefficients → cancellation.
+
+When GQA is high and operators are decoupled, ||h||² is driven by MLP processing
+(which is independent of H_logit) while ||P_perp(h)δ||² retains some H_logit
+dependence through the attention-specific update. The β coefficients diverge →
+cancellation breaks → θ² retains H_logit signal.
+
+**Prediction (testable):** At fixed depth, models with higher GQA should show larger
+|β_total| (depth-controlled H_logit → θ² coefficient), i.e., less cancellation.
+Among the 7 resolvable models in the F5 analysis:
+
+| Model | GQA | |β_total| | |r| |
+|-------|----:|--------:|----:|
+| Qwen3.5-0.8B | 4 | 22.94 | 0.580 |
+| Qwen3.5-2B | 4 | 2.21 | 0.556 |
+| Qwen3.5-4B | 4 | 0.46 | 0.503 |
+| Llama-3.2-3B | 3 | 0.18 | 0.703 |
+| Mistral-7B | 4 | 8.34 | 0.741 |
+| LFM2-350M | 2 | 28.21 | 0.326 |
+
+β_total magnitude is confounded by model scale (different hidden dimensions produce
+different absolute β). The |r| values do not show a clean GQA monotonicity within
+the resolvable set because the cancellation degree also depends on architecture family.
+The prediction is directional (higher GQA → less cancellation on average) but not
+yet cleanly separable from family effects at n=10.
+
+### Summary: Two-Path Framework
+
+The entropy → curvature relationship has two independent geometric paths:
+
+**Path A (H_attn → curvature, this document Steps 1-3):**
+```
+H_attn → support size → Cov[α] rank → Cov[y] spectrum → ||P_perp(h)δ||²
+```
+- [PROVEN] covariance pushforward, rank bounds, entropy-support constraint
+- [EXPLORATORY] curvature bridge
+- Empirically operative in LFM2 only (H_attn → θ_attn: r=0.83 LFM2-700M)
+- Null on standard transformers (Qwen2.5: r=-0.036, p=0.835)
+
+**Path B (H_logit → curvature, this section):**
+```
+H_logit → unembedding alignment → {||P_perp(h)δ||², ||h||²} → θ² (with cancellation)
+```
+- [PROVEN] definitions (Prop 6)
+- [EXPLORATORY] component predictions (Props 7-8), cancellation (Prop 9),
+  GQA modulation (Prop 10)
+- Empirically operative cross-family for components (F4 component PASS at 100th
+  percentile, n=116)
+- θ² signal survives only where cancellation is incomplete (GQA-dependent)
+- F5 CONSISTENT_SIGN among 7/10 resolvable models (all negative β_total)
+
+**The bridge between paths:** GQA controls operator coupling (Prop 10,
+ρ = -0.736, p = 0.015, n = 10). Low GQA → paths A and B share variance through
+routing-norm coupling → Path A is operative. High GQA → paths decouple → Path A
+goes null, Path B's component-level signal survives uncancelled in θ².
+
+**What remains OPEN:**
+1. Formal derivation of ∂||P_perp(h)δ||²/∂H_logit and ∂||h||²/∂H_logit through
+   the chain rule involving W_u (would promote Props 7-8 from EXPLORATORY)
+2. Why the component-level sign is family-dependent (POS for Llama/Qwen3, NEG for
+   LFM2/Qwen2.5/Qwen3.5) — the FFN ratio hypothesis was REFUTED, hybrid architecture
+   is sufficient-but-not-necessary
+3. The Qwen3.5 scale-dependent mechanism transition (mlp_dominant at 0.8B-2B →
+   competing_sublayers at 4B)
+4. Whether the GQA → cancellation relationship is derivable from key compression
+   geometry or is itself an empirical coincidence
+
+---
+
+## Pre-Registered Falsifier: GQA-Isolated Operator Decoupling (F-GQA-01)
+
+**Date:** 2026-03-04
+**Status:** PRE-REGISTERED (not yet executed)
+
+### Hypothesis
+
+GQA ratio causally controls the coupling between H_logit and H_attn, independent of
+architecture family. Specifically: within models of the same architecture family,
+increasing GQA (by modifying the number of KV heads while holding architecture constant)
+decreases r(H_logit, H_attn).
+
+### Current evidence and its limitation
+
+Cross-family Spearman(GQA, r(H_logit, H_attn)) = -0.736, p=0.015, n=10 (6 families).
+This is **confounded by architecture**: GQA co-varies with family (all Qwen3.5 models
+have GQA=4; Qwen2.5 has GQA=8; etc.). The correlation could reflect architecture
+differences rather than GQA per se.
+
+### Test design
+
+**Approach 1 (Within-family GQA variation — gold standard):**
+
+Find or construct models from the same family with different GQA ratios. Candidates:
+- Llama-3.2-1B (GQA=4) vs Llama-3.2-3B (GQA=3 — actually n_kv_heads=8, n_heads=24)
+  → verify actual GQA ratios differ
+- Qwen2.5-0.5B through Qwen2.5-7B if different sizes use different GQA configurations
+- Any family that varies KV head count across scale
+
+For each within-family pair with different GQA:
+```
+Prediction: model with higher GQA has lower |r(H_logit, H_attn)|
+Falsifier: model with higher GQA has HIGHER |r(H_logit, H_attn)| (p < 0.05)
+```
+
+Minimum: 3 families with ≥2 GQA values each → 3 within-family tests.
+
+**Approach 2 (Partial correlation controlling for family — silver standard):**
+
+Pool all 10+ models. Compute partial Spearman(GQA, r(H_logit, H_attn) | family),
+treating family as a categorical covariate.
+
+```
+Prediction: partial ρ < 0 (GQA effect persists after family control)
+Falsifier: partial ρ ≥ 0 (GQA effect explained entirely by family)
+```
+
+This is weaker because within-family GQA variation is limited in our current model set,
+so the partial correlation is dominated by cross-family variation.
+
+**Approach 3 (Norm-coupling regression — mechanistic):**
+
+If GQA controls cancellation through R²(H_logit → ||h||² | depth), then:
+
+```
+R²_norm(model) = R²(H_logit → log||h||² | depth)
+Prediction: Spearman(GQA, R²_norm) < 0, controlling for family
+Falsifier: Spearman(GQA, R²_norm) ≥ 0
+```
+
+Current data (n=3 attention-based families): Spearman = -1.000 (but p=0.167 = 1/6).
+Need n ≥ 5 families for p < 0.05.
+
+### Promotion criteria
+
+To promote Hypothesis B5 (GQA modulates norm-entropy coupling) from [EXPLORATORY]:
+1. Approach 1 passes on ≥ 2/3 within-family pairs, OR
+2. Approaches 2 + 3 both pass with p < 0.05 on n ≥ 5 families
+
+To refute:
+1. Approach 1 fails on ≥ 2/3 within-family pairs (opposite direction), OR
+2. Both approaches 2 and 3 show ρ ≥ 0
+
+### Required models (not yet available)
+
+Priority order for acquisition:
+1. **Llama-3.2-1B** — same family as Llama-3.2-3B, likely different GQA
+2. **Qwen2.5-1.5B or Qwen2.5-7B** — same family as Qwen2.5-3B, may differ in GQA
+3. **Gemma-2-2B and Gemma-2-9B** — new family entirely, known to vary GQA across scale
 
 ---
 

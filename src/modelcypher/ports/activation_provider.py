@@ -266,6 +266,31 @@ class ActivationProvider(Protocol):
         """
         ...
 
+    def collect_attention_matrices_with_values(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> tuple[dict[int, list[Array]], dict[int, list[Array]]]:
+        """Collect attention matrices and per-head value vectors.
+
+        Like collect_attention_matrices but also returns the value vectors
+        (V projections) per head per layer, needed for active sink scores.
+
+        Args:
+            model: The loaded model.
+            tokenizer: The tokenizer for encoding text.
+            text: The text input to process.
+            token_ids: Optional pre-tokenized input.
+
+        Returns:
+            Tuple of (attention_matrices, value_vectors) where:
+            - attention_matrices: dict[layer_idx, list of [seq, seq]]
+            - value_vectors: dict[layer_idx, list of [seq, head_dim]]
+        """
+        ...
+
     def collect_logits(
         self,
         model: Any,

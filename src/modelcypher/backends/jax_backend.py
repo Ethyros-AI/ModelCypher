@@ -1432,6 +1432,30 @@ class JAXBackend(Backend):
         # JAX attention extraction requires model surgery - return empty
         return {}, {}, {}
 
+    def collect_attention_matrices(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> dict[int, list[Any]]:
+        """Collect per-layer, per-head attention weight matrices."""
+        raise NotImplementedError(
+            "collect_attention_matrices not implemented for JAX backend"
+        )
+
+    def collect_attention_matrices_with_values(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> tuple[dict[int, list[Any]], dict[int, list[Any]]]:
+        """Collect attention matrices and per-head value vectors."""
+        raise NotImplementedError(
+            "collect_attention_matrices_with_values not implemented for JAX backend"
+        )
+
     def collect_logits(
         self,
         model: Any,

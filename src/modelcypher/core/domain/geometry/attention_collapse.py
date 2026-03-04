@@ -120,24 +120,29 @@ class CollapseProfile:
 def compute_attention_collapse(
     attention_matrix: list[list[float]],
     dtype: str = "float32",
+    backend: object | None = None,
 ) -> AttentionCollapseResult:
     """Compute collapse metrics for a single attention head matrix.
 
     Args:
         attention_matrix: T×T post-softmax attention weights (list of lists).
         dtype: Model dtype for IEEE 754 threshold derivation.
+        backend: Backend instance (uses default if None). Required by
+            AGENTS.md:363 — no numpy in domain layer.
 
     Returns:
         AttentionCollapseResult with SVD-based metrics.
     """
-    import numpy as np
+    from modelcypher.core.domain._backend import get_default_backend
 
-    A = np.array(attention_matrix, dtype=np.float64)
-    T = A.shape[0]
+    b = backend or get_default_backend()
 
-    # SVD (compute_uv=False for singular values only)
-    sv = np.linalg.svd(A, compute_uv=False)
-    sv_list = [float(s) for s in sv]
+    A = b.array(attention_matrix)
+    T = len(attention_matrix)
+
+    # SVD (singular values only, on CPU for MLX stability)
+    sv = b.svd(A, compute_uv=False)
+    sv_list = [float(s) for s in b.tolist(sv)]
 
     # Rank-1 ratio: σ₂ / σ₁
     sigma1 = sv_list[0] if sv_list else 1.0
@@ -149,9 +154,11 @@ def compute_attention_collapse(
     is_rank1 = rank1_ratio < sqrt_eps
 
     # Column mass: ||A_{·,j}||₂² / ||A||_F² per column
-    col_norms_sq = np.sum(A ** 2, axis=0)
-    frob_sq = float(np.sum(col_norms_sq))
-    column_mass = (col_norms_sq / frob_sq).tolist() if frob_sq > 0 else [0.0] * T
+    col_norms_sq = b.tolist(b.sum(A * A, axis=0))
+    frob_sq = sum(col_norms_sq)
+    column_mass = (
+        [c / frob_sq for c in col_norms_sq] if frob_sq > 0 else [0.0] * T
+    )
 
     # Gradient suppression (Theorem H.1, Sanyal et al.):
     # If σ₂(A) ≤ ε√(2T), then ||∂L/∂W_Q||_F = O(ε).
@@ -160,13 +167,15 @@ def compute_attention_collapse(
 
     # Effective rank: exp(Shannon entropy of normalized σ²)
     # Roy & Vetterli (2007)
-    sv_sq = sv ** 2
-    sv_sq_sum = float(np.sum(sv_sq))
+    sv_sq_list = [s * s for s in sv_list]
+    sv_sq_sum = sum(sv_sq_list)
     if sv_sq_sum > 0:
-        p = sv_sq / sv_sq_sum
-        p = p[p > 0]  # filter zeros for log
-        entropy = float(-np.sum(p * np.log(p)))
-        effective_rank = float(np.exp(entropy))
+        entropy = 0.0
+        for s_sq in sv_sq_list:
+            p = s_sq / sv_sq_sum
+            if p > 0:
+                entropy -= p * math.log(p)
+        effective_rank = math.exp(entropy)
     else:
         effective_rank = 0.0
 

@@ -35,6 +35,14 @@ Metrics:
         so s_i*(T-i) should equal col_sum exactly. Any deviation indicates
         numerical error in the division.
 
+    NOTE: The original plan proposed a "LapEigval identity" check
+        (s_i - A_{i,i} = off_diag / (T-i)). This is NOT an algebraic
+        identity — it only holds when self-attention is excluded from
+        the sink score denominator, which conflicts with the paper's
+        Definition 3.1 that includes self-attention. The consistency
+        check above is the correct verification: it validates the
+        division operation itself, which IS exact by construction.
+
 References:
     Binkowski et al. "From Sparse to Dense: Toeplitz Alignment of Attention
     Sinks in Large Language Models" (2026).

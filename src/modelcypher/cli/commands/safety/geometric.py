@@ -2155,9 +2155,9 @@ def safety_attention_collapse(
     linear attention layers (Qwen3.5 GatedDeltaNet) are skipped.
 
     Examples:
-        mc safety attention-collapse --model ./my-model
-        mc safety attention-collapse --model ./my-model --prompt "Hello world"
-        mc safety attention-collapse --model ./my-model --dtype float32
+        mc analyze attention-collapse --model ./my-model
+        mc analyze attention-collapse --model ./my-model --prompt "Hello world"
+        mc analyze attention-collapse --model ./my-model --dtype float32
     """
     context = get_context(ctx)
 
@@ -2303,8 +2303,8 @@ def safety_attention_sink(
     linear attention layers (Qwen3.5 GatedDeltaNet) are skipped.
 
     Examples:
-        mc safety attention-sink --model ./my-model
-        mc safety attention-sink --model ./my-model --prompt "Hello world"
+        mc analyze attention-sink --model ./my-model
+        mc analyze attention-sink --model ./my-model --prompt "Hello world"
     """
     context = get_context(ctx)
 

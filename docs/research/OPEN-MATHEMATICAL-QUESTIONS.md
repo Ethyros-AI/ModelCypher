@@ -738,24 +738,27 @@ primary entropy operator for curvature coupling on standard transformers:
 |-------|--------------------|--------------------|---------------------|
 | LFM2-700M | **+0.943** (p=0.005) | +0.829 (p=0.042) | +0.657 |
 | Qwen3.5-0.8B | +0.600 | -0.429 | +0.086 |
-| Qwen2.5-3B | **+0.867** (p<0.001) | -0.062 | -0.299 |
+| Qwen3.5-4B | +0.503 (p=0.003) | — | — |
 
 The two operators are barely correlated on standard transformers (r=-0.086 to -0.299).
 
 **F5 depth confound identified (2026-03-04):** The raw sign inconsistency (LFM2 negative,
 Qwen positive) is a depth confound. Both H_logit and θ_total trend with depth, creating
 spurious raw correlations. After depth control with derived detection floor (Fisher-SE MDE +
-Bretherton 1999 autocorrelation correction): 4/6 models resolvable (LFM2-350M, Qwen3.5-0.8B,
-Llama-3.2-3B, Mistral-7B), all show **negative** sign across 4 architecture families.
-F5 status: **CONSISTENT_SIGN** (threshold DERIVED).
-LFM2-700M below detection floor (|r|=0.109 < MDE=0.270). Qwen2.5-3B below floor due to
-high autocorrelation (ρ₁=0.905, n_eff=4, MDE=0.762).
+Bretherton 1999 autocorrelation correction): 7/10 models resolvable, all show **negative**
+sign across 4 architecture families. F5 status: **CONSISTENT_SIGN** (threshold DERIVED).
+Below floor: LFM2-700M, Qwen2.5-3B, Qwen3-8B (high autocorrelation → low n_eff → large MDE).
 
-6-model evidence: F1 PASS 4/4, F3 PASS, F5 CONSISTENT_SIGN (4/6 resolvable, all negative,
-4 families). Mechanism prediction 6/6 (LFM2 competing_sublayers, Qwen3.5 mlp_dominant,
-Qwen2.5/Llama/Mistral core_pass_through).
-CR-EC-001 remains [EMPIRICAL] (autocorrelation and architecture-term gaps still open).
+**10-model evidence (updated 2026-03-04, with proper Qwen3.5 GatedDeltaNet decomposition):**
+F1 PASS 4/4, F3 PASS, F5 CONSISTENT_SIGN (7/10 resolvable, all negative, 4 families).
+Gate check 10/10. Mechanism prediction 9/10 (Qwen3-8B sole mismatch). LFM2
+competing_sublayers, Qwen3.5 core_pass_through, Llama/Mistral core_pass_through.
+Qwen3.5 scale-validated (0.8B+2B+4B, all resolvable, all negative).
+GQA conditioning: Spearman(GQA, r(H_logit, H_attn)) = -0.736, p=0.015, n=10.
+CR-EC-001 remains [EMPIRICAL] (architecture-term gap still open).
 Full results: `results/entropy_curvature_operator_split/`, `results/f5_sign_law/`.
+Derivation: `docs/research/entropy-curvature-derivation.md` (Propositions B1-B3 proven,
+B4-B5 exploratory; two-path framework with GQA-modulated cancellation).
 
 ---
 

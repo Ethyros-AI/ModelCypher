@@ -1,8 +1,9 @@
 # SOTA Audit (2024-2026): ModelCypher vs Industry/Public Signals
 
-**Date:** 2026-03-03
+**Date:** 2026-03-03 (initial); updated 2026-03-04 (10-model entropy-curvature evidence)
 **Scope:** Section 7, Section 9, mission-closure open items, LoRA/PEFT theory, and model-merging position.
 **Method:** Firecrawl search/scrape/extract only; retained sources tiered T0-T4 and crosswalked to internal claim records.
+**Companion:** `docs/research/SOTA-AUDIT-2026-03.md` (full narrative audit with strategic analysis)
 
 ## Executive Summary
 
@@ -100,9 +101,9 @@ Action:
 - Needed: intervention protocol and falsifier-driven conclusion.
 
 ### 4) Entropy operator and architecture dependence
-- Current status: **[EMPIRICAL]** on 6 models (LFM2-350M/700M, Qwen3.5-0.8B, Qwen2.5-3B, Llama-3.2-3B, Mistral-7B). H_logit is the primary operator (r=0.867 on Qwen2.5-3B vs H_attn r=-0.062). F1 PASS 4/4, F3 PASS. F5 CONSISTENT_SIGN (threshold DERIVED: Fisher-SE MDE + Bretherton autocorrelation correction). 4/6 models resolvable (LFM2-350M, Qwen3.5-0.8B, Llama-3.2-3B, Mistral-7B), all negative sign across 4 architecture families. Mechanism prediction 6/6. Cross-scale validated within LFM2 family.
-- F5 depth confound identified: raw sign inconsistency explained as depth confound. After depth control with derived detection floor, sign is consistently negative among resolvable models across 4 architecture families.
-- Open: resolve Qwen2.5-3B high autocorrelation (ρ₁=0.905, n_eff=4); derive architecture term for component-sign split.
+- Current status: **[EMPIRICAL]** on 10 models across 6 families (LFM2-350M/700M, Qwen3.5-0.8B/2B/4B/4B-4bit, Qwen2.5-3B, Qwen3-8B, Llama-3.2-3B, Mistral-7B). H_logit is the primary operator. F1 PASS 4/4, F3 PASS. F5 CONSISTENT_SIGN (threshold DERIVED: Fisher-SE MDE + Bretherton autocorrelation correction). 7/10 models resolvable, all negative sign across 4 architecture families. Gate check 10/10. Mechanism prediction 9/10 (Qwen3-8B sole mismatch). Cross-scale validated within LFM2 and Qwen3.5 (0.8B+2B+4B) families. GQA conditioning: Spearman(GQA, r(H_logit, H_attn)) = -0.736, p=0.015, n=10. Two-path framework with GQA-modulated cancellation (Propositions B1-B3 proven, B4-B5 exploratory).
+- F5 depth confound identified: raw sign inconsistency explained as depth confound. After depth control with derived detection floor, sign is consistently negative among resolvable models across 4 architecture families. Below floor: LFM2-700M, Qwen2.5-3B, Qwen3-8B (high autocorrelation → low n_eff).
+- Open: derive architecture term for component-sign split. GQA → cancellation derivation (n=3 norm-coupling, needs n≥5). Qwen3.5 scale-dependent mechanism transition (mlp_dom at 0.8B-2B → competing at 4B).
 - Claim record: `CR-EC-001` (`[EMPIRICAL]`, `PUSH_FURTHER`).
 
 ## Threads To Retire

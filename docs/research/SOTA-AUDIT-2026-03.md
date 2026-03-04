@@ -1,7 +1,8 @@
 # SOTA Audit: ModelCypher vs. Industry & Academic State of the Art
 
-**Date:** 2026-03-03
+**Date:** 2026-03-03 (narrative audit); updated 2026-03-04 (10-model entropy-curvature evidence)
 **Method:** Three independent audits (2 Claude + 1 Codex/Firecrawl), 80+ papers, 11 sub-areas
+**Companion:** `docs/research/sota_audit_2026_03.md` (claim IDs, JSON artifact references, action items)
 **Verdict:** We occupy an underdeveloped intersection — geometry-first theory + practical
 training/merging controls. The community has observations; we have mechanisms. The community
 has tooling; we have derivations. Neither side has both.
