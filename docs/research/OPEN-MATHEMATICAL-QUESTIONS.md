@@ -759,6 +759,7 @@ CR-EC-001 remains [EMPIRICAL] (architecture-term gap still open).
 Full results: `results/entropy_curvature_operator_split/`, `results/f5_sign_law/`.
 Derivation: `docs/research/entropy-curvature-derivation.md` (Propositions B1-B3 proven,
 B4-B5 exploratory; two-path framework with GQA-modulated cancellation).
+Next falsifier protocol: `docs/research/ENTROPY-CURVATURE-GQA-FALSIFIER-PROTOCOL.md`.
 
 ---
 

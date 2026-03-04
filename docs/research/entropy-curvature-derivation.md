@@ -1355,83 +1355,11 @@ goes null, Path B's component-level signal survives uncancelled in θ².
 
 ## Pre-Registered Falsifier: GQA-Isolated Operator Decoupling (F-GQA-01)
 
-**Date:** 2026-03-04
-**Status:** PRE-REGISTERED (not yet executed)
+Canonical protocol:
+- `docs/research/ENTROPY-CURVATURE-GQA-FALSIFIER-PROTOCOL.md`
 
-### Hypothesis
-
-GQA ratio causally controls the coupling between H_logit and H_attn, independent of
-architecture family. Specifically: within models of the same architecture family,
-increasing GQA (by modifying the number of KV heads while holding architecture constant)
-decreases r(H_logit, H_attn).
-
-### Current evidence and its limitation
-
-Cross-family Spearman(GQA, r(H_logit, H_attn)) = -0.736, p=0.015, n=10 (6 families).
-This is **confounded by architecture**: GQA co-varies with family (all Qwen3.5 models
-have GQA=4; Qwen2.5 has GQA=8; etc.). The correlation could reflect architecture
-differences rather than GQA per se.
-
-### Test design
-
-**Approach 1 (Within-family GQA variation — gold standard):**
-
-Find or construct models from the same family with different GQA ratios. Candidates:
-- Llama-3.2-1B (GQA=4) vs Llama-3.2-3B (GQA=3 — actually n_kv_heads=8, n_heads=24)
-  → verify actual GQA ratios differ
-- Qwen2.5-0.5B through Qwen2.5-7B if different sizes use different GQA configurations
-- Any family that varies KV head count across scale
-
-For each within-family pair with different GQA:
-```
-Prediction: model with higher GQA has lower |r(H_logit, H_attn)|
-Falsifier: model with higher GQA has HIGHER |r(H_logit, H_attn)| (p < 0.05)
-```
-
-Minimum: 3 families with ≥2 GQA values each → 3 within-family tests.
-
-**Approach 2 (Partial correlation controlling for family — silver standard):**
-
-Pool all 10+ models. Compute partial Spearman(GQA, r(H_logit, H_attn) | family),
-treating family as a categorical covariate.
-
-```
-Prediction: partial ρ < 0 (GQA effect persists after family control)
-Falsifier: partial ρ ≥ 0 (GQA effect explained entirely by family)
-```
-
-This is weaker because within-family GQA variation is limited in our current model set,
-so the partial correlation is dominated by cross-family variation.
-
-**Approach 3 (Norm-coupling regression — mechanistic):**
-
-If GQA controls cancellation through R²(H_logit → ||h||² | depth), then:
-
-```
-R²_norm(model) = R²(H_logit → log||h||² | depth)
-Prediction: Spearman(GQA, R²_norm) < 0, controlling for family
-Falsifier: Spearman(GQA, R²_norm) ≥ 0
-```
-
-Current data (n=3 attention-based families): Spearman = -1.000 (but p=0.167 = 1/6).
-Need n ≥ 5 families for p < 0.05.
-
-### Promotion criteria
-
-To promote Hypothesis B5 (GQA modulates norm-entropy coupling) from [EXPLORATORY]:
-1. Approach 1 passes on ≥ 2/3 within-family pairs, OR
-2. Approaches 2 + 3 both pass with p < 0.05 on n ≥ 5 families
-
-To refute:
-1. Approach 1 fails on ≥ 2/3 within-family pairs (opposite direction), OR
-2. Both approaches 2 and 3 show ρ ≥ 0
-
-### Required models (not yet available)
-
-Priority order for acquisition:
-1. **Llama-3.2-1B** — same family as Llama-3.2-3B, likely different GQA
-2. **Qwen2.5-1.5B or Qwen2.5-7B** — same family as Qwen2.5-3B, may differ in GQA
-3. **Gemma-2-2B and Gemma-2-9B** — new family entirely, known to vary GQA across scale
+This derivation document references the protocol but does not duplicate its operational
+criteria, to keep falsifier logic single-sourced.
 
 ---
 

@@ -27,8 +27,8 @@ Modules:
     monitoring: Circuit breaker, persona drift, entropy monitoring, CRM
 
 Commands:
-    mc safety attention-collapse --model <path> [--prompt <text>] [--dtype bfloat16]
-    mc safety attention-sink --model <path> [--prompt <text>]
+    mc analyze attention-collapse --model <path> [--prompt <text>] [--dtype bfloat16]
+    mc analyze attention-sink --model <path> [--prompt <text>]
     mc analyze geodesic-trajectory --model <path> --prompt <text> [--layer <n>]
     mc safety geodesic-profile --model <path> --prompt <text>
     mc analyze concept-volume --model <path> --concepts <file> --layer <n>

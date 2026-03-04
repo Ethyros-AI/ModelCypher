@@ -101,6 +101,22 @@ class TestComputeSinkScores:
                 f"Consistency error at position {ts.position}: {ts.consistency_error}"
             )
 
+    def test_lapeigval_identity_error_near_zero(self):
+        """LapEigval identity residual should be near zero."""
+        T = 5
+        A = [[0.0] * T for _ in range(T)]
+        for u in range(T):
+            weight = 1.0 / (u + 1)
+            for i in range(u + 1):
+                A[u][i] = weight
+
+        result = compute_sink_scores(A)
+        for ts in result.token_sinks:
+            assert ts.lap_eigval_identity_error < 1e-14, (
+                f"LapEigval identity error at position {ts.position}: "
+                f"{ts.lap_eigval_identity_error}"
+            )
+
     def test_sink_scores_sum_property(self):
         """For row-stochastic causal matrix, sum of s_i * (T-i) = T."""
         T = 5
@@ -139,6 +155,7 @@ class TestComputeSinkScores:
         assert "sinkScore" in td
         assert "selfAttention" in td
         assert "consistencyError" in td
+        assert "lapEigvalIdentityError" in td
 
 
 class TestComputeActiveSinks:

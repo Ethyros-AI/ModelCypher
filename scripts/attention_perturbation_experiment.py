@@ -83,6 +83,10 @@ from pathlib import Path
 # IEEE 754 float32 measurement floor
 _EPS_F32 = math.ldexp(1.0, -23)
 _SQRT_EPS_F32 = math.sqrt(_EPS_F32)
+_PRE_REGISTERED_ALPHA = 0.05
+# Permutation resolution derived from IEEE floor.
+# Smallest nonzero p-value is 1/(n_perms+1), so choose n_perms ~ 1/sqrt(eps).
+_N_PERMUTATIONS = int(math.ceil(1.0 / _SQRT_EPS_F32))
 
 MODELS = {
     "LFM2-350M": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
@@ -227,6 +231,24 @@ def measure_mean_prefix_weight(
     return total / count if count > 0 else 0.0
 
 
+def measure_prefix_weight_per_layer(
+    attn_matrices: dict, backend: object
+) -> dict[int, float]:
+    """Measure mean attention to prefix token (position 0) per layer."""
+    result: dict[int, float] = {}
+    for layer_idx in attn_matrices:
+        total = 0.0
+        count = 0
+        for head_mat in attn_matrices[layer_idx]:
+            mat = backend.tolist(head_mat)
+            T = len(mat)
+            for u in range(T):
+                total += mat[u][0]
+                count += 1
+        result[layer_idx] = total / count if count > 0 else 0.0
+    return result
+
+
 def spearman_rank_correlation(x: list[float], y: list[float]) -> float:
     """Compute Spearman rank correlation between x and y."""
     n = len(x)
@@ -261,29 +283,33 @@ def permutation_test_p_value(
     """Permutation test for significance of Spearman correlation.
 
     Args:
-        n_perms: Number of permutations. Default: n! (exact) when
-            n <= 8 (40320 permutations), otherwise 10× the number
-            needed for 1% resolution at α=0.05 (i.e., 10/0.05 = 200
-            per resolution unit × 50 resolution units = 10000).
-            Derivation: to resolve p=0.05 to ±0.005, need
-            1/(0.005²) ≈ 40000 by CLT; 10000 gives ±0.01 which
-            suffices for α=0.05 vs α=0.10 discrimination.
+        n_perms: Number of permutations. Default:
+            exact test when n <= 8 (n!), otherwise 1/sqrt(eps_f32) derived
+            from IEEE 754 measurement floor.
     """
     import random
 
     n = len(x)
     if n_perms is None:
         # Exact test when feasible (n! ≤ 40320 for n ≤ 8)
-        n_perms = math.factorial(n) if n <= 8 else 10000
+        n_perms = math.factorial(n) if n <= 8 else _N_PERMUTATIONS
 
     observed = abs(spearman_rank_correlation(x, y))
     if math.isnan(observed):
         return 1.0
 
+    # Deterministic RNG seed from inputs for reproducibility across runs.
+    seed_payload = (
+        tuple(round(v, 12) for v in x),
+        tuple(round(v, 12) for v in y),
+        n_perms,
+    )
+    rng = random.Random(repr(seed_payload))
+
     count_ge = 0
     y_perm = y.copy()
     for _ in range(n_perms):
-        random.shuffle(y_perm)
+        rng.shuffle(y_perm)
         perm_r = abs(spearman_rank_correlation(x, y_perm))
         if not math.isnan(perm_r) and perm_r >= observed:
             count_ge += 1
@@ -315,6 +341,7 @@ def run_experiment(model_name: str, model_path: str) -> dict:
 
     baseline_entropy = compute_attention_entropy(attn_matrices, backend)
     p_I = measure_mean_prefix_weight(attn_matrices, backend)
+    p_I_per_layer = measure_prefix_weight_per_layer(attn_matrices, backend)
 
     print(f"Mean prefix attention weight p_I = {p_I:.6f}")
     print(f"Attention layers: {sorted(attn_matrices.keys())}")
@@ -339,7 +366,7 @@ def run_experiment(model_name: str, model_path: str) -> dict:
     print(f"Measurement floor: √ε_f32 = {_SQRT_EPS_F32:.6e}")
     print(f"Derived M grid ({len(M_grid)} points): {[f'{m:.2f}' for m in M_grid]}")
 
-    # Analytical ΔH at each M
+    # Analytical ΔH at each M from mean p_I (grid derivation signal)
     H_baseline_binary = binary_entropy(p_I)
     for M in M_grid:
         p_prime = perturbed_prefix_weight(p_I, M)
@@ -395,70 +422,82 @@ def run_experiment(model_name: str, model_path: str) -> dict:
     # For each M > 1, compute correlation between ΔH and Δθ across layers
     attn_layers = sorted(attn_matrices.keys())
 
-    # We need measured ΔH per layer for each M.
-    # Since we only measured baseline entropy, ΔH is computed analytically
-    # from p_I (simplified). For a proper measurement we'd need to collect
-    # attention matrices at each M, but the analytical ΔH serves as the
-    # perturbation magnitude predictor.
+    # ΔH per layer is computed analytically from the measured baseline per-layer
+    # prefix weight p_I(layer) under the closed-form perturbation map:
+    #   p' = M p / (M p + (1-p)), ΔH = H(p') - H(p)
+    # This preserves the pre-registered statistic ρ(ΔH, Δθ) across layers.
 
     print(f"\nCorrelation analysis (attention layers only: {attn_layers}):")
     causal_supported = False
+    correlation_results: list[dict[str, float | bool]] = []
     for sr in sweep_results:
         M = sr["M"]
         if M <= 1.0:
             continue
 
-        p_prime = perturbed_prefix_weight(p_I, M)
-        delta_H = binary_entropy(p_prime) - H_baseline_binary
+        # Per-layer ΔH and Δθ
+        delta_h_layers = []
+        delta_theta_layers = []
+        for l in attn_layers:
+            p_layer = p_I_per_layer[l]
+            p_prime_layer = perturbed_prefix_weight(p_layer, M)
+            delta_h_layers.append(binary_entropy(p_prime_layer) - binary_entropy(p_layer))
+            delta_theta_layers.append(sr["delta_theta"].get(l, 0.0))
 
-        # Per-layer Δθ at attention layers
-        delta_thetas = [sr["delta_theta"].get(l, 0.0) for l in attn_layers]
-        # All layers see same analytical ΔH, so correlation with Δθ is
-        # really testing whether Δθ varies systematically with layer position
+        rho = spearman_rank_correlation(delta_h_layers, delta_theta_layers)
+        p_val = permutation_test_p_value(delta_h_layers, delta_theta_layers)
 
-        # Better: correlate Δθ with baseline_entropy per layer
-        # (layers with higher baseline entropy should show larger |Δθ|)
-        baseline_H_attn = [baseline_entropy[l] for l in attn_layers]
-        abs_delta_thetas = [abs(dt) for dt in delta_thetas]
-
-        rho = spearman_rank_correlation(baseline_H_attn, abs_delta_thetas)
-        p_val = permutation_test_p_value(baseline_H_attn, abs_delta_thetas)
-
-        mean_abs_dt = sum(abs_delta_thetas) / len(abs_delta_thetas)
+        mean_abs_dt = (
+            sum(abs(dt) for dt in delta_theta_layers) / len(delta_theta_layers)
+            if delta_theta_layers else 0.0
+        )
+        max_abs_dh = (
+            max(abs(dh) for dh in delta_h_layers) if delta_h_layers else 0.0
+        )
+        measurable_delta_h = max_abs_dh > _SQRT_EPS_F32
 
         print(
             f"  M={M:8.2f}: mean|Δθ|={mean_abs_dt:.6f}, "
-            f"ρ(H_baseline, |Δθ|)={rho:+.3f}, p={p_val:.4f}"
+            f"max|ΔH|={max_abs_dh:.6e}, "
+            f"ρ(ΔH, Δθ)={rho:+.3f}, p={p_val:.4f}"
         )
 
-        # Decision: p < α with α = 0.05 (Fisher's conventional significance
-        # level, universally used for permutation tests; not a tuned
-        # parameter but a community standard for Type I error control).
-        # No |ρ| threshold — the permutation test already accounts for
-        # effect size through the test statistic.
-        if p_val < 0.05:
+        # Pre-registered decision rule:
+        # If p <= alpha at an M with measurable ΔH, causal link is not falsified.
+        if measurable_delta_h and p_val <= _PRE_REGISTERED_ALPHA:
             causal_supported = True
+
+        correlation_results.append({
+            "M": M,
+            "rho_deltaH_deltaTheta": rho,
+            "p_value": p_val,
+            "max_abs_delta_h": max_abs_dh,
+            "mean_abs_delta_theta": mean_abs_dt,
+            "measurable_delta_h": measurable_delta_h,
+        })
 
     # ===== CONCLUSION =====
     print(f"\n{'='*70}")
     if causal_supported:
         print(
             f"RESULT ({model_name}): Significant correlation found between "
-            f"baseline entropy and perturbation response. "
+            f"per-layer ΔH and per-layer Δθ. "
             f"Entropy→curvature link NOT falsified."
         )
     else:
         print(
             f"RESULT ({model_name}): No significant correlation between "
-            f"baseline entropy and perturbation response (p > 0.05). "
+            f"per-layer ΔH and per-layer Δθ (p > {_PRE_REGISTERED_ALPHA:.2f}). "
             f"Entropy→curvature causal claim FALSIFIED for this model."
         )
 
     return {
         "model": model_name,
         "p_I": p_I,
+        "p_I_per_layer": p_I_per_layer,
         "M_grid": M_grid,
         "causal_supported": causal_supported,
+        "correlations": correlation_results,
         "sweep_results": [
             {"M": sr["M"], "delta_theta": sr["delta_theta"]}
             for sr in sweep_results
