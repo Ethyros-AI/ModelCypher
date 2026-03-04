@@ -887,6 +887,17 @@ def compute_measurements(data: dict, num_layers: int) -> list[dict]:
         delta_total = h_out - h_in
         E_total = float(np.mean(np.sum(delta_total * delta_total, axis=1)))
 
+        # Tangential/radial decomposition (D3 derivation):
+        # r = ||δ|| / ||h_in||, α = angle(h_in, δ), sin(α) = tangential fraction.
+        h_in_norms = np.sqrt(np.sum(h_in * h_in, axis=1))  # (n_probes,)
+        delta_norms = np.sqrt(np.sum(delta_total * delta_total, axis=1))
+        h_in_norms_safe = np.maximum(h_in_norms, 1e-12)
+        delta_norms_safe = np.maximum(delta_norms, 1e-12)
+        r_ratio = delta_norms / h_in_norms_safe  # relative update size
+        cos_alpha = np.sum(h_in * delta_total, axis=1) / (h_in_norms_safe * delta_norms_safe)
+        cos_alpha = np.clip(cos_alpha, -1.0, 1.0)
+        sin_alpha = np.sqrt(1.0 - cos_alpha * cos_alpha)  # tangential fraction
+
         layer_result = {
             "layer_idx": i,
             "depth_fraction": i / max(num_layers - 1, 1),
@@ -908,6 +919,9 @@ def compute_measurements(data: dict, num_layers: int) -> list[dict]:
             "E_mlp": None,
             "E_mix": None,
             "E_closure_error": None,
+            "r_ratio": float(np.mean(r_ratio)),
+            "sin_alpha": float(np.mean(sin_alpha)),
+            "cos_alpha": float(np.mean(cos_alpha)),
             "H_logit": logit_entropy[i],
             "H_logit_norm": logit_entropy_norm[i] if i < len(logit_entropy_norm) else None,
             "H_attn": sd["attn_entropy"],
@@ -1065,6 +1079,14 @@ def compute_operator_correlations(measurements: list[dict]) -> dict:
         result["H_logit_norm_vs_h_out_norm_sq"] = {"r": r_nn, "p": p_nn}
         r_ne, p_ne = safe_spearman(H_ln, E_total_n)
         result["H_logit_norm_vs_E_total"] = {"r": r_ne, "p": p_ne}
+
+        # D3 decomposition: which component drives the negative sign?
+        r_ratio_n = [m["r_ratio"] for m in norm_layers]
+        sin_alpha_n = [m["sin_alpha"] for m in norm_layers]
+        r_nr, p_nr = safe_spearman(H_ln, r_ratio_n)
+        r_ns, p_ns = safe_spearman(H_ln, sin_alpha_n)
+        result["H_logit_norm_vs_r_ratio"] = {"r": r_nr, "p": p_nr}
+        result["H_logit_norm_vs_sin_alpha"] = {"r": r_ns, "p": p_ns}
 
         # Cross-check: H_logit_norm vs H_logit (prediction 3: should be < 0.9)
         H_logit_for_cross = [m["H_logit"] for m in norm_layers if m["H_logit"] is not None]
@@ -1591,44 +1613,121 @@ def compute_falsifier_table(all_model_results: list[dict]) -> dict:
     for mr in all_model_results:
         model_name = mr["model_name"]
         corrs = mr["correlations"]
+        n = mr["num_layers"]
 
         r_norm_vs_normsq = corrs.get("H_logit_norm_vs_h_out_norm_sq", {}).get("r", float("nan"))
         r_norm_vs_logit = corrs.get("H_logit_norm_vs_H_logit", {}).get("r", float("nan"))
         r_logit_vs_normsq = corrs.get("H_logit_vs_h_out_norm_sq", {}).get("r", float("nan"))
 
-        pred1_pass = not math.isnan(r_norm_vs_normsq) and abs(r_norm_vs_normsq) < 0.3
-        pred3_pass = not math.isnan(r_norm_vs_logit) and r_norm_vs_logit < 0.9
+        # Prediction 1: |r(H_logit_norm, ||h||²)| below detection floor → confound removed.
+        # Uses Fisher-SE MDE: smallest |r| with SNR >= 1 at n layers.
+        mde_p1 = _minimum_detectable_effect(float(n), n_controls=0)
+        pred1_below_floor = (
+            not math.isnan(r_norm_vs_normsq) and abs(r_norm_vs_normsq) <= mde_p1
+        )
+        pred1_resolvable_above = (
+            not math.isnan(r_norm_vs_normsq) and abs(r_norm_vs_normsq) > mde_p1
+        )
+
+        # Prediction 3: r(H_logit_norm, H_logit) significantly below 1.0.
+        # Fisher z-test: z = atanh(r), SE = 1/sqrt(n-3). If atanh(1) - atanh(r) > 2*SE,
+        # normalization is non-trivial. atanh(1) = inf, so any r < 1 trivially passes;
+        # the real question is whether r is below the MDE from 1.0.
+        # Use MDE as threshold: if 1 - r > MDE, normalization changed the measurement.
+        mde_p3 = _minimum_detectable_effect(float(n), n_controls=0)
+        pred3_pass = (
+            not math.isnan(r_norm_vs_logit) and (1.0 - r_norm_vs_logit) > mde_p3
+        )
 
         f_norm_results[model_name] = {
             "r_H_logit_norm_vs_h_out_norm_sq": r_norm_vs_normsq,
             "r_H_logit_norm_vs_H_logit": r_norm_vs_logit,
             "r_H_logit_vs_h_out_norm_sq": r_logit_vs_normsq,
-            "prediction_1_pass": pred1_pass,
+            "prediction_1_mde": mde_p1,
+            "prediction_1_below_floor": pred1_below_floor,
+            "prediction_1_resolvable_above": pred1_resolvable_above,
+            "prediction_3_mde": mde_p3,
             "prediction_3_pass": pred3_pass,
         }
 
-    p1_pass_count = sum(1 for v in f_norm_results.values() if v["prediction_1_pass"])
+    p1_below_count = sum(1 for v in f_norm_results.values() if v["prediction_1_below_floor"])
+    p1_above_count = sum(1 for v in f_norm_results.values() if v["prediction_1_resolvable_above"])
     p3_pass_count = sum(1 for v in f_norm_results.values() if v["prediction_3_pass"])
+    total = len(f_norm_results)
+
+    # Mixed-outcome rule: if some models pass and others don't, classify per
+    # MISSION.md no-mixed-model-narrative as MECHANISM_UNDERSPECIFIED.
+    if p1_below_count == total and p3_pass_count == total:
+        f_norm_status = "CONFOUND_REMOVED"
+    elif p1_below_count == 0:
+        f_norm_status = "CONFOUND_PERSISTS"
+    else:
+        # Some pass, some don't → architecture term missing
+        f_norm_status = "MECHANISM_UNDERSPECIFIED"
+
     falsifiers["F_norm_confound_validation"] = {
-        "test": "r(H_logit_norm, ||h||²) ≈ 0 (|r| < 0.3) AND r(H_logit_norm, H_logit) < 0.9",
-        "per_model": f_norm_results,
-        "prediction_1_pass_count": p1_pass_count,
-        "prediction_3_pass_count": p3_pass_count,
-        "total": len(f_norm_results),
-        "status": (
-            "PASS" if p1_pass_count == len(f_norm_results) and p3_pass_count == len(f_norm_results)
-            else "PARTIAL" if p1_pass_count > 0 or p3_pass_count > 0
-            else "FAIL"
+        "test": (
+            "Prediction 1: |r(H_logit_norm, ||h||²)| <= MDE (Fisher-SE). "
+            "Prediction 3: (1 - r(H_logit_norm, H_logit)) > MDE."
         ),
+        "threshold_derivation": "Fisher-SE MDE = tanh(1/sqrt(n - 2)), no magic numbers.",
+        "per_model": f_norm_results,
+        "prediction_1_below_floor_count": p1_below_count,
+        "prediction_1_resolvable_above_count": p1_above_count,
+        "prediction_3_pass_count": p3_pass_count,
+        "total": total,
+        "status": f_norm_status,
     }
 
     # --- F5_norm: Depth-controlled sign consistency for H_logit_norm ---
+    # Uses the same Fisher-SE + Bretherton detection-floor gating as F5.
     f5_norm_depth = {}
     for mr in all_model_results:
         model_name = mr["model_name"]
         dc = mr["depth_controlled"]
         partial_r = dc.get("partial_H_logit_norm_vs_theta_total_given_depth", float("nan"))
         n = mr["num_layers"]
+
+        # Compute detection floor from per-layer measurements (depth-residualized).
+        measurements = mr.get("measurements", [])
+        h_vals, th_vals, d_vals = [], [], []
+        for m_row in measurements:
+            h_v = m_row.get("H_logit_norm")
+            th_v = m_row.get("theta_total")
+            d_v = m_row.get("depth_fraction")
+            if h_v is not None and th_v is not None and d_v is not None:
+                if math.isfinite(h_v) and math.isfinite(th_v) and math.isfinite(d_v):
+                    h_vals.append(h_v)
+                    th_vals.append(th_v)
+                    d_vals.append(d_v)
+
+        det_floor = {}
+        if len(h_vals) >= 6:
+            h_arr = np.array(h_vals)
+            th_arr = np.array(th_vals)
+            d_arr = np.array(d_vals)
+            h_resid = _residualize_ols(h_arr, d_arr)
+            th_resid = _residualize_ols(th_arr, d_arr)
+
+            n_eff_h, rho1_h = _effective_df(h_resid)
+            n_eff_th, rho1_th = _effective_df(th_resid)
+            if abs(rho1_h) >= abs(rho1_th):
+                n_eff_used, rho1_used = n_eff_h, rho1_h
+            else:
+                n_eff_used, rho1_used = n_eff_th, rho1_th
+
+            mde = _minimum_detectable_effect(n_eff_used)
+            obs_abs_r = abs(partial_r) if not math.isnan(partial_r) else 0.0
+            resolvable = obs_abs_r > mde
+
+            det_floor = {
+                "n_raw": len(h_vals),
+                "rho_1_used": rho1_used,
+                "n_eff": n_eff_used,
+                "mde": mde,
+                "observed_abs_r": obs_abs_r,
+                "resolvable": resolvable,
+            }
 
         if not math.isnan(partial_r) and n >= 6:
             df = n - 3
@@ -1640,6 +1739,7 @@ def compute_falsifier_table(all_model_results: list[dict]) -> dict:
                 "approx_p": p_val,
                 "n": n,
                 "sign": "positive" if partial_r > 0 else "negative",
+                "detection_floor": det_floor,
             }
         else:
             f5_norm_depth[model_name] = {
@@ -1647,19 +1747,42 @@ def compute_falsifier_table(all_model_results: list[dict]) -> dict:
                 "approx_p": float("nan"),
                 "n": n,
                 "sign": "unknown",
+                "detection_floor": det_floor,
             }
 
+    resolvable_models = [
+        k for k, v in f5_norm_depth.items()
+        if v.get("detection_floor", {}).get("resolvable", False)
+    ]
+    below_floor_models = [
+        k for k, v in f5_norm_depth.items()
+        if not v.get("detection_floor", {}).get("resolvable", False)
+    ]
+    resolvable_signs = [
+        f5_norm_depth[k]["sign"] for k in resolvable_models
+        if f5_norm_depth[k]["sign"] != "unknown"
+    ]
     norm_signs = [v["sign"] for v in f5_norm_depth.values() if v["sign"] != "unknown"]
-    if len(norm_signs) == 0:
-        f5_norm_status = "INCONCLUSIVE"
-    elif len(set(norm_signs)) == 1:
+
+    if len(resolvable_signs) == 0:
+        f5_norm_status = "BELOW_MEASUREMENT_RESOLUTION"
+    elif len(set(resolvable_signs)) == 1:
         f5_norm_status = "CONSISTENT_SIGN"
     else:
         f5_norm_status = "SIGN_DISAGREEMENT"
 
     falsifiers["F5_norm_sign_across_families"] = {
-        "test": "depth-controlled partial Spearman for H_logit_norm vs theta_total",
+        "test": "depth-controlled partial Spearman with Fisher-SE MDE detection floor",
         "per_model": f5_norm_depth,
+        "all_signs": norm_signs,
+        "resolvable_models": resolvable_models,
+        "below_floor_models": below_floor_models,
+        "resolvable_signs": resolvable_signs,
+        "threshold_status": "DERIVED",
+        "threshold_derivation": (
+            "Fisher-SE MDE with Bretherton (1999) autocorrelation correction. "
+            "MDE = tanh(1/sqrt(n_eff - 3)), n_eff = n*(1-rho1)/(1+rho1)."
+        ),
         "signs": norm_signs,
         "status": f5_norm_status,
     }

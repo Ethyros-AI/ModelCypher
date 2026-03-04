@@ -503,146 +503,22 @@ Exit_rank / Highway_rank = Recovery ratio
 
 ### V_rank Correlation: Statistical Artifact (2026-02-03)
 
-**Original finding:** V_rank correlated with layer decay (r=0.73)
-
-**Investigation results:**
-
-| Model | V_rank/d | Attn Decay | Layer Decay |
-|-------|----------|------------|-------------|
-| Qwen2.5-3B | 0.123 | 0.907 | 0.914 |
-| Qwen3-8B | 0.238 | 0.892 | 0.912 |
-| Granite-8B | 0.236 | 0.888 | 0.918 |
-| Llama-3.2-3B | 0.302 | 0.891 | 0.922 |
-
-**The paradox:** V_rank correlates NEGATIVELY with attn_decay (r=-0.88) but POSITIVELY with layer_decay (r=0.63). This contradicts the layer decay = weighted average formula.
-
-**Resolution:** The variation is noise.
-- Attention decay range: 0.888-0.907 (Δ=0.019)
-- Layer decay range: 0.912-0.922 (Δ=0.011)
-- With only 4 data points and ~1% variation, correlations are unstable
-
-**Conclusion:** The original r=0.73 was likely a statistical artifact. The true relationship is:
-- Attention output decay ≈ 0.89-0.91 (approximately constant)
-- Layer decay ≈ 0.91-0.92 (approximately constant)
-- V_rank has no meaningful effect on decay within this resolution
+Original r=0.73 (V_rank vs layer decay) was noise: attn_decay range is only 0.019 across
+4 models (0.888-0.907). V_rank has no meaningful effect on decay within this resolution.
 
 ### Exit Convergence: Training Reduces Mean Norm (2026-02-03)
 
-**Convergence = mean_norm / dev_norm**
+Convergence = mean_norm / dev_norm. Reasoning training reduces exit mean norm by 2.1×
+(Qwen3-8B base: 2895, DeepSeek-R1: 1364) while dev_norm stays constant (~1360).
+Mechanism: diverse CoT → no single "default" direction dominates → lower mean.
+No arbitrary constants — both norms are directly measurable.
 
-Comparing same architecture (Qwen3-8B) with different training:
+### Expansion Ratio — RESOLVED (2026-02-03)
 
-| Layer | Base Mean | Base Dev | Reason Mean | Reason Dev |
-|-------|-----------|----------|-------------|------------|
-| 0 | 9.1 | 7.9 | 9.6 | 8.7 |
-| 18 | 138.3 | 260.3 | 215.3 | 409.4 |
-| 35 | **2894.9** | 1355.7 | **1364.1** | 1369.2 |
-
-**Key finding:** Reasoning training reduces EXIT MEAN NORM by 2.1×, not deviation norm.
-
-| Model | Exit Mean | Exit Dev | Convergence |
-|-------|-----------|----------|-------------|
-| Qwen3-8B (base) | 2895 | 1356 | 2.14 |
-| DeepSeek-R1-Qwen3 (reasoning) | 1364 | 1369 | 1.00 |
-
-**Why reasoning reduces mean norm:**
-1. Mean direction = "average next token prediction"
-2. Base models predict common continuations → activations cluster toward common token embeddings
-3. Reasoning models generate diverse CoT → no single "default" direction dominates
-4. Lower mean = activations spread more uniformly in direction space
-
-**The causal chain:**
-```
-Training diversity → Output token diversity → Exit mean norm
-                                                    ↓
-                                          Convergence = mean/dev
-```
-
-**No arbitrary constants.** Mean norm is measurable, dev norm is measurable,
-convergence is their ratio.
-
-### Expansion Ratio: Determined by Final Layer Behavior (2026-02-03)
-
-**Definition:** `expansion_ratio = peak_norm / final_norm`
-
-**Key finding:** Expansion ratio depends on whether the last layer increases or decreases norm.
-
-| Model | Last Layer Type | Final Δnorm | Expansion Ratio |
-|-------|-----------------|-------------|-----------------|
-| LFM2 (retrieval) | Mamba (SSM) | -1.0 | 1.056 |
-| LFM2 (reasoning) | Mamba (SSM) | +2.2 | 1.000 |
-| Qwen3 (any task) | Transformer | +2448 | 1.000 |
-
-**Why pure transformers have expansion_ratio = 1.0:**
-- Final transformer layer always increases norm (MLP expansion)
-- Peak is always at the last layer
-- Therefore peak = final → ratio = 1.0
-
-**Why LFM2 can have expansion_ratio > 1.0:**
-- Final layer is Mamba (SSM), which can compress
-- Some tasks cause the final Mamba layer to decrease norm
-- Peak is at second-to-last layer
-- Therefore peak > final → ratio > 1.0
-
-**Why RLHF "flattens" expansion_ratio:**
-- Not actually flattening - it was already 1.0 in pure transformers
-- Qwen2.5-Instruct showed slight variance because some prompts peaked at layer 35 instead of 36
-
-**The complete picture:**
-```
-Architecture (Mamba vs Transformer final layer)
-              ↓
-Final layer behavior (compress vs expand)
-              ↓
-Peak location (last layer vs earlier)
-              ↓
-expansion_ratio = peak / final
-```
-
-**Variance across tasks comes from:**
-1. Task content affecting final layer compression (hybrid architectures only)
-2. Pure transformers: no variance (always ratio = 1.0)
-
-### Expansion Ratio Variance vs Benchmark Performance — RESOLVED (2026-02-03)
-
-**Question:** Does expansion_ratio variance correlate with benchmark performance?
-
-**Results from 6 models, 8 task types:**
-
-| Model | Type | Variance | MMLU |
-|-------|------|----------|------|
-| LFM2-350M | hybrid | 0.027 | 35% |
-| LFM2-700M | hybrid | 0.000 | 42% |
-| LFM2-1.2B | hybrid | 0.001 | 55% |
-| Qwen2.5-3B | transformer | 0.017 | 65% |
-| Qwen3-8B | transformer | 0.000 | 70% |
-| Llama-3.2-3B | transformer | 0.000 | 63% |
-
-**Correlations:**
-- r(variance, MMLU) = -0.47 (overall)
-- r(variance, MMLU) = -0.74 (hybrids only)
-
-**Key findings:**
-
-1. **Variance does NOT predict quality.** The negative correlation is spurious.
-
-2. **Variance is confounded with model size:**
-   - Within LFM2 family: larger models are more stable (lower variance) AND smarter (higher MMLU)
-   - This is because larger models have more parameters to regularize behavior
-
-3. **Most transformers have variance = 0:**
-   - Qwen3-8B, Llama-3.2-3B: peak always at last layer
-   - Qwen2.5-3B: anomaly — peak at layer 35/36 for most prompts
-
-4. **The Qwen2.5-3B anomaly:**
-   - Creative writing: ratio = 1.42 (significant compression in last layer)
-   - Factual/logic: ratio = 1.0 (normal)
-   - This may reflect training recipe differences, not quality
-
-**Conclusion:** Expansion_ratio variance is a **structural signature**, not a quality predictor.
-- High variance = hybrid architecture with small model size
-- Zero variance = pure transformer OR large hybrid model
-- Does NOT indicate reasoning quality
+`expansion_ratio = peak_norm / final_norm`. Pure transformers always have ratio=1.0
+(final MLP always increases norm → peak at last layer). LFM2 hybrids can have ratio>1.0
+when final Mamba layer compresses. Variance does NOT predict quality (r=-0.47, spurious
+confound with model size). It is a structural signature of architecture, not reasoning.
 
 ### Important Distinction: Effective Rank vs Intrinsic Dimension (2026-02-03)
 
@@ -676,7 +552,7 @@ A curved manifold can have:
 **Correlations found:**
 | Relationship | Correlation |
 |--------------|-------------|
-| Logit entropy → Δcurvature | r = 0.507 |
+| Logit entropy → Δcurvature | r = 0.507 (CONTAMINATED — norm confound, see below) |
 | Cumulative curvature → ID | r = 0.821 |
 
 **The mechanism:**
@@ -705,13 +581,14 @@ Cumulative curvature = 1 - (top-2 variance fraction in local neighborhoods)
 Intrinsic Dimension (MLE estimator from nearest neighbor ratios)
 ```
 
-**Why logit entropy predicts Δcurvature (Bayesian manifold mechanism):**
-- High logit entropy (uncertain posterior): Representation spans many dimensions of the value
-  manifold → higher curvature accumulation per layer
-- Low logit entropy (certain posterior): Representation near 1D value manifold → low-dimensional
-  → less curvature accumulation
+**Why logit entropy predicts Δcurvature (derived mechanism, D3.1–D3.5):**
+- High H_logit_norm: attention is diffuse → D3.1 (centroid magnitude reduction) → r↓.
+  D3.2 (centroid tangentiality) → sin(α)↑. D3.4: r-dominance → net θ↓.
+- Low H_logit_norm: attention is concentrated → larger ||δ|| (D3.1 converse) → r↑ → θ↑.
+- Architecture conditioning (D3.5): f_attn = fraction of QK-attention layers determines
+  whether r or sin(α) absorbs the entropy coupling. Pure QK → r. Hybrid → sin(α).
 - Note: This is NOT direct attention mixing. Attention weight entropy is upstream and
-  architecture-dependent in its effect on curvature (see `entropy_curvature_derivation.md`).
+  architecture-dependent in its effect on curvature (see `entropy-curvature-derivation.md`).
 
 **Critical clarification (2026-03-03):** The "entropy" in this chain is **logit entropy**
 (Entropy-Lens), NOT attention weight entropy. Sublayer decomposition experiments show
@@ -770,28 +647,63 @@ Full results: `results/entropy_curvature_operator_split/`,
 `results/f5_sign_law_analysis_6models/`, `results/gqa_norm_entropy_coupling/`.
 Derivation: `docs/research/entropy-curvature-derivation.md` (Propositions B1-B3 proven,
 B4-B5 exploratory; two-path framework with GQA+operator-conditioned cancellation).
+
+**D3 tangential/radial decomposition (2026-03-04, formal derivation):**
+The mechanism for negative r(H_logit_norm, θ) is now formally derived:
+- D3.1 `[PROVEN]`: Centroid magnitude reduction (convexity) → r↓ as H↑
+- D3.2 `[PROVEN]`: Centroid tangentiality (concentration of measure) → sin(α)↑ as H↑
+- D3.3 `[PROVEN under A7]`: CE chain-rule selection bias → concentrated α receives score
+  drift for above-average radial tokens (`r_t > R`)
+- D3.4 `[PROVEN]`: r-dominance — O(√T) vs O(1), r wins the product θ ≈ r·sin(α)
+- D3.5 `[PROVEN]`: Architecture conditioning — f_attn determines coupling strength
+Remaining open item: validate A7 (radial-dominant downstream gradient) on real models.
+All measured signs match across 3 architectures. See `entropy-curvature-derivation.md`.
 Next falsifier protocol: `docs/research/ENTROPY-CURVATURE-GQA-FALSIFIER-PROTOCOL.md`.
 
-**Causal perturbation test (2026-03-04):** Direct causal intervention — boost prefix
-attention weights by multiplier M, measure per-layer angular curvature change Δθ, test
-Spearman(ΔH, Δθ) with permutation test (α=0.05). Pre-registered falsifier.
+**NORM CONFOUND DISCOVERED (2026-03-04):** The Entropy-Lens does NOT apply the model's
+final RMSNorm before unembedding projection. Since `h @ W.T = ||h|| × (ĥ @ W.T)`,
+softmax sharpness scales with ||h||, creating r(H_logit, ||h||²) ≈ -0.99 — a measurement
+operator artifact, not a geometric coupling.
 
-| Model | Result | Best ρ | Best p | Grid |
-|-------|--------|--------|--------|------|
-| LFM2-350M | **FALSIFIED** | +0.371 | 0.46 | 2713 M-values |
-| Qwen3.5-0.8B | **NOT FALSIFIED** | +0.886 | 0.026 | 116 M-values |
+After adding H_logit_norm (RMSNorm applied before unembedding):
+- Prediction 1 (r(H_logit_norm, ||h||²) ≈ 0): PASS for LFM2 (r=-0.065), FAIL for Qwen
+  (r=-0.686, -0.552). RMSNorm reduces but doesn't eliminate norm coupling in Qwen.
+- Prediction 2 (sign of r(H_logit_norm, θ_total | depth)): CONSISTENT NEGATIVE across
+  3 families (LFM2: -0.390, Qwen3.5: -0.145, Qwen2.5: -0.468).
+- Prediction 3 (r(H_logit_norm, H_logit) < 0.9): PASS for all (0.221, 0.689, 0.554).
 
-**Interpretation:** MIXED RESULT = mechanism underspecification. The H_attn → curvature
-causal link holds for Qwen3.5 (pure attention layers, GQA) but NOT for LFM2 (hybrid
-conv+attn, only 6/16 attention layers). LFM2 baseline p_I=0.63 (high prefix concentration),
-Qwen p_I=0.50 (more uniform). Architecture_state term confirmed necessary.
+**The r=0.507 was a confound artifact. The true sign is NEGATIVE.** Higher normalized
+posterior entropy → less curvature. This reverses the chain mechanism prediction and
+suggests the intuition was wrong: uncertain posterior → centroid-like output → LESS
+angular displacement, not more.
 
-This is consistent with prior findings: H_attn has no correlation with curvature on standard
-transformers (Qwen2.5-3B: r=-0.036). The causal test now shows even under direct intervention,
-LFM2's conv-dominated architecture absorbs the attention entropy perturbation without curvature
-change. The conv layers (10/16) may buffer or override attention-induced geometric shifts.
+Artifact: `results/entropy_curvature_operator_split/*/operator_split.json` (includes
+both H_logit and H_logit_norm measurements).
 
-Artifact: `results/attention_validation/perturbation_experiment.txt`.
+**Causal perturbation test (2026-03-04, CORRECTED):** Direct causal intervention — boost
+prefix attention weights by multiplier M, measure per-layer angular curvature change Δθ,
+test Spearman(ΔH, Δθ) with exact permutation test (n=6 layers, all 720 permutations
+enumerated) and Holm-Bonferroni correction across all M values with measurable |Δθ|.
+
+| Model | Result | Best |ρ| | Sign | Raw p | Holm threshold | Testable M |
+|-------|--------|---------|------|-------|----------------|------------|
+| LFM2-350M | **FALSIFIED** | 0.771 | − | 0.103 | 0.000019 | 2696 |
+| Qwen3.5-0.8B | **FALSIFIED** | 0.886 | + | 0.033 | 0.000446 | 112 |
+
+**Both models FALSIFIED.** Initial run (before code review) reported Qwen as "NOT
+FALSIFIED" (p=0.026) — false positive from: (1) no multiple-testing correction across
+112 M values, (2) random-shuffle permutation instead of exact enumeration. After
+Holm-Bonferroni, neither model's best p survives correction.
+
+**Interpretation:** H_attn → curvature causal link is NOT supported by direct intervention.
+Changing attention weight entropy does not produce statistically significant curvature changes
+in either architecture. This is consistent with: (a) H_attn having no correlation with
+curvature on standard transformers (Qwen2.5-3B: r=-0.036, p=0.835), (b) the norm confound
+discovery showing r=0.507 was contaminated by ||h||² trends. The entropy→curvature link,
+if real, operates through H_logit (posterior certainty), not H_attn (attention weight
+redistribution). Direct attention perturbation is the wrong intervention for H_logit.
+
+Artifact: `results/attention_validation/perturbation_experiment_corrected.txt`.
 
 **GQA norm-entropy coupling B5 test (2026-03-04):** R²(H_logit → log||h||²) vs GQA ratio.
 
@@ -856,58 +768,12 @@ Results from Qwen3-8B Layer 18 (mid-network):
 - Linear mixing of sparse representations spreads activations
 - But curvature is preserved: 0.521 → 0.516
 
-### Why Gate × Up is Geometrically Special
-
-The gate × up operation is a **learned bilinear form**:
-
-```
-h_intermediate[i] = SiLU(W_gate[i,:] @ h) × (W_up[i,:] @ h)
-                  ≈ SiLU(a_i) × b_i
-```
-
-where `a_i` and `b_i` are linear projections of h.
-
-**Geometric interpretation:**
-- Two linear projections define two subspaces
-- SiLU gates one based on its magnitude
-- Product combines them nonlinearly
-- Result: manifold gains curvature (can't be approximated by hyperplane)
-
-**This is why MLPs add representational capacity:**
-- Attention is approximately linear (softmax → linear combination of V)
-- MLP's gate × up is fundamentally nonlinear
-- The curvature increase (+0.03 per layer) accumulates
-
-### Consistent Across Models and Layers
-
-Llama-3.2-3B Layer 14 (mid-network):
-
-| Stage | Sparsity | Curvature | ID |
-|-------|----------|-----------|-----|
-| MLP input | 0.005 | 0.474 | 10.7 |
-| Gate (post-SiLU) | 0.004 | 0.477 | 10.5 |
-| **Gate × Up** | **0.024** | **0.518** | 10.6 |
-| MLP output | 0.004 | 0.499 | 10.9 |
-
-Same pattern:
-- SiLU: Δcurvature ≈ 0
-- Gate × Up: Δcurvature ≈ +0.04, Δsparsity ≈ +0.02
-- Down proj: Δcurvature ≈ -0.02, Δsparsity ≈ -0.02
-
 ### Summary
 
-**No arbitrary constants.** The geometry changes are determined by the algebra:
-
-```
-Operation              | Geometric Effect
------------------------|------------------
-Linear projection      | Rotates/scales (preserves linearity)
-SiLU activation        | Negligible (continuous + monotonic)
-Elementwise multiply   | Creates curvature (bilinear form)
-Down projection        | Rotates back, mixes sparsity
-```
-
-**The MLP's geometric role:** Add curvature to the representation through bilinear gating.
+Gate × Up is a learned bilinear form: `SiLU(W_gate @ h) × (W_up @ h)`. This is the
+only nonlinear operation that adds curvature (+0.03/layer, consistent across Qwen3-8B
+and Llama-3.2-3B). SiLU alone: Δcurvature ≈ 0. Down projection: rotates back, mixes
+sparsity. **The MLP's geometric role:** Add curvature through bilinear gating.
 
 ---
 
@@ -964,79 +830,19 @@ Down projection        | Rotates back, mixes sparsity
    The Mamba (SSM) layers may handle sequence modeling, leaving attention
    to simply aggregate information uniformly. Needs verification.
 
-2. **CORRECTION: Rank-1 Jacobian was a numerical artifact!** (2026-02-03)
+2. **Rank-1 Jacobian was a numerical artifact** — see §1 above. True Jacobians are
+   full-rank near-identity (eff_rank=63.9, all σ ≈ 1.0).
 
-   Previous finding (WRONG): Jacobians are rank-1 in trained transformers.
-
-   **Actual finding:** When measured correctly (float32, ε=1e-3 to 1e-4):
-   ```
-   ε=1e-03: eff_rank=63.9, σ_max=1.08, σ_2=1.02
-   ε=1e-04: eff_rank=63.9, σ_max=1.10, σ_2=1.05
-   ```
-
-   The true layer Jacobian is:
-   - **Full rank** (~64 effective rank for 64-probe measurement)
-   - **Near-identity** (all singular values ≈ 1.0)
-   - Each layer makes small incremental changes
-
-   The rank-1 result was caused by:
-   - bf16 model precision (3-4 significant digits)
-   - Tiny finite difference epsilon (1e-5 to 1e-6)
-   - These combined to make small perturbations invisible
-
-   **Correct interpretation:** Transformer layers are approximately identity
-   transformations with small incremental modifications. The "semantic highway"
-   is real (residual connections dominate), but it's not rank-1 - it's full-rank
-   near-identity.
-
-3. **Why does LFM2 learn uniform attention? — EXPLAINED** (2026-02-03)
-
-   **Answer:** Q and K projection matrices converge to **nearly orthogonal subspaces**.
-
-   **Evidence:**
-   | Layer | ||Q@K^T|| | ||Q@K^T|| (Qwen) |
-   |-------|----------|------------------|
-   | LFM2 | 1.0-2.0 | - |
-   | Qwen | - | **14.75** (7.4×) |
-
-   When W_q^T @ W_k ≈ 0, attention scores are near-zero regardless of input.
-   Softmax of near-zero uniform scores → uniform attention.
-
-   **Why does training converge to this?**
-   1. LFM2 is a hybrid: 10 Mamba layers + 6 Attention layers
-   2. Mamba handles sequence modeling (token dependencies)
-   3. Attention layers receive no gradient signal to be selective
-   4. Q/K projections drift toward orthogonality (stable attractor)
-   5. Result: attention = mean-pooling
-
-   **This is emergent specialization, not a bug.** The model learned that
-   global averaging is sufficient when Mamba handles sequence modeling.
+3. **LFM2 uniform attention: Q/K orthogonality** — W_q^T @ W_k ≈ 0 (||Q@K^T|| = 1-2
+   vs Qwen's 14.75). Mamba handles sequence modeling → attention receives no selectivity
+   gradient → Q/K drift to orthogonality → uniform softmax = mean-pooling.
 
 **REMAINING PUZZLES — PARTIALLY EXPLAINED (2026-02-22):**
 
-1. **Why does Qwen3 have sharper attention than Qwen2.5?** — THREE CONTRIBUTING FACTORS
-
-   | Feature | Qwen2.5 | Qwen3 | Effect on Sharpness |
-   |---------|---------|-------|---------------------|
-   | QK-Norm | No | **Yes** | Removes magnitude-based broadening → allows sharper selectivity |
-   | QKV bias | Yes | **No** | Removes constant-offset component → less attention diffusion |
-   | Training tokens | ~18T | ~36T | More training → more specialized Q/K subspace allocation |
-   | GQA | 8.0 (3B) | 4.0 (8B) | Lower GQA → more K capacity (should diffuse, but doesn't) |
-
-   **Why QK-Norm sharpens attention:** Without normalization, attention scores depend on both Q/K direction AND magnitude. QK-Norm removes magnitude dependence → selectivity is purely directional → trained attention can be more discriminating.
-
-   **Why lower GQA doesn't diffuse:** GQA=4 gives K more capacity than GQA=8, which SHOULD allow higher alignment and broader attention. But Qwen3's measured subspace overlap (0.581) is HIGHER than Qwen2.5 (0.433). The combination of QK-Norm + 2× training duration shifts how Q/K use their capacity — they become more aligned but more selective.
-
-   **Key insight:** Architecture parameters (QK-Norm, bias, GQA) set the *capacity* for attention sharpness. Training regime determines how that capacity is *used*. Qwen3's architectural choices enable sharper attention; extended training realizes it.
-
-   See `docs/research/architecture_geometry_theory.md` §5 for full analysis.
-
-2. **GQA and attention sharpness relationship** — NOT A SIMPLE FUNCTION
-   - Qwen2.5 (GQA=8) has higher attention rank than Qwen3 (GQA=4)
-   - This is NOT counter-intuitive once QK-Norm is accounted for
-   - GQA constrains K capacity (fewer parameters), but QK-Norm changes how that capacity is used
-   - The relationship is: GQA × QK-Norm × training_duration → attention spectrum
-   - No single architecture parameter determines attention sharpness
+1. **Why Qwen3 sharper than Qwen2.5?** Three factors: QK-Norm (removes magnitude
+   broadening), no QKV bias, 2× training tokens. Architecture sets capacity; training
+   determines usage. GQA × QK-Norm × training_duration → attention spectrum.
+   Full analysis: `docs/research/architecture_geometry_theory.md` §5.
 
 **Remaining experiments:**
 - [x] Test more architectures (Qwen3, DeepSeek)
@@ -1062,34 +868,10 @@ Using persistent homology via ripser on LFM2-350M:
 | **β₂ (voids)** | =0 always | No 3D holes |
 | **Simplification ratio** | =1.00 | No topology change |
 
-### Detailed Layer-by-Layer Results
-
-**Prompt: "The quick brown fox" (4 tokens):**
-```
-Layer  0: β₀=2, β₁=0, β₂=0, H=1.61
-Layer  7: β₀=2, β₁=0, β₂=0, H=1.27  ← Highway dip
-Layer 15: β₀=2, β₁=0, β₂=0, H=1.58
-```
-
-**Prompt: "What is 2+2?" (7 tokens):**
-```
-Layer  0: β₀=4, β₁=0, β₂=0, H=2.05
-Layer  6: β₀=4, β₁=1, β₂=0, H=2.10  ← Brief loop appears!
-Layer  7: β₀=4, β₁=0, β₂=0, H=1.39  ← Highway dip
-Layer 15: β₀=4, β₁=0, β₂=0, H=2.00
-```
-
 ### Persistence Entropy Shows Highway Pattern
 
-The persistence entropy (H) follows the same "dip" pattern as expansion_ratio:
-
-| Phase | Layers | H (persistence entropy) | Interpretation |
-|-------|--------|-------------------------|----------------|
-| Entry | 0-6 | ~1.6-2.1 | High feature diversity |
-| Highway | 7-10 | ~1.3-1.5 | Concentrated features |
-| Exit | 11-15 | ~1.4-2.0 | Diversification for output |
-
-**This matches the intrinsic dimension trajectory** — the highway compresses representation complexity.
+Persistence entropy H dips at highway (1.3-1.5) vs entry/exit (1.6-2.1), matching the
+ID trajectory. Math prompts show brief β₁ loops at pre-highway layers.
 
 ### β₁ (Loops) Appear During Math Processing — [EMPIRICAL] (2026-02-03)
 
@@ -1140,73 +922,20 @@ This circular dependency is the topological signature of **relational reasoning*
 
 ### ~~Δβ₁ Predicts Reasoning Success~~ [DISPROVEN: beta1_falsification, 2026-02-22]
 
-> **ARCHIVAL NOTE [2026-02-22]:** The claim below was subjected to a pre-registered
-> falsification protocol (6 tests, 50 samples, LFM2-350M) and failed 3/6 tests.
-> See `results/beta1_falsification/full/LFM2-350M/FALSIFICATION_REPORT.md` for the
-> full report. Preserved as historical record only. Do not cite as current findings.
-
-**Original hypothesis (2026-02-03):** Models that fail at math would show β₁ = 0 even on math prompts.
-
-**Original observation:** Weak models still show β₁ > 0, but Δβ₁ sign appeared to correlate with correctness on a small sample (3 prompts, 2 models).
-
-**Falsification results (2026-02-22, LFM2-350M, n=50, 58% accuracy):**
-
-| Test | Result | Detail |
-|------|--------|--------|
-| F1: Metric robustness | **FAIL** | 70% agreement across metrics (threshold: 80%) |
-| F2: Generality | INCONCLUSIVE | 0 degenerate samples |
-| F3: Held-out replication | **FAIL** | No metric shows significant correct/incorrect separation (all CIs include 0) |
-| F5: Subsample stability | **FAIL** | 57.8% sign stability (threshold: 80%) |
-| F6: Null-shuffle control | PASS | Shuffling destroys signal (d=0.22) |
-| F7: Layer-window calibration | PASS | 2/3 windows show d>0.3 |
-
-**Verdict:** The original observation was based on too few samples (3 prompts) and did not survive robustness controls. F3 (the core claim — Δβ₁ separates correct from incorrect) fails across all 4 independent metrics. F5 shows the sign of Δβ₁ is unstable under token subsampling, indicating sensitivity to point cloud composition rather than genuine topological signal.
-
-**What survived:** F6 confirms temporal structure matters (shuffling destroys whatever signal exists), and F7 confirms the signal is not specific to one window choice. But F3's failure is decisive — there is no statistically significant separation between correct and incorrect outputs.
-
-~~**The pattern:**~~
-~~- **Δβ₁ > 0** (loops grow toward exit) → **Correct reasoning**~~
-~~- **Δβ₁ < 0** (loops collapse before exit) → **Incorrect reasoning**~~
-
-**Original data (retained for context, not current findings):**
-
-| Model | Answer | Early β₁ (L0-10) | Late β₁ (L-5 to end) | Δβ₁ |
-|-------|--------|------------------|----------------------|-----|
-| Qwen3-8B | ✓ x=5 | 1.2 | 3.8 | **+2.62** |
-| Qwen-0.5B | ✗ x=10 | 2.6 | 2.0 | **-0.64** |
+Falsified (3/6 tests FAIL, n=50, LFM2-350M). F3 decisive: no metric shows significant
+correct/incorrect separation. Original observation (3 prompts, 2 models) was underpowered.
+Full report: `results/beta1_falsification/full/LFM2-350M/FALSIFICATION_REPORT.md`.
 
 ### Geometric Interpretation
 
-**Transformers preserve topology while transforming geometry.**
+Transformers preserve topology (β₀ constant, no tears/merges) while transforming geometry
+(stretching, compressing, rotating). Consistent with near-identity Jacobians.
+β₀ ≈ number of tokens (residual connections preserve individual token identity).
 
-The activation manifold:
-- **Stretches and compresses** (changing intrinsic dimension)
-- **Rotates** (changing which directions have variance)
-- **DOES NOT tear or merge** (β₀ constant, no new holes persist)
+### Methodological Note: Zigzag Persistence
 
-This is consistent with the near-identity Jacobian finding — each layer makes small incremental changes without topological surgery.
-
-### Why β₀ = number of tokens
-
-The connected components (β₀) roughly equals the number of tokens because:
-1. Each token starts as a distinct point in embedding space
-2. Attention mixes representations but doesn't fully merge them
-3. Residual connections preserve individual token identity
-
-**Prediction:** Longer sequences should show higher β₀ (more components).
-
-### Methodological Upgrade: Zigzag Persistence (2026-02-22)
-
-Current implementation (`scripts/manifold_topology.py`) computes persistent homology per layer independently, then compares β₁ across layers to get Δβ₁. This loses birth-death tracking — a loop at layer 10 and a loop at layer 11 may or may not be "the same" feature.
-
-**Zigzag persistence** (Carlsson & de Silva 2010) tracks topological features as they're born, persist, and die *across* a sequence of spaces (layers). This gives:
-- Birth-death pairs for each β₁ feature across layer depth
-- Persistence diagrams indexed by layer (not just per-layer snapshots)
-- Direct measurement of "later-born features are more long-lived" (reported in LLM zigzag persistence studies)
-
-**Implication for Δβ₁:** Instead of computing `mean(β₁[-5:]) - mean(β₁[:10])`, zigzag persistence would give the actual persistence of each loop — how many layers it survives. Correct reasoning should show loops with high persistence (born early, die late or never). Incorrect reasoning should show loops with low persistence (born, die quickly).
-
-**Status:** Not implemented. Would require replacing per-layer Ripser calls with a zigzag persistence library (e.g., Dionysus 2, or zigzag module in GUDHI).
+Current per-layer Ripser loses birth-death tracking across layers. Zigzag persistence
+(Carlsson & de Silva 2010) would track features across the layer sequence. Not implemented.
 
 ### Experiments Completed
 

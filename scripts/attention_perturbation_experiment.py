@@ -39,10 +39,14 @@ DIRECTIONAL PREDICTION:
     larger curvature change |Δθ(l)| under perturbation.
 
 FALSIFIER:
-    If Spearman rank correlation ρ(H_baseline, |Δθ|) across attention
-    layers is not significantly different from zero (p > 0.05 via
-    permutation test) at M values producing measurable |Δθ|, the
-    entropy→curvature causal claim is falsified for that model.
+    If Spearman rank correlation ρ(ΔH, Δθ) across attention layers
+    is not significantly different from zero after Holm-Bonferroni
+    correction across all M values with measurable mean|Δθ| > √ε_f32,
+    the entropy→curvature causal claim is falsified for that model.
+
+    Multiple-testing correction: Holm-Bonferroni (step-down) across
+    all testable M values. Single uncorrected p < 0.05 is NOT
+    sufficient — the family-wise error rate must be controlled.
 
     NOTE: The perturbation applies uniform M across all layers, so
     per-layer ΔH cannot vary independently (all layers see the same
@@ -282,39 +286,52 @@ def permutation_test_p_value(
 ) -> float:
     """Permutation test for significance of Spearman correlation.
 
-    Args:
-        n_perms: Number of permutations. Default:
-            exact test when n <= 8 (n!), otherwise 1/sqrt(eps_f32) derived
-            from IEEE 754 measurement floor.
+    For n <= 8, enumerates ALL n! unique permutations (exact test).
+    For n > 8, uses Monte Carlo with deterministic RNG, n_perms
+    derived from IEEE 754 measurement floor: ceil(1/sqrt(eps_f32)).
+
+    Returns two-sided p-value: fraction of permutations where
+    |ρ_perm| >= |ρ_observed|.
     """
+    import itertools
     import random
 
     n = len(x)
-    if n_perms is None:
-        # Exact test when feasible (n! ≤ 40320 for n ≤ 8)
-        n_perms = math.factorial(n) if n <= 8 else _N_PERMUTATIONS
-
     observed = abs(spearman_rank_correlation(x, y))
     if math.isnan(observed):
         return 1.0
 
-    # Deterministic RNG seed from inputs for reproducibility across runs.
-    seed_payload = (
-        tuple(round(v, 12) for v in x),
-        tuple(round(v, 12) for v in y),
-        n_perms,
-    )
-    rng = random.Random(repr(seed_payload))
+    if n <= 8:
+        # Exact test: enumerate all n! unique permutations
+        total = 0
+        count_ge = 0
+        for perm in itertools.permutations(y):
+            perm_r = abs(spearman_rank_correlation(x, list(perm)))
+            if not math.isnan(perm_r) and perm_r >= observed:
+                count_ge += 1
+            total += 1
+        return count_ge / total
+    else:
+        # Monte Carlo with deterministic RNG
+        if n_perms is None:
+            n_perms = _N_PERMUTATIONS
 
-    count_ge = 0
-    y_perm = y.copy()
-    for _ in range(n_perms):
-        rng.shuffle(y_perm)
-        perm_r = abs(spearman_rank_correlation(x, y_perm))
-        if not math.isnan(perm_r) and perm_r >= observed:
-            count_ge += 1
+        seed_payload = (
+            tuple(round(v, 12) for v in x),
+            tuple(round(v, 12) for v in y),
+            n_perms,
+        )
+        rng = random.Random(repr(seed_payload))
 
-    return (count_ge + 1) / (n_perms + 1)
+        count_ge = 0
+        y_perm = y.copy()
+        for _ in range(n_perms):
+            rng.shuffle(y_perm)
+            perm_r = abs(spearman_rank_correlation(x, y_perm))
+            if not math.isnan(perm_r) and perm_r >= observed:
+                count_ge += 1
+
+        return (count_ge + 1) / (n_perms + 1)
 
 
 def run_experiment(model_name: str, model_path: str) -> dict:
@@ -428,7 +445,6 @@ def run_experiment(model_name: str, model_path: str) -> dict:
     # This preserves the pre-registered statistic ρ(ΔH, Δθ) across layers.
 
     print(f"\nCorrelation analysis (attention layers only: {attn_layers}):")
-    causal_supported = False
     correlation_results: list[dict[str, float | bool]] = []
     for sr in sweep_results:
         M = sr["M"]
@@ -454,18 +470,15 @@ def run_experiment(model_name: str, model_path: str) -> dict:
         max_abs_dh = (
             max(abs(dh) for dh in delta_h_layers) if delta_h_layers else 0.0
         )
-        measurable_delta_h = max_abs_dh > _SQRT_EPS_F32
+        # Pre-registration gates on measurable |Δθ|, not |ΔH|
+        measurable_delta_theta = mean_abs_dt > _SQRT_EPS_F32
 
         print(
             f"  M={M:8.2f}: mean|Δθ|={mean_abs_dt:.6f}, "
             f"max|ΔH|={max_abs_dh:.6e}, "
             f"ρ(ΔH, Δθ)={rho:+.3f}, p={p_val:.4f}"
+            f"{'  *measurable*' if measurable_delta_theta else ''}"
         )
-
-        # Pre-registered decision rule:
-        # If p <= alpha at an M with measurable ΔH, causal link is not falsified.
-        if measurable_delta_h and p_val <= _PRE_REGISTERED_ALPHA:
-            causal_supported = True
 
         correlation_results.append({
             "M": M,
@@ -473,8 +486,50 @@ def run_experiment(model_name: str, model_path: str) -> dict:
             "p_value": p_val,
             "max_abs_delta_h": max_abs_dh,
             "mean_abs_delta_theta": mean_abs_dt,
-            "measurable_delta_h": measurable_delta_h,
+            "measurable_delta_theta": measurable_delta_theta,
         })
+
+    # --- Holm-Bonferroni correction across all M values with measurable |Δθ| ---
+    # Filter to testable M values (pre-registration: measurable |Δθ|)
+    testable = [
+        cr for cr in correlation_results if cr["measurable_delta_theta"]
+    ]
+    n_tests = len(testable)
+    print(f"\n  Holm-Bonferroni correction: {n_tests} testable M values "
+          f"(mean|Δθ| > √ε_f32)")
+
+    causal_supported = False
+    if n_tests > 0:
+        # Sort by p-value ascending for Holm step-down
+        sorted_tests = sorted(testable, key=lambda cr: cr["p_value"])
+        for rank_k, cr in enumerate(sorted_tests):
+            # Holm threshold: α / (n_tests - k)
+            holm_threshold = _PRE_REGISTERED_ALPHA / (n_tests - rank_k)
+            cr["holm_threshold"] = holm_threshold
+            cr["holm_significant"] = cr["p_value"] <= holm_threshold
+
+        # Holm procedure: reject from smallest p until first non-rejection
+        for cr in sorted_tests:
+            if cr["holm_significant"]:
+                causal_supported = True
+            else:
+                break  # stop at first non-rejection
+
+        # Report best (absolute ρ) and sign
+        best_abs = max(testable, key=lambda cr: abs(cr["rho_deltaH_deltaTheta"]))
+        print(f"  Best |ρ| = {abs(best_abs['rho_deltaH_deltaTheta']):.3f} "
+              f"(sign={'+' if best_abs['rho_deltaH_deltaTheta'] >= 0 else '-'}, "
+              f"M={best_abs['M']:.2f}, "
+              f"raw p={best_abs['p_value']:.4f})")
+
+        # Report Holm result
+        best_p = sorted_tests[0]
+        print(f"  Smallest p = {best_p['p_value']:.4f} "
+              f"(Holm threshold = {best_p['holm_threshold']:.6f}, "
+              f"M={best_p['M']:.2f}, "
+              f"ρ={best_p['rho_deltaH_deltaTheta']:+.3f})")
+        print(f"  Holm-corrected conclusion: "
+              f"{'SIGNIFICANT' if causal_supported else 'NOT SIGNIFICANT'}")
 
     # ===== CONCLUSION =====
     print(f"\n{'='*70}")

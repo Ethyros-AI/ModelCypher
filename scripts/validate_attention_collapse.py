@@ -34,6 +34,15 @@ import math
 import sys
 from pathlib import Path
 
+# IEEE 754 bfloat16 machine epsilon: 2^-7 ≈ 0.0078.
+# SVD of bfloat16 attention matrices produces singular values with rounding
+# errors bounded by eps_bf16 × ||A||. For row-stochastic attention matrices,
+# ||A||_max = 1, so the absolute error bound is eps_bf16. We use sqrt(eps_bf16)
+# as the tolerance for SV ordering and non-negativity — this is the same
+# threshold used for rank-1 detection in the domain module.
+_EPS_BF16 = math.ldexp(1.0, -7)
+_SQRT_EPS_BF16 = math.sqrt(_EPS_BF16)
+
 # Models on external volume
 MODELS = {
     "LFM2-350M": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
@@ -105,14 +114,18 @@ def validate_model(model_name: str, model_path: str) -> dict:
                 mat_list = backend.tolist(head_mat)
                 result = compute_attention_collapse(mat_list, "bfloat16", backend=backend)
 
-                # Check 2: singular values non-negative and descending
+                # Check 2: singular values non-negative and descending.
+                # Tolerance: sqrt(eps_bf16) — same threshold used for rank-1
+                # detection. SVD rounding errors are bounded by eps × ||A||;
+                # sqrt(eps) provides margin for accumulation across the T×T
+                # matrix while remaining far below meaningful SV differences.
                 svs = result.singular_values
                 for i, sv in enumerate(svs):
-                    if sv < -1e-10:
+                    if sv < -_SQRT_EPS_BF16:
                         print(f"    FAIL: L{layer_idx} H{head_idx} SV[{i}] = {sv} < 0")
                         all_pass = False
                 for i in range(len(svs) - 1):
-                    if svs[i] < svs[i + 1] - 1e-10:
+                    if svs[i] < svs[i + 1] - _SQRT_EPS_BF16:
                         print(f"    FAIL: L{layer_idx} H{head_idx} SV not descending: "
                               f"SV[{i}]={svs[i]} < SV[{i+1}]={svs[i+1]}")
                         all_pass = False

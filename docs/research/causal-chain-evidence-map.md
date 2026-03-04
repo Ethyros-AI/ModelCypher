@@ -24,7 +24,7 @@ Attention selectivity
 H_attn (attention weight entropy)
     ↓ [EXPLORATORY] ← OPERATOR RECONCILIATION NEEDED
 H_logit (logit entropy / Entropy-Lens)
-    ↓ [EXPLORATORY: r=0.507] ← KEY DERIVATION GAP
+    ↓ [EXPLORATORY: SIGN-REVERSED, r_norm≈-0.3] ← NORM CONFOUND (2026-03-04)
 Δcurvature
     ↓ [EXPLORATORY]
 Cumulative curvature → ID (r=0.821)
@@ -136,63 +136,88 @@ path must be reframed around H_logit.
 The r=0.507 reported in the causal chain uses H_logit (Entropy-Lens), not H_attn.
 ACT-016 requires: run corr(H_attn, H_logit) per family and per-layer, report per-family.
 
-**Causal perturbation test (2026-03-04):** Direct intervention on H_attn (boost prefix
-attention weights). LFM2-350M: FALSIFIED (best ρ=+0.371, p=0.46). Qwen3.5-0.8B: NOT
-FALSIFIED (ρ=+0.886, p=0.026). Architecture-dependent — LFM2's conv layers (10/16)
-absorb the entropy perturbation. Consistent with operator split finding: H_attn ↔ H_logit
-correlation is architecture-dependent (r=+0.657 LFM2, r=+0.086 Qwen3.5).
-Artifact: `results/attention_validation/perturbation_experiment.txt`.
+**Causal perturbation test (2026-03-04, CORRECTED):** Direct intervention on H_attn (boost
+prefix attention weights), exact permutation test (all 720 permutations for n=6 layers),
+Holm-Bonferroni across all testable M values.
+- LFM2-350M: FALSIFIED (best |ρ|=0.771, sign=−, raw p=0.103, Holm threshold=0.000019)
+- Qwen3.5-0.8B: FALSIFIED (best |ρ|=0.886, sign=+, raw p=0.033, Holm threshold=0.000446)
+Both models FALSIFIED. Initial report of Qwen "NOT FALSIFIED" was a false positive from
+uncorrected multiple testing (112 M values) + random-shuffle permutation.
+H_attn perturbation does not produce statistically significant curvature changes.
+Artifact: `results/attention_validation/perturbation_experiment_corrected.txt`.
 
 **What promotes this to `[VALIDATED]`:** Run ACT-016. Report corr(H_attn, H_logit)
 per family in `results/entropy_curvature_operator_split/<model>/`.
 
 ---
 
-### H_logit → Δcurvature  `[EXPLORATORY]` ← **KEY DERIVATION GAP**
+### H_logit → Δcurvature  `[EXPLORATORY, SIGN-REVERSED]` ← **NORM CONFOUND DISCOVERED**
 
-**Measured:** r = 0.507 (H_logit → Δcurvature, cross-family). Operator: Entropy-Lens
-(logit entropy), NOT attention weight entropy H_attn.
+**Original measurement:** r = 0.507 (H_logit → Δcurvature, cross-family). Contaminated
+by ||h||² confound (r(H_logit, ||h||²) ≈ -0.99 for all models).
 
-**Proposed mechanism:** Diffuse attention → output = mean(V) → output directions span the
-convex hull of V columns → higher-D local patch → higher curvature. Concentrated attention
-→ output ≈ single V_k → low-D local patch → lower curvature.
+**Corrected measurement (2026-03-04):** Using H_logit_norm (RMSNorm before unembedding):
+- LFM2-700M: partial_r = -0.390 (negative)
+- Qwen3.5-0.8B: partial_r = -0.145 (negative)
+- Qwen2.5-3B: partial_r = -0.468 (negative)
+- F5_norm: CONSISTENT_SIGN (all negative)
 
-**Gap:** This argument has not been derived from attention + MLP mechanics. Two things
-are missing:
+The true relationship is **negative**: higher normalized posterior entropy → less curvature.
+The original positive r=0.507 was an artifact of the norm confound and depth trends.
 
-1. **Attention step:** Derive how the distribution over V columns (determined by entropy of
-   α) affects the geometry of {output_i} over an input distribution. This is computable:
-   uniform α → output = (1/T)ΣV_k, meaning all outputs are the same centroid point → ID=1,
-   zero curvature. Concentrated α → outputs are distinct V_k selections → higher ID. The
-   direction is correct but the quantitative relationship is not formalized.
+**Operator:** Entropy-Lens (logit entropy), NOT attention weight entropy H_attn.
 
-2. **MLP step:** After the attention output, a nonlinear MLP acts. The curvature measure
-   (Riemannian distance between adjacent hidden states) aggregates both. How the MLP
-   modulates the attention-derived geometry is not derived.
+**Prior mechanism (REFUTED by sign reversal):** The pre-correction hypothesis predicted
+high entropy → high curvature (diffuse attention → span convex hull → higher-D → more
+curvature). The corrected measurement shows the **opposite**: high normalized entropy →
+less curvature. The prior mechanism text is retained here for the record:
+*"Diffuse attention → output = mean(V) → output directions span the convex hull of V
+columns → higher-D local patch → higher curvature."* — This prediction is falsified.
 
-**Trilogy contribution (arXiv 2512.22471):** Value manifold at the final training
-checkpoint is 1D, parameterized by posterior entropy. This is the strongest available
-theoretical support for the entropy→geometry direction:
+**Corrected mechanism (derived sign law):**
+`docs/research/entropy-curvature-derivation.md` now provides a formal two-step derivation:
+1. Exact entropy-temperature identity:
+   `dH/dt = -t Var_{p_t}(z_hat) <= 0` proves the raw Entropy-Lens norm confound.
+2. Norm-corrected curvature bound:
+   with `D = log(V) - H_logit_norm = KL(p||u_V)` and local map
+   `P_perp(h) delta = B_l(p-u_V) + r_l`,
+   Pinsker gives `||p-u_V||^2 <= 2D`, yielding
+   `sin^2(theta) <= a_l D + b_l D^2`.
+   Leading-order slope is therefore negative:
+   `d sin^2(theta) / dH_logit_norm = -a_l + O(D) <= 0`.
 
-- Low entropy → most hypotheses eliminated → value manifold 1D → minimum curvature.
-- High entropy → many hypotheses remaining → value manifold higher-D → higher curvature.
+So the sign reversal is no longer intuition-only; it is the expected leading-order behavior
+of the norm-corrected operator under an explicit architecture-conditioned local map.
 
-This is theoretical grounding for the **direction** of the relationship, not a derivation
-of the curvature calculation from attention mechanics. The paper's manifold result is a
-measurement (intrinsic dimension of value representations), not a derivation from the
-attention operator that would let us predict curvature from entropy without measurement.
+**D3 tangential/radial decomposition (2026-03-04, formal derivation):**
+`entropy-curvature-derivation.md` now contains D3.1–D3.5:
+- D3.1 `[PROVEN]`: Centroid magnitude reduction — diffuse α → smaller ||δ|| (convexity).
+- D3.2 `[PROVEN]`: Centroid tangentiality — diffuse α → sin(α) → 1 (concentration of measure).
+- D3.3 `[PROVEN under A7]`: CE chain-rule selection bias — score updates are monotone in
+  `(r_t - R)` under radial-dominant downstream gradient, so high-α mass shifts to radially
+  aligned tokens.
+- D3.4 `[PROVEN]`: r-dominance — r changes O(√T) vs sin(α) changes O(1), r wins.
+- D3.5 `[PROVEN]`: Architecture conditioning — f_attn determines which factor absorbs coupling.
+All measured signs match derivation across 3 architectures.
+
+**Remaining gaps:**
+1. Validate A7 in-model (measure monotonicity of `E[Δs_t | r_t]` and sign of `ΔR`).
+2. Estimate `a_l, b_l` from measured Jacobians (`B_l`) per architecture.
+3. Qwen3.5 anomaly: effective f_attn may differ from nominal (linear attention has partial coupling).
 
 **arXiv 2512.23752 contribution:** Entropy-aligned axis appears robust across larger model
 families — partial support for generalization. Does not close the derivation gap.
 
-**Causal perturbation test (2026-03-04):** H_attn intervention → Δθ. LFM2-350M: FALSIFIED
-(ρ=+0.371, p=0.46). Qwen3.5-0.8B: NOT FALSIFIED (ρ=+0.886, p=0.026). The H_attn → curvature
-causal path is architecture-dependent. Conv-dominated architectures absorb the perturbation.
-This narrows the derivation target: the H_logit → curvature mechanism works through posterior
-certainty (Bayesian manifold), not directly through attention weight redistribution.
+**Causal perturbation test (2026-03-04, CORRECTED):** H_attn intervention → Δθ, with
+exact permutation test + Holm-Bonferroni. Both models FALSIFIED:
+- LFM2-350M: best |ρ|=0.771 (sign=−), raw p=0.103, Holm threshold=0.000019
+- Qwen3.5-0.8B: best |ρ|=0.886 (sign=+), raw p=0.033, Holm threshold=0.000446
+Direct attention weight perturbation does not produce significant curvature changes.
+This narrows the derivation target: if entropy→curvature exists, it operates through
+H_logit (posterior certainty / Bayesian manifold), not H_attn (attention weight entropy).
 
 **GQA conditioning on norm-entropy coupling (2026-03-04, B5 test):** Spearman(GQA, R²(H→||h||²))
-= -0.632, p=0.368 (N=4). Direction consistent with B5 but not significant. Needs more models.
+= -0.632, p=0.250 (exact permutation, N=4). Direction consistent with B5 but not significant.
 
 **What promotes this to `[VALIDATED]`:**
 First, reconcile the operator (ACT-016): determine whether H_attn ≈ H_logit or whether
@@ -315,9 +340,12 @@ Curvature and ID are properties of the set `{y(x) : x ~ P(x)}`, not of a single 
    response. Both steps are tractable from the definitions of the curvature measure and
    TwoNN estimator.
 
-**Status:** The population framing is correct and the path is derivable. The derivation has
-not been executed. Until step 3 is formalized, entropy→curvature stays `[EXPLORATORY]`.
-Formal derivation target: `entropy-curvature-derivation.md`.
+**Status (updated 2026-03-04):** D3.1–D3.5 formally derive the sign and architecture
+conditioning. D3.1, D3.2, D3.4, D3.5 are `[PROVEN]`; D3.3 is `[PROVEN under A7]`
+(radial-dominant downstream gradient condition). The Pinsker envelope + D3 decomposition
+close the mechanism at derivation level; promotion now depends on validating A7 and
+estimating architecture-conditioned coefficients (`a_l, b_l`).
+Formal derivation: `entropy-curvature-derivation.md`.
 
 ---
 
@@ -330,7 +358,7 @@ Formal derivation target: `entropy-curvature-derivation.md`.
 | QK alignment → selectivity → highway | `[EXPLORATORY]` | Formal derivation: alignment → expected crossing depth |
 | Attention selectivity ↔ H_attn | `[PROVEN]` | — |
 | H_attn ↔ H_logit | `[EXPLORATORY]` | ACT-016: corr(H_attn, H_logit) per family; determine if proxies |
-| H_logit → Δcurvature | `[EXPLORATORY]` | ACT-016 + derive: H(α), V → expected ID/curvature of output distribution |
+| H_logit → Δcurvature | `[EXPLORATORY, SIGN-REVERSED]` | D3.1–D3.5 derive sign + architecture conditioning (D3.3 proven under A7). Promote after A7 validation and `a_l,b_l` estimation. |
 | Cumulative curvature → ID | `[EXPLORATORY]` | Derive: TwoNN behavior under curvature transformations |
 | ID → Phases | `[PROVEN]` | — |
 

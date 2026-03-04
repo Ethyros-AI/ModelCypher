@@ -33,6 +33,14 @@ import math
 import sys
 from pathlib import Path
 
+# IEEE 754 bfloat16 machine epsilon: 2^-7 ≈ 0.0078.
+# Consistency error measures (sum_col - sum_row) / sum_row for doubly-stochastic
+# attention. Accumulation over T tokens amplifies rounding, so the tolerance is
+# T × eps_bf16. For T <= 128 (our probe lengths), T × eps_bf16 < 1.0, which is
+# far above any valid consistency error. We use eps_bf16 directly as a conservative
+# per-element tolerance — any error larger indicates a computation bug, not rounding.
+_EPS_BF16 = math.ldexp(1.0, -7)  # bfloat16 mantissa precision
+
 # Models on external volume
 MODELS = {
     "LFM2-350M": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
@@ -93,9 +101,12 @@ def validate_model(model_name: str, model_path: str) -> dict:
                 result = compute_sink_scores(mat_list, head_idx=head_idx)
                 head_sinks.append(result)
 
-                # Check 1: Consistency error should be near machine epsilon
+                # Check 1: Consistency error should be near machine epsilon.
+                # Tolerance: eps_bf16 (per-element rounding bound for bfloat16
+                # attention weights). Any error above this indicates a computation
+                # bug in the sink score arithmetic, not floating-point accumulation.
                 for ts in result.token_sinks:
-                    if ts.consistency_error > 1e-12:
+                    if ts.consistency_error > _EPS_BF16:
                         print(
                             f"    FAIL: L{layer_idx} H{head_idx} pos={ts.position} "
                             f"consistency_error={ts.consistency_error}"
@@ -121,7 +132,12 @@ def validate_model(model_name: str, model_path: str) -> dict:
                 f"mean_max_sink={layer_summary.mean_max_sink_score:.4f}"
             )
 
-        # Check 2: BOS/early tokens should dominate sink positions
+        # Check 2: BOS/early tokens should dominate sink positions.
+        # This is an INFORMATIONAL check (NOTE, not FAIL). The >= 50%
+        # threshold is an empirical expectation from Xiao et al. (2023)
+        # "Efficient Streaming Language Models with Attention Sinks",
+        # not a derived decision boundary. It serves as a sanity check
+        # that the infrastructure correctly identifies sink structure.
         early_dominant_count = sum(
             1 for lr in layer_results if lr.dominant_sink_position <= 1
         )
