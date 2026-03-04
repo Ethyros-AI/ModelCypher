@@ -1645,12 +1645,18 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             per_module_null_accessibility = cka_result.get("per_module_null_accessibility")
             if per_layer_cka:
                 min_cka_layer = min(per_layer_cka, key=per_layer_cka.get)
-            logger.info(
-                "CKA verification: min=%.4f, mean=%.4f (%d probes, %d layers)",
-                min_cka, mean_cka,
-                cka_result.get("n_probes", 0),
-                len(cka_result.get("per_layer_cka", {})),
-            )
+            if min_cka is not None and mean_cka is not None:
+                logger.info(
+                    "CKA verification: min=%.4f, mean=%.4f (%d probes, %d layers)",
+                    min_cka, mean_cka,
+                    cka_result.get("n_probes", 0),
+                    len(cka_result.get("per_layer_cka", {})),
+                )
+            else:
+                logger.info(
+                    "CKA verification: skipped (%s)",
+                    cka_result.get("skipped_reason", "unknown"),
+                )
             # Inference-manifold CKA (diagnostic)
             inference_min_cka = cka_result.get("inference_min_cka")
             inference_mean_cka = cka_result.get("inference_mean_cka")

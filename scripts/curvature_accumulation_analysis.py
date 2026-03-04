@@ -60,6 +60,49 @@ def _resolve_existing_path(*candidates: str) -> str:
     return candidates[0]
 
 
+def _resolve_model_base(model) -> object:
+    """Return the backbone object that has both .embed_tokens and .layers.
+
+    Ported from _mlx_backend_activation_mixin.py:_resolve_model_base().
+    Handles standard layout (model.model), Qwen3.5 layout
+    (model.language_model.model), and bare-model fallbacks.
+    """
+
+    def _has_both(obj) -> bool:
+        return obj is not None and hasattr(obj, "embed_tokens") and hasattr(obj, "layers")
+
+    inner = getattr(model, "model", None)
+    if _has_both(inner):
+        return inner
+
+    # Qwen3.5-VL: model.model.language_model(.model)
+    if inner is not None:
+        inner_lm = getattr(inner, "language_model", None)
+        if inner_lm is not None:
+            if _has_both(inner_lm):
+                return inner_lm
+            inner_lm_inner = getattr(inner_lm, "model", None)
+            if _has_both(inner_lm_inner):
+                return inner_lm_inner
+            if hasattr(inner_lm, "layers"):
+                return inner_lm
+
+    # Direct language_model (Qwen3.5 text-only via mlx-lm)
+    lm = getattr(model, "language_model", None)
+    if lm is not None:
+        if _has_both(lm):
+            return lm
+        lm_inner = getattr(lm, "model", None)
+        if _has_both(lm_inner):
+            return lm_inner
+        if hasattr(lm, "layers"):
+            return lm
+
+    if hasattr(model, "layers"):
+        return model
+    return model  # best-effort fallback
+
+
 MODEL_REGISTRY = {
     "LFM2-350M": {
         "path": f"{MODELS_BASE}/mlx-community/LFM2-350M-MLX-bf16",
@@ -99,6 +142,12 @@ MODEL_REGISTRY = {
         "L": 28, "d": 2048,
         "architecture": "qwen3",
         "gqa_ratio": 2,  # 16 query heads / 8 kv heads; architectural identity
+    },
+    "Qwen3.5-0.8B": {
+        "path": f"{MODELS_BASE}/mlx-community/Qwen3.5-0.8B-bf16",
+        "L": 24, "d": 1024,
+        "architecture": "qwen3.5",
+        "gqa_ratio": 4,  # 16 query heads / 4 kv heads; source: text_config
     },
 }
 
@@ -401,7 +450,7 @@ def collect_sublayer_activations(
     """
     import mlx.core as mx
 
-    base = getattr(model, "model", model)
+    base = _resolve_model_base(model)
     embed = getattr(base, "embed_tokens", None)
     layers = getattr(base, "layers", None)
     if layers is None or embed is None:
@@ -1697,7 +1746,7 @@ def run_single_model(
     logger.info(f"Loading model: {model_name} from {model_info['path']}")
     model, tokenizer = backend.load_model(model_info["path"])
 
-    base = getattr(model, "model", model)
+    base = _resolve_model_base(model)
     layers = getattr(base, "layers", None)
     num_layers = len(layers) if layers else 0
     d_model = model_info.get("d", 0)

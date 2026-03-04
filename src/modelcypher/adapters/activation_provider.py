@@ -183,114 +183,28 @@ class ActivationProviderAdapter:
     ) -> dict[int, list[Any]]:
         """Collect per-layer, per-head attention weight matrices.
 
-        Manually computes softmax(QK^T / sqrt(d_k)) since fused kernels
-        don't expose weights. Handles GQA by expanding KV heads via
-        expand_dims + tile + reshape (no framework imports).
-
-        Returns:
-            Dict mapping attention_layer_idx -> list of [seq_len, seq_len]
-            arrays, one per attention head. Only attention layers are included
-            (conv layers are skipped).
+        Delegates to the Backend protocol implementation which handles
+        all architecture variants (standard attention, GQA, LFM2 with
+        q_layernorm/k_layernorm).
         """
-        b = self._backend
-        embed_tokens, layers, norm = self._get_backbone(model)
+        return self._backend.collect_attention_matrices(
+            model, tokenizer, text, token_ids
+        )
 
-        if token_ids is None:
-            tokens = tokenizer.encode(text)
-        else:
-            tokens = token_ids
+    def collect_attention_matrices_with_values(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> tuple[dict[int, list[Any]], dict[int, list[Any]]]:
+        """Collect attention matrices and per-head value vectors.
 
-        input_ids = b.array([tokens])
-        captured_attn: dict[int, Any] = {}
-
-        class _AttnCaptureWrapper:
-            """Wraps a layer to capture attention weights during forward pass."""
-
-            def __init__(self, layer, layer_idx):
-                self._layer = layer
-                self._layer_idx = layer_idx
-
-            def __call__(self, x, mask=None, cache=None):
-                if not getattr(self._layer, "is_attention_layer", False):
-                    return self._layer(x, mask=mask, cache=cache)
-
-                attn = self._layer.self_attn
-                x_normed = self._layer.operator_norm(x)
-                B_val, L, _D = x_normed.shape
-
-                queries = attn.q_proj(x_normed)
-                keys = attn.k_proj(x_normed)
-
-                queries = attn.q_layernorm(
-                    queries.reshape(B_val, L, attn.n_heads, -1)
-                ).transpose(0, 2, 1, 3)
-                keys = attn.k_layernorm(
-                    keys.reshape(B_val, L, attn.n_kv_heads, -1)
-                ).transpose(0, 2, 1, 3)
-
-                if cache is not None:
-                    queries = attn.rope(queries, offset=cache.offset)
-                    keys = attn.rope(keys, offset=cache.offset)
-                else:
-                    queries = attn.rope(queries)
-                    keys = attn.rope(keys)
-
-                # GQA: expand KV heads to match Q heads
-                # keys: [B, n_kv_heads, L, head_dim]
-                # target: [B, n_heads, L, head_dim]
-                n_rep = attn.n_heads // attn.n_kv_heads
-                if n_rep > 1:
-                    n_kv = keys.shape[1]
-                    head_d = keys.shape[3]
-                    keys_expanded = b.expand_dims(keys, axis=2)
-                    keys_expanded = b.tile(
-                        keys_expanded, (1, 1, n_rep, 1, 1)
-                    )
-                    keys_expanded = b.reshape(
-                        keys_expanded, (B_val, n_kv * n_rep, L, head_d)
-                    )
-                else:
-                    keys_expanded = keys
-
-                # scores = QK^T / sqrt(d_k)
-                # attn.scale = 1/sqrt(head_dim), derived from the model's
-                # own geometry (head_dim set by architecture)
-                scores = b.matmul(
-                    queries,
-                    b.transpose(keys_expanded, (0, 1, 3, 2)),
-                ) * attn.scale
-
-                # Additive causal mask: 0 for allowed, -large for masked
-                # Structural constraint of autoregressive computation graph
-                causal = b.create_causal_mask(L)
-                scores = scores + causal
-
-                weights = b.softmax(scores, axis=-1)
-                b.eval(weights)
-                captured_attn[self._layer_idx] = weights[0]
-
-                return self._layer(x, mask=mask, cache=cache)
-
-            def __getattr__(self, name):
-                return getattr(self._layer, name)
-
-        original_layers = list(layers)
-        try:
-            for i in range(len(layers)):
-                layers[i] = _AttnCaptureWrapper(original_layers[i], i)
-            _logits = model(input_ids)
-            b.eval(_logits)
-        finally:
-            for i, layer in enumerate(original_layers):
-                layers[i] = layer
-
-        # Convert from [n_heads, L, L] arrays to list of [L, L] per head
-        result: dict[int, list[Any]] = {}
-        for layer_idx, weights in captured_attn.items():
-            n_heads = weights.shape[0]
-            result[layer_idx] = [weights[h] for h in range(n_heads)]
-
-        return result
+        Delegates to the Backend protocol implementation.
+        """
+        return self._backend.collect_attention_matrices_with_values(
+            model, tokenizer, text, token_ids
+        )
 
     def collect_logits(
         self,

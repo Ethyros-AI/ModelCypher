@@ -389,11 +389,17 @@ class _MLXBackendActivationMixin:
                 v = attn.v_proj(h_norm) if include_values else None
 
                 # Determine head counts and dimensions.
-                # Qwen2/Llama use "num_heads"; Qwen3.5 uses "num_attention_heads".
-                num_heads = getattr(attn, "num_heads", None) or getattr(
-                    attn, "num_attention_heads", None
+                # Qwen2/Llama use "num_heads"; Qwen3.5 uses "num_attention_heads";
+                # LFM2 uses "n_heads" / "n_kv_heads".
+                num_heads = (
+                    getattr(attn, "num_heads", None)
+                    or getattr(attn, "num_attention_heads", None)
+                    or getattr(attn, "n_heads", None)
                 )
-                num_kv_heads = getattr(attn, "num_key_value_heads", None)
+                num_kv_heads = (
+                    getattr(attn, "num_key_value_heads", None)
+                    or getattr(attn, "n_kv_heads", None)
+                )
                 if num_kv_heads is None:
                     num_kv_heads = num_heads
                 if num_heads is None:
@@ -413,16 +419,39 @@ class _MLXBackendActivationMixin:
 
                 # Reshape: [batch, seq, hidden] -> [batch, num_heads, seq, head_dim]
                 batch = q.shape[0]
-                q = q.reshape(batch, seq_len, num_heads, head_dim).transpose(
-                    0, 2, 1, 3
-                )
-                k = k.reshape(batch, seq_len, num_kv_heads, head_dim).transpose(
-                    0, 2, 1, 3
-                )
-                if v is not None:
-                    v = v.reshape(batch, seq_len, num_kv_heads, head_dim).transpose(
+
+                # Apply Q/K layer normalization if present (LFM2 attention).
+                # Order: project -> reshape -> layernorm -> transpose -> RoPE.
+                # Standard attention (Qwen, Llama) skips this (no layernorm attrs).
+                q_ln = getattr(attn, "q_layernorm", None)
+                k_ln = getattr(attn, "k_layernorm", None)
+                if q_ln is not None or k_ln is not None:
+                    # Reshape to [batch, seq, num_heads, head_dim] for layernorm
+                    q = q.reshape(batch, seq_len, num_heads, head_dim)
+                    k = k.reshape(batch, seq_len, num_kv_heads, head_dim)
+                    if q_ln is not None:
+                        q = q_ln(q)
+                    if k_ln is not None:
+                        k = k_ln(k)
+                    # Transpose to [batch, num_heads, seq, head_dim]
+                    q = q.transpose(0, 2, 1, 3)
+                    k = k.transpose(0, 2, 1, 3)
+                    if v is not None:
+                        v = v.reshape(batch, seq_len, num_kv_heads, head_dim).transpose(
+                            0, 2, 1, 3
+                        )
+                else:
+                    # Standard path: reshape + transpose directly
+                    q = q.reshape(batch, seq_len, num_heads, head_dim).transpose(
                         0, 2, 1, 3
                     )
+                    k = k.reshape(batch, seq_len, num_kv_heads, head_dim).transpose(
+                        0, 2, 1, 3
+                    )
+                    if v is not None:
+                        v = v.reshape(batch, seq_len, num_kv_heads, head_dim).transpose(
+                            0, 2, 1, 3
+                        )
 
                 # Apply RoPE (Rotary Position Embeddings) to Q and K.
                 # Every standard attention module (Qwen2, Qwen3.5, Llama, LFM2)

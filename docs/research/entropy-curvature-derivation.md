@@ -659,13 +659,35 @@ relationship.
    | Llama | +0.465 | 0.013 | 0.160 | +0.762 | 0.000 | 0.826 |
    | Qwen2.5 | -0.599 | 0.000 | 0.428 | -0.198 | 0.246 | 0.035 |
    | Qwen3 | +0.366 | 0.028 | 0.123 | +0.655 | 0.000 | 0.274 |
+   | Qwen3.5 | -0.302 | 0.152 | 0.376 | +0.053 | 0.806 | 0.000 |
 
-3. **The sign direction is family-dependent and not understood.** LFM2 and Qwen2.5 show
-   negative signs (higher H_logit → less perpendicular energy, less norm). Llama and Qwen3
-   show positive signs (higher H_logit → more of both). This sign flip must be explained
-   before any cross-family law can be formulated. The architectural variable controlling
-   this sign is unknown — it does not align cleanly with GQA (LFM2 GQA≈2 groups with
-   Qwen2.5 GQA=8, not with Llama GQA=3).
+   Qwen3.5 component-level: perp ρ=-0.302 (negative direction, p=0.152 — below significance
+   with only 6 decomposable full-attention layers out of 24 total). Norm ρ=+0.053 (no signal).
+   The f5 sign-law decomposition (all 24 layers) gives β_θ=-0.379 (p=7.2e-7), β_num=-0.340
+   (p=0.0015), β_den=+0.004 (p=0.958) — sign_match=True. Qwen3.5 is in the NEGATIVE group.
+
+3. **The sign direction is family-dependent. Hybrid architecture is a candidate discriminator.**
+
+   | Family | Sign | FFN ratio | Hybrid? | GQA |
+   |--------|------|----------:|---------|----:|
+   | LFM2-350M | NEG | 6.50 | Yes | ≈2 |
+   | Qwen2.5-3B | NEG | 5.38 | No | 8 |
+   | Qwen3.5-0.8B | NEG | 3.50 | Yes | 4 |
+   | Llama-3.2-3B | POS | 2.67 | No | 3 |
+   | Qwen3-8B | POS | 3.00 | No | 4 |
+
+   **FFN expansion ratio hypothesis: REFUTED.** Predicted Qwen3.5 (FFN=3.50) → POSITIVE
+   (like Llama 2.67, Qwen3 3.00). Observed: NEGATIVE. The sign split is NOT a simple FFN
+   ratio threshold.
+
+   **Hybrid architecture hypothesis: EXPLORATORY / MECHANISM_UNDERSPECIFIED.** Both hybrid
+   models (LFM2, Qwen3.5) are NEGATIVE — consistent (2/2). But Qwen2.5 is also NEGATIVE
+   and is pure transformer, so hybrid is sufficient-but-not-necessary for NEG sign. The
+   pure-transformer discriminator (Qwen2.5 NEG vs Llama/Qwen3 POS) is unresolved. Not
+   promotable to a law until the full sign can be predicted from architecture alone.
+
+   GQA does not explain it (LFM2 GQA≈2 groups with Qwen2.5 GQA=8, not with Llama GQA=3).
+   Qwen3.5 GQA=4 matches Qwen3 GQA=4 but they have opposite signs.
 
 4. **CR-EC-001 reframing.** The link is not "entropy → angular curvature" — it is
    "entropy → representation scale" AND "entropy → perpendicular update energy."
@@ -676,10 +698,11 @@ relationship.
    from incomplete cancellation.
 
 5. **Two open questions (ordered by priority):**
-   a. **What architectural variable controls the sign of component coupling?** The
-      LFM2/Qwen2.5 vs Llama/Qwen3 split does not align with GQA. Until the sign is
-      predicted from architecture, no universal sign law can be formulated. The pooled
-      negative sign is a composition effect, not a mechanism prediction.
+   a. **What distinguishes Qwen2.5 from Llama/Qwen3 among pure-transformer models?**
+      Hybrid → NEGATIVE is consistent (2/2: LFM2, Qwen3.5). Among pure transformers,
+      Qwen2.5 is NEGATIVE while Llama and Qwen3 are POSITIVE. FFN ratio does not explain
+      this (Qwen2.5=5.38, but Qwen3.5=3.50 is also NEG). Until the pure-transformer
+      sign is predicted from architecture, no universal sign law can be formulated.
    b. **Can the GQA → cancellation pattern be derived from key compression geometry?** The
       monotone relationship (n=3) needs both more families and a formal derivation connecting
       GQA ratio to the coupling between routing entropy and representation norm.

@@ -40,3 +40,35 @@ def test_collect_attention_matrices_with_values_exists():
     assert callable(
         getattr(_MLXBackendActivationMixin, "collect_attention_matrices_with_values")
     )
+
+
+def test_collect_attention_layer_results_handles_layernorm():
+    """Backend mixin handles q_layernorm/k_layernorm when present."""
+    import inspect
+    from modelcypher.backends._mlx_backend_activation_mixin import (
+        _MLXBackendActivationMixin,
+    )
+
+    source = inspect.getsource(
+        _MLXBackendActivationMixin._collect_attention_layer_results
+    )
+    assert "q_layernorm" in source, (
+        "_collect_attention_layer_results must handle q_layernorm for LFM2"
+    )
+    assert "k_layernorm" in source, (
+        "_collect_attention_layer_results must handle k_layernorm for LFM2"
+    )
+
+
+def test_adapter_delegates_to_backend():
+    """Adapter collect_attention_matrices delegates to backend, not custom code."""
+    import inspect
+    from modelcypher.adapters.activation_provider import ActivationProviderAdapter
+
+    source = inspect.getsource(ActivationProviderAdapter.collect_attention_matrices)
+    assert "_backend.collect_attention_matrices" in source, (
+        "Adapter must delegate to backend, not implement its own attention collection"
+    )
+    assert "_AttnCaptureWrapper" not in source, (
+        "Adapter must not have custom wrapper class — delegate to backend"
+    )

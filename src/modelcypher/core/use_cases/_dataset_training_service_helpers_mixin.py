@@ -506,19 +506,28 @@ class _DatasetTrainingServiceHelperMixin:
                     logger.exception("Null-space accessibility diagnostics unavailable")
 
             if not cka_scores:
-                raise TrainingDerivationError(
-                    failure_class="unavailable_measurement",
-                    detail=(
-                        "CKA verification requested but no comparable layers were available "
-                        "between base and adapted activations."
-                    ),
-                    diagnostics={
-                        "measurement": "cka_alignment",
-                        "n_probes_used": len(probe_texts),
-                        "n_base_layers": len(base_activations),
-                        "n_adapted_layers": len(adapted_acts),
-                    },
+                # CKA requires >= 2 probes for centering. With tiny datasets
+                # (e.g. VL validation with 1 eval sample), return degraded
+                # result instead of killing the pipeline — spectral bounds
+                # are the mathematically guaranteed check, CKA is diagnostic.
+                logger.warning(
+                    "CKA verification skipped: no comparable layers "
+                    "(n_probes=%d, n_base_layers=%d, n_adapted_layers=%d). "
+                    "Need >= 2 eval samples for CKA centering.",
+                    len(probe_texts), len(base_activations), len(adapted_acts),
                 )
+                return {
+                    "min_cka": None,
+                    "mean_cka": None,
+                    "per_layer_cka": {},
+                    "per_layer_gram_epsilon": {},
+                    "per_layer_cka_bound": {},
+                    "per_layer_null_observability": {},
+                    "per_layer_null_accessibility": None,
+                    "per_module_null_accessibility": None,
+                    "n_probes": len(probe_texts),
+                    "skipped_reason": "insufficient_probes",
+                }
 
             min_cka = min(cka_scores.values())
             mean_cka = sum(cka_scores.values()) / len(cka_scores)

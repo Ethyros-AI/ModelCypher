@@ -116,7 +116,25 @@ MODEL_REGISTRY = {
         "path": f"{MODELS_BASE}/mlx-community/Qwen2.5-3B-Instruct-bf16",
         "L": 36, "d": 2048,
         "architecture": "qwen2.5",
-        "gqa_ratio": 2,
+        "gqa_ratio": 8,
+    },
+    "Llama-3.2-3B": {
+        "path": f"{MODELS_BASE}/mlx-community/Llama-3.2-3B-Instruct-bf16",
+        "L": 28, "d": 3072,
+        "architecture": "llama",
+        "gqa_ratio": 3,
+    },
+    "Qwen3-8B": {
+        "path": f"{MODELS_BASE}/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16",
+        "L": 36, "d": 4096,
+        "architecture": "qwen3",
+        "gqa_ratio": 4,
+    },
+    "Mistral-7B": {
+        "path": f"{MODELS_BASE}/mlx-community/Mistral-7B-Instruct-v0.3-4bit",
+        "L": 32, "d": 4096,
+        "architecture": "mistral",
+        "gqa_ratio": 4,
     },
 }
 
@@ -743,7 +761,7 @@ def compute_measurements(data: dict, num_layers: int) -> list[dict]:
             layer_result["theta_mlp_post_core"] = theta_mlp
             layer_result["core_fraction"] = (
                 theta_core / (theta_core + theta_mlp)
-                if (theta_core + theta_mlp) > 1e-10 else 0.5
+                if (theta_core + theta_mlp) > 1e-10 else float("nan")
             )
             layer_result["G_mlp"] = (
                 theta_mlp / theta_core if theta_core > 1e-10 else float("nan")

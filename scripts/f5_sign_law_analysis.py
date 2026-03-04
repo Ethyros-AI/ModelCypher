@@ -37,6 +37,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# TODO(derivation): Replace this heuristic with a derived minimum decomposition
+# coverage criterion based on operator-count stability / estimator uncertainty.
+DECOMP_COVERAGE_MIN_HEURISTIC = 0.5
+
 
 def _residualize(y: np.ndarray, x: np.ndarray) -> np.ndarray:
     """OLS residual of y after removing linear effect of x."""
@@ -512,7 +516,8 @@ def _predict_mechanism(
         Layer update is carried primarily by the MLP path.
 
     Uses architecture identity for known-hybrid families (coverage-independent).
-    For unknown architectures, requires decomp_coverage >= 0.5 to trust
+    For unknown architectures, requires decomp_coverage >=
+    DECOMP_COVERAGE_MIN_HEURISTIC to trust
     core_operator_counts — low coverage makes operator counts unreliable.
     """
     # Known hybrid architectures predict competing_sublayers directly.
@@ -520,7 +525,7 @@ def _predict_mechanism(
     if architecture in KNOWN_HYBRID:
         return "competing_sublayers"
     # Low coverage → unreliable core_operator_counts.
-    if decomp_coverage < 0.5:
+    if decomp_coverage < DECOMP_COVERAGE_MIN_HEURISTIC:
         return "coverage_insufficient"
     # Standard prediction from dominant core operator in decomposition.
     # Use argmax over measured operator counts (no heuristic thresholds).
