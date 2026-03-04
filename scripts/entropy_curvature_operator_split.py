@@ -40,6 +40,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+from scipy import stats as sp_stats
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,7 +50,56 @@ logger = logging.getLogger(__name__)
 
 MODELS_BASE = os.environ.get("MC_MODELS_BASE", "/Volumes/CodeCypher/models")
 
+
+# ---------------------------------------------------------------------------
+# Detection floor utilities (Fisher-SE MDE + Bretherton autocorrelation)
+# ---------------------------------------------------------------------------
+
+
+def _residualize_ols(y: np.ndarray, x: np.ndarray) -> np.ndarray:
+    """OLS residual of y after removing linear effect of x."""
+    X = np.column_stack([np.ones(len(x)), x])
+    beta = np.linalg.lstsq(X, y, rcond=None)[0]
+    return y - X @ beta
+
+
+def _effective_df(residuals: np.ndarray) -> tuple[float, float]:
+    """Effective degrees of freedom under AR(1) autocorrelation.
+
+    Bretherton et al. (1999) Eq. 31: n_eff = n * (1 - rho_1) / (1 + rho_1).
+    """
+    n = len(residuals)
+    if n < 4:
+        return float(n), 0.0
+    r = np.asarray(residuals, dtype=float)
+    r_centered = r - np.mean(r)
+    denom = np.sum(r_centered ** 2)
+    if abs(denom) < 1e-15:
+        return float(n), 0.0
+    rho_1 = float(np.sum(r_centered[:-1] * r_centered[1:]) / denom)
+    rho_1_clamped = max(-0.99, min(0.99, rho_1))
+    n_eff = n * (1 - rho_1_clamped) / (1 + rho_1_clamped)
+    # Floor at 4 (minimum for partial correlation), ceiling at n (cannot
+    # have more independent observations than physical layers).
+    n_eff = max(4.0, min(float(n), n_eff))
+    return n_eff, rho_1
+
+
+def _minimum_detectable_effect(n_eff: float, n_controls: int = 1) -> float:
+    """Fisher-SE MDE: smallest |r| with SNR >= 1 at given effective df."""
+    df = n_eff - n_controls - 2
+    if df <= 0:
+        return 1.0
+    return float(np.tanh(1.0 / np.sqrt(df)))
+
+
 MODEL_REGISTRY = {
+    "LFM2-350M": {
+        "path": f"{MODELS_BASE}/mlx-community/LFM2-350M-MLX-bf16",
+        "L": 16, "d": 1024,
+        "architecture": "lfm2",
+        "gqa_ratio": 2,
+    },
     "LFM2-700M": {
         "path": f"{MODELS_BASE}/mlx-community/LFM2-700M-bf16",
         "L": 16, "d": 1280,
@@ -214,6 +264,29 @@ def _get_pre_norm(layer):
         if norm is not None:
             return norm
     return None
+
+
+def _call_with_fallback(module, x, mask=None):
+    """Call module with tolerant signature fallback."""
+    try:
+        if mask is not None:
+            return module(x, mask=mask)
+        return module(x)
+    except Exception:
+        pass
+    try:
+        if mask is not None:
+            return module(x, mask=mask, cache=None)
+        return module(x, cache=None)
+    except Exception:
+        pass
+    try:
+        if mask is not None:
+            return module(x, mask)
+        return module(x)
+    except Exception:
+        pass
+    return module(x)
 
 
 def _is_full_attention_layer(layer) -> bool:
@@ -468,8 +541,7 @@ def collect_all_data(
             if input_norm is not None and self_attn is not None and mlp is not None:
                 try:
                     normed = input_norm(h_in)
-                    attn_mask = numeric_mask
-                    attn_out = self_attn(normed, mask=attn_mask)
+                    attn_out = _call_with_fallback(self_attn, normed, mask=layer_mask)
                     if isinstance(attn_out, tuple):
                         attn_out = attn_out[0]
                     h_post_core = h_in + attn_out
@@ -492,13 +564,7 @@ def collect_all_data(
             elif input_norm is not None and conv is not None and mlp is not None:
                 try:
                     normed = input_norm(h_in)
-                    try:
-                        conv_out = conv(normed)
-                    except (TypeError, ValueError):
-                        try:
-                            conv_out = conv(normed, mask=layer_mask)
-                        except (TypeError, ValueError):
-                            conv_out = conv(normed, layer_mask)
+                    conv_out = _call_with_fallback(conv, normed, mask=layer_mask)
                     if isinstance(conv_out, tuple):
                         conv_out = conv_out[0]
                     h_post_core = h_in + conv_out
@@ -506,6 +572,26 @@ def collect_all_data(
 
                     normed2 = post_attn_norm(h_post_core) if post_attn_norm else h_post_core
                     mlp_out = mlp(normed2)
+                    h_out = h_post_core + mlp_out
+                except Exception:
+                    h_post_core = None
+                    core_operator = None
+                    try:
+                        h_out = layer(h_in, mask=layer_mask)
+                    except (TypeError, ValueError):
+                        try:
+                            h_out = layer(h_in, layer_mask)
+                        except (TypeError, ValueError):
+                            h_out = layer(h_in)
+            # 3) Identity-core decomposition (layers without explicit core operator)
+            elif input_norm is not None and mlp is not None:
+                try:
+                    h_post_core = h_in
+                    core_operator = "identity"
+                    normed2 = post_attn_norm(h_post_core) if post_attn_norm else h_post_core
+                    mlp_out = mlp(normed2)
+                    if isinstance(mlp_out, tuple):
+                        mlp_out = mlp_out[0]
                     h_out = h_post_core + mlp_out
                 except Exception:
                     h_post_core = None
@@ -554,7 +640,8 @@ def collect_all_data(
     # Build sublayer result
     sublayer_data = []
     for i in range(num_layers):
-        has_decomp = all(x is not None for x in layer_h_post_core[i])
+        valid_core_idx = [k for k, x in enumerate(layer_h_post_core[i]) if x is not None]
+        has_decomp = len(valid_core_idx) > 0
         valid_ent = [e for e in layer_attn_entropy[i] if e is not None]
         has_attn_entropy = len(valid_ent) > 0
         valid_ops = [op for op in layer_core_operator[i] if op is not None]
@@ -568,8 +655,23 @@ def collect_all_data(
         sublayer_data.append({
             "h_in": np.stack(layer_h_in[i]),
             "h_out": np.stack(layer_h_out[i]),
-            "h_post_core": np.stack(layer_h_post_core[i]) if has_decomp else None,
+            "h_in_core": (
+                np.stack([layer_h_in[i][k] for k in valid_core_idx])
+                if has_decomp else None
+            ),
+            "h_post_core": (
+                np.stack([layer_h_post_core[i][k] for k in valid_core_idx])
+                if has_decomp else None
+            ),
+            "h_out_core": (
+                np.stack([layer_h_out[i][k] for k in valid_core_idx])
+                if has_decomp else None
+            ),
             "has_decomposition": has_decomp,
+            "decomp_probe_fraction": (
+                float(len(valid_core_idx) / len(layer_h_in[i]))
+                if layer_h_in[i] else 0.0
+            ),
             "attn_entropy": float(np.mean(valid_ent)) if has_attn_entropy else None,
             "is_attention_layer": has_attn_entropy,
             "core_operator": core_operator,
@@ -622,12 +724,16 @@ def compute_measurements(data: dict, num_layers: int) -> list[dict]:
             "H_logit": logit_entropy[i],
             "H_attn": sd["attn_entropy"],
             "is_attention_layer": sd["is_attention_layer"],
+            "decomp_probe_fraction": sd.get("decomp_probe_fraction"),
         }
 
         if sd["has_decomposition"]:
+            h_in_core = sd.get("h_in_core", h_in)
             h_post_core = sd["h_post_core"]
-            core_angles = [angular_change(h_in[j], h_post_core[j]) for j in range(n_probes)]
-            mlp_angles = [angular_change(h_post_core[j], h_out[j]) for j in range(n_probes)]
+            h_out_core = sd.get("h_out_core", h_out)
+            n_core = h_post_core.shape[0]
+            core_angles = [angular_change(h_in_core[j], h_post_core[j]) for j in range(n_core)]
+            mlp_angles = [angular_change(h_post_core[j], h_out_core[j]) for j in range(n_core)]
 
             theta_core = float(np.mean(core_angles))
             theta_mlp = float(np.mean(mlp_angles))
@@ -866,23 +972,137 @@ def compute_falsifier_table(all_model_results: list[dict]) -> dict:
         "status": "PASS" if f3_lfm2_pass else ("FAIL" if f3_lfm2_pass is False else "INCONCLUSIVE"),
     }
 
-    # --- F5: Same sign of H_logit coefficient across families ---
-    f5_signs = {}
+    # --- F5: Depth-controlled sign consistency across families ---
+    # The raw Spearman sign of ρ(H_logit, θ_total) is confounded by depth:
+    # both H_logit and θ_total trend with depth, creating spurious positive
+    # correlation.  The depth-controlled partial correlation removes this
+    # confound and reveals the true coupling sign.
+    #
+    # Detection floor: Fisher-SE MDE with Bretherton (1999) autocorrelation
+    # correction. The MDE is the measurement resolution of the partial
+    # correlation estimator — not an imposed threshold.
+    f5_depth = {}
+    f5_raw = {}
     for mr in all_model_results:
         model_name = mr["model_name"]
         corrs = mr["correlations"]
-        r_lt = corrs.get("H_logit_vs_theta_total", {}).get("r", float("nan"))
-        if not math.isnan(r_lt):
-            f5_signs[model_name] = "positive" if r_lt > 0 else "negative"
-        else:
-            f5_signs[model_name] = "unknown"
+        dc = mr["depth_controlled"]
 
-    known_signs = [s for s in f5_signs.values() if s != "unknown"]
-    f5_same = len(set(known_signs)) <= 1 if known_signs else None
+        # Raw Spearman (for confound documentation, NOT the test)
+        r_raw = corrs.get("H_logit_vs_theta_total", {}).get("r", float("nan"))
+        p_raw = corrs.get("H_logit_vs_theta_total", {}).get("p", float("nan"))
+        f5_raw[model_name] = {
+            "r": r_raw,
+            "p": p_raw,
+            "sign": (
+                ("positive" if r_raw > 0 else "negative")
+                if not math.isnan(r_raw) else "unknown"
+            ),
+        }
+
+        # Depth-controlled partial Spearman
+        partial_r = dc.get("partial_H_logit_vs_theta_total_given_depth", float("nan"))
+        n = mr["num_layers"]
+
+        # Compute detection floor from per-layer measurements.
+        measurements = mr.get("measurements", [])
+        h_vals, th_vals, d_vals = [], [], []
+        for m_row in measurements:
+            h_v = m_row.get("H_logit")
+            th_v = m_row.get("theta_total")
+            d_v = m_row.get("depth_fraction")
+            if h_v is not None and th_v is not None and d_v is not None:
+                if math.isfinite(h_v) and math.isfinite(th_v) and math.isfinite(d_v):
+                    h_vals.append(h_v)
+                    th_vals.append(th_v)
+                    d_vals.append(d_v)
+
+        det_floor = {}
+        if len(h_vals) >= 6:
+            h_arr = np.array(h_vals)
+            th_arr = np.array(th_vals)
+            d_arr = np.array(d_vals)
+            h_resid = _residualize_ols(h_arr, d_arr)
+            th_resid = _residualize_ols(th_arr, d_arr)
+
+            n_eff_h, rho1_h = _effective_df(h_resid)
+            n_eff_th, rho1_th = _effective_df(th_resid)
+            if abs(rho1_h) >= abs(rho1_th):
+                n_eff_used, rho1_used = n_eff_h, rho1_h
+            else:
+                n_eff_used, rho1_used = n_eff_th, rho1_th
+
+            mde = _minimum_detectable_effect(n_eff_used)
+            obs_abs_r = abs(partial_r) if not math.isnan(partial_r) else 0.0
+            resolvable = obs_abs_r > mde
+
+            det_floor = {
+                "n_raw": len(h_vals),
+                "rho_1_used": rho1_used,
+                "n_eff": n_eff_used,
+                "mde": mde,
+                "observed_abs_r": obs_abs_r,
+                "resolvable": resolvable,
+            }
+
+        if not math.isnan(partial_r) and n >= 6:
+            # Approximate p-value: t = r*sqrt(n-3) / sqrt(1-r^2), df = n-3
+            df = n - 3
+            denom_sq = max(1e-15, 1 - partial_r ** 2)
+            t_stat = partial_r * math.sqrt(df) / math.sqrt(denom_sq)
+            p_val = float(2 * sp_stats.t.sf(abs(t_stat), df))
+            f5_depth[model_name] = {
+                "partial_r": partial_r,
+                "approx_p": p_val,
+                "n": n,
+                "sign": "positive" if partial_r > 0 else "negative",
+                "detection_floor": det_floor,
+            }
+        else:
+            f5_depth[model_name] = {
+                "partial_r": float("nan") if math.isnan(partial_r) else partial_r,
+                "approx_p": float("nan"),
+                "n": n,
+                "sign": "unknown",
+                "detection_floor": det_floor,
+            }
+
+    # --- Detection-floor-based sign consistency ---
+    resolvable_models = [
+        k for k, v in f5_depth.items()
+        if v.get("detection_floor", {}).get("resolvable", False)
+    ]
+    below_floor_models = [
+        k for k, v in f5_depth.items()
+        if not v.get("detection_floor", {}).get("resolvable", False)
+    ]
+    resolvable_signs = [
+        f5_depth[k]["sign"] for k in resolvable_models
+        if f5_depth[k]["sign"] != "unknown"
+    ]
+    all_signs = [v["sign"] for v in f5_depth.values() if v["sign"] != "unknown"]
+
+    if len(resolvable_signs) == 0:
+        f5_status = "BELOW_MEASUREMENT_RESOLUTION"
+    elif len(set(resolvable_signs)) == 1:
+        f5_status = "CONSISTENT_SIGN"
+    else:
+        f5_status = "SIGN_DISAGREEMENT"
+
     falsifiers["F5_same_sign_across_families"] = {
-        "per_model": f5_signs,
-        "all_same": f5_same,
-        "status": "PASS" if f5_same else ("FAIL" if f5_same is False else "INCONCLUSIVE"),
+        "test": "depth-controlled partial Spearman with Fisher-SE MDE detection floor",
+        "per_model_depth_controlled": f5_depth,
+        "per_model_raw_spearman": f5_raw,
+        "all_signs": all_signs,
+        "resolvable_models": resolvable_models,
+        "below_floor_models": below_floor_models,
+        "resolvable_signs": resolvable_signs,
+        "threshold_status": "DERIVED",
+        "threshold_derivation": (
+            "Fisher-SE MDE with Bretherton (1999) autocorrelation correction. "
+            "MDE = tanh(1/sqrt(n_eff - 3)), n_eff = n*(1-rho1)/(1+rho1)."
+        ),
+        "status": f5_status,
     }
 
     return falsifiers

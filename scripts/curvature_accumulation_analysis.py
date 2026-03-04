@@ -1127,6 +1127,200 @@ def run_falsifier_tests(all_results: list[dict], n_permutations: int = 500) -> d
             out["f4_permutation_logit"] = {"error": str(e), "passes": False}
 
     # -------------------------------------------------------------------------
+    # F4_logit_total: Permutation falsifier with H_logit -> theta_total^2
+    # The empirical r=0.507 chain uses theta_total, not theta_attn.
+    # f4_permutation_logit uses theta_attn^2 which excludes LFM2 and tests
+    # the wrong curvature variable. This variant uses the correct operator.
+    # -------------------------------------------------------------------------
+    pool_logit_total = []
+    for r in all_results:
+        family = r["architecture"]
+        n_layers = r["num_layers"]
+        for m in r["measurements"]:
+            h_logit = m.get("mean_h_logit")
+            theta_total = m.get("total_curvature")
+            if h_logit is None or theta_total is None:
+                continue
+            if not (np.isfinite(h_logit) and np.isfinite(theta_total)):
+                continue
+            pool_logit_total.append({
+                "H_logit": h_logit,
+                "theta_total_sq": theta_total ** 2,
+                "depth_frac": m["layer_idx"] / max(n_layers - 1, 1),
+                "family": family,
+                "model": r.get("model_name", ""),
+                "layer": m["layer_idx"],
+            })
+
+    n_plt = len(pool_logit_total)
+    if n_plt >= 10:
+        try:
+            H_lt = np.array([p["H_logit"] for p in pool_logit_total])
+            theta_tsq = np.array([p["theta_total_sq"] for p in pool_logit_total])
+            depth_lt = np.array([p["depth_frac"] for p in pool_logit_total])
+
+            H_lt_res = residualize(H_lt, depth_lt)
+            theta_tsq_res = residualize(theta_tsq, depth_lt)
+
+            real_stat_lt = abs(float(stats.spearmanr(H_lt_res, theta_tsq_res)[0]))
+            depth_strata_lt = np.digitize(
+                depth_lt, np.quantile(depth_lt, [0.2, 0.4, 0.6, 0.8])
+            )
+            rng_lt = np.random.default_rng(seed=2)
+            perm_stats_lt = []
+            for _ in range(n_permutations):
+                H_perm = H_lt_res.copy()
+                for stratum in range(5):
+                    idx = np.where(depth_strata_lt == stratum)[0]
+                    if len(idx) > 1:
+                        H_perm[idx] = rng_lt.permutation(H_perm[idx])
+                r_p, _ = stats.spearmanr(H_perm, theta_tsq_res)
+                perm_stats_lt.append(abs(float(r_p)))
+
+            perm_arr_lt = np.array(perm_stats_lt)
+            pct_in_null_lt = float(np.mean(perm_arr_lt <= real_stat_lt)) * 100
+            passes_f4_lt = pct_in_null_lt >= 95.0
+            out["f4_permutation_logit_total"] = {
+                "real_abs_spearman": real_stat_lt,
+                "null_mean": float(np.mean(perm_arr_lt)),
+                "null_95th_pct": float(np.percentile(perm_arr_lt, 95)),
+                "percentile_in_null": pct_in_null_lt,
+                "n_permutations": n_permutations,
+                "n_observations": n_plt,
+                "passes": passes_f4_lt,
+                "curvature_operator": "theta_total^2 (full layer)",
+                "entropy_operator": "H_logit (Entropy-Lens)",
+                "note": "Uses theta_total (not theta_attn) to match the empirical r=0.507 chain",
+            }
+        except Exception as e:
+            out["f4_permutation_logit_total"] = {"error": str(e), "passes": False}
+    else:
+        out["f4_permutation_logit_total"] = {
+            "status": f"INSUFFICIENT_DATA: need >=10 obs, have {n_plt}",
+            "passes": None,
+        }
+
+    # -------------------------------------------------------------------------
+    # F4 component tests: permutation null on θ² components separately.
+    # θ² = ||P_perp(h)δ||² / ||h||². F4 fails on θ² because numerator and
+    # denominator co-move with H_logit (same sign in 3/4 families), cancelling
+    # in the ratio. These tests check whether the individual components
+    # survive depth-stratified permutation.
+    # -------------------------------------------------------------------------
+    pool_components = []
+    for r in all_results:
+        family = r["architecture"]
+        n_layers = r["num_layers"]
+        for m in r["measurements"]:
+            h_logit = m.get("mean_h_logit")
+            log_perp = m.get("mean_log_perp_delta_sq")
+            log_h_in = m.get("mean_log_h_in_sq")
+            if h_logit is None or log_perp is None or log_h_in is None:
+                continue
+            if not (np.isfinite(h_logit) and np.isfinite(log_perp) and np.isfinite(log_h_in)):
+                continue
+            pool_components.append({
+                "H_logit": h_logit,
+                "log_perp_delta_sq": log_perp,
+                "log_h_in_sq": log_h_in,
+                "depth_frac": m["layer_idx"] / max(n_layers - 1, 1),
+                "family": family,
+            })
+
+    def _run_component_permutation(pool, target_key, seed, n_perms):
+        """Depth-stratified permutation test for H_logit -> target component."""
+        H = np.array([p["H_logit"] for p in pool])
+        Y = np.array([p[target_key] for p in pool])
+        depth = np.array([p["depth_frac"] for p in pool])
+        families = np.array([p["family"] for p in pool])
+
+        H_res = residualize(H, depth)
+        Y_res = residualize(Y, depth)
+
+        real_r = float(stats.spearmanr(H_res, Y_res)[0])
+        real_abs = abs(real_r)
+        depth_strata = np.digitize(depth, np.quantile(depth, [0.2, 0.4, 0.6, 0.8]))
+
+        rng = np.random.default_rng(seed=seed)
+        perm_stats = []
+        for _ in range(n_perms):
+            H_perm = H_res.copy()
+            for stratum in range(5):
+                idx = np.where(depth_strata == stratum)[0]
+                if len(idx) > 1:
+                    H_perm[idx] = rng.permutation(H_perm[idx])
+            r_p, _ = stats.spearmanr(H_perm, Y_res)
+            perm_stats.append(abs(float(r_p)))
+
+        perm_arr = np.array(perm_stats)
+        pct_in_null = float(np.mean(perm_arr <= real_abs)) * 100
+
+        # Per-family breakdown
+        per_family = {}
+        unique_families = sorted(set(families))
+        for fam in unique_families:
+            fam_idx = np.where(families == fam)[0]
+            if len(fam_idx) < 5:
+                continue
+            H_f = residualize(H[fam_idx], depth[fam_idx])
+            Y_f = residualize(Y[fam_idx], depth[fam_idx])
+            r_fam, p_fam = stats.spearmanr(H_f, Y_f)
+
+            # OLS slope and R²
+            slope_f, intercept_f, r_pearson_f, _, _ = stats.linregress(H_f, Y_f)
+            r_sq_f = r_pearson_f ** 2
+
+            per_family[fam] = {
+                "spearman_r": float(r_fam),
+                "spearman_p": float(p_fam),
+                "ols_slope": float(slope_f),
+                "r_squared": float(r_sq_f),
+                "n_layers": int(len(fam_idx)),
+            }
+
+        return {
+            "real_spearman": real_r,
+            "real_abs_spearman": real_abs,
+            "null_mean": float(np.mean(perm_arr)),
+            "null_95th_pct": float(np.percentile(perm_arr, 95)),
+            "percentile_in_null": pct_in_null,
+            "n_permutations": n_perms,
+            "n_observations": len(pool),
+            "passes": pct_in_null >= 95.0,
+            "per_family": per_family,
+        }
+
+    n_comp = len(pool_components)
+    if n_comp >= 10:
+        try:
+            # H_logit -> log||P_perp(h)δ||² (perpendicular update energy)
+            result_perp = _run_component_permutation(
+                pool_components, "log_perp_delta_sq", seed=3, n_perms=n_permutations
+            )
+            result_perp["entropy_operator"] = "H_logit (Entropy-Lens)"
+            result_perp["target_operator"] = "log||P_perp(h)delta||^2 (perpendicular update energy)"
+            out["f4_component_perp"] = result_perp
+        except Exception as e:
+            out["f4_component_perp"] = {"error": str(e), "passes": False}
+
+        try:
+            # H_logit -> log||h||² (representation norm)
+            result_norm = _run_component_permutation(
+                pool_components, "log_h_in_sq", seed=4, n_perms=n_permutations
+            )
+            result_norm["entropy_operator"] = "H_logit (Entropy-Lens)"
+            result_norm["target_operator"] = "log||h_in||^2 (representation norm)"
+            out["f4_component_norm"] = result_norm
+        except Exception as e:
+            out["f4_component_norm"] = {"error": str(e), "passes": False}
+    else:
+        for key in ("f4_component_perp", "f4_component_norm"):
+            out[key] = {
+                "status": f"INSUFFICIENT_DATA: need >=10 obs, have {n_comp}",
+                "passes": None,
+            }
+
+    # -------------------------------------------------------------------------
     # F5_logit: Family sign consistency with H_logit.
     # Same structure as F5 but using H_logit. Derivation prediction: same sign.
     # -------------------------------------------------------------------------
@@ -1306,6 +1500,15 @@ def run_falsifier_tests(all_results: list[dict], n_permutations: int = 500) -> d
                 b_d, _, _, p_d, _ = stats.linregress(Hf_r, Ydf_r)
                 b_p = b_n - b_d
 
+                # Spearman correlations (complement OLS betas)
+                rho_theta_f, p_rho_theta_f = stats.spearmanr(Hf_r, Ytf_r)
+                rho_num_f, p_rho_num_f = stats.spearmanr(Hf_r, Ynf_r)
+                rho_den_f, p_rho_den_f = stats.spearmanr(Hf_r, Ydf_r)
+
+                # R²(H_logit → ||h||² | depth): governs cancellation in θ² ratio
+                _, _, r_pearson_den_f, _, _ = stats.linregress(Hf_r, Ydf_r)
+                r_sq_norm_f = r_pearson_den_f ** 2
+
                 sign_match = np.sign(b_t) == np.sign(b_p) or abs(b_t) < 1e-12 or abs(b_p) < 1e-12
                 if not sign_match:
                     sign_mismatch_all += 1
@@ -1324,6 +1527,13 @@ def run_falsifier_tests(all_results: list[dict], n_permutations: int = 500) -> d
                     "beta_predicted_num_minus_den": float(b_p),
                     "sign_match": bool(sign_match),
                     "n_layers": len(fam_rows),
+                    "spearman_h_logit_theta": float(rho_theta_f),
+                    "spearman_p_theta": float(p_rho_theta_f),
+                    "spearman_h_logit_num": float(rho_num_f),
+                    "spearman_p_num": float(p_rho_num_f),
+                    "spearman_h_logit_den": float(rho_den_f),
+                    "spearman_p_den": float(p_rho_den_f),
+                    "r_sq_h_logit_norm": float(r_sq_norm_f),
                 }
 
             passes_sign_law = sign_mismatch == 0
@@ -1652,7 +1862,7 @@ def run_experiment(args: argparse.Namespace) -> None:
     logger.info(f"  F2: {falsifier_results.get('f2_status', 'unknown')}")
 
     logger.info("  -- H_logit falsifiers (Entropy-Lens / logit entropy) --")
-    for key in ("f1_sign_logit", "f4_permutation_logit", "f5_family_logit"):
+    for key in ("f1_sign_logit", "f4_permutation_logit", "f4_permutation_logit_total", "f4_component_perp", "f4_component_norm", "f5_family_logit"):
         f = falsifier_results.get(key, {})
         if not f:
             continue
@@ -1671,6 +1881,30 @@ def run_experiment(args: argparse.Namespace) -> None:
                     f"null 95th={f.get('null_95th_pct', 0):.3f}, "
                     f"pct={f.get('percentile_in_null', 0):.1f}%"
                 )
+            elif key == "f4_permutation_logit_total":
+                logger.info(
+                    f"  F4_logit_total [{status}]: real |r|={f.get('real_abs_spearman', 0):.3f}, "
+                    f"null 95th={f.get('null_95th_pct', 0):.3f}, "
+                    f"pct={f.get('percentile_in_null', 0):.1f}%, "
+                    f"n={f.get('n_observations', '?')} (theta_total^2)"
+                )
+            elif key in ("f4_component_perp", "f4_component_norm"):
+                target = "||P_perp δ||²" if "perp" in key else "||h||²"
+                logger.info(
+                    f"  {key} [{status}]: real r={f.get('real_spearman', 0):+.3f}, "
+                    f"|r|={f.get('real_abs_spearman', 0):.3f}, "
+                    f"null 95th={f.get('null_95th_pct', 0):.3f}, "
+                    f"pct={f.get('percentile_in_null', 0):.1f}%, "
+                    f"n={f.get('n_observations', '?')} ({target})"
+                )
+                pf = f.get("per_family", {})
+                for fam, fv in sorted(pf.items()):
+                    logger.info(
+                        f"    {fam}: r={fv.get('spearman_r', 0):+.3f} "
+                        f"p={fv.get('spearman_p', 1):.3f} "
+                        f"R²={fv.get('r_squared', 0):.3f} "
+                        f"n={fv.get('n_layers', '?')}"
+                    )
             elif key == "f5_family_logit":
                 logger.info(
                     f"  F5_logit [{status}]: sign_flips={f.get('n_significant_sign_flips', 0)}, "

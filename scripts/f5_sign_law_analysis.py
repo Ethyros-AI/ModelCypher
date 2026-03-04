@@ -47,6 +47,15 @@ def _residualize(y: np.ndarray, x: np.ndarray) -> np.ndarray:
     return y - X @ beta
 
 
+def _residualize_quadratic(y: np.ndarray, x: np.ndarray) -> np.ndarray:
+    """OLS residual of y after removing quadratic depth trend."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    X = np.column_stack([np.ones(len(x)), x, x * x])
+    beta = np.linalg.lstsq(X, y, rcond=None)[0]
+    return y - X @ beta
+
+
 def _depth_controlled_slope(y: np.ndarray, h: np.ndarray, depth: np.ndarray) -> dict:
     """Slope of y on h controlling depth via residualization."""
     y_res = _residualize(y, depth)
@@ -70,6 +79,185 @@ def _safe_spearman(x: np.ndarray, y: np.ndarray) -> dict:
         return {"rho": float("nan"), "p_value": float("nan"), "n": int(mask.sum())}
     rho, p = stats.spearmanr(x[mask], y[mask])
     return {"rho": float(rho), "p_value": float(p), "n": int(mask.sum())}
+
+
+def _effective_df(
+    residuals: np.ndarray, n_controls: int = 1,
+) -> tuple[float, float]:
+    """Effective degrees of freedom for partial correlation under autocorrelation.
+
+    Adjacent transformer layers share residual stream state, so n layers are
+    not n independent observations. This computes the effective sample size
+    using the Bretherton et al. (1999) AR(1) correction.
+
+    Args:
+        residuals: Depth-controlled residuals, ordered by layer index.
+        n_controls: Number of controlled variables (1 for depth).
+
+    Returns:
+        (n_eff, rho_1): Effective sample size and lag-1 autocorrelation.
+
+    Reference:
+        Bretherton, C.S. et al. (1999). "The effective number of spatial
+        degrees of freedom of a time-varying field." J. Climate 12:1990-2009.
+        Eq. (31) for AR(1) case.
+    """
+    n = len(residuals)
+    if n < 4:
+        return float(n), 0.0
+
+    r = np.asarray(residuals, dtype=float)
+    mean_r = np.mean(r)
+    r_centered = r - mean_r
+
+    denom = np.sum(r_centered ** 2)
+    if abs(denom) < 1e-15:
+        return float(n), 0.0
+
+    # Unbiased lag-1 autocorrelation.
+    numer = np.sum(r_centered[:-1] * r_centered[1:])
+    rho_1 = float(numer / denom)
+
+    # Bretherton et al. (1999) Eq. (31): n_eff = n * (1 - rho_1) / (1 + rho_1)
+    rho_1_clamped = max(-0.99, min(0.99, rho_1))
+    n_eff = n * (1 - rho_1_clamped) / (1 + rho_1_clamped)
+    # Floor at 4 (minimum for partial correlation), ceiling at n (cannot
+    # have more independent observations than physical layers).
+    n_eff = max(4.0, min(float(n), n_eff))
+
+    return n_eff, rho_1
+
+
+def _minimum_detectable_effect(n_eff: float, n_controls: int = 1) -> float:
+    """Minimum detectable partial correlation magnitude (Fisher-SE MDE).
+
+    The Fisher transform z = atanh(r) has asymptotic standard error
+    1/sqrt(df) where df = n_eff - n_controls - 2. The MDE is the smallest
+    |r| where the signal-to-noise ratio of the estimator equals 1:
+        |z| / SE >= 1  =>  |r| >= tanh(SE)
+
+    This is not an imposed threshold — it is the measurement resolution
+    of the partial correlation estimator at this effective sample size.
+
+    Args:
+        n_eff: Effective sample size (after autocorrelation correction).
+        n_controls: Number of controlled variables.
+
+    Returns:
+        MDE as |partial_r|. Returns 1.0 if df <= 0 (unresolvable).
+    """
+    df = n_eff - n_controls - 2
+    if df <= 0:
+        return 1.0
+    se_z = 1.0 / np.sqrt(df)
+    return float(np.tanh(se_z))
+
+
+def _depth_model_diagnostics(
+    h_total: np.ndarray, theta_total: np.ndarray, depth_total: np.ndarray,
+) -> dict:
+    """Compare linear vs quadratic depth control for residual autocorrelation.
+
+    Reports whether the H-theta coupling remains above the measurement floor
+    under each depth model. This is diagnostic only; it does not override the
+    primary detection-floor result.
+    """
+
+    def _run(mode: str) -> dict:
+        if mode == "linear":
+            h_res = _residualize(h_total, depth_total)
+            th_res = _residualize(theta_total, depth_total)
+            n_controls = 1
+        else:
+            h_res = _residualize_quadratic(h_total, depth_total)
+            th_res = _residualize_quadratic(theta_total, depth_total)
+            n_controls = 2
+
+        pearson_r = float(np.corrcoef(h_res, th_res)[0, 1])
+        spearman = _safe_spearman(h_res, th_res)
+
+        n_eff_h, rho1_h = _effective_df(h_res, n_controls=n_controls)
+        n_eff_th, rho1_th = _effective_df(th_res, n_controls=n_controls)
+        if abs(rho1_h) >= abs(rho1_th):
+            n_eff, rho1_used = n_eff_h, rho1_h
+            rho1_source = "H_logit_residuals"
+        else:
+            n_eff, rho1_used = n_eff_th, rho1_th
+            rho1_source = "theta_total_residuals"
+
+        mde = _minimum_detectable_effect(n_eff, n_controls=n_controls)
+        return {
+            "pearson_r": pearson_r,
+            "spearman_r": spearman["rho"],
+            "spearman_p": spearman["p_value"],
+            "rho_1_h": rho1_h,
+            "rho_1_theta": rho1_th,
+            "rho_1_used": rho1_used,
+            "rho_1_source": rho1_source,
+            "n_eff": n_eff,
+            "n_controls": n_controls,
+            "mde": mde,
+            "resolvable": abs(pearson_r) > mde,
+        }
+
+    return {
+        "linear": _run("linear"),
+        "quadratic": _run("quadratic"),
+    }
+
+
+def _permutation_null_diagnostic(
+    h_resid: np.ndarray,
+    theta_resid: np.ndarray,
+    n_permutations: int = 2000,
+    seed: int = 42,
+) -> dict:
+    """Permutation null diagnostic for observed |Spearman r|.
+
+    Permutes h_resid (breaking H-theta association while preserving marginal
+    distributions) and computes the distribution of |Spearman r| under the
+    null. Reports the fraction of null draws that exceed the observed |r|
+    (empirical p-value) and summary statistics of the null distribution.
+
+    This is a diagnostic — the Fisher-SE MDE is the primary derived threshold.
+    The permutation validates that the Fisher MDE is consistent with the
+    empirical null structure.
+
+    Args:
+        h_resid: Depth-residualized H_logit values (layer-ordered).
+        theta_resid: Depth-residualized theta values (layer-ordered).
+        n_permutations: Number of permutations.
+        seed: RNG seed for reproducibility.
+
+    Returns:
+        Dict with null_mean, null_max, observed_abs_r, exceedance_fraction.
+    """
+    n = len(h_resid)
+    if n < 4:
+        return {"null_mean": float("nan"), "null_max": float("nan"),
+                "exceedance_fraction": float("nan")}
+
+    # Use Pearson r to match the Fisher-SE MDE statistic (OLS r_value).
+    obs_r = float(np.corrcoef(h_resid, theta_resid)[0, 1])
+    obs_abs_r = abs(obs_r)
+
+    rng = np.random.default_rng(seed=seed)
+    null_abs_r = np.empty(n_permutations)
+
+    for i in range(n_permutations):
+        h_perm = rng.permutation(h_resid)
+        r_perm = float(np.corrcoef(h_perm, theta_resid)[0, 1])
+        null_abs_r[i] = abs(r_perm)
+
+    exceedance = float(np.mean(null_abs_r >= obs_abs_r))
+
+    return {
+        "null_mean": float(np.mean(null_abs_r)),
+        "null_max": float(np.max(null_abs_r)),
+        "observed_abs_r": obs_abs_r,
+        "exceedance_fraction": exceedance,
+        "n_permutations": n_permutations,
+    }
 
 
 def _sign_of(x: float) -> str:
@@ -177,6 +365,29 @@ def analyze_model(model_result: dict) -> dict:
     beta_core = _depth_controlled_slope(theta_core, h, depth)
     beta_m = _depth_controlled_slope(theta_m, h, depth)
 
+    # --- Detection floor (Fisher-SE MDE + Bretherton autocorrelation) ---
+    # Compute depth-residualized series for autocorrelation analysis.
+    h_resid_all = _residualize(h_total, depth_total)
+    theta_resid_all = _residualize(theta_t_total, depth_total)
+
+    # Use the more conservative (higher |rho_1|) of the two residual series.
+    n_eff_h, rho1_h = _effective_df(h_resid_all)
+    n_eff_th, rho1_th = _effective_df(theta_resid_all)
+    if abs(rho1_h) >= abs(rho1_th):
+        n_eff, rho1_used = n_eff_h, rho1_h
+        rho1_source = "H_logit_residuals"
+    else:
+        n_eff, rho1_used = n_eff_th, rho1_th
+        rho1_source = "theta_total_residuals"
+
+    mde = _minimum_detectable_effect(n_eff)
+    perm_diag = _permutation_null_diagnostic(h_resid_all, theta_resid_all)
+    depth_model_diag = _depth_model_diagnostics(h_total, theta_t_total, depth_total)
+
+    # The OLS r_value from beta_t_all is the depth-controlled correlation.
+    obs_r = abs(beta_t_all["r_value"])
+    resolvable = obs_r > mde
+
     beta_cross_angle = beta_t["slope"] - beta_core["slope"] - beta_m["slope"]
 
     # Depth-controlled slopes in squared-angle proxy space with exact closure.
@@ -267,7 +478,62 @@ def analyze_model(model_result: dict) -> dict:
         "core_operator_counts": {
             op: core_ops.count(op) for op in sorted(set(core_ops))
         },
+        "detection_floor": {
+            "n_raw": len(rows_total),
+            "rho_1_h": rho1_h,
+            "rho_1_theta": rho1_th,
+            "rho_1_used": rho1_used,
+            "rho_1_source": rho1_source,
+            "n_eff": n_eff,
+            "mde": mde,
+            "observed_abs_r": obs_r,
+            "resolvable": resolvable,
+            "permutation_diagnostic": perm_diag,
+            "derivation": (
+                "Fisher-SE MDE with Bretherton (1999) autocorrelation correction. "
+                "MDE = tanh(1/sqrt(n_eff - 3)), n_eff = n*(1-rho1)/(1+rho1). "
+                "Permutation null as diagnostic validation (not threshold)."
+            ),
+        },
+        "depth_model_diagnostics": depth_model_diag,
     }
+
+
+def _predict_mechanism(
+    architecture: str, core_operator_counts: dict, decomp_coverage: float = 1.0,
+) -> str:
+    """Pre-registered mechanism prediction from architecture type.
+
+    Hybrid architectures (conv+attn) → competing_sublayers:
+        MLP opposes core signal because core handles specialized function.
+    Pure attention → core_pass_through:
+        MLP extends/amplifies attention signal without opposition.
+    Identity-core dominant (no explicit attention/conv core) → mlp_dominant:
+        Layer update is carried primarily by the MLP path.
+
+    Uses architecture identity for known-hybrid families (coverage-independent).
+    For unknown architectures, requires decomp_coverage >= 0.5 to trust
+    core_operator_counts — low coverage makes operator counts unreliable.
+    """
+    # Known hybrid architectures predict competing_sublayers directly.
+    KNOWN_HYBRID = {"lfm2"}
+    if architecture in KNOWN_HYBRID:
+        return "competing_sublayers"
+    # Low coverage → unreliable core_operator_counts.
+    if decomp_coverage < 0.5:
+        return "coverage_insufficient"
+    # Standard prediction from dominant core operator in decomposition.
+    # Use argmax over measured operator counts (no heuristic thresholds).
+    if core_operator_counts:
+        dominant_core = max(core_operator_counts.items(), key=lambda kv: kv[1])[0]
+    else:
+        dominant_core = "unknown"
+
+    if dominant_core == "conv":
+        return "competing_sublayers"
+    if dominant_core == "identity":
+        return "mlp_dominant"
+    return "core_pass_through"
 
 
 def build_cross_model_summary(per_model: list[dict]) -> dict:
@@ -303,12 +569,16 @@ def build_cross_model_summary(per_model: list[dict]) -> dict:
         bt = m["theta_space"]["raw_spearman"]["beta_total_all_layers"]["rho"]
         if ba <= 0:
             continue
-        # Candidate expectation: negative bm suppresses/attenuates total effect.
-        # This check is directional, not a full theorem.
         if bm < 0:
             gate_checks.append(abs(bt) <= abs(ba))
         else:
             gate_checks.append(bt >= 0)
+
+    # --- Formal sign law test (depth-controlled) ---
+    # Prediction: depth-controlled β_total is negative for all architectures.
+    # At fixed depth, higher logit entropy (more diffuse posterior) → less
+    # angular change (model makes smaller geometric moves when uncertain).
+    sign_law = _build_sign_law_test(ok_models)
 
     return {
         "models": rows,
@@ -322,6 +592,109 @@ def build_cross_model_summary(per_model: list[dict]) -> dict:
             "When beta_core > 0, sign/magnitude of beta_mlp acts as suppression gate; "
             "negative beta_mlp yields competition, non-negative beta_mlp allows core pass-through."
         ),
+        "sign_law_test": sign_law,
+    }
+
+
+def _build_sign_law_test(ok_models: list[dict]) -> dict:
+    """Depth-controlled sign law test with derived detection floor.
+
+    Uses Fisher-SE minimum detectable effect (MDE) corrected for layer
+    autocorrelation (Bretherton 1999) to classify each model's depth-controlled
+    correlation as resolvable or below measurement resolution. No heuristic
+    thresholds — the MDE is the measurement resolution of the partial
+    correlation estimator at each model's effective sample size.
+
+    Mechanism predictions (coverage-gated) are independent of detection floor.
+    """
+    per_model = {}
+    mechanism_predictions = {}
+
+    for m in ok_models:
+        name = m["model_name"]
+        t_dc = m["theta_space"]["depth_controlled"]
+        beta_all = t_dc["beta_total_all_layers"]
+        beta_core = t_dc["beta_core"]
+        beta_mlp = t_dc["beta_mlp"]
+        core_ops = m.get("core_operator_counts", {})
+        decomp_cov = m.get("decomp_coverage_fraction", 1.0)
+        det_floor = m.get("detection_floor", {})
+
+        slope = beta_all["slope"]
+        p_val = beta_all["p_value"]
+        r_val = beta_all.get("r_value", float("nan"))
+
+        per_model[name] = {
+            "beta_total": slope,
+            "p_value": p_val,
+            "r_value": r_val,
+            "sign": _sign_of(slope),
+            "beta_core": beta_core["slope"],
+            "beta_core_p": beta_core["p_value"],
+            "beta_mlp": beta_mlp["slope"],
+            "beta_mlp_p": beta_mlp["p_value"],
+            "detection_floor": det_floor,
+            "depth_model_diagnostics": m.get("depth_model_diagnostics", {}),
+        }
+
+        # Mechanism prediction (coverage-gated)
+        predicted = _predict_mechanism(m["architecture"], core_ops, decomp_cov)
+        observed = m["mechanism_classification"]
+        mechanism_predictions[name] = {
+            "predicted": predicted,
+            "observed": observed,
+            "match": predicted == observed,
+        }
+
+    # --- Detection-floor-based sign consistency ---
+    resolvable_models = {
+        k: v for k, v in per_model.items()
+        if v.get("detection_floor", {}).get("resolvable", False)
+    }
+    below_floor_models = {
+        k: v for k, v in per_model.items()
+        if not v.get("detection_floor", {}).get("resolvable", False)
+    }
+
+    resolvable_signs = [
+        v["sign"] for v in resolvable_models.values() if v["sign"] != "unknown"
+    ]
+    all_signs = [v["sign"] for v in per_model.values() if v["sign"] != "unknown"]
+
+    if len(resolvable_signs) == 0:
+        status = "BELOW_MEASUREMENT_RESOLUTION"
+    elif len(set(resolvable_signs)) == 1:
+        status = "CONSISTENT_SIGN"
+    else:
+        status = "SIGN_DISAGREEMENT"
+
+    # Mechanism prediction accuracy (exclude coverage_insufficient from match count)
+    testable = {k: v for k, v in mechanism_predictions.items()
+                if v["predicted"] != "coverage_insufficient"}
+    mech_matches = sum(1 for v in testable.values() if v["match"])
+
+    return {
+        "prediction": (
+            "Depth-controlled OLS r_value sign consistency among models whose "
+            "|r| exceeds the Fisher-SE MDE (Bretherton autocorrelation-corrected)."
+        ),
+        "per_model": per_model,
+        "n_total": len(per_model),
+        "n_resolvable": len(resolvable_models),
+        "n_below_floor": len(below_floor_models),
+        "resolvable_models": list(resolvable_models.keys()),
+        "below_floor_models": list(below_floor_models.keys()),
+        "resolvable_signs": resolvable_signs,
+        "all_signs": all_signs,
+        "threshold_status": "DERIVED",
+        "threshold_derivation": (
+            "Fisher-SE MDE with Bretherton (1999) autocorrelation correction. "
+            "MDE = tanh(1/sqrt(n_eff - 3)), n_eff = n*(1-rho1)/(1+rho1). "
+            "Permutation null (2000 perms, Pearson r) as diagnostic validation (not threshold)."
+        ),
+        "status": status,
+        "mechanism_predictions": mechanism_predictions,
+        "mechanism_accuracy": f"{mech_matches}/{len(testable)}" if testable else "0/0",
     }
 
 
@@ -352,6 +725,103 @@ def render_report(summary: dict, out_path: Path) -> None:
         summary["candidate_law"],
         "",
     ])
+
+    # Sign law test results
+    slt = summary.get("sign_law_test", {})
+    if slt:
+        lines.extend([
+            "## Formal Sign Law Test (Depth-Controlled)",
+            "",
+            f"**Prediction:** {slt.get('prediction', 'N/A')}",
+            "",
+            f"**Status:** {slt.get('status', '?')} "
+            f"(threshold: {slt.get('threshold_status', 'unknown')})",
+            "",
+        ])
+
+        # Detection floor table
+        lines.extend([
+            "### Detection Floor (Fisher-SE MDE + Bretherton autocorrelation)",
+            "",
+            "| Model | n | rho_1 | n_eff | MDE | |r| | Resolvable | Perm exceedance |",
+            "|---|---:|---:|---:|---:|---:|---|---:|",
+        ])
+        for name, v in slt.get("per_model", {}).items():
+            df = v.get("detection_floor", {})
+            if df:
+                perm = df.get("permutation_diagnostic", {})
+                exc = perm.get("exceedance_fraction", float("nan"))
+                exc_str = f"{exc:.3f}" if not math.isnan(exc) else "N/A"
+                lines.append(
+                    f"| {name} | {df.get('n_raw', '?')} | "
+                    f"{df.get('rho_1_used', 0):.3f} | "
+                    f"{df.get('n_eff', 0):.1f} | "
+                    f"{df.get('mde', 0):.3f} | "
+                    f"{df.get('observed_abs_r', 0):.3f} | "
+                    f"{'Yes' if df.get('resolvable') else 'No'} | "
+                    f"{exc_str} |"
+                )
+
+        lines.extend([
+            "",
+            f"Resolvable: {slt.get('n_resolvable', 0)}/{slt.get('n_total', 0)} models",
+            f"Below floor: {', '.join(slt.get('below_floor_models', [])) or 'none'}",
+            "",
+        ])
+
+        # Depth model diagnostics (linear vs quadratic residualization)
+        lines.extend([
+            "### Depth Model Diagnostics",
+            "",
+            "| Model | Mode | rho_1 | n_eff | MDE | Pearson r | Spearman r | Spearman p | Resolvable |",
+            "|---|---|---:|---:|---:|---:|---:|---:|---|",
+        ])
+        for name, v in slt.get("per_model", {}).items():
+            dm = v.get("depth_model_diagnostics", {})
+            for mode in ("linear", "quadratic"):
+                row = dm.get(mode, {})
+                if not row:
+                    continue
+                lines.append(
+                    f"| {name} | {mode} | "
+                    f"{row.get('rho_1_used', 0):.3f} | "
+                    f"{row.get('n_eff', 0):.1f} | "
+                    f"{row.get('mde', 0):.3f} | "
+                    f"{row.get('pearson_r', 0):+.3f} | "
+                    f"{row.get('spearman_r', 0):+.3f} | "
+                    f"{row.get('spearman_p', 1):.3f} | "
+                    f"{'Yes' if row.get('resolvable') else 'No'} |"
+                )
+        lines.extend([""])
+
+        # Per-model slopes
+        lines.extend([
+            "### Depth-Controlled Slopes",
+            "",
+            "| Model | beta_total | p-value | Sign | Resolvable |",
+            "|---|---:|---:|---|---|",
+        ])
+        for name, v in slt.get("per_model", {}).items():
+            resolvable = v.get("detection_floor", {}).get("resolvable", False)
+            lines.append(
+                f"| {name} | {v['beta_total']:.4f} | {v['p_value']:.4f} | "
+                f"{v.get('sign', 'unknown')} | "
+                f"{'Yes' if resolvable else 'No'} |"
+            )
+        lines.extend([
+            "",
+            "### Mechanism Predictions",
+            "",
+            "| Model | Predicted | Observed | Match |",
+            "|---|---|---|---|",
+        ])
+        for name, v in slt.get("mechanism_predictions", {}).items():
+            lines.append(
+                f"| {name} | {v['predicted']} | {v['observed']} | "
+                f"{'Yes' if v['match'] else '**NO**'} |"
+            )
+        lines.append("")
+
     out_path.write_text("\n".join(lines) + "\n")
 
 

@@ -186,8 +186,11 @@ class Qwen35VisionEncoder(nn.Module):
         """
         x = self.patch_embed(pixel_values)  # [N, 768]
         x = x + self.pos_embed(position_ids)  # [N, 768]
+        # ViT attention expects (B, L, D); add batch dim, process, remove.
+        x = mx.expand_dims(x, axis=0)  # [1, N, 768]
         for block in self.blocks:
             x = block(x)
+        x = x.squeeze(0)  # [N, 768]
         return self.merger(x)  # [N/4, out_hidden_size]
 
 

@@ -364,13 +364,45 @@ class _MLXTrainingAdapterAdapterIOMixin:
         """
         from mlx_lm.tuner.trainer import default_loss, iterate_batches
 
+        from modelcypher.backends.mlx_training_adapter_core import (
+            iterate_vl_batches,
+            make_vl_loss,
+        )
+
+        is_vl = (
+            isinstance(eval_dataset, list)
+            and len(eval_dataset) > 0
+            and isinstance(eval_dataset[0], dict)
+            and "tokens" in eval_dataset[0]
+            and "pixel_values" in eval_dataset[0]
+        )
+
+        if is_vl:
+            vl_loss_fn = make_vl_loss(
+                image_token_id=eval_dataset[0].get("image_token_id"),
+                video_token_id=eval_dataset[0].get("video_token_id"),
+            )
+            batch_iter = iterate_vl_batches(
+                eval_dataset, batch_size, seq_length, loop=False,
+            )
+        else:
+            batch_iter = iterate_batches(
+                eval_dataset, batch_size, seq_length, loop=False,
+            )
+
         per_batch: list[float] = []
-        for batch, lengths in iterate_batches(
-            eval_dataset, batch_size, seq_length, loop=False,
-        ):
+        for batch_item in batch_iter:
             if len(per_batch) >= n_batches:
                 break
-            loss, ntoks = default_loss(model, batch, lengths)
+            if is_vl:
+                batch, lengths, pixel_values_batch, position_ids_batch = batch_item
+                loss, ntoks = vl_loss_fn(
+                    model, batch, lengths,
+                    pixel_values_batch, position_ids_batch,
+                )
+            else:
+                batch, lengths = batch_item
+                loss, ntoks = default_loss(model, batch, lengths)
             mx.eval(loss, ntoks)
             n = float(ntoks)
             if n > 0:

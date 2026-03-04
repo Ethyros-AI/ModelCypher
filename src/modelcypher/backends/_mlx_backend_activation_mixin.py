@@ -40,6 +40,18 @@ class _MLXBackendActivationMixin:
         if _has_both(inner):
             return inner
 
+        # Qwen3.5-VL: model.model.language_model(.model) has embed_tokens + layers
+        if inner is not None:
+            inner_lm = getattr(inner, "language_model", None)
+            if inner_lm is not None:
+                if _has_both(inner_lm):
+                    return inner_lm
+                inner_lm_inner = getattr(inner_lm, "model", None)
+                if _has_both(inner_lm_inner):
+                    return inner_lm_inner
+                if hasattr(inner_lm, "layers"):
+                    return inner_lm
+
         lm = getattr(model, "language_model", None)
         if lm is not None:
             if _has_both(lm):
@@ -320,6 +332,203 @@ class _MLXBackendActivationMixin:
             h = result[0] if isinstance(result, tuple) else result
 
         return q_activations, k_activations, v_activations
+
+    def _collect_attention_layer_results(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+        include_values: bool = False,
+    ) -> list[tuple[int, list[Any], list[Any] | None]]:
+        """Shared core for attention matrix extraction.
+
+        Runs a full forward pass, extracting per-head attention weights (and
+        optionally value vectors) from each attention layer.  Conv/non-attention
+        layers are skipped.
+
+        Args:
+            model: The loaded model.
+            tokenizer: The tokenizer for encoding text.
+            text: The text input to process.
+            token_ids: Optional pre-tokenized input.
+            include_values: If True, also extract per-head V vectors.
+
+        Returns:
+            List of (layer_idx, head_weights_list, head_values_list_or_none)
+            where head_weights_list is list of [seq, seq] arrays,
+            and head_values_list is list of [seq, head_dim] arrays (or None
+            if include_values is False).
+        """
+        if token_ids is None:
+            token_ids = tokenizer.encode(text)
+        input_ids = self.mx.array([token_ids])
+
+        results: list[tuple[int, list[Any], list[Any] | None]] = []
+        base = self._resolve_model_base(model)
+        h = base.embed_tokens(input_ids)
+        seq_len = input_ids.shape[1]
+
+        for layer_idx, layer in enumerate(base.layers):
+            # Detect attention module
+            attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
+            if attn is not None and hasattr(attn, "q_proj"):
+                # Get pre-attention norm
+                if hasattr(layer, "input_layernorm"):
+                    h_norm = layer.input_layernorm(h)
+                elif hasattr(layer, "ln_1"):
+                    h_norm = layer.ln_1(h)
+                elif hasattr(layer, "operator_norm"):
+                    h_norm = layer.operator_norm(h)
+                else:
+                    h_norm = h
+
+                # Project Q and K (and V if requested)
+                q = attn.q_proj(h_norm)
+                k = attn.k_proj(h_norm)
+                v = attn.v_proj(h_norm) if include_values else None
+
+                # Determine head counts and dimensions.
+                # Qwen2/Llama use "num_heads"; Qwen3.5 uses "num_attention_heads".
+                num_heads = getattr(attn, "num_heads", None) or getattr(
+                    attn, "num_attention_heads", None
+                )
+                num_kv_heads = getattr(attn, "num_key_value_heads", None)
+                if num_kv_heads is None:
+                    num_kv_heads = num_heads
+                if num_heads is None:
+                    # Both num_heads and num_attention_heads are missing, and
+                    # num_kv_heads was None too (set to num_heads above which is
+                    # None).  Cannot determine head configuration.
+                    q_dim = q.shape[-1]
+                    k_dim = k.shape[-1]
+                    raise ValueError(
+                        f"Cannot determine head configuration for attention at "
+                        f"layer {layer_idx}: no num_heads or num_attention_heads "
+                        f"attribute found, and num_kv_heads is also unknown. "
+                        f"q_proj output dim={q_dim}, k_proj output dim={k_dim}."
+                    )
+                else:
+                    head_dim = q.shape[-1] // num_heads
+
+                # Reshape: [batch, seq, hidden] -> [batch, num_heads, seq, head_dim]
+                batch = q.shape[0]
+                q = q.reshape(batch, seq_len, num_heads, head_dim).transpose(
+                    0, 2, 1, 3
+                )
+                k = k.reshape(batch, seq_len, num_kv_heads, head_dim).transpose(
+                    0, 2, 1, 3
+                )
+                if v is not None:
+                    v = v.reshape(batch, seq_len, num_kv_heads, head_dim).transpose(
+                        0, 2, 1, 3
+                    )
+
+                # Apply RoPE (Rotary Position Embeddings) to Q and K.
+                # Every standard attention module (Qwen2, Qwen3.5, Llama, LFM2)
+                # stores RoPE as attn.rope and applies it after reshape, before
+                # computing scores. Without RoPE the positional structure of
+                # attention is wrong and downstream SVD results are meaningless.
+                rope_fn = getattr(attn, "rope", None)
+                if rope_fn is not None:
+                    q = rope_fn(q)
+                    k = rope_fn(k)
+
+                # GQA expansion: repeat K (and V) heads to match Q head count
+                if num_kv_heads < num_heads:
+                    repeats = num_heads // num_kv_heads
+                    k = self.mx.repeat(k, repeats, axis=1)
+                    if v is not None:
+                        v = self.mx.repeat(v, repeats, axis=1)
+
+                # Compute attention scores: Q @ K^T / sqrt(head_dim)
+                scale = head_dim ** -0.5
+                scores = (q @ k.transpose(0, 1, 3, 2)) * scale
+
+                # Causal mask: upper triangle = -inf
+                causal_mask = self.mx.tril(self.mx.ones((seq_len, seq_len)))
+                neg_inf = self.mx.array(float("-inf"))
+                scores = self.mx.where(
+                    causal_mask[None, None, :, :], scores, neg_inf
+                )
+
+                # Softmax -> attention weights [batch, num_heads, seq, seq]
+                weights = self.mx.softmax(scores, axis=-1)
+                if v is not None:
+                    self.mx.eval(weights, v)
+                else:
+                    self.mx.eval(weights)
+
+                # Split into per-head [seq, seq] matrices (and value vectors)
+                head_weights: list[Any] = []
+                head_values: list[Any] | None = [] if include_values else None
+                for head_i in range(num_heads):
+                    head_weights.append(weights[0, head_i, :, :])
+                    if head_values is not None:
+                        head_values.append(v[0, head_i, :, :])
+                results.append((layer_idx, head_weights, head_values))
+
+            # Forward through layer so subsequent layers get correct hidden
+            # states.  We pass mask="causal" so the layer's internal attention
+            # uses a proper causal mask, consistent with the explicit causal
+            # mask applied to the attention matrices we extract above.
+            # (mask=None in mlx-lm's mx.fast.scaled_dot_product_attention
+            # means *no mask*, i.e. unmasked attention — not causal.)
+            result = layer(h, mask="causal", cache=None)
+            h = result[0] if isinstance(result, tuple) else result
+
+        return results
+
+    def collect_attention_matrices(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> dict[int, list[Any]]:
+        """Collect per-layer, per-head attention weight matrices.
+
+        Extracts the softmax(QK^T / sqrt(d_k)) attention weight matrices
+        from each attention layer. Conv/non-attention layers are skipped.
+
+        Args:
+            model: The loaded model.
+            tokenizer: The tokenizer for encoding text.
+            text: The text input to process.
+            token_ids: Optional pre-tokenized input.
+
+        Returns:
+            Dict mapping layer_idx -> list of [seq_len, seq_len]
+            arrays, one per attention head.
+        """
+        layer_results = self._collect_attention_layer_results(
+            model, tokenizer, text, token_ids, include_values=False
+        )
+        return {layer_idx: weights for layer_idx, weights, _ in layer_results}
+
+    def collect_attention_matrices_with_values(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> tuple[dict[int, list[Any]], dict[int, list[Any]]]:
+        """Like collect_attention_matrices but also returns per-head V vectors.
+
+        Returns:
+            (attention_matrices, value_vectors) where:
+            - attention_matrices: dict[layer_idx, list of [seq, seq]]
+            - value_vectors: dict[layer_idx, list of [seq, head_dim]]
+        """
+        layer_results = self._collect_attention_layer_results(
+            model, tokenizer, text, token_ids, include_values=True
+        )
+        attn_result: dict[int, list[Any]] = {}
+        val_result: dict[int, list[Any]] = {}
+        for layer_idx, weights, values in layer_results:
+            attn_result[layer_idx] = weights
+            val_result[layer_idx] = values
+        return attn_result, val_result
 
     def collect_logits(
         self,

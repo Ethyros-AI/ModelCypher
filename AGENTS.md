@@ -538,6 +538,27 @@ return {"similarity": 0.73}
 
 When thresholds are needed, derive from baselines (z-scores, percentiles).
 
+### No Simulated Results
+
+**Run real models or don't claim to know the answer.**
+
+Reprocessing cached JSON to "predict" what a script will output is not measurement — it is simulation dressed as verification. If a test exists in the script, run the script on real models. Do not substitute `python -c "import json; d = json.load(...);"` for the actual pipeline.
+
+The only valid verification is the real pipeline producing real numbers from real weights. A simulation that matches expectations proves nothing — it proves you can re-derive the same arithmetic. The script exists to run on models, not on cached output.
+
+```python
+# WRONG: "Smoke test" by reprocessing cached results
+d = json.load(open("results/cached_output.json"))
+# ... recompute statistic from cached data ...
+print(f"Expected result: {result}")  # This is not a measurement
+
+# CORRECT: Run the actual pipeline
+# poetry run python scripts/curvature_accumulation_analysis.py --models ...
+# Then read the output
+```
+
+If the volume isn't mounted or the run takes too long for the current session, say so and stop. Do not fabricate a shortcut.
+
 ### Don't Invent Heuristics
 
 **Every heuristic is an admission of ignorance.**
