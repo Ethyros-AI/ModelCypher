@@ -751,6 +751,175 @@ class _MLXBackendActivationMixin:
 
         return hidden_states
 
+    def collect_logits_with_attention_hook(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        attention_hook: Any | None = None,
+        token_ids: list[int] | None = None,
+    ) -> tuple[Any, dict[int, Any]]:
+        """Forward pass with attention hook, returning logits and attention weights.
+
+        Same hook mechanism as collect_hidden_with_attention_hook, but instead
+        of collecting mean-pooled hidden states, applies final norm + unembedding
+        to produce logits. Also collects post-softmax attention weights per layer.
+
+        Args:
+            model: The loaded model.
+            tokenizer: The tokenizer.
+            text: Input text.
+            attention_hook: Optional callable(weights, layer_idx) -> weights.
+                weights shape: [batch, num_heads, seq, seq].
+                If None, runs a normal forward pass (baseline).
+            token_ids: Optional pre-tokenized input.
+
+        Returns:
+            Tuple of (logits [batch, seq, vocab], attn_weights_per_layer).
+            attn_weights_per_layer maps layer_idx -> weights [batch, heads, seq, seq]
+            for attention layers only.
+        """
+        if token_ids is None:
+            token_ids = tokenizer.encode(text)
+        input_ids = self.mx.array([token_ids])
+
+        base = self._resolve_model_base(model)
+        h = base.embed_tokens(input_ids)
+        seq_len = input_ids.shape[1]
+        attn_weights_per_layer: dict[int, Any] = {}
+
+        for layer_idx, layer in enumerate(base.layers):
+            attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None)
+            is_attn = attn is not None and hasattr(attn, "q_proj")
+
+            if is_attn:
+                # Manual attention decomposition (same as collect_hidden_with_attention_hook)
+                if hasattr(layer, "input_layernorm"):
+                    h_norm = layer.input_layernorm(h)
+                elif hasattr(layer, "ln_1"):
+                    h_norm = layer.ln_1(h)
+                elif hasattr(layer, "operator_norm"):
+                    h_norm = layer.operator_norm(h)
+                else:
+                    h_norm = h
+
+                q = attn.q_proj(h_norm)
+                k = attn.k_proj(h_norm)
+                v = attn.v_proj(h_norm)
+
+                num_heads = (
+                    getattr(attn, "num_heads", None)
+                    or getattr(attn, "num_attention_heads", None)
+                    or getattr(attn, "n_heads", None)
+                )
+                num_kv_heads = (
+                    getattr(attn, "num_key_value_heads", None)
+                    or getattr(attn, "n_kv_heads", None)
+                )
+                if num_kv_heads is None:
+                    num_kv_heads = num_heads
+
+                head_dim = getattr(attn, "head_dim", None)
+                if head_dim is None:
+                    head_dim = k.shape[-1] // num_kv_heads
+
+                batch = q.shape[0]
+                expected_q_dim = num_heads * head_dim
+
+                gate = None
+                if q.shape[-1] == expected_q_dim * 2:
+                    q = q.reshape(batch, seq_len, num_heads, head_dim * 2)
+                    q, gate = self.mx.split(q, 2, axis=-1)
+                    gate = gate.reshape(batch, seq_len, -1)
+
+                if q.ndim == 3:
+                    q = q.reshape(batch, seq_len, num_heads, head_dim)
+                k = k.reshape(batch, seq_len, num_kv_heads, head_dim)
+                v = v.reshape(batch, seq_len, num_kv_heads, head_dim)
+
+                q_ln = getattr(attn, "q_layernorm", None) or getattr(attn, "q_norm", None)
+                k_ln = getattr(attn, "k_layernorm", None) or getattr(attn, "k_norm", None)
+                if q_ln is not None:
+                    q = q_ln(q)
+                if k_ln is not None:
+                    k = k_ln(k)
+
+                q = q.transpose(0, 2, 1, 3)
+                k = k.transpose(0, 2, 1, 3)
+                v = v.transpose(0, 2, 1, 3)
+
+                rope_fn = getattr(attn, "rope", None)
+                if rope_fn is not None:
+                    q = rope_fn(q)
+                    k = rope_fn(k)
+
+                if num_kv_heads < num_heads:
+                    repeats = num_heads // num_kv_heads
+                    k = self.mx.repeat(k, repeats, axis=1)
+                    v = self.mx.repeat(v, repeats, axis=1)
+
+                scale = head_dim ** -0.5
+                scores = (q @ k.transpose(0, 1, 3, 2)) * scale
+
+                causal_mask = self.mx.tril(self.mx.ones((seq_len, seq_len)))
+                neg_inf = self.mx.array(float("-inf"))
+                scores = self.mx.where(causal_mask[None, None, :, :], scores, neg_inf)
+
+                weights = self.mx.softmax(scores, axis=-1)
+
+                # Collect pre-hook weights for baseline measurement
+                attn_weights_per_layer[layer_idx] = weights
+
+                if attention_hook is not None:
+                    weights = attention_hook(weights, layer_idx)
+
+                attn_output = weights @ v
+                attn_output = attn_output.transpose(0, 2, 1, 3).reshape(
+                    batch, seq_len, -1
+                )
+
+                if gate is not None:
+                    attn_output = attn_output * self.mx.sigmoid(gate)
+
+                o_proj = getattr(attn, "o_proj", None) or getattr(attn, "out_proj", None)
+                attn_output = o_proj(attn_output)
+
+                h = h + attn_output
+
+                post_norm = (
+                    getattr(layer, "post_attention_layernorm", None)
+                    or getattr(layer, "ffn_norm", None)
+                    or getattr(layer, "ln_2", None)
+                )
+                h_mlp = post_norm(h) if post_norm is not None else h
+
+                mlp_fn = getattr(layer, "mlp", None) or getattr(layer, "feed_forward", None)
+                h = h + mlp_fn(h_mlp)
+                self.mx.eval(h)
+            else:
+                layer_mask = "causal" if is_attn else None
+                result = layer(h, mask=layer_mask, cache=None)
+                h = result[0] if isinstance(result, tuple) else result
+                self.mx.eval(h)
+
+        # Final norm + unembedding → logits
+        # Order matches mlx_training_adapter_core.py (lines 930-938):
+        # norm (Qwen/Llama) takes precedence, then embedding_norm (LFM2).
+        # In practice these are mutually exclusive, but the guard prevents
+        # double-normalization if a model ever exposes both.
+        if hasattr(base, "norm"):
+            h = base.norm(h)
+        elif hasattr(base, "embedding_norm"):
+            h = base.embedding_norm(h)
+
+        if hasattr(model, "lm_head"):
+            logits = model.lm_head(h)
+        else:
+            logits = base.embed_tokens.as_linear(h)
+
+        self.mx.eval(logits)
+        return logits, attn_weights_per_layer
+
     def collect_logits(
         self,
         model: Any,
