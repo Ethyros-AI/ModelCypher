@@ -2119,3 +2119,311 @@ def safety_chain_profile(
         write_output("\n".join(lines), context.output_format, context.pretty)
     else:
         write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("attention-collapse")
+def safety_attention_collapse(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Path to model directory"),
+    prompt: str = typer.Option(
+        "The capital of France is",
+        "--prompt",
+        help="Text input for attention analysis",
+    ),
+    dtype: str = typer.Option(
+        "bfloat16",
+        "--dtype",
+        help="Model dtype for rank-1 threshold (float32, float16, bfloat16)",
+    ),
+) -> None:
+    """Detect attention head collapse via SVD analysis.
+
+    Computes per-head singular value decomposition of attention weight matrices
+    to identify rank-1 collapsed heads (gradient-dead) and measure effective rank.
+
+    Metrics per head:
+    - Rank-1 ratio: sigma_2 / sigma_1 (collapsed when < sqrt(eps_dtype), IEEE 754)
+    - Effective rank: exp(Shannon entropy of normalized sigma^2)  (Roy & Vetterli 2007)
+    - Gradient suppression: sigma_2 / sqrt(2T)  (Theorem H.1, Sanyal et al. TMLR 2025)
+
+    Thresholds:
+    - bfloat16 (7-bit mantissa): sqrt(2^-7) = 0.0884
+    - float16  (10-bit mantissa): sqrt(2^-10) = 0.0312
+    - float32  (23-bit mantissa): sqrt(2^-23) = 3.45e-4
+
+    Only softmax attention layers are analyzed. Conv layers (LFM2) and
+    linear attention layers (Qwen3.5 GatedDeltaNet) are skipped.
+
+    Examples:
+        mc safety attention-collapse --model ./my-model
+        mc safety attention-collapse --model ./my-model --prompt "Hello world"
+        mc safety attention-collapse --model ./my-model --dtype float32
+    """
+    context = get_context(ctx)
+
+    model_path = Path(model)
+    if not model_path.exists():
+        error = ErrorDetail(
+            code="MC-3060",
+            title="Model not found",
+            detail=f"Model path does not exist: {model}",
+            hint="Ensure the model path points to a valid directory with config.json.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=EXIT_RUNTIME)
+
+    valid_dtypes = ("float32", "float16", "bfloat16")
+    if dtype not in valid_dtypes:
+        error = ErrorDetail(
+            code="MC-3061",
+            title="Invalid dtype",
+            detail=f"dtype must be one of {valid_dtypes}, got '{dtype}'",
+            hint="Use --dtype float32, --dtype float16, or --dtype bfloat16.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=EXIT_RUNTIME)
+
+    try:
+        from modelcypher.adapters.model_loader import ModelLoader
+        from modelcypher.core.domain.geometry.attention_collapse import (
+            _DTYPE_SQRT_EPS,
+            compute_attention_collapse,
+            compute_collapse_profile,
+            summarize_layer_collapse,
+        )
+        from modelcypher.ports.activation_provider import get_activation_provider
+
+        provider = get_activation_provider()
+        sqrt_eps = _DTYPE_SQRT_EPS[dtype]
+
+        loader = ModelLoader()
+        loaded_model, tokenizer = loader.load_model(str(model_path))
+
+        attn_matrices = provider.collect_attention_matrices(
+            loaded_model, tokenizer, prompt
+        )
+
+        layer_results = []
+        all_head_results: dict[int, list] = {}
+
+        for layer_idx in sorted(attn_matrices.keys()):
+            head_matrices = attn_matrices[layer_idx]
+            head_results = []
+            for head_mat in head_matrices:
+                mat_list = provider._backend.tolist(head_mat)
+                result = compute_attention_collapse(mat_list, dtype)
+                head_results.append(result)
+            all_head_results[layer_idx] = head_results
+            layer_summary = summarize_layer_collapse(
+                head_results, layer_idx=layer_idx
+            )
+            layer_results.append(layer_summary)
+
+        profile = compute_collapse_profile(layer_results)
+
+        # Build output payload
+        payload = {
+            "model": str(model_path),
+            "prompt": prompt,
+            "dtype": dtype,
+            "profile": profile.to_dict(),
+            "layers": [lr.to_dict() for lr in layer_results],
+        }
+
+        if context.output_format == "text":
+            lines = [
+                f"Attention Collapse Analysis: {model_path.name}",
+                f"Prompt: {prompt!r}",
+                f"Dtype: {dtype}  |  Rank-1 threshold: sqrt(eps) = {sqrt_eps:.6f}",
+                "",
+                f"{'Layer':>5} | {'Collapsed':>9} | {'MaxEffRank':>10} | {'MeanGradSupp':>12}",
+                f"{'-----':>5}-+-{'---------':>9}-+-{'----------':>10}-+-{'------------':>12}",
+            ]
+            for lr in layer_results:
+                n_heads = len(all_head_results[lr.layer_idx])
+                lines.append(
+                    f"{lr.layer_idx:5d} | "
+                    f"{lr.collapsed_head_count}/{n_heads:>3}     | "
+                    f"{lr.max_effective_rank:10.2f} | "
+                    f"{lr.mean_gradient_suppression:12.4f}"
+                )
+            lines.extend([
+                "",
+                f"Total layers: {profile.total_layers}  |  "
+                f"Layers with any collapse: {profile.collapsed_layer_count}",
+            ])
+            if profile.collapse_onset_layer is not None:
+                lines.append(
+                    f"Collapse onset: layer {profile.collapse_onset_layer}"
+                )
+            else:
+                lines.append("Collapse onset: none detected")
+
+            write_output("\n".join(lines), context.output_format, context.pretty)
+        else:
+            write_output(payload, context.output_format, context.pretty)
+
+    except Exception as e:
+        error = ErrorDetail(
+            code="MC-3062",
+            title="Attention collapse analysis failed",
+            detail=str(e),
+            hint="Check model path and ensure model is loadable.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=EXIT_RUNTIME)
+
+
+@app.command("attention-sink")
+def safety_attention_sink(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Path to model directory"),
+    prompt: str = typer.Option(
+        "The capital of France is",
+        "--prompt",
+        help="Text input for attention analysis",
+    ),
+) -> None:
+    """Analyze attention sink positions and value-weighted active sinks.
+
+    Computes per-head sink scores measuring how much attention each token
+    position receives from causal successors, then weights by value-vector
+    norms to identify geometrically impactful sinks.
+
+    Metrics per token:
+    - Sink score: s_i = (1/(T-i)) * sum_{u>=i} A_{u,i}  (Binkowski et al. 2026)
+    - Active sink: sink_score * ||V_i||_2  (geometric impact weighting)
+
+    No tuned thresholds. All measurements are continuous.
+
+    Only softmax attention layers are analyzed. Conv layers (LFM2) and
+    linear attention layers (Qwen3.5 GatedDeltaNet) are skipped.
+
+    Examples:
+        mc safety attention-sink --model ./my-model
+        mc safety attention-sink --model ./my-model --prompt "Hello world"
+    """
+    context = get_context(ctx)
+
+    model_path = Path(model)
+    if not model_path.exists():
+        error = ErrorDetail(
+            code="MC-3063",
+            title="Model not found",
+            detail=f"Model path does not exist: {model}",
+            hint="Ensure the model path points to a valid directory with config.json.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=EXIT_RUNTIME)
+
+    try:
+        import math
+
+        from modelcypher.adapters.model_loader import ModelLoader
+        from modelcypher.core.domain.geometry.attention_sink import (
+            compute_active_sinks,
+            compute_sink_scores,
+            summarize_layer_sinks,
+        )
+        from modelcypher.ports.activation_provider import get_activation_provider
+
+        provider = get_activation_provider()
+
+        loader = ModelLoader()
+        loaded_model, tokenizer = loader.load_model(str(model_path))
+
+        attn_matrices, value_vectors = provider.collect_attention_matrices_with_values(
+            loaded_model, tokenizer, prompt
+        )
+
+        layer_results = []
+        for layer_idx in sorted(attn_matrices.keys()):
+            head_matrices = attn_matrices[layer_idx]
+            head_values = value_vectors[layer_idx]
+
+            head_sinks = []
+            active_sinks = []
+
+            for head_idx, (head_mat, head_v) in enumerate(
+                zip(head_matrices, head_values)
+            ):
+                mat_list = provider._backend.tolist(head_mat)
+                head_sink = compute_sink_scores(mat_list, head_idx=head_idx)
+                head_sinks.append(head_sink)
+
+                v_list = provider._backend.tolist(head_v)
+                v_norms = [
+                    math.sqrt(sum(x * x for x in row)) for row in v_list
+                ]
+                active = compute_active_sinks(head_sink, v_norms)
+                active_sinks.append(active)
+
+            layer_summary = summarize_layer_sinks(
+                head_sinks, active_results=active_sinks, layer_idx=layer_idx
+            )
+            layer_results.append(layer_summary)
+
+        payload = {
+            "model": str(model_path),
+            "prompt": prompt,
+            "layers": [lr.to_dict() for lr in layer_results],
+        }
+
+        if context.output_format == "text":
+            lines = [
+                f"Attention Sink Analysis: {model_path.name}",
+                f"Prompt: {prompt!r}",
+                "",
+                f"{'Layer':>5} | {'DomSinkPos':>10} | {'MeanMaxSink':>11} | {'Heads':>5}",
+                f"{'-----':>5}-+-{'----------':>10}-+-{'-----------':>11}-+-{'-----':>5}",
+            ]
+            for lr in layer_results:
+                n_heads = len(lr.head_results)
+                lines.append(
+                    f"{lr.layer_idx:5d} | "
+                    f"{lr.dominant_sink_position:10d} | "
+                    f"{lr.mean_max_sink_score:11.4f} | "
+                    f"{n_heads:5d}"
+                )
+
+            # Summary: how many layers have BOS/early token as dominant
+            early_count = sum(
+                1 for lr in layer_results if lr.dominant_sink_position <= 1
+            )
+            total = len(layer_results)
+            lines.extend([
+                "",
+                f"Layers with BOS/early dominant sink: {early_count}/{total}",
+            ])
+
+            # Show heads where active differs from raw
+            reweighted_count = 0
+            for lr in layer_results:
+                if lr.active_results:
+                    for hs, act in zip(lr.head_results, lr.active_results):
+                        if hs.max_sink_position != act.max_active_position:
+                            reweighted_count += 1
+            total_heads = sum(len(lr.head_results) for lr in layer_results)
+            lines.append(
+                f"Heads where V-norm reweighting changes max sink: "
+                f"{reweighted_count}/{total_heads}"
+            )
+
+            write_output("\n".join(lines), context.output_format, context.pretty)
+        else:
+            write_output(payload, context.output_format, context.pretty)
+
+    except Exception as e:
+        error = ErrorDetail(
+            code="MC-3064",
+            title="Attention sink analysis failed",
+            detail=str(e),
+            hint="Check model path and ensure model is loadable.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=EXIT_RUNTIME)

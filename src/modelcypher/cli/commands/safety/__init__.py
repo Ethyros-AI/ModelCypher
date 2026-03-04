@@ -27,6 +27,8 @@ Modules:
     monitoring: Circuit breaker, persona drift, entropy monitoring, CRM
 
 Commands:
+    mc safety attention-collapse --model <path> [--prompt <text>] [--dtype bfloat16]
+    mc safety attention-sink --model <path> [--prompt <text>]
     mc analyze geodesic-trajectory --model <path> --prompt <text> [--layer <n>]
     mc safety geodesic-profile --model <path> --prompt <text>
     mc analyze concept-volume --model <path> --concepts <file> --layer <n>
@@ -82,6 +84,8 @@ from .geodesic_profile import geodesic_profile
 from .geodesic_trajectory import geodesic_trajectory
 from .geometric import (
     concept_volume_analysis,
+    safety_attention_collapse,
+    safety_attention_sink,
     safety_dimension_profile,
     safety_entropy_trajectory,
     safety_expansion_ratio,
@@ -112,6 +116,8 @@ app = typer.Typer(no_args_is_help=True)
 
 # Register all commands directly on the main app
 # Geometric commands
+app.command("attention-collapse")(safety_attention_collapse)
+app.command("attention-sink")(safety_attention_sink)
 app.command("geodesic-compare")(geodesic_compare)
 app.command("geodesic-profile")(geodesic_profile)
 app.command("geodesic-trajectory")(geodesic_trajectory)

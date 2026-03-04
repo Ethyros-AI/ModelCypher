@@ -100,10 +100,9 @@ Action:
 - Needed: intervention protocol and falsifier-driven conclusion.
 
 ### 4) Entropy operator and architecture dependence
-- Current status: **[EMPIRICAL]** on 4 models (LFM2-350M/700M, Qwen3.5-0.8B, Qwen2.5-3B). H_logit is the primary operator (r=0.867 on Qwen2.5-3B vs H_attn r=-0.062). F1 PASS 4/4, F3 PASS. F5 CONSISTENT_SIGN (threshold DERIVED: Fisher-SE MDE + Bretherton autocorrelation correction). 2/4 models resolvable (LFM2-350M, Qwen3.5-0.8B), both negative sign. Mechanism prediction 4/4 (Qwen3.5-0.8B coverage raised to 100% via identity-core decomposition on non-full-attention layers). Cross-scale validated within LFM2 family.
-- F5 depth confound identified: raw sign inconsistency explained as depth confound. After depth control with derived detection floor, sign is consistently negative among resolvable models (cross-family: hybrid + standard transformer).
-- Promotion to [VALIDATED] was premature (reverted 2026-03-04): only 2/4 models are currently resolvable despite derived threshold closure.
-- Open: add models for stronger cross-family evidence; resolve Qwen2.5-3B high autocorrelation (ρ₁=0.905, n_eff=4); derive architecture term for component-sign split.
+- Current status: **[EMPIRICAL]** on 6 models (LFM2-350M/700M, Qwen3.5-0.8B, Qwen2.5-3B, Llama-3.2-3B, Mistral-7B). H_logit is the primary operator (r=0.867 on Qwen2.5-3B vs H_attn r=-0.062). F1 PASS 4/4, F3 PASS. F5 CONSISTENT_SIGN (threshold DERIVED: Fisher-SE MDE + Bretherton autocorrelation correction). 4/6 models resolvable (LFM2-350M, Qwen3.5-0.8B, Llama-3.2-3B, Mistral-7B), all negative sign across 4 architecture families. Mechanism prediction 6/6. Cross-scale validated within LFM2 family.
+- F5 depth confound identified: raw sign inconsistency explained as depth confound. After depth control with derived detection floor, sign is consistently negative among resolvable models across 4 architecture families.
+- Open: resolve Qwen2.5-3B high autocorrelation (ρ₁=0.905, n_eff=4); derive architecture term for component-sign split.
 - Claim record: `CR-EC-001` (`[EMPIRICAL]`, `PUSH_FURTHER`).
 
 ## Threads To Retire

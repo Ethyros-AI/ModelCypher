@@ -745,15 +745,16 @@ The two operators are barely correlated on standard transformers (r=-0.086 to -0
 **F5 depth confound identified (2026-03-04):** The raw sign inconsistency (LFM2 negative,
 Qwen positive) is a depth confound. Both H_logit and θ_total trend with depth, creating
 spurious raw correlations. After depth control with derived detection floor (Fisher-SE MDE +
-Bretherton 1999 autocorrelation correction): 2/4 models resolvable (LFM2-350M, Qwen3.5-0.8B),
-both show **negative** sign. F5 status: **CONSISTENT_SIGN** (threshold DERIVED).
+Bretherton 1999 autocorrelation correction): 4/6 models resolvable (LFM2-350M, Qwen3.5-0.8B,
+Llama-3.2-3B, Mistral-7B), all show **negative** sign across 4 architecture families.
+F5 status: **CONSISTENT_SIGN** (threshold DERIVED).
 LFM2-700M below detection floor (|r|=0.109 < MDE=0.270). Qwen2.5-3B below floor due to
 high autocorrelation (ρ₁=0.905, n_eff=4, MDE=0.762).
 
-4-model evidence (added LFM2-350M): F1 PASS 4/4, F3 PASS, F5 CONSISTENT_SIGN (2/4
-resolvable, both negative). Mechanism prediction: 4/4 after Qwen3.5-0.8B
-identity-core decomposition raises decomp coverage to 100%.
-CR-EC-001 remains [EMPIRICAL] (only 2/4 models resolvable; more cross-family data needed).
+6-model evidence: F1 PASS 4/4, F3 PASS, F5 CONSISTENT_SIGN (4/6 resolvable, all negative,
+4 families). Mechanism prediction 6/6 (LFM2 competing_sublayers, Qwen3.5 mlp_dominant,
+Qwen2.5/Llama/Mistral core_pass_through).
+CR-EC-001 remains [EMPIRICAL] (autocorrelation and architecture-term gaps still open).
 Full results: `results/entropy_curvature_operator_split/`, `results/f5_sign_law/`.
 
 ---

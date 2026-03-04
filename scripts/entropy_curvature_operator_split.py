@@ -112,11 +112,11 @@ MODEL_REGISTRY = {
         "architecture": "qwen3.5",
         "gqa_ratio": 4,
     },
-    "Qwen2.5-3B": {
-        "path": f"{MODELS_BASE}/mlx-community/Qwen2.5-3B-Instruct-bf16",
-        "L": 36, "d": 2048,
-        "architecture": "qwen2.5",
-        "gqa_ratio": 8,
+    "Qwen3.5-4B": {
+        "path": f"{MODELS_BASE}/mlx-community/Qwen3.5-4B-bf16",
+        "L": 32, "d": 2560,
+        "architecture": "qwen3.5",
+        "gqa_ratio": 4,
     },
     "Llama-3.2-3B": {
         "path": f"{MODELS_BASE}/mlx-community/Llama-3.2-3B-Instruct-bf16",
@@ -128,6 +128,24 @@ MODEL_REGISTRY = {
         "path": f"{MODELS_BASE}/mlx-community/DeepSeek-R1-0528-Qwen3-8B-bf16",
         "L": 36, "d": 4096,
         "architecture": "qwen3",
+        "gqa_ratio": 4,
+    },
+    "Qwen3.5-2B": {
+        "path": f"{MODELS_BASE}/mlx-community/Qwen3.5-2B-bf16",
+        "L": 24, "d": 2048,
+        "architecture": "qwen3.5",
+        "gqa_ratio": 4,
+    },
+    "Qwen3.5-4B": {
+        "path": f"{MODELS_BASE}/mlx-community/Qwen3.5-4B-bf16",
+        "L": 32, "d": 2560,
+        "architecture": "qwen3.5",
+        "gqa_ratio": 4,
+    },
+    "Qwen3.5-4B-4bit": {
+        "path": f"{MODELS_BASE}/mlx-community/Qwen3.5-4B-4bit-g64",
+        "L": 32, "d": 2560,
+        "architecture": "qwen3.5",
         "gqa_ratio": 4,
     },
     "Mistral-7B": {
@@ -413,7 +431,44 @@ def collect_logit_entropy(model, tokenizer, prompts: list[str], num_layers: int,
     import mlx.core as mx
     from modelcypher.core.domain.entropy.layer_entropy_projector import LayerEntropyProjector
 
+    # Resolve backbone once; used by both projector setup and manual fallback paths.
+    base = _resolve_backbone(model)
+    embed = getattr(base, "embed_tokens", None)
+    layers = getattr(base, "layers", None)
+    if layers is None or embed is None:
+        raise RuntimeError("Cannot resolve model backbone for logit entropy")
+
+    def _resolve_output_head():
+        """Find a callable output projection module for direct logit projection."""
+        candidates = []
+        if hasattr(model, "lm_head"):
+            candidates.append(getattr(model, "lm_head"))
+        if hasattr(model, "model") and hasattr(model.model, "lm_head"):
+            candidates.append(getattr(model.model, "lm_head"))
+        if hasattr(base, "lm_head"):
+            candidates.append(getattr(base, "lm_head"))
+        if hasattr(base, "language_model") and hasattr(base.language_model, "lm_head"):
+            candidates.append(getattr(base.language_model, "lm_head"))
+
+        for head in candidates:
+            if callable(head):
+                return head
+        return None
+
+    def _entropy_from_logits(logits):
+        """Stable Shannon entropy from logits tensor."""
+        logits = logits.astype(mx.float32)
+        logits = logits - mx.max(logits, axis=-1, keepdims=True)
+        probs = mx.softmax(logits, axis=-1)
+        probs = probs + 1e-12
+        entropy = -mx.sum(probs * mx.log(probs), axis=-1)
+        mx.eval(entropy)
+        return float(np.array(entropy.tolist(), dtype=np.float32).reshape(-1)[0])
+
     projector = LayerEntropyProjector(backend=backend)
+    output_head = _resolve_output_head()
+    use_output_head_projection = False
+    fallback_logged = False
 
     # Try standard set_unembedding_matrix first
     try:
@@ -421,24 +476,18 @@ def collect_logit_entropy(model, tokenizer, prompts: list[str], num_layers: int,
     except ValueError:
         # Qwen3.5: model.model.language_model.embed_tokens
         # Resolve backbone and manually set unembedding from embed_tokens
-        base = _resolve_backbone(model)
-        embed = getattr(base, "embed_tokens", None)
         if embed is None:
             raise RuntimeError("Cannot find embed_tokens on resolved backbone")
         weight = embed.weight
+        # Quantized embeddings store packed weights; dequantize to full [vocab, hidden].
+        if hasattr(embed, "scales") and hasattr(embed, "bits"):
+            weight = mx.dequantize(weight, embed.scales, embed.biases, embed.group_size, embed.bits)
         projector._unembedding_matrix = backend.astype(weight, "float32")
         projector._vocab_size = weight.shape[0]
         projector._hidden_dim = weight.shape[1]
         projector._unembedding_source = "embed_tokens_transposed"
         logger.info("Using resolved backbone embed_tokens: vocab=%d, hidden=%d",
                      projector._vocab_size, projector._hidden_dim)
-
-    # Manual per-layer forward pass (works with all architectures)
-    base = _resolve_backbone(model)
-    embed = getattr(base, "embed_tokens", None)
-    layers = getattr(base, "layers", None)
-    if layers is None or embed is None:
-        raise RuntimeError("Cannot resolve model backbone for logit entropy")
 
     layer_entropies = [[] for _ in range(num_layers)]
 
@@ -475,7 +524,46 @@ def collect_logit_entropy(model, tokenizer, prompts: list[str], num_layers: int,
             # Compute logit entropy at this layer
             h_last = hidden[:, -1, :].astype(mx.float32)
             mx.eval(h_last)
-            entropy, _ = projector.compute_layer_entropy(h_last)
+            if (
+                not use_output_head_projection
+                and output_head is not None
+                and projector._hidden_dim not in (0, int(h_last.shape[-1]))
+            ):
+                # Quantized heads may expose packed weights (e.g., 4-bit), so
+                # projector hidden_dim can mismatch true hidden state width.
+                use_output_head_projection = True
+                if not fallback_logged:
+                    logger.warning(
+                        "Unembedding hidden_dim=%d mismatches hidden state dim=%d; "
+                        "falling back to direct output-head projection for logit entropy.",
+                        projector._hidden_dim,
+                        int(h_last.shape[-1]),
+                    )
+                    fallback_logged = True
+
+            if use_output_head_projection:
+                logits = output_head(h_last)
+                if isinstance(logits, tuple):
+                    logits = logits[0]
+                entropy = _entropy_from_logits(logits)
+            else:
+                try:
+                    entropy, _ = projector.compute_layer_entropy(h_last)
+                except ValueError as exc:
+                    if output_head is None:
+                        raise
+                    use_output_head_projection = True
+                    if not fallback_logged:
+                        logger.warning(
+                            "LayerEntropyProjector projection failed (%s); "
+                            "falling back to direct output-head projection.",
+                            exc,
+                        )
+                        fallback_logged = True
+                    logits = output_head(h_last)
+                    if isinstance(logits, tuple):
+                        logits = logits[0]
+                    entropy = _entropy_from_logits(logits)
             layer_entropies[i].append(entropy)
 
         mx.eval(hidden)
@@ -601,7 +689,30 @@ def collect_all_data(
                             h_out = layer(h_in, layer_mask)
                         except (TypeError, ValueError):
                             h_out = layer(h_in)
-            # 3) Identity-core decomposition (layers without explicit core operator)
+            # 3) Linear-attention-core decomposition (GatedDeltaNet in Qwen3.5)
+            elif input_norm is not None and getattr(layer, "linear_attn", None) is not None and mlp is not None:
+                try:
+                    normed = input_norm(h_in)
+                    la_out = _call_with_fallback(layer.linear_attn, normed, mask=layer_mask)
+                    if isinstance(la_out, tuple):
+                        la_out = la_out[0]
+                    h_post_core = h_in + la_out
+                    core_operator = "linear_attn"
+
+                    normed2 = post_attn_norm(h_post_core) if post_attn_norm else h_post_core
+                    mlp_out = mlp(normed2)
+                    h_out = h_post_core + mlp_out
+                except Exception:
+                    h_post_core = None
+                    core_operator = None
+                    try:
+                        h_out = layer(h_in, mask=layer_mask)
+                    except (TypeError, ValueError):
+                        try:
+                            h_out = layer(h_in, layer_mask)
+                        except (TypeError, ValueError):
+                            h_out = layer(h_in)
+            # 4) Identity-core decomposition (layers without explicit core operator)
             elif input_norm is not None and mlp is not None:
                 try:
                     h_post_core = h_in

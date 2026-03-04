@@ -149,6 +149,24 @@ MODEL_REGISTRY = {
         "architecture": "qwen3.5",
         "gqa_ratio": 4,  # 16 query heads / 4 kv heads; source: text_config
     },
+    "Qwen3.5-2B": {
+        "path": f"{MODELS_BASE}/mlx-community/Qwen3.5-2B-bf16",
+        "L": 24, "d": 2048,
+        "architecture": "qwen3.5",
+        "gqa_ratio": 4,  # 8 query heads / 2 kv heads; source: text_config
+    },
+    "Qwen3.5-4B": {
+        "path": f"{MODELS_BASE}/mlx-community/Qwen3.5-4B-bf16",
+        "L": 32, "d": 2560,
+        "architecture": "qwen3.5",
+        "gqa_ratio": 4,  # 16 query heads / 4 kv heads; source: text_config
+    },
+    "Qwen3.5-4B-4bit": {
+        "path": f"{MODELS_BASE}/mlx-community/Qwen3.5-4B-4bit-g64",
+        "L": 32, "d": 2560,
+        "architecture": "qwen3.5",
+        "gqa_ratio": 4,  # 16 query heads / 4 kv heads; source: text_config
+    },
 }
 
 # 6 categories × 10 probes = 60 total — matches signal_propagation experiment
@@ -409,7 +427,12 @@ def try_compute_logit_entropy(model, base, h_out_last: "mx.array") -> float | No
         elif embed_tokens is not None and hasattr(embed_tokens, "as_linear"):
             logits = embed_tokens.as_linear(h_normed)  # LFM2 tied unembedding
         elif embed_tokens is not None and hasattr(embed_tokens, "weight"):
-            logits = h_normed @ embed_tokens.weight.T  # weight-tied fallback
+            weight = embed_tokens.weight
+            # Quantized embeddings store packed weights; dequantize to full [vocab, hidden].
+            if hasattr(embed_tokens, "scales") and hasattr(embed_tokens, "bits"):
+                weight = mx.dequantize(weight, embed_tokens.scales, embed_tokens.biases,
+                                       embed_tokens.group_size, embed_tokens.bits)
+            logits = h_normed @ weight.T  # weight-tied fallback
         else:
             return None
 
