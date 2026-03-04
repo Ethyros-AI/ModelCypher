@@ -103,7 +103,7 @@ def validate_model(model_name: str, model_path: str) -> dict:
             for head_idx, head_mat in enumerate(head_matrices):
                 # Convert MLX array to list of lists
                 mat_list = backend.tolist(head_mat)
-                result = compute_attention_collapse(mat_list, "bfloat16")
+                result = compute_attention_collapse(mat_list, "bfloat16", backend=backend)
 
                 # Check 2: singular values non-negative and descending
                 svs = result.singular_values

@@ -1,6 +1,6 @@
 # Causal Chain Evidence Map
 
-**Status:** Derivation memo (2026-03-03)
+**Status:** Derivation memo (2026-03-04, updated with perturbation experiment results)
 **Purpose:** Map each link in the validated causal chain to its evidence level using the
 three-tier taxonomy from EVIDENCE-TAXONOMY.md, and record precisely what the Bayesian
 Geometry trilogy (arXiv 2512.22471/22473/23752) formally adds vs. what remains an open
@@ -136,6 +136,13 @@ path must be reframed around H_logit.
 The r=0.507 reported in the causal chain uses H_logit (Entropy-Lens), not H_attn.
 ACT-016 requires: run corr(H_attn, H_logit) per family and per-layer, report per-family.
 
+**Causal perturbation test (2026-03-04):** Direct intervention on H_attn (boost prefix
+attention weights). LFM2-350M: FALSIFIED (best ρ=+0.371, p=0.46). Qwen3.5-0.8B: NOT
+FALSIFIED (ρ=+0.886, p=0.026). Architecture-dependent — LFM2's conv layers (10/16)
+absorb the entropy perturbation. Consistent with operator split finding: H_attn ↔ H_logit
+correlation is architecture-dependent (r=+0.657 LFM2, r=+0.086 Qwen3.5).
+Artifact: `results/attention_validation/perturbation_experiment.txt`.
+
 **What promotes this to `[VALIDATED]`:** Run ACT-016. Report corr(H_attn, H_logit)
 per family in `results/entropy_curvature_operator_split/<model>/`.
 
@@ -177,6 +184,15 @@ attention operator that would let us predict curvature from entropy without meas
 
 **arXiv 2512.23752 contribution:** Entropy-aligned axis appears robust across larger model
 families — partial support for generalization. Does not close the derivation gap.
+
+**Causal perturbation test (2026-03-04):** H_attn intervention → Δθ. LFM2-350M: FALSIFIED
+(ρ=+0.371, p=0.46). Qwen3.5-0.8B: NOT FALSIFIED (ρ=+0.886, p=0.026). The H_attn → curvature
+causal path is architecture-dependent. Conv-dominated architectures absorb the perturbation.
+This narrows the derivation target: the H_logit → curvature mechanism works through posterior
+certainty (Bayesian manifold), not directly through attention weight redistribution.
+
+**GQA conditioning on norm-entropy coupling (2026-03-04, B5 test):** Spearman(GQA, R²(H→||h||²))
+= -0.632, p=0.368 (N=4). Direction consistent with B5 but not significant. Needs more models.
 
 **What promotes this to `[VALIDATED]`:**
 First, reconcile the operator (ACT-016): determine whether H_attn ≈ H_logit or whether

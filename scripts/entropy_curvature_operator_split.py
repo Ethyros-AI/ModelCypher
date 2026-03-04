@@ -10,6 +10,7 @@ operator drives the r=0.507 correlation with angular curvature?
 
 Measurements per layer:
     1. H_logit: logit entropy (project h_l through unembedding, softmax, Shannon H)
+    1b. H_logit_norm: normalized logit entropy (apply RMSNorm before unembedding, removing ||h||² confound)
     2. H_attn: attention weight entropy (Shannon H of softmax(QK^T/sqrt(d_k)))
     3. theta_core: angular change h_in -> h_post_core (core operator = attention or conv)
     4. theta_mlp: angular change h_post_core -> h_out
@@ -430,11 +431,15 @@ def compute_attention_entropy(layer, h_in, seq_len: int, model=None):
 def collect_logit_entropy(model, tokenizer, prompts: list[str], num_layers: int, backend):
     """Collect per-layer logit entropy using Entropy-Lens (unembedding projection).
 
-    Returns list of length num_layers, each entry is the mean logit entropy
-    across all probes at that layer, or None if measurement failed.
+    Returns dict with:
+        H_logit: list of per-layer mean unnormalized logit entropy (original operator)
+        H_logit_norm: list of per-layer mean normalized logit entropy (RMSNorm applied first)
 
-    Handles Qwen3.5's nested architecture by manually computing logit entropy
-    via the resolved backbone when LayerEntropyProjector can't find unembedding.
+    Each list has length num_layers; entries are None if measurement failed.
+
+    The normalized variant applies the model's final norm (RMSNorm) before projecting
+    through the unembedding, matching what the model actually computes at inference.
+    This removes the ||h||² confound where softmax sharpness scales with hidden state norm.
     """
     import mlx.core as mx
     from modelcypher.core.domain.entropy.layer_entropy_projector import LayerEntropyProjector
@@ -445,6 +450,12 @@ def collect_logit_entropy(model, tokenizer, prompts: list[str], num_layers: int,
     layers = getattr(base, "layers", None)
     if layers is None or embed is None:
         raise RuntimeError("Cannot resolve model backbone for logit entropy")
+
+    # Resolve final norm for H_logit_norm (matches model's actual readout path).
+    # Pattern from curvature_accumulation_analysis.py:418-419.
+    final_norm = getattr(base, "embedding_norm", None) or getattr(base, "norm", None)
+    if final_norm is None:
+        logger.warning("No final norm found on backbone; H_logit_norm will equal H_logit")
 
     def _resolve_output_head():
         """Find a callable output projection module for direct logit projection."""
@@ -498,6 +509,7 @@ def collect_logit_entropy(model, tokenizer, prompts: list[str], num_layers: int,
                      projector._vocab_size, projector._hidden_dim)
 
     layer_entropies = [[] for _ in range(num_layers)]
+    layer_entropies_norm = [[] for _ in range(num_layers)]
 
     for pi, prompt in enumerate(prompts):
         tokens = tokenizer.encode(prompt)
@@ -574,16 +586,39 @@ def collect_logit_entropy(model, tokenizer, prompts: list[str], num_layers: int,
                     entropy = _entropy_from_logits(logits)
             layer_entropies[i].append(entropy)
 
+            # Compute normalized logit entropy (apply final RMSNorm before unembedding)
+            if final_norm is not None:
+                h_normed = final_norm(h_last)
+                mx.eval(h_normed)
+                if use_output_head_projection and output_head is not None:
+                    logits_norm = output_head(h_normed)
+                    if isinstance(logits_norm, tuple):
+                        logits_norm = logits_norm[0]
+                    entropy_norm = _entropy_from_logits(logits_norm)
+                else:
+                    # Direct unembedding projection on normalized hidden state
+                    W = projector._unembedding_matrix
+                    logits_norm = h_normed @ W.T
+                    entropy_norm = _entropy_from_logits(logits_norm)
+                layer_entropies_norm[i].append(entropy_norm)
+            else:
+                layer_entropies_norm[i].append(entropy)
+
         mx.eval(hidden)
 
-    result = []
+    result_logit = []
+    result_logit_norm = []
     for i in range(num_layers):
         if layer_entropies[i]:
-            result.append(float(np.mean(layer_entropies[i])))
+            result_logit.append(float(np.mean(layer_entropies[i])))
         else:
-            result.append(None)
+            result_logit.append(None)
+        if layer_entropies_norm[i]:
+            result_logit_norm.append(float(np.mean(layer_entropies_norm[i])))
+        else:
+            result_logit_norm.append(None)
 
-    return result
+    return {"H_logit": result_logit, "H_logit_norm": result_logit_norm}
 
 
 # =============================================================================
@@ -598,7 +633,8 @@ def collect_all_data(
 
     Returns dict with:
         sublayer_data: list of per-layer dicts with h_in, h_post_attn, h_out, attn_entropy
-        logit_entropy: list of per-layer mean logit entropy
+        logit_entropy: list of per-layer mean logit entropy (unnormalized)
+        logit_entropy_norm: list of per-layer mean logit entropy (RMSNorm applied)
     """
     import mlx.core as mx
 
@@ -817,11 +853,12 @@ def collect_all_data(
 
     # --- Logit entropy ---
     logger.info("  Collecting logit entropy (Entropy-Lens)...")
-    logit_entropy = collect_logit_entropy(model, tokenizer, prompts, num_layers, backend)
+    logit_result = collect_logit_entropy(model, tokenizer, prompts, num_layers, backend)
 
     return {
         "sublayer_data": sublayer_data,
-        "logit_entropy": logit_entropy,
+        "logit_entropy": logit_result["H_logit"],
+        "logit_entropy_norm": logit_result["H_logit_norm"],
     }
 
 
@@ -834,6 +871,7 @@ def compute_measurements(data: dict, num_layers: int) -> list[dict]:
     """Compute per-layer curvature + both entropy operators."""
     sublayer_data = data["sublayer_data"]
     logit_entropy = data["logit_entropy"]
+    logit_entropy_norm = data.get("logit_entropy_norm", [None] * num_layers)
 
     measurements = []
     for i in range(num_layers):
@@ -871,6 +909,7 @@ def compute_measurements(data: dict, num_layers: int) -> list[dict]:
             "E_mix": None,
             "E_closure_error": None,
             "H_logit": logit_entropy[i],
+            "H_logit_norm": logit_entropy_norm[i] if i < len(logit_entropy_norm) else None,
             "H_attn": sd["attn_entropy"],
             "is_attention_layer": sd["is_attention_layer"],
             "decomp_probe_fraction": sd.get("decomp_probe_fraction"),
@@ -1010,6 +1049,47 @@ def compute_operator_correlations(measurements: list[dict]) -> dict:
                 theta_attn_la = [m["theta_attn"] for m in logit_attn_only]
                 r_la, p_la = safe_spearman(H_la, theta_attn_la)
                 result["H_logit_vs_theta_attn"] = {"r": r_la, "p": p_la}
+
+    # --- Normalized logit entropy correlations (all layers with H_logit_norm) ---
+    norm_layers = [m for m in measurements if m.get("H_logit_norm") is not None]
+    result["n_norm_layers"] = len(norm_layers)
+    if len(norm_layers) >= 4:
+        H_ln = [m["H_logit_norm"] for m in norm_layers]
+        theta_total_n = [m["theta_total"] for m in norm_layers]
+        h_out_norm_sq_n = [m["h_out_norm_sq"] for m in norm_layers]
+        E_total_n = [m["E_total"] for m in norm_layers]
+
+        r_nt, p_nt = safe_spearman(H_ln, theta_total_n)
+        result["H_logit_norm_vs_theta_total"] = {"r": r_nt, "p": p_nt}
+        r_nn, p_nn = safe_spearman(H_ln, h_out_norm_sq_n)
+        result["H_logit_norm_vs_h_out_norm_sq"] = {"r": r_nn, "p": p_nn}
+        r_ne, p_ne = safe_spearman(H_ln, E_total_n)
+        result["H_logit_norm_vs_E_total"] = {"r": r_ne, "p": p_ne}
+
+        # Cross-check: H_logit_norm vs H_logit (prediction 3: should be < 0.9)
+        H_logit_for_cross = [m["H_logit"] for m in norm_layers if m["H_logit"] is not None]
+        H_norm_for_cross = [m["H_logit_norm"] for m in norm_layers if m["H_logit"] is not None]
+        if len(H_logit_for_cross) >= 4:
+            r_cross_norm, p_cross_norm = safe_spearman(H_logit_for_cross, H_norm_for_cross)
+            result["H_logit_norm_vs_H_logit"] = {"r": r_cross_norm, "p": p_cross_norm}
+
+        # Core decomposition subset
+        norm_decomp = [m for m in norm_layers if m["theta_core"] is not None]
+        if len(norm_decomp) >= 4:
+            H_nd = [m["H_logit_norm"] for m in norm_decomp]
+            r_nc, p_nc = safe_spearman(H_nd, [m["theta_core"] for m in norm_decomp])
+            r_nm, p_nm = safe_spearman(H_nd, [m["theta_mlp"] for m in norm_decomp])
+            r_ng, p_ng = safe_spearman(H_nd, [m["G_mlp"] for m in norm_decomp])
+            r_nec, p_nec = safe_spearman(H_nd, [m["E_core"] for m in norm_decomp])
+            r_nem, p_nem = safe_spearman(H_nd, [m["E_mlp"] for m in norm_decomp])
+            r_nex, p_nex = safe_spearman(H_nd, [m["E_mix"] for m in norm_decomp])
+
+            result["H_logit_norm_vs_theta_core"] = {"r": r_nc, "p": p_nc}
+            result["H_logit_norm_vs_theta_mlp"] = {"r": r_nm, "p": p_nm}
+            result["H_logit_norm_vs_G_mlp"] = {"r": r_ng, "p": p_ng}
+            result["H_logit_norm_vs_E_core"] = {"r": r_nec, "p": p_nec}
+            result["H_logit_norm_vs_E_mlp"] = {"r": r_nem, "p": p_nem}
+            result["H_logit_norm_vs_E_mix"] = {"r": r_nex, "p": p_nex}
 
     # --- Attention entropy correlations (attention layers only) ---
     if len(attn_layers) >= 4:
@@ -1167,6 +1247,28 @@ def compute_depth_controlled_correlations(measurements: list[dict]) -> dict:
                 }
             if by_operator:
                 result["ols_H_logit_by_core_operator"] = by_operator
+
+    # H_logit_norm vs theta_total | depth (norm-corrected)
+    norm_layers = [m for m in measurements if m.get("H_logit_norm") is not None]
+    if len(norm_layers) >= 4:
+        H_logit_norm = [m["H_logit_norm"] for m in norm_layers]
+        theta_total_n = [m["theta_total"] for m in norm_layers]
+        h_out_norm_sq_n = [m["h_out_norm_sq"] for m in norm_layers]
+        E_total_n = [m["E_total"] for m in norm_layers]
+        depth_n = [m["depth_fraction"] for m in norm_layers]
+
+        result["partial_H_logit_norm_vs_theta_total_given_depth"] = partial_spearman(
+            H_logit_norm, theta_total_n, depth_n
+        )
+        result["ols_H_logit_norm_to_theta_total_given_depth"] = depth_controlled_ols(
+            H_logit_norm, theta_total_n, depth_n,
+        )
+        result["ols_H_logit_norm_to_h_out_norm_sq_given_depth"] = depth_controlled_ols(
+            H_logit_norm, h_out_norm_sq_n, depth_n,
+        )
+        result["ols_H_logit_norm_to_E_total_given_depth"] = depth_controlled_ols(
+            H_logit_norm, E_total_n, depth_n,
+        )
 
     # H_attn vs theta_total | depth (attention layers only)
     attn_layers = [m for m in measurements if m["H_attn"] is not None]
@@ -1482,6 +1584,86 @@ def compute_falsifier_table(all_model_results: list[dict]) -> dict:
         "status": f5_status,
     }
 
+    # --- F_norm: Norm confound validation ---
+    # Prediction 1: r(H_logit_norm, ||h||²) ≈ 0 (|r| < 0.3)
+    # Prediction 3: r(H_logit_norm, H_logit) < 0.9 (normalization is non-trivial)
+    f_norm_results = {}
+    for mr in all_model_results:
+        model_name = mr["model_name"]
+        corrs = mr["correlations"]
+
+        r_norm_vs_normsq = corrs.get("H_logit_norm_vs_h_out_norm_sq", {}).get("r", float("nan"))
+        r_norm_vs_logit = corrs.get("H_logit_norm_vs_H_logit", {}).get("r", float("nan"))
+        r_logit_vs_normsq = corrs.get("H_logit_vs_h_out_norm_sq", {}).get("r", float("nan"))
+
+        pred1_pass = not math.isnan(r_norm_vs_normsq) and abs(r_norm_vs_normsq) < 0.3
+        pred3_pass = not math.isnan(r_norm_vs_logit) and r_norm_vs_logit < 0.9
+
+        f_norm_results[model_name] = {
+            "r_H_logit_norm_vs_h_out_norm_sq": r_norm_vs_normsq,
+            "r_H_logit_norm_vs_H_logit": r_norm_vs_logit,
+            "r_H_logit_vs_h_out_norm_sq": r_logit_vs_normsq,
+            "prediction_1_pass": pred1_pass,
+            "prediction_3_pass": pred3_pass,
+        }
+
+    p1_pass_count = sum(1 for v in f_norm_results.values() if v["prediction_1_pass"])
+    p3_pass_count = sum(1 for v in f_norm_results.values() if v["prediction_3_pass"])
+    falsifiers["F_norm_confound_validation"] = {
+        "test": "r(H_logit_norm, ||h||²) ≈ 0 (|r| < 0.3) AND r(H_logit_norm, H_logit) < 0.9",
+        "per_model": f_norm_results,
+        "prediction_1_pass_count": p1_pass_count,
+        "prediction_3_pass_count": p3_pass_count,
+        "total": len(f_norm_results),
+        "status": (
+            "PASS" if p1_pass_count == len(f_norm_results) and p3_pass_count == len(f_norm_results)
+            else "PARTIAL" if p1_pass_count > 0 or p3_pass_count > 0
+            else "FAIL"
+        ),
+    }
+
+    # --- F5_norm: Depth-controlled sign consistency for H_logit_norm ---
+    f5_norm_depth = {}
+    for mr in all_model_results:
+        model_name = mr["model_name"]
+        dc = mr["depth_controlled"]
+        partial_r = dc.get("partial_H_logit_norm_vs_theta_total_given_depth", float("nan"))
+        n = mr["num_layers"]
+
+        if not math.isnan(partial_r) and n >= 6:
+            df = n - 3
+            denom_sq = max(1e-15, 1 - partial_r ** 2)
+            t_stat = partial_r * math.sqrt(df) / math.sqrt(denom_sq)
+            p_val = float(2 * sp_stats.t.sf(abs(t_stat), df))
+            f5_norm_depth[model_name] = {
+                "partial_r": partial_r,
+                "approx_p": p_val,
+                "n": n,
+                "sign": "positive" if partial_r > 0 else "negative",
+            }
+        else:
+            f5_norm_depth[model_name] = {
+                "partial_r": float("nan") if math.isnan(partial_r) else partial_r,
+                "approx_p": float("nan"),
+                "n": n,
+                "sign": "unknown",
+            }
+
+    norm_signs = [v["sign"] for v in f5_norm_depth.values() if v["sign"] != "unknown"]
+    if len(norm_signs) == 0:
+        f5_norm_status = "INCONCLUSIVE"
+    elif len(set(norm_signs)) == 1:
+        f5_norm_status = "CONSISTENT_SIGN"
+    else:
+        f5_norm_status = "SIGN_DISAGREEMENT"
+
+    falsifiers["F5_norm_sign_across_families"] = {
+        "test": "depth-controlled partial Spearman for H_logit_norm vs theta_total",
+        "per_model": f5_norm_depth,
+        "signs": norm_signs,
+        "status": f5_norm_status,
+    }
+
     return falsifiers
 
 
@@ -1574,6 +1756,10 @@ def build_cross_model_summary(all_results: list[dict]) -> dict:
             "r_H_logit_E_core": corrs.get("H_logit_vs_E_core", {}).get("r"),
             "r_H_logit_E_mlp": corrs.get("H_logit_vs_E_mlp", {}).get("r"),
             "r_H_logit_E_mix": corrs.get("H_logit_vs_E_mix", {}).get("r"),
+            "r_H_logit_norm_theta_total": corrs.get("H_logit_norm_vs_theta_total", {}).get("r"),
+            "r_H_logit_norm_h_out_norm_sq": corrs.get("H_logit_norm_vs_h_out_norm_sq", {}).get("r"),
+            "r_H_logit_norm_E_total": corrs.get("H_logit_norm_vs_E_total", {}).get("r"),
+            "r_H_logit_norm_vs_H_logit": corrs.get("H_logit_norm_vs_H_logit", {}).get("r"),
             "core_decomp_coverage": corrs.get("core_decomp_coverage"),
         }
 
@@ -1590,13 +1776,17 @@ def build_cross_model_summary(all_results: list[dict]) -> dict:
         dc = r["depth_controlled"]
         p_logit = dc.get("partial_H_logit_vs_theta_total_given_depth", float("nan"))
         p_attn = dc.get("partial_H_attn_vs_theta_total_given_depth", float("nan"))
+        p_norm = dc.get("partial_H_logit_norm_vs_theta_total_given_depth", float("nan"))
+        entry = {}
         if not math.isnan(p_logit) and not math.isnan(p_attn):
             winner = "H_logit" if abs(p_logit) > abs(p_attn) else "H_attn"
-            operator_comparison[model] = {
-                "partial_r_logit": p_logit,
-                "partial_r_attn": p_attn,
-                "stronger_operator": winner,
-            }
+            entry["partial_r_logit"] = p_logit
+            entry["partial_r_attn"] = p_attn
+            entry["stronger_operator"] = winner
+        if not math.isnan(p_norm):
+            entry["partial_r_logit_norm"] = p_norm
+        if entry:
+            operator_comparison[model] = entry
 
     return {
         "sign_table": sign_table,

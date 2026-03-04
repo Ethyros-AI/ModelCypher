@@ -360,9 +360,9 @@ relationship is family-conditioned:
 
 **Implication:** The H(α) → Cov[y] → curvature derivation path cannot be claimed as the
 mechanism behind the empirical r=0.507 link. The relationship between the two operators is
-GQA-conditioned: higher GQA (more key compression) → operators decouple. This is itself a
-testable claim (r vs GQA monotone hypothesis: Qwen2.5 GQA=8 r=-0.094, Qwen3 GQA=4 r=0.602,
-Llama GQA=3 r=0.629 — consistent with monotone decrease as GQA increases).
+architecture-conditioned. Cross-family evidence is directional (10-model Spearman
+GQA vs r(H_logit, H_attn) = -0.736, p=0.015), but same-GQA models can diverge
+(Qwen3 vs Qwen3.5 at GQA=4), so a GQA-only monotone law is not established.
 
 ### F1 Operator Split Results
 
@@ -414,11 +414,10 @@ but the mechanism for the negative direction remains open.
    relationship to angular curvature must be derived from the unembedding geometry, not from
    the attention operator V/W_O path.
 
-3. **The GQA-conditioning hypothesis (open, testable):** The operator correlation pattern
-   (Qwen2.5 GQA=8: r=-0.094; Qwen3 GQA=4: r=0.602; Llama GQA=3: r=0.629) is consistent
-   with a monotone relationship: higher GQA → more K capacity compression → greater decoupling
-   of routing (H_attn) from posterior uncertainty (H_logit). This is a new testable prediction
-   from this measurement that links back to the GQA → K capacity → QK alignment chain.
+3. **The GQA-conditioning hypothesis (open, testable):** Current data supports a directional
+   cross-family trend (higher GQA tends to weaker H_attn/H_logit coupling), but the same-GQA
+   split (Qwen3 vs Qwen3.5, both GQA=4) shows architecture terms are required. The correct
+   claim form is GQA + architecture, not a 1D monotone GQA law.
 
 4. **Two separate derivation targets:**
    - **Target A (Steps 1–3 above):** H_attn → Cov[y] → curvature (theoretically clean;
@@ -1360,6 +1359,88 @@ Canonical protocol:
 
 This derivation document references the protocol but does not duplicate its operational
 criteria, to keep falsifier logic single-sourced.
+
+---
+
+## Norm Confound Discovery & Controlled Re-measurement (2026-03-04)
+
+### The Confound
+
+The Entropy-Lens does NOT apply the model's final norm (RMSNorm) before projecting through
+the unembedding:
+
+```
+H_logit = H(softmax(h @ W_unembed.T))                ← what we measure (unnormalized)
+H_model = H(softmax(RMSNorm(h) @ W_unembed.T))       ← what the model actually computes
+```
+
+Since `h @ W.T = ||h|| × (ĥ @ W.T)`, softmax sharpness scales with `||h||`. The r=-0.99
+correlation between H_logit and `||h||²` is a **measurement operator artifact**: it measures
+how norm affects softmax temperature, not posterior uncertainty about the next token.
+
+**Consequences for the causal chain:**
+- The r=0.507 raw (H_logit → θ_total) is contaminated by norm confound
+- H_logit → E_total (r≈-0.9) is norm²→norm² (`||h||²` → `||δ||²`)
+- θ_total is norm-independent → correctly shows no signal after depth control
+- The entropy→curvature link needs re-measurement with the model's actual norm applied
+
+**Per MISSION.md "Bedrock Mandate":** This is exactly the kind of correlation→cause error
+the mission guards against. A near-perfect correlation (r=-0.99) that turns out to be a
+measurement operator confound, not a geometric coupling.
+
+### Prediction Contract (MISSION.md:51 — written before measurement)
+
+```
+observable = r(H_logit_norm, θ_total | depth)
+  where H_logit_norm = H(softmax(RMSNorm(h_l) @ W_unembed.T))
+
+geometry_state: per-layer hidden state direction (after norm removes magnitude)
+architecture_state: {
+    LFM2-700M (hybrid conv+attn, 16 layers),
+    Qwen3.5-0.8B (hybrid linear_attn+full_attn, 24 layers),
+    Qwen2.5-3B (pure attention, 36 layers)
+}
+scale_state: {700M (16L), 800M (24L), 3B (36L)}
+measurement_operator: {
+    H_logit_norm: Shannon entropy of norm-then-unembed projection,
+    θ_total: arccos(cos(h_in, h_out)) per layer,
+    depth control: OLS residualization on depth_fraction
+}
+```
+
+**Directional predictions (written before measurement):**
+1. `r(H_logit_norm, ||h||²) ≈ 0` — normalization removes the norm confound
+   (Falsifier: |r| > 0.3 means normalization didn't work → implementation bug)
+2. `r(H_logit_norm, θ_total | depth)` — TWO possible outcomes, BOTH informative:
+   - If |r| > 0.3, p < 0.05: entropy→curvature is REAL, previously masked by norm confound
+   - If |r| < 0.3: entropy does NOT predict curvature → chain link demoted
+   (No falsifier needed — both outcomes are valid scientific results)
+3. `r(H_logit_norm, H_logit) < 0.9` — if normalized and unnormalized entropy are
+   near-identical, normalization didn't change the measurement → check implementation
+
+**Mixed-outcome rule (FIRST_PRINCIPLES_REVIEW_PROTOCOL.md §4):**
+If sign differs across families, classify as MECHANISM_UNDERSPECIFIED unless architecture
+terms predict the divergence. Report per-family and aggregate separately.
+
+### E_mix Architecture Split (from existing results)
+
+This finding is independent of the norm confound (E_mix is a norm² quantity but the
+SIGN split is geometric):
+
+| Operator | E_mix sign at high H_logit | Interpretation |
+|----------|---------------------------|----------------|
+| Attention (LFM2) | negative | core/MLP cooperate |
+| Conv (LFM2) | positive | core/MLP oppose |
+| Attention (Qwen3.5) | negative | core/MLP cooperate |
+| Linear attn (Qwen3.5) | near-zero | no coupling |
+| Attention (Llama) | negative | moderate cooperation |
+| Attention (Mistral) | positive | core/MLP oppose |
+
+This needs its own claim form if promoted beyond exploratory.
+
+### Results
+
+*To be filled after running `entropy_curvature_operator_split.py` with H_logit_norm.*
 
 ---
 

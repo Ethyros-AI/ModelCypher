@@ -754,12 +754,58 @@ F1 PASS 4/4, F3 PASS, F5 CONSISTENT_SIGN (7/10 resolvable, all negative, 4 famil
 Gate check 10/10. Mechanism prediction 9/10 (Qwen3-8B sole mismatch). LFM2
 competing_sublayers, Qwen3.5 core_pass_through, Llama/Mistral core_pass_through.
 Qwen3.5 scale-validated (0.8B+2B+4B, all resolvable, all negative).
-GQA conditioning: Spearman(GQA, r(H_logit, H_attn)) = -0.736, p=0.015, n=10.
+GQA conditioning (operator coupling): Spearman(GQA, r(H_logit, H_attn)) = -0.736, p=0.015, n=10.
+
+**New falsifier closure (6-model rerun, 2026-03-04):**
+F2_geometry_conditioned_E_mix = PASS (resolvable geometry effect in Qwen2.5-3B and
+Llama-3.2-3B; others below measurement floor, not failures).
+
+**B5 refinement (norm-coupling path):**
+Spearman(GQA, R²(H_logit -> ||h||²)) = -0.632, permutation p=0.250, n=4 attention families:
+NON_MONOTONE. Same-GQA counterexample: Qwen3-8B and Qwen3.5-0.8B both have GQA=4 but
+R²=0.274 vs 0.000. Therefore B5 is two-variable (GQA + core operator type), not GQA-only.
+
 CR-EC-001 remains [EMPIRICAL] (architecture-term gap still open).
-Full results: `results/entropy_curvature_operator_split/`, `results/f5_sign_law/`.
+Full results: `results/entropy_curvature_operator_split/`,
+`results/f5_sign_law_analysis_6models/`, `results/gqa_norm_entropy_coupling/`.
 Derivation: `docs/research/entropy-curvature-derivation.md` (Propositions B1-B3 proven,
-B4-B5 exploratory; two-path framework with GQA-modulated cancellation).
+B4-B5 exploratory; two-path framework with GQA+operator-conditioned cancellation).
 Next falsifier protocol: `docs/research/ENTROPY-CURVATURE-GQA-FALSIFIER-PROTOCOL.md`.
+
+**Causal perturbation test (2026-03-04):** Direct causal intervention — boost prefix
+attention weights by multiplier M, measure per-layer angular curvature change Δθ, test
+Spearman(ΔH, Δθ) with permutation test (α=0.05). Pre-registered falsifier.
+
+| Model | Result | Best ρ | Best p | Grid |
+|-------|--------|--------|--------|------|
+| LFM2-350M | **FALSIFIED** | +0.371 | 0.46 | 2713 M-values |
+| Qwen3.5-0.8B | **NOT FALSIFIED** | +0.886 | 0.026 | 116 M-values |
+
+**Interpretation:** MIXED RESULT = mechanism underspecification. The H_attn → curvature
+causal link holds for Qwen3.5 (pure attention layers, GQA) but NOT for LFM2 (hybrid
+conv+attn, only 6/16 attention layers). LFM2 baseline p_I=0.63 (high prefix concentration),
+Qwen p_I=0.50 (more uniform). Architecture_state term confirmed necessary.
+
+This is consistent with prior findings: H_attn has no correlation with curvature on standard
+transformers (Qwen2.5-3B: r=-0.036). The causal test now shows even under direct intervention,
+LFM2's conv-dominated architecture absorbs the attention entropy perturbation without curvature
+change. The conv layers (10/16) may buffer or override attention-induced geometric shifts.
+
+Artifact: `results/attention_validation/perturbation_experiment.txt`.
+
+**GQA norm-entropy coupling B5 test (2026-03-04):** R²(H_logit → log||h||²) vs GQA ratio.
+
+| Model | GQA | R²(H→||h||²) |
+|-------|-----|---------------|
+| Llama-3.2-3B | 3 | 0.826 |
+| Qwen3-8B | 4 | 0.274 |
+| Qwen3.5-0.8B | 4 | 0.000 |
+| Qwen2.5-3B | 8 | 0.035 |
+
+Spearman(GQA, R²) = -0.632; analytic p=0.368, exact-permutation p=0.250 (N=4, not significant). Direction consistent with B5
+(higher GQA → weaker coupling) but insufficient power. LFM2-350M (GQA=N/A, hybrid)
+excluded. B5 remains `[EXPLORATORY]` — needs more GQA-varied models.
+Artifact: `results/gqa_norm_entropy_coupling/coupling_results.json`.
 
 ---
 
