@@ -154,6 +154,7 @@ def main():
 
     from modelcypher.backends.mlx_training_adapter import MLXTrainingAdapter
     from modelcypher.core.domain._backend import get_default_backend
+    from modelcypher.core.domain.geometry.model_utils import resolve_model_base
     from modelcypher.core.domain.training.geometric_lora import (
         select_target_modules,
     )
@@ -198,9 +199,19 @@ def main():
     # ── Phase 1: Load models ──
     logger.info("Loading bf16 reference model...")
     fp_model, tokenizer = backend.load_model(str(args.fp_model))
+    fp_base = resolve_model_base(fp_model)
+    if not hasattr(fp_base, "layers") or not hasattr(fp_base, "embed_tokens"):
+        raise ValueError(
+            "FP model base resolution failed: expected resolved base with .layers and .embed_tokens",
+        )
 
     logger.info("Loading quantized model...")
     q_model, _ = backend.load_model(str(args.quantized_model))
+    q_base = resolve_model_base(q_model)
+    if not hasattr(q_base, "layers") or not hasattr(q_base, "embed_tokens"):
+        raise ValueError(
+            "Quantized model base resolution failed: expected resolved base with .layers and .embed_tokens",
+        )
 
     # ── Phase 2: Collect pre-training CKA baseline ──
     logger.info("Collecting CKA baseline activations (%d probes)...", args.n_cka_probes)

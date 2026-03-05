@@ -45,6 +45,7 @@ app = typer.Typer(no_args_is_help=True)
 def run_benchmark(
     ctx: typer.Context,
     model: str = typer.Argument(..., help="Path to model"),
+    adapter: str | None = typer.Option(None, "--adapter", help="Optional adapter path"),
     suite: str = typer.Option(
         "quick", "--suite", "-s", help="Benchmark suite (quick, reasoning, factual, comprehensive)"
     ),
@@ -77,7 +78,7 @@ def run_benchmark(
         model_loader = get_model_loader()
         backend = get_backend()
 
-        loaded_model, tokenizer = model_loader.load_model(model)
+        loaded_model, tokenizer = model_loader.load_model(model, adapter_path=adapter)
 
         def generate_fn(m, t, prompt, max_tokens, verbose=False):
             return backend.generate(m, t, prompt, max_tokens=max_tokens)
@@ -94,6 +95,8 @@ def run_benchmark(
 
         payload = result.to_dict()
         payload["modelPath"] = model
+        if adapter is not None:
+            payload["adapterPath"] = adapter
 
         if output_dir:
             import json

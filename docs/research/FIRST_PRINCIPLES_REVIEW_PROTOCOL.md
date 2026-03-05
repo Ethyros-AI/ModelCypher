@@ -25,7 +25,7 @@ conclusion. It is either:
 Every promoted claim must be written in this form before experiments run:
 
 ```text
-observable = f(geometry_state, architecture_state, scale_state, measurement_operator)
+observable = f(geometry_state, architecture_state, scale_state, precision_state, measurement_operator)
 ```
 
 Required fields per claim:
@@ -34,10 +34,11 @@ Required fields per claim:
 2. **Equation/theorem**: formal derivation with assumptions.
 3. **Architecture term**: explicit dependence on operator type/routing/layer family.
 4. **Scale term**: explicit dependence on width/depth/parameter count or derived dimensional terms.
-5. **Measurement operator**: statistic/kernel and domain of validity.
-6. **Commensurability proof**: proof measurements are comparable across compared objects.
-7. **Directional prediction**: sign/magnitude expectation before seeing data.
-8. **Falsifier**: exact observation that invalidates the claim.
+5. **Precision state**: explicit numeric representation and quantization operator parameters.
+6. **Measurement operator**: statistic/kernel and domain of validity.
+7. **Commensurability proof**: proof measurements are comparable across compared objects.
+8. **Directional prediction**: sign/magnitude expectation before seeing data.
+9. **Falsifier**: exact observation that invalidates the claim.
 
 Missing any field means the claim is **exploratory only**.
 

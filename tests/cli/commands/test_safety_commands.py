@@ -215,6 +215,79 @@ class TestBenchmarkCommands:
         """Test help text for benchmark command."""
         result = runner.invoke(app, ["analyze", "benchmark", "--help"])
         assert result.exit_code == 0
+        assert "--adapter" in result.stdout
+
+    def test_benchmark_passes_adapter_to_model_loader(self, monkeypatch):
+        """Benchmark command should load base model with optional adapter."""
+        from modelcypher.cli import composition
+
+        captured: dict[str, object] = {}
+
+        class _StubModelLoader:
+            def load_model(self, model_path: str, adapter_path: str | None = None):
+                captured["model_path"] = model_path
+                captured["adapter_path"] = adapter_path
+                return object(), object()
+
+        class _StubBackend:
+            @staticmethod
+            def generate(_m, _t, _prompt, max_tokens, verbose=False):
+                _ = verbose
+                return f"generated_{max_tokens}"
+
+        class _StubSuiteResult:
+            @staticmethod
+            def to_dict():
+                return {
+                    "suite": "quick",
+                    "overall_accuracy": 1.0,
+                    "benchmarks": [],
+                }
+
+        class _StubBenchmarkService:
+            def run_suite(
+                self,
+                *,
+                model,
+                tokenizer,
+                suite_name: str,
+                generate_fn,
+                limit_per_benchmark: int | None = None,
+                max_failures: int | None = None,
+                max_tokens: int = 512,
+            ):
+                _ = (model, tokenizer, generate_fn, max_failures, max_tokens)
+                captured["suite_name"] = suite_name
+                captured["limit_per_benchmark"] = limit_per_benchmark
+                return _StubSuiteResult()
+
+        monkeypatch.setattr(composition, "get_model_loader", lambda: _StubModelLoader())
+        monkeypatch.setattr(composition, "get_backend", lambda: _StubBackend())
+        monkeypatch.setattr(
+            composition, "get_benchmark_service", lambda: _StubBenchmarkService(),
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "--output", "json",
+                "analyze", "benchmark", "/tmp/base-model",
+                "--suite", "quick",
+                "--limit", "7",
+                "--adapter", "/tmp/adapter-path",
+            ],
+        )
+
+        assert result.exit_code == 0
+        json_start = result.stdout.find("{")
+        assert json_start >= 0
+        payload = json.loads(result.stdout[json_start:])
+        assert captured["model_path"] == "/tmp/base-model"
+        assert captured["adapter_path"] == "/tmp/adapter-path"
+        assert captured["suite_name"] == "quick"
+        assert captured["limit_per_benchmark"] == 7
+        assert payload["modelPath"] == "/tmp/base-model"
+        assert payload["adapterPath"] == "/tmp/adapter-path"
 
 
 class TestLoRADiagnosticCommands:

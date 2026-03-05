@@ -33,7 +33,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-MODEL_PATH_DEFAULT = "/Volumes/CodeCypher/models/mlx-community/LFM2-1.2B-bf16"
+MODEL_PATH_DEFAULT = "/Volumes/CodeCypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16"
 TRAIN_DATA_DEFAULT = "data/training/1p2b_reasoning_foundation_train.jsonl"
 EVAL_DATA_DEFAULT = "data/training/1p2b_reasoning_foundation_val.jsonl"
 RETENTION_DATA_DEFAULT = "data/training/retention_replay.jsonl"
