@@ -90,6 +90,38 @@ Probability language is strictly observer-side bookkeeping. It may summarize unc
 
 Scale is not a substitute for understanding. More parameters and more data cannot rescue a wrong causal model.
 
+## Bedrock Enforcement: Falsifier Failure = Dig Deeper
+
+**A failed falsifier is not a dead end. It is a measurement pointing to where your understanding is wrong.**
+
+Every operation in this pipeline is a deterministic geometric map. The math lives in our code, in the weight matrices, in MLX's operators, or somewhere in between. Nothing is hidden. Nothing is stochastic. When a prediction fails, the answer to "why" is always findable — because the entire computation is visible.
+
+The wrong response to falsifier failure:
+```
+F1 FAIL — Jacobian spectral structure doesn't explain norm coupling.
+Investigate alternative mechanisms.
+```
+
+The correct response:
+```
+F1 FAIL — σ₁(J_core) anti-correlates with norm growth. WHY?
+σ₁ measures maximum amplification along the leading singular direction.
+But norm change = ||h_out - h_in|| depends on:
+  1. Projection of h_in onto EACH singular direction (not just σ₁)
+  2. ALL singular values (not just the largest)
+  3. The angle between h_in and the operator output
+The answer is in the math. Trace it.
+```
+
+**The protocol:**
+1. Record what failed and what was observed
+2. Write out the exact mathematical chain from input to output
+3. Identify which link in the chain violates the prediction
+4. That link contains the missing understanding
+5. Measure the missing piece directly
+
+"The mechanism is unclear" is never acceptable. The mechanism is in the code. Read the code. Trace the tensors. The answer is there.
+
 ## Bedrock Enforcement: No Mixed-Model Narrative
 
 If a prediction is confirmed on some models and refuted on others, do NOT narrate that as
