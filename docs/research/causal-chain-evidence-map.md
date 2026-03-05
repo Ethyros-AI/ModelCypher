@@ -44,6 +44,8 @@ What this chain controls for `mc train run`:
   the norm-corrected operator path (`H_logit_norm`, depth-controlled statistics).
 - Consequence map is usable now: concentration geometry determines curvature response under
   the bedrock operator equation.
+- Operational decision boundary is now explicit in code: `pipeline_gate_v1` hard-gates
+  strict promotability using measured spectral/CKA/budget and online-eval stop-basis checks.
 
 What this chain does **not** currently gate:
 - Objective selection (CE vs REINFORCE variants) — this is determined by CI-based baseline

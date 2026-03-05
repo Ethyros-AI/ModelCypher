@@ -1813,6 +1813,17 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                     "Post-training benchmark failed", exc_info=True,
                 )
 
+        # Extract max gain ratio across all epochs for stability certificate.
+        max_gain_ratio: float | None = None
+        if epoch_metrics:
+            gain_ratios = [
+                m.max_effective_gain_ratio
+                for m in epoch_metrics
+                if m.max_effective_gain_ratio is not None
+            ]
+            if gain_ratios:
+                max_gain_ratio = max(gain_ratios)
+
         epoch_metrics_payload = [m.to_dict() for m in epoch_metrics] if epoch_metrics else None
 
         # 11.10. Pipeline promotability gate (shared with derived validation).
@@ -1898,17 +1909,6 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 "confidence_level": regime_result.confidence_level,
                 "n_total": regime_result.n_total,
             }
-
-        # Extract max gain ratio across all epochs for stability certificate
-        max_gain_ratio: float | None = None
-        if epoch_metrics:
-            gain_ratios = [
-                m.max_effective_gain_ratio
-                for m in epoch_metrics
-                if m.max_effective_gain_ratio is not None
-            ]
-            if gain_ratios:
-                max_gain_ratio = max(gain_ratios)
 
         moe_saturated_during_training: list[str] | None = None
         moe_saturation_threshold = max(

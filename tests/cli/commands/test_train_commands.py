@@ -221,6 +221,18 @@ class _DummyDatasetService:
         )
 
 
+class _DummyPipelineGateDatasetService:
+    def train_from_dataset_strict(self, **_kwargs):
+        raise TrainingDerivationError(
+            failure_class="pipeline_gate_failed",
+            detail="Pipeline gate failed: spectral_bounds_violation",
+            diagnostics={
+                "operator": "pipeline_gate_v1",
+                "failure_modes": ["spectral_bounds_violation"],
+            },
+        )
+
+
 class _DummyStarService:
     def run(self, **_kwargs):
         raise TrainingDerivationError(
@@ -292,6 +304,26 @@ class TestFailFastCoverage:
         assert result.exit_code == EXIT_RUNTIME
         payload = json.loads(result.stdout)
         assert payload["error"]["failure_class"] == "insufficient_entropy_baseline"
+
+    def test_train_run_surfaces_pipeline_gate_failure_class(self, monkeypatch, tmp_path):
+        model_dir = tmp_path / "model"
+        model_dir.mkdir()
+        data_path = tmp_path / "train.jsonl"
+        data_path.write_text('{"text":"hello"}\n', encoding="utf-8")
+        monkeypatch.setattr(
+            "modelcypher.cli.composition.get_dataset_training_service",
+            lambda: _DummyPipelineGateDatasetService(),
+        )
+
+        result = runner.invoke(
+            app,
+            ["train", "run", "--model", str(model_dir), "--data", str(data_path)],
+        )
+        from modelcypher.cli.exit_codes import EXIT_RUNTIME
+
+        assert result.exit_code == EXIT_RUNTIME
+        payload = json.loads(result.stdout)
+        assert payload["error"]["failure_class"] == "pipeline_gate_failed"
 
     def test_train_star_surfaces_failure_class(self, monkeypatch, tmp_path):
         model_dir = tmp_path / "model"

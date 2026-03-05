@@ -57,7 +57,7 @@ Each piece of this architecture has a foundation in ModelCypher today:
 
 | Capability | Current State | Module |
 |-----------|--------------|--------|
-| Geometry-derived training | Validated, CLI-promoted | `dataset_training_service.py`, `mc train run` |
+| Geometry-derived training | Validated, CLI-promoted with hard promotability gate (`pipeline_gate_v1`) | `dataset_training_service.py`, `mc train run` |
 | Cross-architecture adapter portability | Demonstrated via merge pipeline | `experimental/merge/`, CKA alignment |
 | Nightly consolidation | Experimental, architecture sound | `experimental/continual/`, `experimental/use_cases/consolidation_service.py` |
 | Adapter stacking at inference | Theoretical, infrastructure partial | `experimental/self_improve/lora_stacker.py` |

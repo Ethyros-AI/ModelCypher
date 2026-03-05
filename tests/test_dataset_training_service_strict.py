@@ -143,6 +143,11 @@ class _FlowAdapter:
         return True, 0.5, {}
 
 
+class _FlowAdapterFailingSpectral(_FlowAdapter):
+    def verify_bounds(self, _model):
+        return False, 1.5, {}
+
+
 class _CliResult:
     def __init__(self, payload: dict[str, object] | None = None) -> None:
         self._payload = payload or {"ok": True}
@@ -222,6 +227,70 @@ def _patch_lightweight_training(monkeypatch: pytest.MonkeyPatch, service: Datase
         dataset_training_service_module,
         "estimate_nb_lora_parameter_count",
         lambda *_args, **_kwargs: 1,
+    )
+
+
+def _patch_auto_regime_measurements(monkeypatch: pytest.MonkeyPatch) -> None:
+    from modelcypher.core.domain.training.online_eval import OnlineEvalResult
+    from modelcypher.core.domain.training.regime_selection import (
+        PerTypeRegime as RegimePerType,
+    )
+    from modelcypher.core.domain.training.regime_selection import TrainingRegime
+
+    baseline_result = OnlineEvalResult(
+        epoch=0,
+        accuracy=0.0,
+        n_correct=0,
+        n_total=5,
+        correct_ids=frozenset(),
+        baseline_n_correct=0,
+        baseline_accuracy=0.0,
+        n_lost=0,
+        n_gained=0,
+        degraded=False,
+        per_type_accuracy={"syllogistic_chain": 0.0},
+        per_type_correct={"syllogistic_chain": 0},
+        per_type_total={"syllogistic_chain": 5},
+    )
+    regime_result = TrainingRegime(
+        global_regime="ce",
+        per_type={
+            "syllogistic_chain": RegimePerType(
+                problem_type="syllogistic_chain",
+                n_correct=0,
+                n_total=5,
+                observed_accuracy=0.0,
+                ci_lower=0.0,
+                ci_upper=0.1,
+                chance_rate=0.5,
+                regime="ce",
+                rationale="k=0",
+            ),
+        },
+        use_ce=True,
+        use_outcome_training=False,
+        use_entropy_regularization=False,
+        confidence_level=0.8,
+        n_total=5,
+        baseline_ci_lower=0.0,
+        baseline_ci_upper=0.6,
+        headroom_upper=0.6,
+        headroom_resolution=0.2,
+        ceiling_bound=False,
+        ceiling_rationale="test",
+        derivation_log=("test",),
+    )
+    monkeypatch.setattr(
+        "modelcypher.core.domain.training.online_eval.create_eval_problem_set",
+        lambda **_kwargs: [object()],
+    )
+    monkeypatch.setattr(
+        "modelcypher.core.domain.training.online_eval.evaluate_correctness",
+        lambda **_kwargs: baseline_result,
+    )
+    monkeypatch.setattr(
+        "modelcypher.core.domain.training.regime_selection.select_training_regime",
+        lambda _baseline_result: regime_result,
     )
 
 
@@ -777,6 +846,98 @@ def test_train_from_dataset_auto_regime_adds_regime_metadata(monkeypatch, tmp_pa
     assert payload["regime_global"] == "ce"
     assert payload["regime_per_type"]["syllogistic_chain"]["regime"] == "ce"
     assert payload["regime_headroom"]["ceiling_bound"] is False
+
+
+def test_train_from_dataset_strict_fails_pipeline_gate(monkeypatch, tmp_path: Path):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(train_path, [{"text": "train 1"}])
+    _write_jsonl(eval_path, [{"text": "eval 1"}])
+
+    service = DatasetTrainingService(
+        adapter=_FlowAdapterFailingSpectral(),
+        backend=_FlowBackend(),
+    )
+    _patch_lightweight_training(monkeypatch, service)
+    _patch_auto_regime_measurements(monkeypatch)
+    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
+
+    with pytest.raises(TrainingDerivationError) as excinfo:
+        service.train_from_dataset_strict(
+            model_path=model_dir,
+            dataset_path=train_path,
+            output_path=tmp_path / "adapter",
+            eval_dataset_path=eval_path,
+        )
+
+    err = excinfo.value
+    assert err.failure_class == "pipeline_gate_failed"
+    diagnostics = err.diagnostics or {}
+    assert diagnostics["operator"] == "pipeline_gate_v1"
+    assert "spectral_bounds_violation" in diagnostics["failure_modes"]
+
+
+def test_train_from_dataset_strict_exposes_pipeline_gate_metadata(monkeypatch, tmp_path: Path):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(train_path, [{"text": "train 1"}])
+    _write_jsonl(eval_path, [{"text": "eval 1"}])
+
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
+    _patch_lightweight_training(monkeypatch, service)
+    _patch_auto_regime_measurements(monkeypatch)
+    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
+
+    result = service.train_from_dataset_strict(
+        model_path=model_dir,
+        dataset_path=train_path,
+        output_path=tmp_path / "adapter",
+        eval_dataset_path=eval_path,
+    )
+
+    assert result.pipeline_gate_operator == "pipeline_gate_v1"
+    assert result.pipeline_gate_passed is True
+    assert result.pipeline_gate_failure_modes == []
+    payload = result.to_dict()
+    assert payload["pipeline_gate_operator"] == "pipeline_gate_v1"
+    assert payload["pipeline_gate_passed"] is True
+    assert payload["pipeline_gate_failure_modes"] == []
+    assert "spectral_bounds" in payload["pipeline_gate_checks"]
+
+
+def test_train_from_dataset_research_reports_failed_pipeline_gate(monkeypatch, tmp_path: Path):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(train_path, [{"text": "train 1"}])
+    _write_jsonl(eval_path, [{"text": "eval 1"}])
+
+    service = DatasetTrainingService(
+        adapter=_FlowAdapterFailingSpectral(),
+        backend=_FlowBackend(),
+    )
+    _patch_lightweight_training(monkeypatch, service)
+    _patch_auto_regime_measurements(monkeypatch)
+    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
+
+    result = service.train_from_dataset_research(
+        model_path=model_dir,
+        dataset_path=train_path,
+        eval_dataset_path=eval_path,
+        no_save=True,
+    )
+
+    assert result.pipeline_gate_operator == "pipeline_gate_v1"
+    assert result.pipeline_gate_passed is False
+    assert "spectral_bounds_violation" in (result.pipeline_gate_failure_modes or [])
+    payload = result.to_dict()
+    assert payload["pipeline_gate_passed"] is False
+    assert "spectral_bounds_violation" in payload["pipeline_gate_failure_modes"]
 
 
 def test_auto_regime_preserves_explicit_entropy_regularization(monkeypatch, tmp_path: Path):

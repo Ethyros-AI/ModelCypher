@@ -378,6 +378,47 @@ def test_gain_bounded_is_not_failure(tmp_path):
     assert "gain_divergence" not in result.trial_results[0].failure_modes
 
 
+def test_shared_pipeline_gate_reports_spectral_failure(tmp_path):
+    service, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.4,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+            spectral_bounds_ok=False,
+        ),
+    ])
+    result = service.validate(
+        model_path=model_dir, dataset_path=data_file,
+        eval_dataset_path=None, trials=1, base_seed=1,
+    )
+    assert result.all_passed is False
+    assert "spectral_bounds_violation" in result.counterexamples[0].failure_modes
+
+
+def test_shared_pipeline_gate_keeps_unresolved_core_non_blocking_in_validation(tmp_path):
+    service, model_dir, data_file = _make_service(tmp_path, [
+        _FakeTrainResult(
+            baseline_loss=2.0,
+            post_loss=1.4,
+            baseline_perplexity=7.0,
+            post_perplexity=4.0,
+            spectral_bounds_ok=None,
+            per_layer_cka=None,
+            per_layer_cka_bound=None,
+            stop_reason="certificate",
+        ),
+    ])
+    result = service.validate(
+        model_path=model_dir, dataset_path=data_file,
+        eval_dataset_path=None, trials=1, base_seed=1,
+    )
+    assert result.all_passed is True
+    trial = result.trial_results[0]
+    assert "spectral_bounds_unavailable" not in trial.failure_modes
+    assert "cka_bound_unavailable" not in trial.failure_modes
+
+
 def test_new_gates_pass_when_healthy(tmp_path):
     service, model_dir, data_file = _make_service(tmp_path, [
         _FakeTrainResult(

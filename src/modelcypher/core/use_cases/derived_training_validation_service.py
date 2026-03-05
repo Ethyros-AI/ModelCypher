@@ -36,6 +36,10 @@ logger = logging.getLogger(__name__)
 
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.star.problem_generator import StarProblem, StarProblemGenerator
+from modelcypher.core.domain.training.pipeline_gate import (
+    PipelineGateInput,
+    evaluate_pipeline_gate,
+)
 from modelcypher.core.domain.training.online_eval import (
     OnlineEvalResult,
     create_eval_problem_set,
@@ -509,18 +513,39 @@ class DerivedTrainingValidationService:
         )
         loss_improved = loss_delta > eps
         perplexity_improved = perplexity_delta > eps
-        bounds_ok = bool(train_result.spectral_bounds_ok)
         sqrt_eps = math.sqrt(eps)
+        bounds_ok = bool(getattr(train_result, "spectral_bounds_ok", False))
+
+        per_layer_cka_bound_raw = getattr(train_result, "per_layer_cka_bound", None)
+        per_layer_cka_raw = getattr(train_result, "per_layer_cka", None)
+        sat = getattr(train_result, "adapter_saturation_median_ratio", None)
+        sat = float(sat) if sat is not None else None
+        max_gain_ratio = getattr(train_result, "max_effective_gain_ratio", None)
+        max_gain_ratio = float(max_gain_ratio) if max_gain_ratio is not None else None
+        epoch_metrics_raw = getattr(train_result, "epoch_metrics", None)
+        epoch_metrics_in = (
+            list(epoch_metrics_raw)
+            if isinstance(epoch_metrics_raw, list)
+            else None
+        )
+        gate_input = PipelineGateInput(
+            spectral_bounds_ok=getattr(train_result, "spectral_bounds_ok", None),
+            stop_reason=getattr(train_result, "stop_reason", None),
+            per_layer_cka=per_layer_cka_raw,
+            per_layer_cka_bound=per_layer_cka_bound_raw,
+            adapter_saturation_median_ratio=sat,
+            max_effective_gain_ratio=max_gain_ratio,
+            epoch_metrics=epoch_metrics_in,
+            strict_fail_closed_core=False,
+        )
+        pipeline_gate = evaluate_pipeline_gate(gate_input, eps=eps)
 
         structural_failure_modes: list[str] = []
         if not loss_improved:
             structural_failure_modes.append("loss_not_improved")
         if not perplexity_improved:
             structural_failure_modes.append("perplexity_not_improved")
-        if not bounds_ok:
-            structural_failure_modes.append("spectral_bounds_violation")
-        if str(train_result.stop_reason).startswith("safety_cap"):
-            structural_failure_modes.append("safety_cap_hit")
+        structural_failure_modes.extend(pipeline_gate.failure_modes)
         min_cka = (
             float(train_result.min_cka)
             if getattr(train_result, "min_cka", None) is not None
@@ -532,8 +557,6 @@ class DerivedTrainingValidationService:
         # lower bound (1-ε)/(1+ε) minus numerical tolerance.
         cka_shift = min_cka is not None and min_cka < 1.0 - sqrt_eps
 
-        per_layer_cka_bound_raw = getattr(train_result, "per_layer_cka_bound", None)
-        per_layer_cka_raw = getattr(train_result, "per_layer_cka", None)
         cka_margin_to_bound: float | None = None
         if per_layer_cka_raw and per_layer_cka_bound_raw:
             margins = []
@@ -543,20 +566,6 @@ class DerivedTrainingValidationService:
                     margins.append(float(actual) - float(bound))
             if margins:
                 cka_margin_to_bound = min(margins)
-                if cka_margin_to_bound < -sqrt_eps:
-                    structural_failure_modes.append("cka_bound_violation")
-
-        sat = getattr(train_result, "adapter_saturation_median_ratio", None)
-        sat = float(sat) if sat is not None else None
-        if sat is not None and sat >= 1.0:
-            structural_failure_modes.append("adapter_saturation_exceeded")
-
-        # Bounded-gain stability (Sahraee-Ardakan et al. 2026):
-        # gain_ratio = max(eta_step / eta_ceiling) should stay <= 1.0.
-        max_gain_ratio = getattr(train_result, "max_effective_gain_ratio", None)
-        max_gain_ratio = float(max_gain_ratio) if max_gain_ratio is not None else None
-        if max_gain_ratio is not None and max_gain_ratio > 1.0 + sqrt_eps:
-            structural_failure_modes.append("gain_divergence")
 
         inference_failure_modes: list[str] = []
         online_eval_baseline_correct = None

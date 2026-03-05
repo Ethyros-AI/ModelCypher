@@ -221,8 +221,9 @@ promotion as a standalone finding.
 
 Artifacts: `results/gqa_falsifier_protocol/*/`
 
-**Provenance note:** The archived artifact `20260304_213522` reflects the pre-correction
-outcome (F3=FALSIFIED, overall=FALSIFIED, no commensurability fields). The commensurability
-correction is a post-hoc reanalysis of the same measurement data. A corrected artifact
-with the updated schema (commensurability fields, dual regression) will be generated on
-the next `--collect-missing` run.
+**Provenance note:** `20260304_213522` is the legacy pre-correction artifact
+(F3=FALSIFIED, overall=FALSIFIED, no commensurability fields). `20260304_221926`
+is the first corrected v2 artifact from an offline run (commensurability-corrected,
+but `c_cancel` limited to cached models). `20260304_230500` is the canonical corrected
+artifact from `--collect-missing` (v2 schema, commensurability fields present, full
+`c_cancel` coverage across all 9 models) and should be used for adjudication.

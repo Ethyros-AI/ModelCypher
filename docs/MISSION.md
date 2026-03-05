@@ -162,6 +162,9 @@ ModelCypher is complete when the following command works on any model and any da
 mc train run --model /path/to/model --data /path/to/dataset --output /path/to/adapter
 ```
 
+`mc train run` now includes a hard promotability gate (`pipeline_gate_v1`): strict runs fail
+if measured geometric invariants are violated or core invariants are unresolved.
+
 And the resulting adapter:
 
 1. **Captures the target knowledge or behavior** — measurable via held-out evaluation

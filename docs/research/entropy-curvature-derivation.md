@@ -1169,6 +1169,10 @@ Interpretation: architecture terms bound the ceiling (`W_O,W_V,W_Q,W_K,d_k,W_u`)
 input-state terms (`alpha,p,r,Cov_alpha(v,k),sigma_min(J_g)`) tighten the realized value.
 This is the required architecture/input split for the Gap-2 measurable.
 
+**Operator note (pipeline integration):** `pipeline_gate_v1` consumes only these measured
+invariants (spectral safety, stop-basis degradation, CKA-vs-bound bundle, saturation, gain)
+as promotability checks. It does not rely on open-cause mechanism claims (e.g., A7/D3.3).
+
 #### Gap-2 Measurement Results (2026-03-04)
 
 Measured via `scripts/estimate_bl_jacobian.py` on 3 probes per layer.
