@@ -469,12 +469,19 @@ def collect_per_head_gradient_data(
 
 
 def compute_radial_projections(
-    model, tokenizer, text, baseline, attn_weights, backend, mx
+    model, tokenizer, text, baseline, attn_weights, backend, mx,
+    *, include_vectors: bool = False,
 ) -> dict[int, dict[int, dict]]:
     """Compute r_t = ⟨w_t, ĥ⟩ and R = Σ α_t r_t for each (layer, head).
 
     w_t = output vector for token t = V[t] @ W_O^T (per head)
     ĥ = normalized hidden state at layer input
+
+    When include_vectors=True, additionally stores:
+        w_t_vectors: list of T lists, each [hidden_dim] — full w_t per token
+        h_hat: [hidden_dim] — normalized hidden state unit vector
+    This is opt-in to avoid allocation overhead for callers that only
+    need the scalar projections (r_t, norms).
     """
     token_ids = baseline["token_ids"]
     input_ids = mx.array([token_ids])
@@ -552,12 +559,13 @@ def compute_radial_projections(
                 r_t_list = []
                 norm_w_t_list = []
                 norm_w_t_perp_list = []
-                w_t_vectors = []
+                w_t_vectors = [] if include_vectors else None
                 for t in range(seq_len):
                     v_t = v_reshaped[0, t, head_idx, :]  # [head_dim]
                     # w_t = W_O_head @ v_t → [hidden_dim]
                     w_t = W_O_head @ v_t
-                    w_t_vectors.append(w_t.tolist())  # [hidden_dim] per token
+                    if include_vectors:
+                        w_t_vectors.append(w_t.tolist())  # [hidden_dim] per token
                     # r_t = ⟨w_t, ĥ⟩
                     r_t = float(mx.sum(w_t * h_hat))
                     r_t_list.append(r_t)
@@ -571,15 +579,17 @@ def compute_radial_projections(
                 alpha = [float(attn_weights[layer_idx][0, head_idx, _QUERY_POS, t]) for t in range(seq_len)]
                 R = sum(alpha[t] * r_t_list[t] for t in range(seq_len))
 
-                radial[layer_idx][head_idx] = {
+                head_data = {
                     "r_t": r_t_list,
                     "R": R,
                     "r_minus_R": [r_t_list[t] - R for t in range(seq_len)],
                     "norm_w_t": norm_w_t_list,
                     "norm_w_t_perp": norm_w_t_perp_list,
-                    "w_t_vectors": w_t_vectors,  # list of T lists, each [hidden_dim]
-                    "h_hat": h_hat.tolist(),       # [hidden_dim]
                 }
+                if include_vectors:
+                    head_data["w_t_vectors"] = w_t_vectors  # list of T lists, each [hidden_dim]
+                    head_data["h_hat"] = h_hat.tolist()       # [hidden_dim]
+                radial[layer_idx][head_idx] = head_data
 
         # Forward through layer to advance h
         if is_attn:

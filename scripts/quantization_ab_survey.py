@@ -172,6 +172,17 @@ def build_tool_specs() -> list[ToolSpec]:
             timeout=300,
             needs_probes=True,
         ),
+        ToolSpec(
+            name="chain-profile",
+            command_template=[
+                "poetry", "run", "mc", "--json", "analyze", "chain-profile",
+                "--model", "{model_path}", "--probes", "{probes_file}",
+                "--samples", "60",
+            ],
+            category="activation",
+            timeout=480,
+            needs_probes=True,
+        ),
         # ── Activation-Space (single prompt) ──
         ToolSpec(
             name="jacobian-trace",
@@ -587,6 +598,18 @@ def _extract_summary_metrics(comparisons: list[ToolComparison]) -> list[dict]:
                         "q4": sum(q4_vals) / len(q4_vals),
                     })
 
+        elif comp.tool_name == "chain-profile" and comp.prompt_index is None:
+            bf16_corr = bf16.get("correlations", {})
+            q4_corr = q4.get("correlations", {})
+            for key in ["entropyToCurvature", "cumulativeCurvatureToId", "meanAttnFraction"]:
+                if key in bf16_corr and key in q4_corr:
+                    metrics.append({
+                        "metric": key,
+                        "tool": comp.tool_name,
+                        "bf16": bf16_corr[key],
+                        "q4": q4_corr[key],
+                    })
+
         elif comp.tool_name == "benchmark":
             # Look for accuracy or total scores
             for key in bf16:
@@ -757,65 +780,137 @@ def generate_comparison_report(
             for key in sorted(bf16_data.keys()):
                 bf16_v = bf16_data.get(key)
                 q4_v = q4_data.get(key)
-                if (
+                if not (
                     isinstance(bf16_v, list)
                     and isinstance(q4_v, list)
                     and len(bf16_v) > 0
-                    and len(bf16_v) == len(q4_v)
                     and isinstance(bf16_v[0], dict)
                 ):
-                    # Per-layer table — show first numeric field per item
-                    lines.append(f"**{key}** ({len(bf16_v)} items):")
+                    continue
+
+                # Name-matched comparison: match items by "name" field
+                # instead of position.  This handles model-info layers where
+                # bf16 and q4 have different tensor counts and iteration order.
+                bf16_has_name = all(
+                    isinstance(x, dict) and "name" in x for x in bf16_v
+                )
+                q4_has_name = isinstance(q4_v, list) and all(
+                    isinstance(x, dict) and "name" in x for x in q4_v
+                )
+                if bf16_has_name and q4_has_name:
+                    bf16_map = {item["name"]: item for item in bf16_v}
+                    q4_map = {item["name"]: item for item in q4_v}
+                    # Filter out quantization metadata
+                    q4_filtered = {
+                        k: v for k, v in q4_map.items()
+                        if not k.endswith((".scales", ".biases"))
+                    }
+                    common_names = sorted(set(bf16_map) & set(q4_filtered))
+                    bf16_only = len(bf16_map) - len(common_names)
+                    q4_only = len(q4_filtered) - len(common_names)
+                    q4_quant_meta = len(q4_map) - len(q4_filtered)
+
+                    lines.append(
+                        f"**{key}** ({len(common_names)} matched, "
+                        f"{bf16_only} bf16-only, {q4_only} q4-only, "
+                        f"{q4_quant_meta} q4 quant metadata skipped):"
+                    )
                     lines.append("")
 
-                    # Find common numeric keys in first element
-                    sample_keys = [
-                        k for k in bf16_v[0]
-                        if isinstance(bf16_v[0].get(k), (int, float))
-                    ][:6]  # limit columns
-                    if sample_keys:
-                        # Find a label key
-                        label_key = None
-                        for candidate in ["layer_name", "name", "layer", "id", "index"]:
-                            if candidate in bf16_v[0]:
-                                label_key = candidate
-                                break
-
-                        header = "| # |"
-                        if label_key:
-                            header += f" {label_key} |"
-                        for sk in sample_keys:
-                            header += f" {sk} (bf16) | {sk} (q4) | delta |"
-                        lines.append(header)
-
-                        sep = "|---|"
-                        if label_key:
-                            sep += "---|"
-                        for _ in sample_keys:
-                            sep += "---|---|---|"
-                        lines.append(sep)
-
-                        # Limit rows to avoid huge tables
-                        show_items = bf16_v[:20]
-                        for i, (b_item, q_item) in enumerate(
-                            zip(show_items, q4_v[:20])
-                        ):
-                            row = f"| {i} |"
-                            if label_key:
-                                row += f" {b_item.get(label_key, '')} |"
+                    if common_names:
+                        sample = bf16_map[common_names[0]]
+                        sample_keys = [
+                            k for k in sample
+                            if isinstance(sample.get(k), (int, float))
+                        ][:4]
+                        if sample_keys:
+                            header = "| # | name |"
                             for sk in sample_keys:
-                                bv = b_item.get(sk)
-                                qv = q_item.get(sk)
-                                if isinstance(bv, (int, float)) and isinstance(qv, (int, float)):
-                                    d = qv - bv
-                                    row += f" {_format_value(bv)} | {_format_value(qv)} | {_format_value(d)} |"
-                                else:
-                                    row += f" {_format_value(bv)} | {_format_value(qv)} | — |"
-                            lines.append(row)
+                                header += f" {sk} (bf16) | {sk} (q4) | delta |"
+                            lines.append(header)
 
-                        if len(bf16_v) > 20:
-                            lines.append(f"| ... | ({len(bf16_v) - 20} more rows) | ... |")
+                            sep = "|---|---|"
+                            for _ in sample_keys:
+                                sep += "---|---|---|"
+                            lines.append(sep)
+
+                            for i, name in enumerate(common_names[:20]):
+                                b_item = bf16_map[name]
+                                q_item = q4_filtered[name]
+                                row = f"| {i} | {name} |"
+                                for sk in sample_keys:
+                                    bv = b_item.get(sk)
+                                    qv = q_item.get(sk)
+                                    if isinstance(bv, (int, float)) and isinstance(qv, (int, float)):
+                                        d = qv - bv
+                                        row += f" {_format_value(bv)} | {_format_value(qv)} | {_format_value(d)} |"
+                                    else:
+                                        row += f" {_format_value(bv)} | {_format_value(qv)} | — |"
+                                lines.append(row)
+
+                            if len(common_names) > 20:
+                                lines.append(
+                                    f"| ... | ({len(common_names) - 20} more) | ... |"
+                                )
                         lines.append("")
+                    continue
+
+                # Positional comparison (same-length lists without name field)
+                if len(bf16_v) != len(q4_v):
+                    continue
+
+                # Per-layer table — show first numeric field per item
+                lines.append(f"**{key}** ({len(bf16_v)} items):")
+                lines.append("")
+
+                # Find common numeric keys in first element
+                sample_keys = [
+                    k for k in bf16_v[0]
+                    if isinstance(bf16_v[0].get(k), (int, float))
+                ][:6]  # limit columns
+                if sample_keys:
+                    # Find a label key
+                    label_key = None
+                    for candidate in ["layer_name", "name", "layer", "id", "index"]:
+                        if candidate in bf16_v[0]:
+                            label_key = candidate
+                            break
+
+                    header = "| # |"
+                    if label_key:
+                        header += f" {label_key} |"
+                    for sk in sample_keys:
+                        header += f" {sk} (bf16) | {sk} (q4) | delta |"
+                    lines.append(header)
+
+                    sep = "|---|"
+                    if label_key:
+                        sep += "---|"
+                    for _ in sample_keys:
+                        sep += "---|---|---|"
+                    lines.append(sep)
+
+                    # Limit rows to avoid huge tables
+                    show_items = bf16_v[:20]
+                    for i, (b_item, q_item) in enumerate(
+                        zip(show_items, q4_v[:20])
+                    ):
+                        row = f"| {i} |"
+                        if label_key:
+                            row += f" {b_item.get(label_key, '')} |"
+                        for sk in sample_keys:
+                            bv = b_item.get(sk)
+                            qv = q_item.get(sk)
+                            if isinstance(bv, (int, float)) and isinstance(qv, (int, float)):
+                                d = qv - bv
+                                row += f" {_format_value(bv)} | {_format_value(qv)} | {_format_value(d)} |"
+                            else:
+                                row += f" {_format_value(bv)} | {_format_value(qv)} | — |"
+                        lines.append(row)
+
+                    if len(bf16_v) > 20:
+                        lines.append(f"| ... | ({len(bf16_v) - 20} more rows) | ... |")
+                    lines.append("")
 
             # Show per-layer data for simple numeric lists
             for key in sorted(bf16_data.keys()):

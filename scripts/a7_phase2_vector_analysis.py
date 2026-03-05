@@ -43,19 +43,21 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-import numpy as np
-
 # Reuse validated functions from A7 validator
 from validate_a7_assumption import (
+    _QUERY_POS,
     MODELS,
     PROBE_TEXTS,
-    _EPS_F32,
-    _QUERY_POS,
     collect_baseline,
     collect_per_head_gradient_data,
     compute_radial_projections,
     compute_score_gradients,
 )
+
+# IEEE 754 float64 constants for numerical guards
+_EPS_F64 = math.ldexp(1.0, -52)  # ≈ 2.22e-16
+# Geometric mean of 1 and eps: floor for directions whose unit vector is noise-dominated
+_SQRT_EPS_F64 = math.sqrt(_EPS_F64)  # ≈ 1.49e-8
 
 logging.basicConfig(
     level=logging.INFO,
@@ -71,63 +73,138 @@ PHASE2_MODELS = {
 
 
 # =====================================================================
-# Analysis functions (pure numpy)
+# Analysis functions (backend-native + Python scalars)
 # =====================================================================
 
 
-def vector_regression(
-    w_t_vectors: np.ndarray, grad_over_alpha: np.ndarray
-) -> dict:
-    """Identity verification: recover g from ⟨g, w_t⟩ = ∂L/∂s_t / α_t - const.
+def _as_float_list(x: list[float] | tuple[float, ...] | float | int) -> list[float]:
+    if isinstance(x, list):
+        return [float(v) for v in x]
+    if isinstance(x, tuple):
+        return [float(v) for v in x]
+    return [float(x)]
 
-    Build W = [w_1^T; ...; w_T^T] shape [T, hidden_dim], augment with intercept.
-    Solve via np.linalg.lstsq (minimum-norm solution since T << d).
-    R² should be ≈ 1.0 (identity is exact; deviation measures finite-diff noise).
 
-    Returns: R², g_proj [hidden_dim], intercept, residual_norm.
-    """
-    T, d = w_t_vectors.shape
-    # Augment: [W | 1] @ [g; c] = y
-    W_aug = np.column_stack([w_t_vectors, np.ones(T)])  # [T, d+1]
-    y = grad_over_alpha  # [T]
+def _dot(a: list[float], b: list[float]) -> float:
+    return float(sum(x * y for x, y in zip(a, b)))
 
-    beta, _, rank, _ = np.linalg.lstsq(W_aug, y, rcond=None)
-    g_proj = beta[:d]  # [hidden_dim]
-    intercept = float(beta[d])
 
-    y_hat = W_aug @ beta
-    residuals = y - y_hat
-    ss_res = float(np.sum(residuals**2))
-    ss_tot = float(np.sum((y - np.mean(y))**2))
+def _norm(a: list[float]) -> float:
+    return math.sqrt(_dot(a, a))
 
-    if ss_tot < 1e-30:
-        r_squared = 0.0
+
+def _mean(a: list[float]) -> float:
+    if not a:
+        return float("nan")
+    return float(sum(a) / len(a))
+
+
+def _std(a: list[float]) -> float:
+    if not a:
+        return float("nan")
+    mu = _mean(a)
+    return math.sqrt(sum((x - mu) ** 2 for x in a) / len(a))
+
+
+def _r_squared(y_true: list[float], y_pred: list[float]) -> float:
+    y_mean = _mean(y_true)
+    ss_tot = sum((y - y_mean) ** 2 for y in y_true)
+    if ss_tot < _EPS_F64:
+        return 0.0
+    ss_res = sum((y - y_hat) ** 2 for y, y_hat in zip(y_true, y_pred))
+    return 1.0 - ss_res / ss_tot
+
+
+def _append_ones_column(backend, rows: list[list[float]]):
+    if not rows:
+        return backend.array([], dtype="float32")
+    out = [row + [1.0] for row in rows]
+    return backend.array(out, dtype="float32")
+
+
+def _lstsq_via_pinv(backend, x_mat, y_vec):
+    """Minimum-norm least squares via pseudoinverse: beta = pinv(X) @ y."""
+    n_rows, n_cols = backend.shape(x_mat)
+    y_col = backend.reshape(y_vec, (n_rows, 1))
+    beta_col = backend.matmul(backend.pinv(x_mat), y_col)
+    beta = backend.reshape(beta_col, (n_cols,))
+    svals = backend.svd(x_mat, compute_uv=False)
+    backend.eval(beta, svals)
+
+    s_list = _as_float_list(backend.tolist(svals))
+    if not s_list:
+        rank = 0
     else:
-        r_squared = 1.0 - ss_res / ss_tot
+        s_max = max(s_list)
+        tol = _SQRT_EPS_F64 * s_max
+        rank = sum(1 for s in s_list if s > tol)
+    return beta, rank
 
-    residual_norm = float(np.sqrt(ss_res))
+
+def vector_regression(
+    w_t_vectors, grad_over_alpha, backend
+) -> dict:
+    """Recover g from ⟨g, w_t⟩ = ∂L/∂s_t / α_t - const via held-out split.
+
+    Since T << d (e.g. T=10, d=1024), full-data least squares can interpolate
+    any y. The falsifiable metric is held-out R² from split-half prediction.
+    """
+    T, d = backend.shape(w_t_vectors)
+    w_rows = backend.tolist(w_t_vectors)
+    y_vals = _as_float_list(backend.tolist(grad_over_alpha))
+
+    even_idx = [i for i in range(T) if i % 2 == 0]
+    odd_idx = [i for i in range(T) if i % 2 == 1]
+
+    held_out_r_squared = float("nan")
+    if len(even_idx) >= 2 and len(odd_idx) >= 1:
+        x_fit_rows = [w_rows[i] for i in even_idx]
+        y_fit_vals = [y_vals[i] for i in even_idx]
+        x_test_rows = [w_rows[i] for i in odd_idx]
+        y_test_vals = [y_vals[i] for i in odd_idx]
+
+        x_fit = _append_ones_column(backend, x_fit_rows)
+        y_fit = backend.array(y_fit_vals, dtype="float32")
+        beta_fit, _ = _lstsq_via_pinv(backend, x_fit, y_fit)
+
+        x_test = _append_ones_column(backend, x_test_rows)
+        y_pred = backend.matmul(x_test, backend.reshape(beta_fit, (d + 1, 1)))
+        backend.eval(y_pred)
+        y_pred_vals = _as_float_list(backend.tolist(backend.reshape(y_pred, (len(odd_idx),))))
+        held_out_r_squared = _r_squared(y_test_vals, y_pred_vals)
+
+    # Full-data fit for downstream decomposition (tautological metric retained for logging)
+    x_full = _append_ones_column(backend, w_rows)
+    y_full = backend.array(y_vals, dtype="float32")
+    beta, rank = _lstsq_via_pinv(backend, x_full, y_full)
+    beta_list = _as_float_list(backend.tolist(beta))
+    g_proj = beta_list[:d]
+    intercept = float(beta_list[d])
+
+    y_hat = backend.matmul(x_full, backend.reshape(beta, (d + 1, 1)))
+    backend.eval(y_hat)
+    y_hat_vals = _as_float_list(backend.tolist(backend.reshape(y_hat, (T,))))
+    full_r_squared = _r_squared(y_vals, y_hat_vals)
+    residual_norm = math.sqrt(sum((y - y_hat_v) ** 2 for y, y_hat_v in zip(y_vals, y_hat_vals)))
 
     return {
-        "r_squared": r_squared,
+        "held_out_r_squared": held_out_r_squared,
+        "full_r_squared_tautological": full_r_squared,
         "g_proj": g_proj,
         "intercept": intercept,
         "residual_norm": residual_norm,
         "rank": int(rank),
         "T": T,
         "d": d,
+        "n_fit": len(even_idx),
+        "n_test": len(odd_idx),
     }
 
 
-def analyze_g_proj(g_proj: np.ndarray, h_hat: np.ndarray) -> dict:
-    """Gradient direction characterization.
-
-    - g_radial = ⟨g_proj, ĥ⟩
-    - g_⊥ = g_proj - g_radial·ĥ
-    - cos(g_proj, ĥ) — how radial is the downstream gradient?
-    - radial_fraction = |g_radial| / ||g_proj||
-    """
-    g_norm = float(np.linalg.norm(g_proj))
-    if g_norm < 1e-30:
+def analyze_g_proj(g_proj: list[float], h_hat: list[float]) -> dict:
+    """Gradient direction characterization."""
+    g_norm = _norm(g_proj)
+    if g_norm < _EPS_F64:
         return {
             "g_radial": 0.0,
             "g_perp_norm": 0.0,
@@ -136,10 +213,9 @@ def analyze_g_proj(g_proj: np.ndarray, h_hat: np.ndarray) -> dict:
             "g_norm": 0.0,
         }
 
-    g_radial = float(np.dot(g_proj, h_hat))
-    g_perp = g_proj - g_radial * h_hat
-    g_perp_norm = float(np.linalg.norm(g_perp))
-
+    g_radial = _dot(g_proj, h_hat)
+    g_perp = [g - g_radial * h for g, h in zip(g_proj, h_hat)]
+    g_perp_norm = _norm(g_perp)
     cos_g_hhat = g_radial / g_norm
     radial_fraction = abs(g_radial) / g_norm
 
@@ -153,30 +229,18 @@ def analyze_g_proj(g_proj: np.ndarray, h_hat: np.ndarray) -> dict:
 
 
 def measure_tangential_direction_variance(
-    w_t_vectors: np.ndarray, h_hat: np.ndarray
+    w_t_vectors: list[list[float]], h_hat: list[float]
 ) -> dict:
-    """Gap explanation: directional diversity of tangential components.
+    """Directional diversity of tangential components."""
+    u_hat: list[list[float]] = []
+    for w in w_t_vectors:
+        r = _dot(w, h_hat)
+        w_perp = [w_i - r * h_i for w_i, h_i in zip(w, h_hat)]
+        nrm = _norm(w_perp)
+        if nrm > _SQRT_EPS_F64:
+            u_hat.append([v / nrm for v in w_perp])
 
-    For each token: û_t = w_t_⊥ / ||w_t_⊥|| (normalized tangential direction).
-    Pairwise cosines between all û_t pairs.
-
-    mean_pairwise_cos ≈ 1.0 → tangential directions aligned →
-        scalar model should capture it → gap comes from something else
-    mean_pairwise_cos ≈ 0 → diverse tangential directions →
-        scalar model loses directional info → explains the R² ≈ 0.7 gap
-    """
-    T = w_t_vectors.shape[0]
-
-    # Compute tangential components
-    # w_t_⊥ = w_t - ⟨w_t, ĥ⟩ ĥ
-    radial_projections = w_t_vectors @ h_hat  # [T]
-    w_t_perp = w_t_vectors - np.outer(radial_projections, h_hat)  # [T, d]
-    norms = np.linalg.norm(w_t_perp, axis=1)  # [T]
-
-    # Filter tokens with negligible tangential component
-    valid = norms > 1e-10
-    n_valid = int(np.sum(valid))
-
+    n_valid = len(u_hat)
     if n_valid < 2:
         return {
             "mean_pairwise_cos": float("nan"),
@@ -187,157 +251,127 @@ def measure_tangential_direction_variance(
             "n_pairs": 0,
         }
 
-    # Normalized tangential directions
-    u_hat = w_t_perp[valid] / norms[valid, np.newaxis]  # [n_valid, d]
+    pairwise_cos: list[float] = []
+    for i in range(n_valid):
+        for j in range(i + 1, n_valid):
+            pairwise_cos.append(_dot(u_hat[i], u_hat[j]))
 
-    # Pairwise cosine matrix
-    cos_matrix = u_hat @ u_hat.T  # [n_valid, n_valid]
-
-    # Extract upper triangle (excluding diagonal)
-    triu_indices = np.triu_indices(n_valid, k=1)
-    pairwise_cos = cos_matrix[triu_indices]
-    abs_pairwise_cos = np.abs(pairwise_cos)
-
+    abs_pairwise_cos = [abs(v) for v in pairwise_cos]
     return {
-        "mean_pairwise_cos": float(np.mean(abs_pairwise_cos)),
-        "std_pairwise_cos": float(np.std(abs_pairwise_cos)),
-        "min_pairwise_cos": float(np.min(abs_pairwise_cos)),
-        "max_pairwise_cos": float(np.max(abs_pairwise_cos)),
+        "mean_pairwise_cos": _mean(abs_pairwise_cos),
+        "std_pairwise_cos": _std(abs_pairwise_cos),
+        "min_pairwise_cos": min(abs_pairwise_cos),
+        "max_pairwise_cos": max(abs_pairwise_cos),
         "n_valid_tokens": n_valid,
         "n_pairs": len(pairwise_cos),
-        "mean_signed_cos": float(np.mean(pairwise_cos)),
+        "mean_signed_cos": _mean(pairwise_cos),
     }
 
 
 def decomposition_verification(
-    w_t_vectors: np.ndarray,
-    h_hat: np.ndarray,
-    g_proj: np.ndarray,
-    grad_over_alpha: np.ndarray,
+    w_t_vectors: list[list[float]],
+    h_hat: list[float],
+    g_proj: list[float],
+    grad_over_alpha: list[float],
     intercept: float,
 ) -> dict:
-    """Decompose ⟨g, w_t⟩ into radial and tangential terms.
+    """Fixed-coefficient decomposition verification (no re-fitting)."""
+    y = [float(v) for v in grad_over_alpha]
+    y_mean = _mean(y)
+    ss_tot = sum((v - y_mean) ** 2 for v in y)
 
-    Verify R²(radial) + R²(tangential) ≈ R²(both) ≈ vector R².
-
-    - R²(radial only): y_hat = g_radial × r_t + c
-    - R²(tangential only): y_hat = ⟨g_⊥, w_t_⊥⟩ + c
-    - R²(both): should match vector regression R²
-    """
-    T = w_t_vectors.shape[0]
-    y = grad_over_alpha
-    y_mean = float(np.mean(y))
-    ss_tot = float(np.sum((y - y_mean)**2))
-
-    if ss_tot < 1e-30:
+    if ss_tot < _EPS_F64:
         return {
             "r_squared_radial_only": 0.0,
             "r_squared_tangential_only": 0.0,
             "r_squared_both": 0.0,
+            "g_radial_scalar": 0.0,
+            "g_perp_norm": 0.0,
         }
 
-    g_radial = float(np.dot(g_proj, h_hat))
-    g_perp = g_proj - g_radial * h_hat
+    g_radial = _dot(g_proj, h_hat)
+    g_perp = [g - g_radial * h for g, h in zip(g_proj, h_hat)]
 
-    # Per-token radial projections r_t = ⟨w_t, ĥ⟩
-    r_t = w_t_vectors @ h_hat  # [T]
-    # Per-token tangential components: w_t_⊥ = w_t - r_t ĥ
-    w_t_perp = w_t_vectors - np.outer(r_t, h_hat)  # [T, d]
-    # Tangential inner products: ⟨g_⊥, w_t_⊥⟩
-    tang_inner = w_t_perp @ g_perp  # [T]
+    r_t: list[float] = []
+    tang_inner: list[float] = []
+    for w in w_t_vectors:
+        r = _dot(w, h_hat)
+        r_t.append(r)
+        w_perp = [w_i - r * h_i for w_i, h_i in zip(w, h_hat)]
+        tang_inner.append(_dot(w_perp, g_perp))
 
-    # R²(radial only): y_hat = g_radial × r_t + c
-    X_rad = np.column_stack([r_t, np.ones(T)])
-    beta_rad, _, _, _ = np.linalg.lstsq(X_rad, y, rcond=None)
-    y_hat_rad = X_rad @ beta_rad
-    ss_res_rad = float(np.sum((y - y_hat_rad)**2))
-    r_sq_radial = 1.0 - ss_res_rad / ss_tot
+    y_hat_rad = [g_radial * r + intercept for r in r_t]
+    y_hat_tang = [t + intercept for t in tang_inner]
+    y_hat_both = [g_radial * r + t + intercept for r, t in zip(r_t, tang_inner)]
 
-    # R²(tangential only): y_hat = ⟨g_⊥, w_t_⊥⟩ + c
-    X_tang = np.column_stack([tang_inner, np.ones(T)])
-    beta_tang, _, _, _ = np.linalg.lstsq(X_tang, y, rcond=None)
-    y_hat_tang = X_tang @ beta_tang
-    ss_res_tang = float(np.sum((y - y_hat_tang)**2))
-    r_sq_tangential = 1.0 - ss_res_tang / ss_tot
-
-    # R²(both): y_hat = g_radial × r_t + ⟨g_⊥, w_t_⊥⟩ + c
-    X_both = np.column_stack([r_t, tang_inner, np.ones(T)])
-    beta_both, _, _, _ = np.linalg.lstsq(X_both, y, rcond=None)
-    y_hat_both = X_both @ beta_both
-    ss_res_both = float(np.sum((y - y_hat_both)**2))
-    r_sq_both = 1.0 - ss_res_both / ss_tot
+    r_sq_radial = _r_squared(y, y_hat_rad)
+    r_sq_tangential = _r_squared(y, y_hat_tang)
+    r_sq_both = _r_squared(y, y_hat_both)
 
     return {
         "r_squared_radial_only": r_sq_radial,
         "r_squared_tangential_only": r_sq_tangential,
         "r_squared_both": r_sq_both,
         "g_radial_scalar": g_radial,
-        "g_perp_norm": float(np.linalg.norm(g_perp)),
-        "beta_radial_fit": beta_rad.tolist(),
-        "beta_tangential_fit": beta_tang.tolist(),
+        "g_perp_norm": _norm(g_perp),
     }
 
 
 def cross_head_g_similarity(
-    g_projs: dict[tuple[int, int], np.ndarray],
+    g_projs: dict[tuple[int, int], list[float]],
 ) -> dict:
-    """g direction similarity across heads (within-layer and across-layer).
-
-    Pairwise cosine of g_proj across all heads.
-    """
+    """g direction similarity across heads (within-layer and across-layer)."""
     heads = sorted(g_projs.keys())
     if len(heads) < 2:
         return {"within_layer": {}, "across_layer": {}, "n_heads": len(heads)}
 
-    # Organize by layer
-    by_layer: dict[int, list[tuple[int, np.ndarray]]] = {}
-    for (l, h), g in g_projs.items():
-        by_layer.setdefault(l, []).append((h, g))
+    by_layer: dict[int, list[tuple[int, list[float]]]] = {}
+    for (layer_idx, head_idx), g in g_projs.items():
+        by_layer.setdefault(layer_idx, []).append((head_idx, g))
 
     within_layer = {}
     for layer_idx, head_gs in by_layer.items():
         if len(head_gs) < 2:
             continue
-        cosines = []
+        cosines: list[float] = []
         for i in range(len(head_gs)):
             for j in range(i + 1, len(head_gs)):
                 g_i = head_gs[i][1]
                 g_j = head_gs[j][1]
-                n_i = float(np.linalg.norm(g_i))
-                n_j = float(np.linalg.norm(g_j))
-                if n_i > 1e-30 and n_j > 1e-30:
-                    cosines.append(float(np.dot(g_i, g_j) / (n_i * n_j)))
+                n_i = _norm(g_i)
+                n_j = _norm(g_j)
+                if n_i > _EPS_F64 and n_j > _EPS_F64:
+                    cosines.append(_dot(g_i, g_j) / (n_i * n_j))
         if cosines:
             within_layer[str(layer_idx)] = {
-                "mean_cos": float(np.mean(cosines)),
-                "std_cos": float(np.std(cosines)),
-                "min_cos": float(np.min(cosines)),
-                "max_cos": float(np.max(cosines)),
+                "mean_cos": _mean(cosines),
+                "std_cos": _std(cosines),
+                "min_cos": min(cosines),
+                "max_cos": max(cosines),
                 "n_pairs": len(cosines),
             }
 
-    # Across-layer: all pairs from different layers
-    across_cosines = []
+    across_cosines: list[float] = []
     for i in range(len(heads)):
         for j in range(i + 1, len(heads)):
-            l_i, h_i = heads[i]
-            l_j, h_j = heads[j]
+            l_i, _ = heads[i]
+            l_j, _ = heads[j]
             if l_i == l_j:
                 continue
             g_i = g_projs[heads[i]]
             g_j = g_projs[heads[j]]
-            n_i = float(np.linalg.norm(g_i))
-            n_j = float(np.linalg.norm(g_j))
-            if n_i > 1e-30 and n_j > 1e-30:
-                across_cosines.append(float(np.dot(g_i, g_j) / (n_i * n_j)))
+            n_i = _norm(g_i)
+            n_j = _norm(g_j)
+            if n_i > _EPS_F64 and n_j > _EPS_F64:
+                across_cosines.append(_dot(g_i, g_j) / (n_i * n_j))
 
     across_layer = {}
     if across_cosines:
         across_layer = {
-            "mean_cos": float(np.mean(across_cosines)),
-            "std_cos": float(np.std(across_cosines)),
-            "min_cos": float(np.min(across_cosines)),
-            "max_cos": float(np.max(across_cosines)),
+            "mean_cos": _mean(across_cosines),
+            "std_cos": _std(across_cosines),
+            "min_cos": min(across_cosines),
+            "max_cos": max(across_cosines),
             "n_pairs": len(across_cosines),
         }
 
@@ -388,7 +422,8 @@ def run_single_model(
 
         logger.info("  Computing radial projections (with vectors)...")
         radial_data = compute_radial_projections(
-            model, tokenizer, text, baseline, baseline["attn_weights"], backend, mx
+            model, tokenizer, text, baseline, baseline["attn_weights"], backend, mx,
+            include_vectors=True,
         )
 
         logger.info("  Collecting per-head gradient data...")
@@ -399,7 +434,7 @@ def run_single_model(
         # Phase 2 analysis per head
         logger.info("  Running Phase 2 vector analysis...")
         per_head_results: dict[str, dict[str, dict]] = {}
-        g_projs_for_cross: dict[tuple[int, int], np.ndarray] = {}
+        g_projs_for_cross: dict[tuple[int, int], list[float]] = {}
 
         for layer_idx in sorted(mono_data.keys()):
             l_key = str(layer_idx)
@@ -424,22 +459,26 @@ def run_single_model(
                     }
                     continue
 
-                w_t_vecs = np.array(radial_entry["w_t_vectors"], dtype=np.float64)  # [T, d]
-                h_hat = np.array(radial_entry["h_hat"], dtype=np.float64)  # [d]
-                goa = np.array(mono_entry["grad_over_alpha"], dtype=np.float64)  # [T]
+                w_t_vecs = backend.array(radial_entry["w_t_vectors"], dtype="float32")  # [T, d]
+                h_hat = [float(v) for v in radial_entry["h_hat"]]  # [d]
+                goa = backend.array(mono_entry["grad_over_alpha"], dtype="float32")  # [T]
 
                 # (a) Vector regression → R², g_proj
-                vreg = vector_regression(w_t_vecs, goa)
+                vreg = vector_regression(w_t_vecs, goa, backend)
 
                 # (b) Analyze g_proj → radial/tangential fractions
                 g_analysis = analyze_g_proj(vreg["g_proj"], h_hat)
 
                 # (c) Tangential direction variance
-                tang_var = measure_tangential_direction_variance(w_t_vecs, h_hat)
+                tang_var = measure_tangential_direction_variance(radial_entry["w_t_vectors"], h_hat)
 
                 # (d) Decomposition verification
                 decomp = decomposition_verification(
-                    w_t_vecs, h_hat, vreg["g_proj"], goa, vreg["intercept"]
+                    radial_entry["w_t_vectors"],
+                    h_hat,
+                    vreg["g_proj"],
+                    mono_entry["grad_over_alpha"],
+                    vreg["intercept"],
                 )
 
                 # Store g_proj for cross-head analysis
@@ -448,12 +487,15 @@ def run_single_model(
                 per_head_results[l_key][h_key] = {
                     "excluded": False,
                     "vector_regression": {
-                        "r_squared": vreg["r_squared"],
+                        "held_out_r_squared": vreg["held_out_r_squared"],
+                        "full_r_squared_tautological": vreg["full_r_squared_tautological"],
                         "intercept": vreg["intercept"],
                         "residual_norm": vreg["residual_norm"],
                         "rank": vreg["rank"],
                         "T": vreg["T"],
                         "d": vreg["d"],
+                        "n_fit": vreg["n_fit"],
+                        "n_test": vreg["n_test"],
                     },
                     "g_analysis": g_analysis,
                     "tangential_variance": tang_var,
@@ -461,10 +503,10 @@ def run_single_model(
                 }
 
                 logger.info(
-                    "    L%d H%d: vec_R²=%.4f, cos(g,ĥ)=%+.3f, rad_frac=%.3f, "
+                    "    L%d H%d: held_out_R²=%.4f, cos(g,ĥ)=%+.3f, rad_frac=%.3f, "
                     "tang_cos=%.3f, R²(rad)=%.4f, R²(tang)=%.4f",
                     layer_idx, head_idx,
-                    vreg["r_squared"],
+                    vreg["held_out_r_squared"],
                     g_analysis["cos_g_hhat"],
                     g_analysis["radial_fraction"],
                     tang_var.get("mean_pairwise_cos", float("nan")),
@@ -477,7 +519,7 @@ def run_single_model(
         cross_head = cross_head_g_similarity(g_projs_for_cross)
 
         # Aggregate statistics
-        all_vec_r2 = []
+        all_held_out_r2 = []
         all_cos_g_hhat = []
         all_radial_frac = []
         all_tang_cos = []
@@ -492,8 +534,8 @@ def run_single_model(
                     continue
 
                 vreg = entry["vector_regression"]
-                if not math.isnan(vreg["r_squared"]):
-                    all_vec_r2.append(vreg["r_squared"])
+                if not math.isnan(vreg["held_out_r_squared"]):
+                    all_held_out_r2.append(vreg["held_out_r_squared"])
 
                 ga = entry["g_analysis"]
                 if not math.isnan(ga["cos_g_hhat"]):
@@ -511,7 +553,7 @@ def run_single_model(
                 all_r2_both.append(dec["r_squared_both"])
 
         aggregate = {
-            "vector_r_squared": _safe_stats(all_vec_r2),
+            "held_out_r_squared": _safe_stats(all_held_out_r2),
             "cos_g_hhat": _safe_stats(all_cos_g_hhat),
             "radial_fraction": _safe_stats(all_radial_frac),
             "tangential_pairwise_cos": _safe_stats(all_tang_cos),
@@ -521,10 +563,10 @@ def run_single_model(
         }
 
         logger.info(
-            "  Probe %d aggregate: vec_R² mean=%.4f, cos(g,ĥ) mean=%+.3f, "
+            "  Probe %d aggregate: held_out_R² mean=%.4f, cos(g,ĥ) mean=%+.3f, "
             "rad_frac mean=%.3f, tang_cos mean=%.3f",
             probe_idx + 1,
-            aggregate["vector_r_squared"]["mean"] or 0,
+            aggregate["held_out_r_squared"]["mean"] or 0,
             aggregate["cos_g_hhat"]["mean"] or 0,
             aggregate["radial_fraction"]["mean"] or 0,
             aggregate["tangential_pairwise_cos"]["mean"] or 0,
@@ -578,9 +620,9 @@ def write_text_summary(txt_path: Path, run_doc: dict) -> None:
         "Phase 2 recovers the gradient vector g and decomposes it.",
         "",
         "Key questions:",
-        "  1. Vector R² ≈ 1.0?  → identity confirmed, finite-diff noise is small",
+        "  1. Held-out R² > 0?  → identity confirmed (falsifiable: T<<d split test)",
         "  2. cos(g, ĥ) distribution → how radial is g actually?",
-        "  3. R²(rad) vs R²(tang) → fraction from each component",
+        "  3. R²(rad) vs R²(tang) → fraction from each component (fixed coefficients)",
         "  4. tangential pairwise cos → can scalar model capture it?",
         "",
     ]
@@ -596,7 +638,7 @@ def write_text_summary(txt_path: Path, run_doc: dict) -> None:
 
             agg = pr["aggregate"]
             for key, label in [
-                ("vector_r_squared", "Vector R²"),
+                ("held_out_r_squared", "Held-out R² (falsifiable)"),
                 ("cos_g_hhat", "cos(g, ĥ)"),
                 ("radial_fraction", "Radial fraction"),
                 ("tangential_pairwise_cos", "Tangential pairwise |cos|"),
@@ -617,7 +659,7 @@ def write_text_summary(txt_path: Path, run_doc: dict) -> None:
             cross = pr.get("cross_head_g_similarity", {})
             within = cross.get("within_layer", {})
             across = cross.get("across_layer", {})
-            lines.append(f"\n  Cross-head g similarity:")
+            lines.append("\n  Cross-head g similarity:")
             for l_key, stats in sorted(within.items()):
                 lines.append(
                     f"    Layer {l_key} (within): mean_cos={stats['mean_cos']:+.4f}, "
@@ -632,7 +674,7 @@ def write_text_summary(txt_path: Path, run_doc: dict) -> None:
                 )
 
             # Per-head detail
-            lines.append(f"\n  Per-head detail:")
+            lines.append("\n  Per-head detail:")
             for l_key in sorted(pr["per_head"].keys(), key=int):
                 for h_key in sorted(pr["per_head"][l_key].keys(), key=int):
                     entry = pr["per_head"][l_key][h_key]
@@ -645,7 +687,7 @@ def write_text_summary(txt_path: Path, run_doc: dict) -> None:
                     dec = entry["decomposition"]
                     tv = entry["tangential_variance"]
                     lines.append(
-                        f"    L{l_key} H{h_key}: vec_R²={vreg['r_squared']:.4f}, "
+                        f"    L{l_key} H{h_key}: held_out_R²={vreg['held_out_r_squared']:.4f}, "
                         f"cos(g,ĥ)={ga['cos_g_hhat']:+.3f}, "
                         f"rad_frac={ga['radial_fraction']:.3f}, "
                         f"R²(rad)={dec['r_squared_radial_only']:.4f}, "

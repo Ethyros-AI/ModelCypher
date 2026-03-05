@@ -34,6 +34,8 @@ from typing import TYPE_CHECKING, Any
 import mlx.core as mx
 import numpy as np
 
+from modelcypher.core.domain.geometry.model_utils import resolve_model_base
+
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
 
@@ -69,7 +71,7 @@ def collect_sublayer_activations(
             h_post_attn: list[list[float]] [N_probes, d] or None
             has_decomposition: bool
     """
-    base = getattr(model, "model", model)
+    base = resolve_model_base(model)
     embed = getattr(base, "embed_tokens", None)
     layers_list = getattr(base, "layers", None)
     if layers_list is None or embed is None:
