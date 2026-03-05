@@ -36,9 +36,11 @@ z_t = log(α_t), perturb z_t' = z_t + ε, recompute softmax(z').
 MEASUREMENT:
 ∂L/∂s_t ≈ (L(s + ε e_t) - L(s)) / ε  via forward finite difference.
 
-ε = sqrt(eps_f32) ≈ 1.09e-4 (IEEE 754 optimal finite-difference step
-for f32 arithmetic: balances truncation error O(ε) against round-off
-error O(eps/ε)). Reference: Numerical Recipes §5.7.
+ε = sqrt(eps_bf16) ≈ 0.088 (IEEE 754 optimal finite-difference step
+for bf16 computation dtype: balances truncation error O(ε) against
+rounding error O(eps_bf16/ε)). The perturbation propagates through bf16
+matmuls, so the computation dtype — not accumulation format — determines
+the precision floor. Reference: Numerical Recipes §5.7.
 
 EXPERIMENTAL STATUS: scripts/ only, NOT CLI (AGENTS.md:695)
 """
@@ -51,17 +53,32 @@ import random
 import sys
 from pathlib import Path
 
-# IEEE 754 float32 constants
+# IEEE 754 constants
 _EPS_F32 = math.ldexp(1.0, -23)
 _SQRT_EPS_F32 = math.sqrt(_EPS_F32)
+_EPS_BF16 = math.ldexp(1.0, -7)
+_SQRT_EPS_BF16 = math.sqrt(_EPS_BF16)
 # IEEE 754 float32 minimum positive normal number (for log floor)
 _FLOAT32_MIN_NORMAL = math.ldexp(1.0, -126)
-# Optimal finite-difference step for f32 (Numerical Recipes §5.7)
-_EPSILON = _SQRT_EPS_F32
+# Optimal finite-difference step: must be derived from the COMPUTATION dtype,
+# not the accumulation format. The perturbation propagates through bf16 matmuls
+# (hidden state values O(1), ULP ≈ eps_bf16 ≈ 0.0078). A perturbation that
+# produces Δα_t < eps_bf16 gets quantized to zero at the first bf16 op.
+# Optimal step balances truncation O(ε) vs rounding O(eps_bf16/ε):
+#   ε_opt = sqrt(eps_bf16) = sqrt(2^-7) ≈ 0.0884
+# At this ε, Δα_t ≈ α(1-α)ε ≈ 0.014 > eps_bf16 for typical α ≈ 0.2.
+_EPSILON = _SQRT_EPS_BF16
 # Pre-registered significance level (Fisher convention, matches perturbation experiment)
 _PRE_REGISTERED_ALPHA = 0.05
-# Permutation resolution derived from IEEE floor: ceil(1/sqrt(eps_f32))
-_N_PERMUTATIONS = int(math.ceil(1.0 / _SQRT_EPS_F32))
+# Permutation count for Monte Carlo test (T > 8).
+# Holm-Bonferroni strictest threshold is α/n_tests. For the Monte Carlo
+# test to resolve this, need min_p = 1/(n_perms+1) < α/n_tests, i.e.
+# n_perms > n_tests/α - 1. Worst case: 6 layers × 16 heads = 96 tests.
+# n_perms > 96/0.05 - 1 = 1919. Use 10× margin for stable p-value
+# estimation: 19200. (For T ≤ 8, exact test uses all T! permutations
+# regardless of this constant.)
+_MAX_HEADS_PER_MODEL = 96  # 6 attn layers × 16 heads (LFM2-350M worst case)
+_N_PERMUTATIONS = int(math.ceil(10.0 * _MAX_HEADS_PER_MODEL / _PRE_REGISTERED_ALPHA))
 # Query position whose logits drive the CE loss. Under causal masking,
 # logits[-2] predicts token_ids[-1]. All perturbations and alpha
 # extractions must target this query row for gradient path consistency.
@@ -72,8 +89,13 @@ MODELS = {
     "Qwen3.5-0.8B": "/Volumes/CodeCypher/models/mlx-community/Qwen3.5-0.8B-bf16",
 }
 
+# Probes must tokenize to T ≥ 7 for the exact permutation test (T ≤ 8)
+# to resolve the Holm threshold α/n_tests. With n_tests ≈ 96 and α = 0.05,
+# Holm threshold ≈ 0.00053. Minimum p from T! permutations: 1/T!.
+# T=6: 1/720 = 0.0014 > 0.00053 — IMPOSSIBLE. T=7: 1/5040 = 0.0002 — OK.
+# "The capital of France is" tokenizes to T=6 on LFM2. Replaced.
 PROBE_TEXTS = [
-    "The capital of France is",
+    "The quick brown fox jumps over the lazy dog",
     "In mathematics, the derivative of x squared is",
     "Once upon a time in a land far away",
 ]

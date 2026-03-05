@@ -1327,7 +1327,7 @@ sin²(α_centroid) = ||w̄^⊥||² / (||w̄^⊥||² + (w̄^∥)²)
 For concentrated `α ≈ e_k`: `sin²(α) = ||w_k^⊥||²/||w_k||²` depends on the specific
 token's radial alignment, which can be strictly less than 1. ∎
 
-**Lemma D3.3 (CE-Driven QK Selection Bias) `[PROVEN under A7]`.**
+**Lemma D3.3 (CE-Driven QK Selection Bias) `[PROVEN under A7, A7 FALSIFIED — D3.3 NOT APPLICABLE]`.**
 Under a radial-dominant downstream gradient, CE training increases attention scores for
 above-average radial tokens and decreases scores for below-average radial tokens.
 
@@ -1393,6 +1393,20 @@ Strictly positive unless all `r_t` are equal. So CE increases radial concentrati
 
 **Falsifier for A7:** if measured `E[Δs_t | r_t]` is not monotone increasing in `r_t - R`,
 or if `E[ΔR] < 0`, the radial-selection premise fails and D3.3 is not applicable.
+
+**A7 FALSIFIED (2026-03-04).** `scripts/validate_a7_assumption.py` measured per-token
+score gradients via finite difference (ε = sqrt(eps_bf16), IEEE 754 derived) on LFM2-350M
+and Qwen3.5-0.8B. Results: Spearman(∂L/∂s_t / α_t, -(r_t - R)) shows no systematic
+positive correlation (0/96 heads pass Holm-Bonferroni on LFM2, 0/48 on Qwen). β sign
+scattered ≈50/50 positive/negative. The downstream gradient ∂L/∂δ is not radial-dominant.
+D3.3's selection mechanism does not hold.
+
+**What survives:** D3.1, D3.2, D3.4, D3.5 are unconditional geometric identities.
+The consequence map (concentration → larger r → larger θ) is proven. The open question
+is now the *cause*: what CE gradient mechanism drives attention concentration during
+training, if not radial selection? The bedrock operator equation is:
+`θ_l² ≈ (α^T M_l α / ||h_l||²) sin²(α_l)` where `M_l` is the Gram matrix over
+token output vectors `w_{l,t}`. This is geometry, not dynamics.
 
 **Theorem D3.4 (r-Dominance) `[PROVEN given D3.1, D3.2]`.**
 r changes by `O(√T)` between concentrated and uniform α; sin(α) changes by `O(1)`.

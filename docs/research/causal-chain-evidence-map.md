@@ -193,15 +193,20 @@ of the norm-corrected operator under an explicit architecture-conditioned local 
 `entropy-curvature-derivation.md` now contains D3.1–D3.5:
 - D3.1 `[PROVEN]`: Centroid magnitude reduction — diffuse α → smaller ||δ|| (convexity).
 - D3.2 `[PROVEN]`: Centroid tangentiality — diffuse α → sin(α) → 1 (concentration of measure).
-- D3.3 `[PROVEN under A7]`: CE chain-rule selection bias — score updates are monotone in
-  `(r_t - R)` under radial-dominant downstream gradient, so high-α mass shifts to radially
-  aligned tokens.
+- D3.3 `[PROVEN under A7, A7 FALSIFIED]`: CE chain-rule selection bias — the math is correct
+  *given* a radial-dominant downstream gradient, but A7 is empirically false. The downstream
+  gradient ∂L/∂δ is not radial-dominant (0/96 heads on LFM2, 0/48 on Qwen show the predicted
+  monotonicity). D3.3 is not applicable to real models.
 - D3.4 `[PROVEN]`: r-dominance — r changes O(√T) vs sin(α) changes O(1), r wins.
 - D3.5 `[PROVEN]`: Architecture conditioning — f_attn determines which factor absorbs coupling.
-All measured signs match derivation across 3 architectures.
+
+**Bedrock operator equation (unconditional):**
+`θ_l² ≈ (α^T M_l α / ||h_l||²) sin²(α_l)` where `M_l` is the Gram matrix over `w_{l,t}`.
+D3.1+D3.2+D3.4 prove: concentration raises r, r dominates θ. This is geometry, no assumptions.
 
 **Remaining gaps:**
-1. Validate A7 in-model (measure monotonicity of `E[Δs_t | r_t]` and sign of `ΔR`).
+1. ~~Validate A7 in-model~~ → **A7 FALSIFIED** (2026-03-04, `scripts/validate_a7_assumption.py`).
+   Open question: what CE gradient mechanism drives attention concentration during training?
 2. Estimate `a_l, b_l` from measured Jacobians (`B_l`) per architecture.
 3. Qwen3.5 anomaly: effective f_attn may differ from nominal (linear attention has partial coupling).
 
@@ -358,7 +363,7 @@ Formal derivation: `entropy-curvature-derivation.md`.
 | QK alignment → selectivity → highway | `[EXPLORATORY]` | Formal derivation: alignment → expected crossing depth |
 | Attention selectivity ↔ H_attn | `[PROVEN]` | — |
 | H_attn ↔ H_logit | `[EXPLORATORY]` | ACT-016: corr(H_attn, H_logit) per family; determine if proxies |
-| H_logit → Δcurvature | `[EXPLORATORY, SIGN-REVERSED]` | D3.1–D3.5 derive sign + architecture conditioning (D3.3 proven under A7). Promote after A7 validation and `a_l,b_l` estimation. |
+| H_logit → Δcurvature | `[EXPLORATORY, SIGN-REVERSED]` | D3.1+D3.2+D3.4 derive consequence (concentration → curvature). D3.3 (cause: radial selection) FALSIFIED. Geometric consequence map is proven; training dynamics cause is open. Promote after cause mechanism identified and `a_l,b_l` estimation. |
 | Cumulative curvature → ID | `[EXPLORATORY]` | Derive: TwoNN behavior under curvature transformations |
 | ID → Phases | `[PROVEN]` | — |
 
