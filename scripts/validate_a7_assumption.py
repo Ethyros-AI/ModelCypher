@@ -552,10 +552,12 @@ def compute_radial_projections(
                 r_t_list = []
                 norm_w_t_list = []
                 norm_w_t_perp_list = []
+                w_t_vectors = []
                 for t in range(seq_len):
                     v_t = v_reshaped[0, t, head_idx, :]  # [head_dim]
                     # w_t = W_O_head @ v_t → [hidden_dim]
                     w_t = W_O_head @ v_t
+                    w_t_vectors.append(w_t.tolist())  # [hidden_dim] per token
                     # r_t = ⟨w_t, ĥ⟩
                     r_t = float(mx.sum(w_t * h_hat))
                     r_t_list.append(r_t)
@@ -575,6 +577,8 @@ def compute_radial_projections(
                     "r_minus_R": [r_t_list[t] - R for t in range(seq_len)],
                     "norm_w_t": norm_w_t_list,
                     "norm_w_t_perp": norm_w_t_perp_list,
+                    "w_t_vectors": w_t_vectors,  # list of T lists, each [hidden_dim]
+                    "h_hat": h_hat.tolist(),       # [hidden_dim]
                 }
 
         # Forward through layer to advance h

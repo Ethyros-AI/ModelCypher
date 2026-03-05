@@ -64,8 +64,8 @@ def run_benchmark(
         mc analyze benchmark /path/to/model --suite comprehensive -o ./results
     """
     from modelcypher.cli.composition import (
+        get_backend,
         get_benchmark_service,
-        get_inference_engine,
         get_model_loader,
     )
 
@@ -75,12 +75,12 @@ def run_benchmark(
 
     try:
         model_loader = get_model_loader()
-        inference_engine = get_inference_engine()
+        backend = get_backend()
 
         loaded_model, tokenizer = model_loader.load_model(model)
 
         def generate_fn(m, t, prompt, max_tokens, verbose=False):
-            return inference_engine.generate(m, t, prompt, max_tokens=max_tokens)
+            return backend.generate(m, t, prompt, max_tokens=max_tokens)
 
         service = get_benchmark_service()
         result = service.run_suite(

@@ -1407,6 +1407,107 @@ Source: `results/entropy_curvature_three_component/cross_model_summary.json`,
 
 ---
 
+### Proposition B6.1: Norm-Corrected Sublayer Decomposition [EMPIRICAL, UNIVERSAL CENTROID]
+
+**Statement:** The D3.1 sign reversal across architectures (B6: 3/10 models positive) is a
+confound from mixing three independent effects in the raw `r(H, log(E_total))` measurement:
+
+1. **Core operator centroid averaging** (hypothesis: always negative)
+2. **Norm-entropy coupling** (architecture-dependent sign)
+3. **MLP entropy-magnitude coupling** (architecture-dependent)
+
+By normalizing `E_core` and `E_mlp` by `||h_in||²`, we factor out the norm contribution
+and measure the GEOMETRIC effect only:
+
+```
+r(H_logit_norm, log(E_core / ||h_in||²) | depth)   — "norm-corrected core coupling"
+r(H_logit_norm, log(E_mlp / ||h_in||²) | depth)    — "norm-corrected MLP coupling"
+r(H_logit_norm, log(||h_in||²) | depth)             — "norm-entropy coupling direction"
+```
+
+**10-model results (2026-03-04):**
+
+| Model | L | MDE | r(core/h²) | r(mlp/h²) | r(h²) | r(cos_α) | r(E_tot) | F1 |
+|-------|--:|----:|-----------:|----------:|------:|---------:|---------:|:--:|
+| LFM2-350M | 16 | 0.762 | -0.229 | -0.168 | **-0.797*** | +0.232 | -0.688 | PASS |
+| LFM2-700M | 16 | 0.762 | -0.312 | +0.241 | **-0.918*** | +0.456 | -0.656 | PASS |
+| Llama-3.2-3B | 28 | 0.487 | -0.067 | -0.104 | **+0.768*** | -0.365 | +0.485 | PASS |
+| Mistral-7B | 32 | 0.762 | -0.125 | -0.205 | +0.602 | -0.724 | +0.430 | PASS |
+| Qwen2.5-3B | 36 | 0.635 | -0.201 | -0.356 | -0.201 | -0.560 | -0.626 | PASS |
+| Qwen3-8B | 36 | 0.762 | -0.044 | +0.081 | +0.706 | -0.375 | +0.400 | PASS |
+| Qwen3.5-0.8B | 24 | 0.266 | **-0.316*** | **-0.350*** | +0.099 | +0.022 | -0.256 | PASS |
+| Qwen3.5-2B | 24 | 0.345 | -0.331 | -0.272 | -0.044 | +0.205 | -0.238 | PASS |
+| Qwen3.5-4B | 32 | 0.314 | **-0.476*** | +0.043 | -0.067 | +0.002 | -0.174 | PASS |
+| Qwen3.5-4B-4bit | 32 | 0.328 | **-0.626*** | -0.065 | +0.113 | -0.131 | -0.201 | PASS |
+
+\* = resolvable (|r| > MDE).
+
+**Falsifier outcomes:**
+
+| ID | Prediction | Result | Pass |
+|----|-----------|--------|:----:|
+| F1 | r(H, log(E_core/\|\|h\|\|²) \| depth) < 0 for ALL 10 | 10/10 negative | **PASS** |
+| F2 | D3.1-reversed models have positive r(H, log(\|\|h\|\|²)) | All 3 reversed (Llama +0.768, Mistral +0.602, Qwen3-8B +0.706) have positive norm | **PASS** |
+| F3 | Three-way predicts raw D3.1 sign for 10/10 | 10/10 reconstructed | **PASS** |
+| F4 | r(H, cos_α) same sign as r(H, log(\|\|h\|\|²)) | 2/10 match | **FAIL** |
+
+**F1 PASS: Centroid averaging is universal.** The norm-corrected core coupling
+`r(H_logit_norm, log(E_core/||h_in||²) | depth)` is **negative for ALL 10 models**
+across 6 architecture families (LFM2, Llama, Mistral, Qwen2.5, Qwen3, Qwen3.5).
+The D3.1 sign reversals in B6 are confounds from the norm-entropy coupling, not
+genuine failures of centroid averaging.
+
+**F2 PASS: Norm coupling explains all D3.1 reversals.** The three D3.1-reversed models
+(Llama-3.2-3B, Mistral-7B, Qwen3-8B) all have strongly positive norm-entropy coupling
+(r = +0.768, +0.602, +0.706). In these architectures, higher H_logit_norm → larger ||h||² →
+the norm effect overwhelms the negative centroid effect, producing a net positive
+r(H, log(E_total)).
+
+**F4 FAIL: Norm growth not fully explained by radial projection.** cos_α does not
+consistently match the norm coupling sign (2/10). Norm growth through depth involves
+mechanisms beyond radial projection (e.g., MLP expansion, residual stream accumulation).
+
+**Architecture grouping:**
+
+| Architecture | r(core/h²) range | r(h²) range | Interpretation |
+|-------------|-----------------|-------------|----------------|
+| LFM2 (conv+attn) | [-0.31, -0.23] | [-0.92, -0.80] | Strong negative norm coupling; centroid + norm cooperate |
+| Llama/Mistral/Qwen3 (pure attn) | [-0.13, -0.04] | [+0.60, +0.77] | Positive norm coupling overwhelms centroid → D3.1 reversal |
+| Qwen2.5 (GQA=8) | [-0.20] | [-0.20] | Weak, balanced |
+| Qwen3.5 (GatedDeltaNet) | [-0.63, -0.32] | [-0.07, +0.11] | Strong centroid, near-zero norm coupling |
+
+**Permutation test details (core_normed — F1 critical):**
+
+| Model | |r| | Exceedance | Null max |
+|-------|----:|----------:|--------:|
+| Qwen3.5-4B-4bit | 0.626 | 0.000 | 0.571 |
+| Qwen3.5-4B | 0.476 | 0.012 | 0.616 |
+| Qwen3.5-2B | 0.331 | 0.122 | 0.693 |
+| Qwen3.5-0.8B | 0.316 | 0.128 | 0.610 |
+| LFM2-700M | 0.312 | 0.246 | 0.688 |
+| LFM2-350M | 0.229 | 0.426 | 0.685 |
+| Qwen2.5-3B | 0.201 | 0.222 | 0.453 |
+| Mistral-7B | 0.125 | 0.466 | 0.538 |
+| Llama-3.2-3B | 0.067 | 0.702 | 0.558 |
+| Qwen3-8B | 0.044 | 0.764 | 0.541 |
+
+The sign consistency (10/10 negative) is the key finding. Individual magnitudes are small
+(many below MDE) due to limited layer counts, but the probability of 10/10 same-sign by
+chance under the null is 2^(-10) ≈ 0.001, providing strong evidence for universality
+independent of per-model significance.
+
+**Status: [EMPIRICAL, UNIVERSAL CENTROID].** B6.1 resolves the B6 inconsistency:
+centroid averaging IS universal at the core operator level. The architecture-dependent
+part is how the norm grows through depth as a function of entropy, determined by:
+1. **Core operator type** (conv vs softmax attention vs linear attention)
+2. **GQA ratio** (modulates routing-norm coupling)
+3. **Norm growth profile** (cumulative effect of radial projections through depth)
+
+Source: `results/entropy_curvature_norm_corrected_sublayer/cross_model_summary.json`,
+`scripts/entropy_curvature_norm_corrected_sublayer.py`.
+
+---
+
 ## References
 
 - Facco et al. (2017), TwoNN intrinsic dimension estimator.

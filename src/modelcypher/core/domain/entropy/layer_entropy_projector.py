@@ -202,6 +202,63 @@ class LayerEntropyProjector:
         self._hidden_dim: int = 0
         self._unembedding_source: str = ""
 
+    def _embed_weight_for_unembedding(self, embed: Any) -> "Array | None":
+        """Return embed weight as float32, dequantizing packed weights when needed."""
+        if not hasattr(embed, "weight"):
+            return None
+
+        b = self._backend
+        weight = embed.weight
+
+        # Quantized embeddings store packed integer weights + per-group scales/biases.
+        # Entropy projection needs the dequantized [vocab, hidden] matrix.
+        if (
+            hasattr(embed, "scales")
+            and hasattr(embed, "group_size")
+            and hasattr(embed, "bits")
+        ):
+            scales = embed.scales
+            biases = getattr(embed, "biases", None)
+            mode = getattr(embed, "mode", None) or "affine"
+            try:
+                dequantized = b.dequantize(
+                    weight=weight,
+                    scales=scales,
+                    biases=biases,
+                    group_size=int(embed.group_size),
+                    bits=int(embed.bits),
+                    mode=mode,
+                )
+                b.eval(dequantized)
+                return b.astype(dequantized, "float32")
+            except Exception as exc:  # pragma: no cover - backend/model dependent
+                logger.warning(
+                    "Failed to dequantize embed_tokens for entropy projection: %s. "
+                    "Falling back to raw embedding weights.",
+                    exc,
+                )
+
+        return b.astype(weight, "float32")
+
+    def _set_from_embed_tokens(self, embed: Any, source_label: str) -> str | None:
+        """Set unembedding matrix from tied embed_tokens weights."""
+        weight = self._embed_weight_for_unembedding(embed)
+        if weight is None:
+            return None
+
+        self._unembedding_matrix = weight
+        self._vocab_size = int(weight.shape[0])
+        self._hidden_dim = int(weight.shape[1])
+        self._unembedding_source = "embed_tokens_transposed"
+        logger.info(
+            f"Using {source_label} (tied): vocab={self._vocab_size}, hidden={self._hidden_dim}"
+        )
+        logger.debug(
+            "Tied embeddings assume distributional hypothesis "
+            "(Bertolotti & Cazzola 2024)"
+        )
+        return self._unembedding_source
+
     def set_unembedding_matrix(self, model: Any) -> str:
         """Extract unembedding matrix from model.
 
@@ -263,72 +320,32 @@ class LayerEntropyProjector:
             lm = model.language_model
             lm_inner = getattr(lm, "model", None)
             if lm_inner is not None and hasattr(lm_inner, "embed_tokens"):
-                embed = lm_inner.embed_tokens
-                if hasattr(embed, "weight"):
-                    weight = embed.weight
-                    self._unembedding_matrix = b.astype(weight, "float32")
-                    self._vocab_size = weight.shape[0]
-                    self._hidden_dim = weight.shape[1]
-                    self._unembedding_source = "embed_tokens_transposed"
-                    logger.info(
-                        f"Using language_model.model.embed_tokens (tied): "
-                        f"vocab={self._vocab_size}, hidden={self._hidden_dim}"
-                    )
-                    logger.debug(
-                        "Tied embeddings assume distributional hypothesis "
-                        "(Bertolotti & Cazzola 2024)"
-                    )
-                    return self._unembedding_source
+                result = self._set_from_embed_tokens(
+                    lm_inner.embed_tokens, "language_model.model.embed_tokens"
+                )
+                if result is not None:
+                    return result
             # Fallback: model.language_model.embed_tokens (no inner .model)
-            if hasattr(lm, "embed_tokens") and hasattr(lm.embed_tokens, "weight"):
-                weight = lm.embed_tokens.weight
-                self._unembedding_matrix = b.astype(weight, "float32")
-                self._vocab_size = weight.shape[0]
-                self._hidden_dim = weight.shape[1]
-                self._unembedding_source = "embed_tokens_transposed"
-                logger.info(
-                    f"Using language_model.embed_tokens (tied): "
-                    f"vocab={self._vocab_size}, hidden={self._hidden_dim}"
+            if hasattr(lm, "embed_tokens"):
+                result = self._set_from_embed_tokens(
+                    lm.embed_tokens, "language_model.embed_tokens"
                 )
-                logger.debug(
-                    "Tied embeddings assume distributional hypothesis "
-                    "(Bertolotti & Cazzola 2024)"
-                )
-                return self._unembedding_source
+                if result is not None:
+                    return result
 
         # Strategy 4: Tied weights via model.model.embed_tokens
         if hasattr(model, "model") and hasattr(model.model, "embed_tokens"):
-            embed = model.model.embed_tokens
-            if hasattr(embed, "weight"):
-                weight = embed.weight
-                # embed_tokens.weight is [vocab_size, hidden_dim]
-                # unembedding is also [vocab_size, hidden_dim] for tied weights
-                self._unembedding_matrix = b.astype(weight, "float32")
-                self._vocab_size = weight.shape[0]
-                self._hidden_dim = weight.shape[1]
-                self._unembedding_source = "embed_tokens_transposed"
-                logger.info(
-                    f"Using embed_tokens (tied): vocab={self._vocab_size}, hidden={self._hidden_dim}"
-                )
-                logger.debug(
-                    "Tied embeddings assume distributional hypothesis (Bertolotti & Cazzola 2024)"
-                )
-                return self._unembedding_source
+            result = self._set_from_embed_tokens(
+                model.model.embed_tokens, "embed_tokens"
+            )
+            if result is not None:
+                return result
 
         # Strategy 5: Direct embed_tokens (same distributional hypothesis caveat)
-        if hasattr(model, "embed_tokens") and hasattr(model.embed_tokens, "weight"):
-            weight = model.embed_tokens.weight
-            self._unembedding_matrix = b.astype(weight, "float32")
-            self._vocab_size = weight.shape[0]
-            self._hidden_dim = weight.shape[1]
-            self._unembedding_source = "embed_tokens_transposed"
-            logger.info(
-                f"Using embed_tokens (tied): vocab={self._vocab_size}, hidden={self._hidden_dim}"
-            )
-            logger.debug(
-                "Tied embeddings assume distributional hypothesis (Bertolotti & Cazzola 2024)"
-            )
-            return self._unembedding_source
+        if hasattr(model, "embed_tokens"):
+            result = self._set_from_embed_tokens(model.embed_tokens, "embed_tokens")
+            if result is not None:
+                return result
 
         raise ValueError(
             "Could not locate unembedding matrix in model. "

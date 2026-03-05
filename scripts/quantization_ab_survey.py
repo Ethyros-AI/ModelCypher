@@ -935,14 +935,6 @@ def generate_tool_health_report(
         lines.append("No issues found. All tools ran successfully on both models.")
         lines.append("")
 
-    # Unregistered commands note
-    lines.append("## Unregistered Commands")
-    lines.append("")
-    lines.append("- `chain-profile`: Function `safety_chain_profile` exists in "
-                  "`geometric.py` but is not registered in `safety/__init__.py`. "
-                  "Skipped in this survey.")
-    lines.append("")
-
     return "\n".join(lines)
 
 

@@ -670,6 +670,19 @@ Qwen3-8B show positive r(H,log(||δ||²)), contradicting centroid averaging pred
 D3.1: 7/10 (70%), D3.2: 9/10 (90%), D3.4: 6/10 (60%). Cross-model inconsistent.
 Full table: `entropy-curvature-derivation.md` (B6), `results/entropy_curvature_three_component/`.
 
+**B6.1 norm-corrected sublayer decomposition (2026-03-04, 10 models):**
+RESOLVES the B6 inconsistency. Normalizing E_core by ||h_in||² factors out norm contribution:
+- **F1 PASS (10/10):** r(H, log(E_core/||h||²) | depth) < 0 for ALL models. Centroid
+  averaging IS universal at the core operator level (2^(-10) ≈ 0.001 under null).
+- **F2 PASS (10/10):** All 3 D3.1-reversed models have positive norm-entropy coupling
+  (Llama +0.768, Mistral +0.602, Qwen3-8B +0.706) that overwhelms the centroid term.
+- **F3 PASS (10/10):** Three-way decomposition predicts raw D3.1 sign for all models.
+- **F4 FAIL (2/10):** cos_α does not match norm coupling sign. Norm growth not fully
+  explained by radial projection alone.
+The architecture-dependent part is norm-entropy coupling direction (determined by core
+operator type + GQA ratio + norm growth profile), not centroid averaging itself.
+Source: `results/entropy_curvature_norm_corrected_sublayer/`, `entropy-curvature-derivation.md` (B6.1).
+
 **NORM CONFOUND DISCOVERED (2026-03-04):** The Entropy-Lens does NOT apply the model's
 final RMSNorm before unembedding projection. Since `h @ W.T = ||h|| × (ĥ @ W.T)`,
 softmax sharpness scales with ||h||, creating r(H_logit, ||h||²) ≈ -0.99 — a measurement

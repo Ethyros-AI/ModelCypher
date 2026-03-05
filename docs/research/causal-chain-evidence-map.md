@@ -237,8 +237,20 @@ Source: `results/entropy_curvature_three_component/cross_model_summary.json`.
    Diagnostic (`scripts/diagnose_a7_gradient_structure.py`): R²(radial) mean=0.18 (LFM2-350M),
    0.15 (Qwen3.5-0.8B) — radial projection explains <18% of gradient variance. Best correlate
    is token position (mean |ρ|≈0.37), not radial geometry. Gradient is moderately concentrated
-   (k_eff/T≈0.53). Open question: what CE gradient mechanism drives attention concentration
-   during training?
+   (k_eff/T≈0.53).
+   **Multivariate analysis** (`scripts/a7_multivariate_gradient_analysis.py`, 2026-03-04):
+   Per-head multivariate OLS with X = [1, position, α_t, r_t, |r_t-R|, ||w_t||, ||w_t^⊥||]:
+   - LFM2-350M: R² mean=0.71, median=0.74 (range across probes: 0.69–0.73)
+   - Qwen3.5-0.8B: R² mean=0.76, median=0.80 (range: 0.71–0.80)
+   - Dominant predictor: ||w_t|| (output vector norm) in ~65% of heads; ||w_t^⊥|| in ~30%.
+   - Pooled R² ≈ 0 — coefficients are head-specific, not universal.
+   - Severe collinearity: VIF(||w_t||, ||w_t^⊥||) > 10K (expected: ||w_t^⊥||² = ||w_t||² − r_t²).
+   **Interpretation:** ~70-80% of per-head gradient variance is captured by simple scalar
+   geometric quantities of w_t = W_O_head @ v_t. The remaining ~25% lives in directions of w_t
+   not captured by scalar summaries (||w_t||, r_t, ||w_t^⊥||). The mapping is head-specific —
+   no universal linear combination exists. Phase 2 needed: PCA on full w_t vectors per head.
+   Artifact: `results/a7_validation/multivariate/multivariate_v1/`.
+   Open question: what CE gradient mechanism drives attention concentration during training?
 2. ~~Estimate `a_l, b_l` from measured Jacobians (`B_l`) per architecture~~ →
    **MEASURED** (2026-03-04, `scripts/estimate_bl_jacobian.py`,
    `results/bl_estimation/full_local2/`).
@@ -413,6 +425,18 @@ mechanism (training dynamics that drive attention concentration → curvature ch
 B6 three-component decomposition (10 models) shows the dominant sub-component is
 architecture-dependent: ||h||² for LFM2/Llama, sin²(α) for Qwen2.5, below floor
 for Qwen3.5. D3.1 sign reversed on Llama/Mistral/Qwen3-8B.
+
+**B6.1 norm-corrected sublayer decomposition (2026-03-04, 10 models):**
+The D3.1 sign reversals are a CONFOUND, not a genuine architectural difference.
+Normalizing by ||h_in||² factors out the norm contribution:
+- F1: r(H, log(E_core/||h||²) | depth) < 0 for ALL 10 models → **centroid averaging
+  is universal** (sign consistency probability under null: 2^(-10) ≈ 0.001).
+- F2: All 3 D3.1-reversed models (Llama +0.768, Mistral +0.602, Qwen3-8B +0.706)
+  have positive norm-entropy coupling that overwhelms the negative centroid effect.
+- F3: Three-way decomposition reconstructs raw D3.1 sign for 10/10 models.
+- F4: FAIL — cos_α does not match norm coupling sign (2/10). Norm growth involves
+  mechanisms beyond radial projection.
+Source: `results/entropy_curvature_norm_corrected_sublayer/cross_model_summary.json`.
 Formal derivation: `entropy-curvature-derivation.md`.
 
 ---
