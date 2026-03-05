@@ -47,19 +47,20 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-import numpy as np
-
 # Reuse validated functions from A7 validator
 from validate_a7_assumption import (
+    _QUERY_POS,
     MODELS,
     PROBE_TEXTS,
-    _EPS_F32,
-    _QUERY_POS,
     collect_baseline,
     collect_per_head_gradient_data,
     compute_radial_projections,
     compute_score_gradients,
 )
+
+# IEEE 754 float64 constants for numerical guards (scalar-side checks)
+_EPS_F64 = math.ldexp(1.0, -52)  # ≈ 2.22e-16
+_SQRT_EPS_F64 = math.sqrt(_EPS_F64)  # ≈ 1.49e-8
 
 logging.basicConfig(
     level=logging.INFO,
@@ -80,62 +81,96 @@ POOLED_PREDICTORS = PER_HEAD_PREDICTORS + ["position_x_r_t", "position_x_alpha"]
 
 
 # =====================================================================
-# Statistical functions (pure numpy, no scipy)
+# Statistical functions (backend-native + Python scalars)
 # =====================================================================
 
 
-def multivariate_ols(X: np.ndarray, y: np.ndarray) -> dict:
-    """Full OLS regression via np.linalg.lstsq.
+def _mean(vals: list[float]) -> float:
+    if not vals:
+        return float("nan")
+    return float(sum(vals) / len(vals))
 
-    X: [T, p+1] design matrix (column 0 = intercept = 1)
-    y: [T] response
 
-    Returns:
-        beta: [p+1] coefficient vector
-        r_squared: R²
-        adj_r_squared: 1 - (1 - R²)(T - 1)/(T - p - 1)
-        residuals: [T] residual vector
-        std_beta: [p+1] standardized coefficients (β_j × std(x_j) / std(y))
-    """
-    T, p_plus_1 = X.shape
-    p = p_plus_1 - 1  # number of predictors (excluding intercept)
+def _std(vals: list[float], ddof: int = 0) -> float:
+    n = len(vals)
+    if n <= ddof:
+        return 0.0
+    mu = _mean(vals)
+    denom = n - ddof
+    return math.sqrt(sum((v - mu) ** 2 for v in vals) / denom)
 
-    beta, residual_ss_arr, rank, sv = np.linalg.lstsq(X, y, rcond=None)
 
-    with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
-        y_hat = X @ beta
-    residuals = y - y_hat
-    ss_res = float(np.sum(residuals**2))
-    ss_tot = float(np.sum((y - np.mean(y))**2))
+def _r_squared(y_true: list[float], y_pred: list[float]) -> tuple[float, float, float]:
+    y_mean = _mean(y_true)
+    ss_res = float(sum((y - y_hat) ** 2 for y, y_hat in zip(y_true, y_pred)))
+    ss_tot = float(sum((y - y_mean) ** 2 for y in y_true))
+    if ss_tot < _EPS_F64:
+        return 0.0, ss_res, ss_tot
+    return 1.0 - ss_res / ss_tot, ss_res, ss_tot
 
-    if ss_tot < 1e-30:
-        r_squared = 0.0
+
+def _lstsq_via_pinv(backend, x_rows: list[list[float]], y_vals: list[float]) -> tuple[list[float], list[float], int]:
+    """Minimum-norm least squares via pseudoinverse: beta = pinv(X) @ y."""
+    n_rows = len(x_rows)
+    n_cols = len(x_rows[0]) if n_rows > 0 else 0
+    x_mat = backend.array(x_rows, dtype="float32")
+    y_vec = backend.array(y_vals, dtype="float32")
+    y_col = backend.reshape(y_vec, (n_rows, 1))
+    beta_col = backend.matmul(backend.pinv(x_mat), y_col)
+    y_hat_col = backend.matmul(x_mat, beta_col)
+    svals = backend.svd(x_mat, compute_uv=False)
+    backend.eval(beta_col, y_hat_col, svals)
+
+    beta = [float(v) for v in backend.tolist(backend.reshape(beta_col, (n_cols,)))]
+    y_hat = [float(v) for v in backend.tolist(backend.reshape(y_hat_col, (n_rows,)))]
+
+    s_list_raw = backend.tolist(svals)
+    if isinstance(s_list_raw, list):
+        s_list = [float(v) for v in s_list_raw]
     else:
-        r_squared = 1.0 - ss_res / ss_tot
+        s_list = [float(s_list_raw)]
+    if not s_list:
+        rank = 0
+    else:
+        s_max = max(s_list)
+        tol = _SQRT_EPS_F64 * s_max
+        rank = sum(1 for s in s_list if s > tol)
 
-    # Adjusted R²: penalizes for number of predictors
+    return beta, y_hat, rank
+
+
+def multivariate_ols(X_rows: list[list[float]], y: list[float], backend) -> dict:
+    """Full OLS regression via pseudoinverse least squares."""
+    T = len(X_rows)
+    p_plus_1 = len(X_rows[0]) if T > 0 else 0
+    p = p_plus_1 - 1
+
+    beta, y_hat, rank = _lstsq_via_pinv(backend, X_rows, y)
+    residuals = [yy - yh for yy, yh in zip(y, y_hat)]
+    r_squared, ss_res, ss_tot = _r_squared(y, y_hat)
+
     dof_resid = T - p - 1
-    if dof_resid > 0 and ss_tot > 1e-30:
+    if dof_resid > 0 and ss_tot > _EPS_F64:
         adj_r_squared = 1.0 - (1.0 - r_squared) * (T - 1) / dof_resid
     else:
         adj_r_squared = float("nan")
 
-    # Standardized coefficients: β_j × std(x_j) / std(y)
-    std_y = float(np.std(y, ddof=1)) if T > 1 else 1.0
-    std_beta = np.zeros(p_plus_1)
+    std_y = _std(y, ddof=1) if T > 1 else 1.0
+    std_beta = [0.0] * p_plus_1
     for j in range(p_plus_1):
-        std_xj = float(np.std(X[:, j], ddof=1)) if T > 1 else 1.0
-        if std_y > 1e-30:
+        col_j = [row[j] for row in X_rows]
+        std_xj = _std(col_j, ddof=1) if T > 1 else 1.0
+        if std_y > _EPS_F64:
             std_beta[j] = beta[j] * std_xj / std_y
         else:
             std_beta[j] = 0.0
 
     return {
-        "beta": beta.tolist(),
+        "beta": beta,
         "r_squared": r_squared,
         "adj_r_squared": adj_r_squared,
-        "residuals": residuals.tolist(),
-        "std_beta": std_beta.tolist(),
+        "residuals": residuals,
+        "std_beta": std_beta,
         "ss_res": ss_res,
         "ss_tot": ss_tot,
         "rank": int(rank),
@@ -143,75 +178,61 @@ def multivariate_ols(X: np.ndarray, y: np.ndarray) -> dict:
     }
 
 
-def compute_vif(X_no_intercept: np.ndarray, pred_names: list[str]) -> dict[str, float]:
-    """Variance inflation factor per predictor via auxiliary R².
+def compute_vif(X_no_intercept: list[list[float]], pred_names: list[str], backend) -> dict[str, float]:
+    """Variance inflation factor per predictor via auxiliary R²."""
+    if not X_no_intercept:
+        return {name: float("nan") for name in pred_names}
 
-    VIF_j = 1 / (1 - R²_j) where R²_j is R² of regressing x_j on all
-    other predictors. VIF > 10 = severe collinearity.
-    """
-    n_pred = X_no_intercept.shape[1]
-    vif = {}
+    n_pred = len(X_no_intercept[0])
+    vif: dict[str, float] = {}
+    for j in range(n_pred):
+        y_j = [row[j] for row in X_no_intercept]
+        others = [[v for idx, v in enumerate(row) if idx != j] for row in X_no_intercept]
+        X_aux = [[1.0] + row for row in others]
 
-    with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
-        for j in range(n_pred):
-            y_j = X_no_intercept[:, j]
-            # Other predictors + intercept
-            others = np.delete(X_no_intercept, j, axis=1)
-            X_aux = np.column_stack([np.ones(len(y_j)), others])
+        _, y_hat, _ = _lstsq_via_pinv(backend, X_aux, y_j)
+        r_sq_aux, _, ss_tot = _r_squared(y_j, y_hat)
+        if ss_tot < _EPS_F64:
+            r_sq_aux = 0.0
 
-            beta_aux, _, _, _ = np.linalg.lstsq(X_aux, y_j, rcond=None)
-            y_hat = X_aux @ beta_aux
-            ss_res = float(np.sum((y_j - y_hat)**2))
-            ss_tot = float(np.sum((y_j - np.mean(y_j))**2))
-
-            if ss_tot < 1e-30:
-                r_sq_aux = 0.0
-            else:
-                r_sq_aux = 1.0 - ss_res / ss_tot
-
-            if r_sq_aux >= 1.0 - 1e-12:
-                vif[pred_names[j]] = float("inf")
-            else:
-                vif[pred_names[j]] = 1.0 / (1.0 - r_sq_aux)
-
+        if r_sq_aux >= 1.0 - _SQRT_EPS_F64:
+            vif[pred_names[j]] = float("inf")
+        else:
+            vif[pred_names[j]] = 1.0 / (1.0 - r_sq_aux)
     return vif
 
 
 def compute_partial_correlations(
-    X_no_intercept: np.ndarray, y: np.ndarray, pred_names: list[str]
+    X_no_intercept: list[list[float]], y: list[float], pred_names: list[str], backend
 ) -> dict[str, float]:
-    """Partial correlation of each predictor with y after controlling for all others.
+    """Partial correlation of each predictor with y after controlling for all others."""
+    if not X_no_intercept:
+        return {name: float("nan") for name in pred_names}
 
-    Method: sequential residualization. For predictor j:
-    1. Regress x_j on all other predictors → residual e_x
-    2. Regress y on all other predictors → residual e_y
-    3. partial_corr(x_j, y | rest) = Pearson(e_x, e_y)
-    """
-    n_pred = X_no_intercept.shape[1]
-    partial_corrs = {}
+    n_pred = len(X_no_intercept[0])
+    partial_corrs: dict[str, float] = {}
 
-    with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
-        for j in range(n_pred):
-            x_j = X_no_intercept[:, j]
-            others = np.delete(X_no_intercept, j, axis=1)
-            X_aux = np.column_stack([np.ones(len(x_j)), others])
+    for j in range(n_pred):
+        x_j = [row[j] for row in X_no_intercept]
+        others = [[v for idx, v in enumerate(row) if idx != j] for row in X_no_intercept]
+        X_aux = [[1.0] + row for row in others]
 
-            # Residualize x_j
-            beta_x, _, _, _ = np.linalg.lstsq(X_aux, x_j, rcond=None)
-            e_x = x_j - X_aux @ beta_x
+        _, x_hat, _ = _lstsq_via_pinv(backend, X_aux, x_j)
+        e_x = [a - b for a, b in zip(x_j, x_hat)]
 
-            # Residualize y
-            beta_y, _, _, _ = np.linalg.lstsq(X_aux, y, rcond=None)
-            e_y = y - X_aux @ beta_y
+        _, y_hat, _ = _lstsq_via_pinv(backend, X_aux, y)
+        e_y = [a - b for a, b in zip(y, y_hat)]
 
-            # Pearson correlation of residuals
-            std_ex = float(np.std(e_x))
-            std_ey = float(np.std(e_y))
-            if std_ex < 1e-30 or std_ey < 1e-30:
-                partial_corrs[pred_names[j]] = 0.0
-            else:
-                cov = float(np.mean(e_x * e_y) - np.mean(e_x) * np.mean(e_y))
-                partial_corrs[pred_names[j]] = cov / (std_ex * std_ey)
+        std_ex = _std(e_x)
+        std_ey = _std(e_y)
+        if std_ex < _EPS_F64 or std_ey < _EPS_F64:
+            partial_corrs[pred_names[j]] = 0.0
+            continue
+
+        mean_ex = _mean(e_x)
+        mean_ey = _mean(e_y)
+        cov = _mean([a * b for a, b in zip(e_x, e_y)]) - mean_ex * mean_ey
+        partial_corrs[pred_names[j]] = cov / (std_ex * std_ey)
 
     return partial_corrs
 
@@ -223,84 +244,74 @@ def compute_partial_correlations(
 
 def build_per_head_design_matrix(
     mono_entry: dict, radial_entry: dict, seq_len: int
-) -> tuple[np.ndarray, np.ndarray, list[str]] | None:
-    """Build per-head design matrix X and response y.
-
-    X = [1, position, α_t, r_t, |r_t - R|, ||w_t||, ||w_t^⊥||]
-    y = ∂L/∂s_t / α_t (grad_over_alpha)
-
-    Returns (X, y, predictor_names) or None if insufficient data.
-    """
+) -> tuple[list[list[float]], list[float], list[str]] | None:
+    """Build per-head design matrix X and response y."""
     if mono_entry.get("excluded") or radial_entry is None:
         return None
 
-    grad_over_alpha = mono_entry["grad_over_alpha"]
-    alpha = mono_entry["alpha"]
-    r_t = radial_entry["r_t"]
-    r_minus_R = radial_entry["r_minus_R"]
+    grad_over_alpha = [float(v) for v in mono_entry["grad_over_alpha"]]
+    alpha = [float(v) for v in mono_entry["alpha"]]
+    r_t = [float(v) for v in radial_entry["r_t"]]
+    r_minus_R = [float(v) for v in radial_entry["r_minus_R"]]
     norm_w_t = radial_entry.get("norm_w_t")
     norm_w_t_perp = radial_entry.get("norm_w_t_perp")
 
     if norm_w_t is None or norm_w_t_perp is None:
         return None
+    norm_w_t = [float(v) for v in norm_w_t]
+    norm_w_t_perp = [float(v) for v in norm_w_t_perp]
 
     T = len(grad_over_alpha)
-    if T < 4:  # Need at least 4 observations for 7-column X
+    if T < 4:
         return None
 
-    positions = list(range(T))
     abs_r_dev = [abs(x) for x in r_minus_R]
+    X_rows: list[list[float]] = []
+    for t in range(T):
+        X_rows.append([
+            1.0,
+            float(t),
+            alpha[t],
+            r_t[t],
+            abs_r_dev[t],
+            norm_w_t[t],
+            norm_w_t_perp[t],
+        ])
 
-    X = np.column_stack([
-        np.ones(T),
-        np.array(positions, dtype=np.float64),
-        np.array(alpha, dtype=np.float64),
-        np.array(r_t, dtype=np.float64),
-        np.array(abs_r_dev, dtype=np.float64),
-        np.array(norm_w_t, dtype=np.float64),
-        np.array(norm_w_t_perp, dtype=np.float64),
-    ])
-    y = np.array(grad_over_alpha, dtype=np.float64)
-
-    return X, y, PER_HEAD_PREDICTORS
+    return X_rows, grad_over_alpha, PER_HEAD_PREDICTORS
 
 
 def build_pooled_design_matrix(
     all_entries: list[tuple[dict, dict, int]],
     include_interactions: bool = False,
-) -> tuple[np.ndarray, np.ndarray, list[str]] | None:
-    """Pool all tokens from all heads into a single design matrix.
-
-    all_entries: list of (mono_entry, radial_entry, seq_len)
-    """
-    rows_X = []
-    rows_y = []
+) -> tuple[list[list[float]], list[float], list[str]] | None:
+    """Pool all tokens from all heads into a single design matrix."""
+    rows_X: list[list[float]] = []
+    rows_y: list[float] = []
 
     for mono_entry, radial_entry, seq_len in all_entries:
         result = build_per_head_design_matrix(mono_entry, radial_entry, seq_len)
         if result is None:
             continue
         X_head, y_head, _ = result
-        rows_X.append(X_head)
-        rows_y.append(y_head)
+        rows_X.extend(X_head)
+        rows_y.extend(y_head)
 
     if not rows_X:
         return None
 
-    X_pooled = np.vstack(rows_X)  # [N_total, 7]
-    y_pooled = np.concatenate(rows_y)  # [N_total]
-
     if include_interactions:
-        # position × r_t (column indices: 1=position, 3=r_t)
-        pos_x_rt = X_pooled[:, 1] * X_pooled[:, 3]
-        # position × α_t (column indices: 1=position, 2=alpha)
-        pos_x_alpha = X_pooled[:, 1] * X_pooled[:, 2]
-        X_pooled = np.column_stack([X_pooled, pos_x_rt, pos_x_alpha])
+        out_rows = []
+        for row in rows_X:
+            pos_x_rt = row[1] * row[3]
+            pos_x_alpha = row[1] * row[2]
+            out_rows.append(row + [pos_x_rt, pos_x_alpha])
+        rows_X = out_rows
         pred_names = POOLED_PREDICTORS
     else:
         pred_names = PER_HEAD_PREDICTORS
 
-    return X_pooled, y_pooled, pred_names
+    return rows_X, rows_y, pred_names
 
 
 # =====================================================================
@@ -393,19 +404,22 @@ def run_single_model(
                 probe_entries.append((mono_entry, radial_entry, seq_len))
 
                 # OLS
-                ols = multivariate_ols(X, y)
+                ols = multivariate_ols(X, y, backend)
 
                 # VIF (on predictors only, no intercept column)
-                X_no_int = X[:, 1:]
-                vif = compute_vif(X_no_int, pred_names)
+                X_no_int = [row[1:] for row in X]
+                vif = compute_vif(X_no_int, pred_names, backend)
 
                 # Partial correlations
-                partial_corrs = compute_partial_correlations(X_no_int, y, pred_names)
+                partial_corrs = compute_partial_correlations(X_no_int, y, pred_names, backend)
 
                 # Dominant predictor by |standardized β|
                 # std_beta[0] is intercept, skip it
                 abs_std_beta = [abs(b) for b in ols["std_beta"][1:]]
-                dominant_idx = int(np.argmax(abs_std_beta))
+                dominant_idx = (
+                    max(range(len(abs_std_beta)), key=lambda idx: abs_std_beta[idx])
+                    if abs_std_beta else 0
+                )
                 dominant_pred = pred_names[dominant_idx]
 
                 per_head_results[l_key][h_key] = {
@@ -478,14 +492,17 @@ def run_single_model(
         X_pooled, y_pooled, pred_names = result
         T_pooled = len(y_pooled)
 
-        ols = multivariate_ols(X_pooled, y_pooled)
-        X_no_int = X_pooled[:, 1:]
-        vif = compute_vif(X_no_int, pred_names)
-        partial_corrs = compute_partial_correlations(X_no_int, y_pooled, pred_names)
+        ols = multivariate_ols(X_pooled, y_pooled, backend)
+        X_no_int = [row[1:] for row in X_pooled]
+        vif = compute_vif(X_no_int, pred_names, backend)
+        partial_corrs = compute_partial_correlations(X_no_int, y_pooled, pred_names, backend)
 
         # Dominant predictor
         abs_std_beta = [abs(b) for b in ols["std_beta"][1:]]
-        dominant_idx = int(np.argmax(abs_std_beta))
+        dominant_idx = (
+            max(range(len(abs_std_beta)), key=lambda idx: abs_std_beta[idx])
+            if abs_std_beta else 0
+        )
         dominant_pred = pred_names[dominant_idx]
 
         pooled_results[label] = {
