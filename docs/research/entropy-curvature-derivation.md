@@ -1144,162 +1144,33 @@ angular curvature to first order, matching the observed sign reversal.
 
 ### Derivation C: `B_l` Jacobian Factorization (Gap-2 Target)
 
-Gap-2 from `causal-chain-evidence-map.md` asks for measurable `a_l, b_l` from a depth-local
-Jacobian object. This section states what `B_l` is algebraically and what must be measured.
-
-#### C1. `B_l` as a local linear map on simplex tangent `[PROVEN: definition]`
-
-At fixed layer `l`, define:
+Gap-2 asks for measurable `a_l, b_l` via a depth-local Jacobian object. The reduced
+algebra is:
 
 ```
-f_l(h) = P_perp(h) delta(h),   g_l(h) = p(h) - u_V
+f_l(h)=P_perp(h)delta(h),  g_l(h)=p(h)-u_V,  f_l(h)=B_l g_l(h)+r_l(h)
+B_l = J_f J_g^+,  ||B_l|| <= ||J_f||/sigma_min(J_g)
 ```
 
-with local model:
+with
 
 ```
-f_l(h) = B_l g_l(h) + r_l(h),   ||r_l(h)|| <= c_l ||g_l(h)||^2
+J_f = d(P_perp delta)/d xi,   J_g = J_softmax(z) W_u J_RMSNorm(h)
 ```
 
-On a local chart (direction coordinates), `B_l` is the first-order best linear predictor:
+and
 
 ```
-B_l = J_f J_g^+,
-J_f = d f_l / d xi,   J_g = d g_l / d xi
+a_l = 4||B_l||^2 / ||h+delta||^2
+    <= 4||J_f||^2 / (||h+delta||^2 sigma_min(J_g)^2)
 ```
 
-where `xi` spans the sphere tangent at `hat(h)`.
+Interpretation: architecture terms bound the ceiling (`W_O,W_V,W_Q,W_K,d_k,W_u`), while
+input-state terms (`alpha,p,r,Cov_alpha(v,k),sigma_min(J_g)`) tighten the realized value.
+This is the required architecture/input split for the Gap-2 measurable.
 
-Equivalent operator-norm form:
-
-```
-||B_l|| <= ||J_f|| * ||J_g^+|| = ||J_f|| / sigma_min(J_g)
-```
-
-(`sigma_min` over nonzero singular directions in the measured local subspace.)
-
-#### C2. Attention chain rule decomposition for `J_f` `[PROVEN: algebra, EXPLORATORY: dominance]`
-
-For attention head `i` (query position `q`):
-
-```
-delta_i = W_O^(i) sum_t alpha_t^(i) v_t^(i)
-```
-
-Differentiate w.r.t. query input state:
-
-```
-d delta_i / d h = (value path, alpha fixed) + (score path, V fixed)
-```
-
-Value path:
-
-```
-d delta_i / d h |_(alpha fixed)
-  = alpha_q^(i) W_O^(i) W_V^(i) J_LN(h)
-```
-
-Score path (softmax Jacobian expanded):
-
-```
-d delta_i / d h |_(V fixed)
-  = (1/sqrt(d_k)) W_O^(i)
-    [sum_t alpha_t (v_t - delta_i) k_t^T]
-    (W_Q^(i))^T J_LN(h)
-```
-
-The bracketed term is the attention-weighted value-key covariance:
-
-```
-Cov_alpha(v, k) = sum_t alpha_t (v_t - delta_i) k_t^T
-```
-
-Thus:
-
-```
-||d delta_i / d h||
-  <= sigma(O_i)sigma(V_i)||J_LN||
-   + sigma(O_i)||Cov_alpha(v,k)||sigma(Q_i)||J_LN||/sqrt(d_k)
-```
-
-Because `f_l(h) = P_perp(h) delta(h)`, projection variation contributes:
-
-```
-||J_f|| <= ||d delta / d h|| + ||(d P_perp / d h) delta||
-```
-
-and locally `||(d P_perp / d h) delta|| = O(r_l)` with `r_l = ||delta||/||h||`.
-
-#### C3. Posterior Jacobian factorization for `J_g` `[PROVEN: algebra]`
-
-With normalized readout:
-
-```
-p(h) = softmax(W_u RMSNorm(h))
-```
-
-so
-
-```
-J_g = J_softmax(z) W_u J_RMSNorm(h)
-J_softmax(z) = diag(p) - p p^T
-```
-
-`J_RMSNorm` acts on tangential directions and removes radial sensitivity (D1).
-
-Hence `sigma_min(J_g)` is controlled by three factors:
-1. softmax local sensitivity (`diag(p)-pp^T`),
-2. readout geometry (`W_u` singular structure on active subspace),
-3. RMSNorm tangent scaling.
-
-#### C4. Architecture/Input factorization of `a_l` `[PROVEN: decomposition]`
-
-From Bedrock-B:
-
-```
-a_l = 4 ||B_l||^2 / ||h + delta||^2
-```
-
-Using C1-C3:
-
-```
-a_l <= 4 ||J_f||^2 / ( ||h+delta||^2 sigma_min(J_g)^2 )
-```
-
-Architecture-determined terms:
-- `sigma(W_O), sigma(W_V), sigma(W_Q), sigma(W_K)`
-- `d_k`, layer norm gain parameters
-- readout operator structure `W_u`
-
-Input-dependent terms:
-- `alpha`, `p`
-- `||h||`, `r = ||delta||/||h||`
-- `Cov_alpha(v,k)`
-- local `sigma_min(J_g)` (posterior sensitivity at current state)
-
-This is the exact split needed for Gap-2: ceiling from architecture terms, tightening from
-measured input-state Jacobians.
-
-#### C5. Geometric interpretation `[EXPLORATORY: layer-role mapping]`
-
-- Large `||B_l||`: tangential update strongly coupled to posterior displacement.
-- Small `||B_l||`: update mostly posterior-insensitive (generic transport/highway behavior).
-- Small `theta` can arise from distinct causes:
-  1. small coupling (`||B_l||` small),
-  2. small posterior displacement (`D` small),
-  3. large denominator scale (`||h+delta||` large).
-
-`B_l` estimation disambiguates these mechanisms.
-
-**Consequences for the causal chain:**
-- The r=0.507 raw (H_logit → θ_total) is contaminated by norm confound
-- H_logit → E_total (r≈-0.9) is norm²→norm² (`||h||²` → `||δ||²`)
-- θ_total is norm-independent → correctly shows no signal after depth control
-- The entropy→curvature link needs re-measurement with the model's actual norm applied
-
-**Per MISSION.md "Bedrock Mandate":** This is exactly the kind of correlation→cause error
-the mission guards against. A near-perfect correlation (r=-0.99) that turns out to be a
-measurement operator confound, not a geometric coupling.
+Detailed derivation steps (previous C1-C5 expansion) are preserved in project artifacts and
+summarized in [OPEN-MATHEMATICAL-QUESTIONS.md](./OPEN-MATHEMATICAL-QUESTIONS.md).
 
 ### Prediction Contract (MISSION.md:51 — written before measurement)
 
@@ -1321,16 +1192,10 @@ measurement_operator: {
 }
 ```
 
-**Directional predictions (written before measurement):**
-1. `|r(H_logit_norm, ||h||²)| <= MDE` — normalization removes the norm confound.
-   MDE = Fisher-SE minimum detectable effect = tanh(1/√(n-2)) where n = num_layers.
-   (Falsifier: |r| resolvable above MDE means confound persists → architecture term needed)
-2. `r(H_logit_norm, θ_total | depth)` — TWO possible outcomes, BOTH informative:
-   - If |partial_r| resolvable above MDE: entropy→curvature is REAL
-   - If below MDE: entropy does NOT predict curvature → chain link demoted
-   (No falsifier needed — both outcomes are valid scientific results)
-3. `(1 - r(H_logit_norm, H_logit)) > MDE` — normalization changed the measurement.
-   If H_logit_norm ≈ H_logit (within MDE of r=1), normalization is trivial → check impl.
+Directional predictions (pre-registered):
+1. `|r(H_logit_norm, ||h||²)| <= MDE` (norm confound removed).
+2. `r(H_logit_norm, θ_total | depth)` adjudicates the coupling link.
+3. `1 - r(H_logit_norm, H_logit) > MDE` (normalization is non-trivial).
 
 **Mixed-outcome rule (FIRST_PRINCIPLES_REVIEW_PROTOCOL.md §4):**
 If sign differs across families, classify as MECHANISM_UNDERSPECIFIED unless architecture
@@ -1338,19 +1203,10 @@ terms predict the divergence. Report per-family and aggregate separately.
 
 ### E_mix Architecture Split (from existing results)
 
-This finding is independent of the norm confound (E_mix is a norm² quantity but the
-SIGN split is geometric):
-
-| Operator | E_mix sign at high H_logit | Interpretation |
-|----------|---------------------------|----------------|
-| Attention (LFM2) | negative | core/MLP cooperate |
-| Conv (LFM2) | positive | core/MLP oppose |
-| Attention (Qwen3.5) | negative | core/MLP cooperate |
-| Linear attn (Qwen3.5) | near-zero | no coupling |
-| Attention (Llama) | negative | moderate cooperation |
-| Attention (Mistral) | positive | core/MLP oppose |
-
-This needs its own claim form if promoted beyond exploratory.
+Independent of the norm confound, `E_mix` still shows architecture-conditioned sign split:
+attention channels mostly negative (core/MLP cooperation), conv and some families positive
+(opposition), linear-attention near zero. Keep as exploratory unless promoted with its own
+claim form and falsifier set.
 
 ### Derivation D1: H_logit_norm Is Direction-Only (Identity)
 
@@ -1358,47 +1214,30 @@ RMSNorm(h)_i = γ_i · h_i / RMS(h), where RMS(h) = ||h|| / √d.
 
 Therefore: `RMSNorm(h) = √d · γ ⊙ ĥ`, where `ĥ = h/||h||`.
 
-Logits after norm: `√d · (γ ⊙ ĥ) @ W_unembed^T`.
-
-√d is constant across layers. γ and W_unembed are fixed parameters.
-
-**H_logit_norm = f(ĥ; γ, W, d) — depends on direction only.** `[PROVEN]`
-
-||h|| is algebraically divided out. No approximation. No residual. This is exact.
-
-Corollary: r(H_logit_norm, ||h||²) = r(f(ĥ_l), ||h_l||²) across layers l. This is
-nonzero **iff** the direction trajectory {ĥ_l} and magnitude trajectory {||h_l||}
-are statistically dependent across the layer index. We call this quantity the
-**direction-magnitude coupling (DMC)**.
+Thus `H_logit_norm = f(ĥ;γ,W,d)` depends on direction only (`||h||` exactly divided out).
+Residual correlation with `||h||²` after normalization is therefore DMC
+(direction-magnitude coupling), not direct norm leakage.
 
 ### Derivation D2: DMC From Residual Stream Geometry
 
-In a residual network, `h_l = h_0 + Σ_{k<l} δ_k`. Decompose each update into radial
-and tangential components relative to the current hidden state:
+In a residual stream `h_l = h_0 + Σ_{k<l} δ_k`, decompose updates into radial and
+tangential components:
 
 ```
 δ_k^∥ = ⟨δ_k, ĥ_k⟩ ĥ_k        (radial: changes ||h||, preserves ĥ)
 δ_k^⊥ = δ_k - δ_k^∥              (tangential: changes ĥ, preserves ||h||)
 ```
 
-To first order in ||δ||/||h||:
+First-order:
 
 ```
 ||h_{k+1}||² ≈ ||h_k||² + 2||h_k||·⟨δ_k, ĥ_k⟩ + ||δ_k||²    (magnitude from radial)
 ĥ_{k+1} ≈ ĥ_k + δ_k^⊥ / ||h_k||                               (direction from tangential)
 ```
 
-**DMC is zero when the tangential trajectory (which determines f(ĥ_l)) does not co-vary
-with the cumulative radial trajectory (which determines ||h_l||²) across layers.**
-
-For attention layers: δ_k = W_O V α(x), where α depends on Q = h_k W_Q. Because Q
-depends on h_k, the output δ is structurally coupled to the input direction → radial
-and tangential components co-vary → DMC ≠ 0.
-
-For conv layers: δ_k = Conv(h_k) applies local temporal mixing via fixed-width kernels.
-The conv output direction relative to h_k is determined by kernel weights and local
-context, not by the global direction ĥ_k. This produces approximately direction-independent
-radial/tangential ratios → DMC ≈ 0.
+Hence DMC is near zero when tangential and radial trajectories decouple across depth.
+Empirically this is architecture-conditioned: pure attention retains coupling; conv-heavy
+paths suppress it.
 
 ### Derivation D3: Negative Sign From Tangential/Radial Decomposition
 
@@ -1410,284 +1249,25 @@ cos(θ) = (1 + r cos α) / √(1 + 2r cos α + r²)
 
 where `r = ||δ||/||h_in||` and `α = angle(h_in, δ)`.
 
-For small r (typical: θ < 0.3 rad implies r < 0.3): `θ ≈ r · sin(α) = ||δ^⊥||/||h_in||`.
-
-Angular curvature = tangential update / residual stream magnitude.
-
-**D3 original prediction (FALSIFIED):** sin(α) drives the negative sign — generic-direction
-layers producing radial-dominant updates. **Corrected by D3.1–D3.4:** r (centroid magnitude
-reduction) drives the negative sign; sin(α) opposes it (centroid is MORE tangential, D3.2).
-
-**D3 measurement (2026-03-04, depth-controlled log-space):**
-
-Since θ ≈ r · sin(α), decompose in log space: log θ ≈ log r + log sin(α).
-All correlations are depth-residualized Spearman (OLS residuals against depth_fraction).
-
-| Model | r(H_norm, log r) | p | r(H_norm, log sin α) | p | r(H_norm, log θ) | p |
-|-------|----------------:|----:|--------------------:|----:|----------------:|----:|
-| LFM2-700M | -0.071 | 0.795 | **+0.750** | 0.001 | -0.318 | 0.231 |
-| Qwen3.5-0.8B | **-0.395** | 0.056 | -0.007 | 0.974 | -0.323 | 0.123 |
-| Qwen2.5-3B | **-0.568** | 0.000 | **+0.686** | 0.000 | **-0.361** | 0.031 |
-
-**D3's original tangential prediction was WRONG. Corrected derivation (D3.1–D3.5):**
-
-The original D3 predicted sin(α) drives the negative sign (high entropy → radial-dominant →
-small sin(α)). D3.2 proves the opposite: high entropy → centroid → MORE tangential (large
-sin(α)). The negative θ comes from D3.1 (centroid magnitude reduction: r↓), with D3.4
-proving r-dominance over the opposing sin(α) effect.
-
-Architecture conditioning (D3.5) determines which factor absorbs the coupling:
-
-```
-θ ≈ r · sin(α)
-
-Pure attention (Qwen2.5):  r↓↓↓(p<.001) + sin(α)↑↑↑(p<.001) → net θ↓ (D3.4: r wins)
-Hybrid lin-attn (Qwen3.5): r↓↓ (p=.056) + sin(α)≈0 (n.s.)   → net θ↓ (D3.5: partial)
-Hybrid conv+attn (LFM2):  r≈0  (n.s.)   + sin(α)↑↑↑(p=.001) → net θ↓ (D3.5: conv buffers r)
-```
-
-**Derivation: r and sin(α) as functions of attention entropy**
-
-Let `w_t = W_O v_t ∈ R^(d_h)` be the output vectors (value columns composed with output
-projection). Decompose each relative to `ĥ = h/||h||`:
-
-```
-w_t = w_t^∥ ĥ + w_t^⊥       where w_t^∥ = ⟨w_t, ĥ⟩ ∈ R,  w_t^⊥ ⊥ ĥ
-```
-
-The attention output `δ = Σ_t α_t w_t` decomposes as:
-
-```
-δ^∥ = Σ_t α_t w_t^∥           (radial: scalar sum)
-δ^⊥ = Σ_t α_t w_t^⊥           (tangential: vector sum in d_h − 1 dimensions)
-```
-
-**Lemma D3.1 (Centroid Magnitude Reduction) `[PROVEN: convexity]`.**
-For non-collinear value vectors (A4), concentrated α produces larger `||δ||` than diffuse α.
-
-*Proof.* `||δ||² = α^T M α` where `M_{ts} = ⟨w_t, w_s⟩` is the Gram matrix.
-`α = e_k` gives `||δ||² = ||w_k||²`. `α = u` gives `||δ||² = ||w̄||²`.
-By strict triangle inequality, `||w̄|| < max_k ||w_k||` for non-collinear vectors.
-Convex quadratic on simplex: maximum at vertices. ∎
-
-This gives `r = ||δ||/||h|| ↓` as `H(α) ↑`.
-
-**Lemma D3.2 (Centroid Tangentiality) `[PROVEN: concentration of measure]`.**
-For T output vectors in d_h dimensions, the centroid has `sin²(α) → 1 − O(T/d_h)`.
-
-*Proof.* The tangential centroid norm:
-
-```
-||w̄^⊥||² = (1/T²) Σ_{t,s} ⟨w_t^⊥, w_s^⊥⟩
-```
-
-Tangential components `{w_t^⊥}` live in `d_h − 1` dimensions. Cross-terms
-`⟨w_t^⊥, w_s^⊥⟩` for `t ≠ s` satisfy `E[|⟨u,v⟩|²] = 1/d` for random unit vectors
-(standard concentration). For `T ≪ d_h`, cross-terms are negligible:
-`||w̄^⊥||² ≈ (1/T) mean_t(||w_t^⊥||²)`.
-
-The radial centroid `(w̄^∥)² = (mean_t(w_t^∥))²` — scalars add coherently. But each
-projection `w_t^∥ = ⟨w_t, ĥ⟩` captures `O(1/d_h)` of `||w_t||²` (one direction
-among d_h). Meanwhile `||w_t^⊥||² = ||w_t||² · (1 − O(1/d_h))`.
-
-```
-sin²(α_centroid) = ||w̄^⊥||² / (||w̄^⊥||² + (w̄^∥)²)
-                 ≥ 1 − O(T/d_h) → 1     for d_h ≫ T
-```
-
-For concentrated `α ≈ e_k`: `sin²(α) = ||w_k^⊥||²/||w_k||²` depends on the specific
-token's radial alignment, which can be strictly less than 1. ∎
-
-**Lemma D3.3 (CE-Driven QK Selection Bias) `[PROVEN under A7, A7 FALSIFIED — D3.3 NOT APPLICABLE]`.**
-Under a radial-dominant downstream gradient, CE training increases attention scores for
-above-average radial tokens and decreases scores for below-average radial tokens.
-
-Define:
-
-```
-r_t = ⟨w_t, ĥ⟩               (token radial component)
-R   = Σ_t α_t r_t = ⟨δ, ĥ⟩   (attention-weighted radial mean)
-g   = ∂L/∂δ                   (downstream gradient at attention output)
-```
-
-Attention identities:
-
-```
-δ = Σ_t α_t w_t
-s_t = q·k_t / √d_k
-∂δ/∂s_t = α_t (w_t - δ)
-∂L/∂s_t = ⟨g, ∂δ/∂s_t⟩ = α_t ⟨g, w_t - δ⟩
-```
-
-Assumption A7 (explicit): local downstream gradient is radial-dominant,
-`g = -β ĥ + g_⊥`, with `β > 0` and `⟨g_⊥, w_t - δ⟩` mean-zero over t
-conditioned on `r_t` (no systematic correlation with radial order).
-
-Then the CE score update (`Δs_t = -η ∂L/∂s_t`) has signed radial term:
-
-```
-Δs_t = η β α_t (r_t - R) - η α_t ⟨g_⊥, w_t - δ⟩
-```
-
-Taking conditional expectation under A7:
-
-```
-E[Δs_t | r_t] = η β α_t (r_t - R)
-```
-
-So tokens with `r_t > R` get positive score drift; tokens with `r_t < R` get negative drift.
-This is the QK selection bias: CE pushes mass toward radially aligned value directions.
-
-Equivalent chain-rule closure to Q/K parameters:
-
-```
-∇_{W_Q}L = h^T [ Σ_t (∂L/∂s_t) k_t ] / √d_k
-∇_{W_K}L = Σ_t x_t^T [ (∂L/∂s_t) q ] / √d_k
-```
-
-Hence the same signed `∂L/∂s_t` term governs both query-side and key-side learning.
-
-**Monotone radial-gain corollary (under A7).**
-First-order change in weighted radial mean `R = Σ_t α_t r_t` is:
-
-```
-ΔR = Σ_t (∂R/∂s_t) Δs_t + O(η²),   ∂R/∂s_t = α_t (r_t - R)
-```
-
-Using the radial part above:
-
-```
-E[ΔR] = η β Σ_t α_t² (r_t - R)² >= 0
-```
-
-Strictly positive unless all `r_t` are equal. So CE increases radial concentration.
-
-**Falsifier for A7:** if measured `E[Δs_t | r_t]` is not monotone increasing in `r_t - R`,
-or if `E[ΔR] < 0`, the radial-selection premise fails and D3.3 is not applicable.
-
-**A7 FALSIFIED (2026-03-04).** `scripts/validate_a7_assumption.py` measured per-token
-score gradients via finite difference (ε = sqrt(eps_bf16), IEEE 754 derived) on LFM2-350M
-and Qwen3.5-0.8B. Results: Spearman(∂L/∂s_t / α_t, -(r_t - R)) shows no systematic
-positive correlation (0/96 heads pass Holm-Bonferroni on LFM2, 0/48 on Qwen). β sign
-scattered ≈50/50 positive/negative. The downstream gradient ∂L/∂δ is not radial-dominant.
-D3.3's selection mechanism does not hold.
-
-**What survives:** D3.1, D3.2, D3.4, D3.5 are unconditional geometric identities.
-The consequence map (concentration → larger r → larger θ) is proven. The open question
-is now the *cause*: what CE gradient mechanism drives attention concentration during
-training, if not radial selection? The bedrock operator equation is:
-`θ_l² ≈ (α^T M_l α / ||h_l||²) sin²(α_l)` where `M_l` is the Gram matrix over
-token output vectors `w_{l,t}`. This is geometry, not dynamics.
-
-**Theorem D3.4 (r-Dominance) `[PROVEN given D3.1, D3.2]`.**
-r changes by `O(√T)` between concentrated and uniform α; sin(α) changes by `O(1)`.
-
-*Proof.* From D3.1: for T diverse vectors, `||w̄|| = O(||w_k||/√T)` (centroid of T
-vectors with cancelling cross-terms → `||w̄||² ≈ mean(||w_t||²)/T`). So r-ratio = `O(√T)`.
-
-From D3.2: `sin(α_unif) ≈ 1`, `sin(α_conc) ∈ [c, 1]` with c > 0 (measured: 0.7–1.0).
-Sin-ratio is `O(1)`.
-
-For T ≥ 4: `√T ≥ 2 >` sin-ratio. The r-factor dominates `θ ≈ r · sin(α)`. ∎
-
-**Corollary D3.5 (Architecture Conditioning) `[PROVEN: structural]`.**
-
-D3.1–D3.4 apply to QK attention sublayers only. Non-QK sublayers have
-entropy-independent output magnitude, diluting r-coupling:
-
-- **Conv layers (LFM2, 10/16):** `δ_conv = Conv(h)` uses fixed kernels, no QK
-  selection. D3.1 does not apply → no r-entropy coupling from conv layers.
-
-- **Linear attention (Qwen3.5, 18/24):** `δ_lin = W_O S φ(q)` where `S = K^T V` is
-  a recurrent state (no per-query softmax). D3.1 does not apply.
-
-- **Pure QK attention (Qwen2.5, 36/36):** Every layer uses softmax → D3.1 applies
-  everywhere → maximum r-entropy coupling.
-
-Combined with the Pinsker envelope `[r · sin(α)]² ≤ a_l D + b_l D²`:
-
-```
-f_attn = (# QK-attention layers) / (# total layers)
-
-High f_attn  → r absorbs entropy decrease (D3.1 at every layer)
-Low f_attn   → r buffered by non-QK layers → sin(α) absorbs residual
-```
-
-This is structural: which sublayer types have entropy-dependent output magnitude
-(QK attention: yes, by D3.1; conv/linear attention: no, by architecture).
-
-### Results (2026-03-04)
-
-**Prediction 1: DMC by architecture**
-
-| Model | Arch | r(H_logit, \|\|h\|\|²) | r(H_logit_norm, \|\|h\|\|²) | DMC |
-|-------|------|----------------------|---------------------------|-----|
-| LFM2-700M | 10/16 conv | -0.894 | -0.065 | ≈ 0 |
-| Qwen3.5-0.8B | 18/24 lin_attn | -0.999 | -0.686 | ≠ 0 |
-| Qwen2.5-3B | 36/36 attn | -0.998 | -0.552 | ≠ 0 |
-
-The DMC pattern matches the derivation: conv-dominant → DMC ≈ 0, attention-dominant → DMC ≠ 0.
-The unnormalized H_logit was measuring ||h|| (r ≈ -1.0 for all models); after normalization,
-only the DMC component remains.
-
-**Prediction 2: Corrected sign**
-
-| Model | partial_r(H_logit_norm, θ \| depth) | OLS r | OLS p |
-|-------|-------------------------------------|-------|-------|
-| LFM2-700M | -0.390 | -0.176 | 0.514 |
-| Qwen3.5-0.8B | -0.145 | -0.846 | 0.000 |
-| Qwen2.5-3B | -0.468 | -0.517 | 0.001 |
-
-Consistent negative sign across all three families, matching the D3 prediction.
-
-**Prediction 3: Normalization non-triviality**
-
-| Model | r(H_logit_norm, H_logit) |
-|-------|--------------------------|
-| LFM2-700M | 0.221 |
-| Qwen3.5-0.8B | 0.689 |
-| Qwen2.5-3B | 0.554 |
-
-LFM2's near-zero correlation confirms the unnormalized Entropy-Lens was measuring ||h||,
-not directional posterior uncertainty. Qwen's moderate correlation reflects DMC: direction
-and magnitude share variance through the attention coupling pathway.
-
-### D3 Measurement Results `[DERIVATION, TESTED — original prediction corrected]`
-
-D3 originally predicted sin(α) drives the negative sign. Measurement (2026-03-04) falsified
-that specific prediction and confirmed the corrected decomposition (D3.1–D3.5):
-
-| Model | f_attn | r(H_ln, log r) | p | r(H_ln, log sin α) | p | Predicted dominant |
-|-------|--------|---------------:|----:|-------------------:|----:|-------------------|
-| LFM2-700M | 6/16 = 0.375 | -0.071 | 0.795 | **+0.750** | 0.001 | sin(α) (D3.5: low f_attn) |
-| Qwen3.5-0.8B | 6/24 = 0.250 | **-0.395** | 0.056 | -0.007 | 0.974 | r (partial) |
-| Qwen2.5-3B | 36/36 = 1.000 | **-0.568** | 0.000 | **+0.686** | 0.000 | r (D3.5: high f_attn) |
-
-**Verification against D3.1–D3.5:**
-
-1. **D3.1 (r↓ as H↑):** Confirmed for pure attention (Qwen2.5: r=-0.568, p<.001).
-   Weak/absent for low-f_attn architectures as predicted by D3.5.
-
-2. **D3.2 (sin(α)↑ as H↑):** Confirmed for LFM2 (+0.750, p=.001) and Qwen2.5 (+0.686, p<.001).
-   The centroid is more tangential than QK-selected tokens, as derived.
-
-3. **D3.4 (r-dominance):** Confirmed for Qwen2.5 (full QK attention): net r(H, log θ) = -0.361
-   despite opposing sin(α) = +0.686. The r-factor wins.
-
-4. **D3.5 (architecture conditioning):** LFM2 (f_attn=0.375) shows negligible r-coupling but
-   strong sin(α)-coupling — conv layers buffer r, forcing entropy effects into the tangential
-   channel. Qwen2.5 (f_attn=1.0) shows strong r-coupling as predicted.
-
-**Qwen3.5 anomaly:** f_attn = 0.25 (6/24 full attention layers) predicts sin(α)-dominance
-(like LFM2), but measurement shows r-dominance with p=0.056. Possible cause: the linear
-attention layers in Qwen3.5 have partial entropy coupling through the φ(q) term (unlike
-pure conv which has zero QK dependence). This makes the effective f_attn higher than the
-nominal 0.25. **Status: needs investigation — may require refining D3.5 to distinguish
-"zero coupling" (conv) from "partial coupling" (linear attention).**
-
-**Summary:** The negative r(H_logit_norm, θ) emerges from D3.1 (centroid magnitude reduction)
-at QK attention layers, opposed by D3.2 (centroid tangentiality) but dominated by D3.4
-(r-dominance: O(√T) vs O(1)). Architecture conditions the coupling via D3.5 (f_attn).
+For small `r`, `θ ≈ r·sin(α)`. The original D3 mechanism (`sin(α)` dominance) was falsified;
+the corrected mechanism is `r` dominance with architecture-conditioned buffering:
+QK-attention-rich stacks transmit `r` coupling strongly, while conv/linear-attention-heavy
+stacks partially absorb it.
+
+Compact empirical summary (2026-03-04):
+- **DMC by architecture:** `r(H_logit_norm, ||h||²)` is near zero for conv-dominant LFM2 and
+  nonzero for Qwen families.
+- **Corrected sign:** `partial_r(H_logit_norm, θ | depth)` is negative in all tested families.
+- **Normalization non-triviality:** `r(H_logit_norm, H_logit)` far from 1 confirms operator
+  change (not cosmetic renaming).
+- **A7 status:** radial-selection training mechanism (old D3.3) is falsified; this does not
+  invalidate geometric consequence equations (D3.1/D3.2/D3.4/D3.5).
+
+Numerical tables and per-head diagnostics are kept in:
+- `results/entropy_curvature_operator_split/*`
+- `results/gqa_falsifier_protocol/*`
+- [OPEN-MATHEMATICAL-QUESTIONS.md](./OPEN-MATHEMATICAL-QUESTIONS.md)
+- [causal-chain-evidence-map.md](./causal-chain-evidence-map.md)
 
 ---
 

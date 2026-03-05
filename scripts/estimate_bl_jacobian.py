@@ -119,7 +119,7 @@ def _resolve_output_head(model: Any, base: Any) -> Any | None:
 
 def _resolve_final_norm(base: Any) -> Any | None:
     """Final readout norm, aligned with backend readout order."""
-    return getattr(base, "norm", None) or getattr(base, "embedding_norm", None)
+    return getattr(base, "embedding_norm", None) or getattr(base, "norm", None)
 
 
 def _call_with_fallback(module: Any, x: Any, mask: Any = None) -> Any:
@@ -170,7 +170,12 @@ def _query_index(seq_len: int) -> int | None:
 
 
 def _derive_num_tangent_probes(hidden_dim: int) -> int:
-    """Derive probe count from state-space bit-depth (dimension resolution)."""
+    """Derive probe count for randomized top-1 SVD estimation.
+
+    ceil(log2(d)) gives k ~ 10 for typical hidden dims (896-1024).
+    Halko et al. 2011 Thm 10.5: oversampling p >= 5 for k=1 target
+    singular value gives relative error bounded w.h.p.
+    """
     if hidden_dim <= 2:
         return 1
     return min(hidden_dim - 1, max(2, int(math.ceil(math.log2(hidden_dim)))))
@@ -200,6 +205,27 @@ def _spectral_norm(weight: Any, backend: Any) -> float:
     if int(s.shape[0]) == 0:
         return 0.0
     return float(backend.to_scalar(s[0]))
+
+
+def _unembedding_sigma_d(model: Any, base: Any, backend: Any, mx: Any) -> float:
+    """Compute sigma_d(W_u): smallest nonzero SV of the unembedding matrix.
+
+    Resolves W_u from lm_head.weight (if present) or embed_tokens.weight
+    (tied embeddings). Returns the d-th singular value where d = hidden_dim
+    (since W_u is V x d with V > d, there are exactly d nonzero SVs).
+    """
+    head = _resolve_output_head(model, base)
+    if head is not None and hasattr(head, "weight"):
+        w = _weight_matrix(head, mx)
+    else:
+        w = _weight_matrix(base.embed_tokens, mx)
+
+    w_f32 = backend.astype(w, "float32")
+    backend.eval(w_f32)
+    w_np = np.array(w_f32.tolist(), dtype=np.float32)
+    s = np.linalg.svd(w_np, compute_uv=False, full_matrices=False)
+    # s has min(V, d) entries; take the last one (d-th, smallest nonzero)
+    return float(s[-1]) if s.size > 0 else 0.0
 
 
 def _head_dim(attn: Any) -> int:
@@ -568,6 +594,9 @@ def _run_single_model(
     final_norm = _resolve_final_norm(base)
     output_head = _resolve_output_head(model, base)
 
+    sigma_d_wu = _unembedding_sigma_d(model, base, backend, mx)
+    logger.info("%s: sigma_d(W_u) = %.6e", model_name, sigma_d_wu)
+
     selected_attn_layers = []
     layer_arch = {}
     for idx, layer in enumerate(layers):
@@ -661,8 +690,19 @@ def _run_single_model(
                     + arch["path_score_term"]
                     + 2.0 * baseline["r_ratio"]
                 )
+                # Hybrid ceiling: architecture-only numerator (submultiplicative
+                # J_f bound), measured denominator (sigma_min(J_g) from probes).
+                # Pure architecture-only ceiling is vacuous because sigma_min(J_g)
+                # -> 0 when posterior concentrates (min_i p_i -> 0).
+                # The J_g factor cancels in ratio a_measured/a_ceiling, making
+                # the ratio a direct measure of J_f tightness.
+                # sigma_jg_min_effective is already floored at sqrt(eps_f32),
+                # so its square is always positive — no additional floor needed.
+                sigma_jg_eff_sq = measured["sigma_jg_min_effective"] ** 2
                 a_l_ceiling = (
-                    4.0 * (j_tan_ceiling ** 2) / max(baseline["h_out_norm_sq"], _SQRT_EPS_F32)
+                    4.0 * (j_tan_ceiling ** 2)
+                    / max(baseline["h_out_norm_sq"], _SQRT_EPS_F32)
+                    / sigma_jg_eff_sq
                 )
 
                 row = {
@@ -724,6 +764,7 @@ def _run_single_model(
         "model_name": model_name,
         "model_path": model_path,
         "epsilon": epsilon,
+        "sigma_d_wu": sigma_d_wu,
         "n_probes": len(per_probe_rows),
         "n_attention_layers_measured": len(selected_attn_layers),
         "selected_attention_layers": selected_attn_layers,
