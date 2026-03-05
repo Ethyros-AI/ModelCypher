@@ -8,6 +8,17 @@ Every training decision — learning rate, rank, scale, convergence, batch size,
 
 Point any model at any dataset. Hit train. Get a LoRA that perfectly captures either the knowledge or the behavioral shapes contained in the data.
 
+## Precision Objective (2026-03-05)
+
+Full precision was the microscope phase. Quantization is the deployment phase.
+
+- `bf16/fp16` remains the derivation environment for mechanism discovery and falsification.
+- Quantized models are the practical objective because they are the only viable path on constrained hardware and they deliver materially higher throughput.
+- Mission success requires smaller-and-smarter outcomes: preserving or improving behavior while reducing precision and resource footprint.
+- "Works in bf16" is necessary but insufficient. A training or merge method is promotable only when its quantized behavior is measured, explained, and controllable.
+
+Quantization in this project is treated as a deterministic geometric perturbation operator. If behavior changes under quantization, the response is mechanism tracing, not heuristic patching.
+
 Deep-research integration context:
 - `docs/research/deep_research_integration_2026_02.md`
 
@@ -53,13 +64,14 @@ If a result differs across models and those terms were omitted, the result is cl
 Every pre-registered prediction must include this equation-level contract:
 
 ```text
-observable = f(geometry_state, architecture_state, scale_state, measurement_operator)
+observable = f(geometry_state, architecture_state, scale_state, precision_state, measurement_operator)
 ```
 
 With explicit declarations:
 - `geometry_state`: the causal geometric variables
 - `architecture_state`: layer/operator type, routing pattern, attention regime, etc.
 - `scale_state`: width/depth/parameter count and derived dimensional terms
+- `precision_state`: numeric representation and quantization operator parameters
 - `measurement_operator`: kernel/normalization/statistic with domain of validity
 
 No experiment starts until this contract is written in the experiment doc.

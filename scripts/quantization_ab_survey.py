@@ -83,6 +83,16 @@ INFER_PROMPTS = [
 ]
 
 
+# ── Benign Stderr Patterns ──────────────────────────────────────────────
+# Lines matching any of these substrings are excluded from warning/error
+# counts in assess_health(). Each pattern is documented with its source.
+BENIGN_STDERR_PATTERNS: list[str] = [
+    "HTTP/1.1 404 Not Found",       # HuggingFace dataset resolution probing
+    "datasets-server.huggingface",   # HuggingFace datasets API info logs
+    '"level": "info"',               # Structured JSON info logs (not warnings)
+    "Could not load google/boolq from HuggingFace:",  # boolq split fallback warning
+]
+
 # ── Tool Specifications ─────────────────────────────────────────────────
 
 
@@ -489,7 +499,8 @@ def assess_health(
             # Count warning/error lines
             warn_lines = [
                 ln for ln in r.stderr.splitlines()
-                if "warning" in ln.lower() or "error" in ln.lower()
+                if ("warning" in ln.lower() or "error" in ln.lower())
+                and not any(pat in ln for pat in BENIGN_STDERR_PATTERNS)
             ]
             if warn_lines:
                 notes.append(
@@ -650,6 +661,51 @@ def _format_value(v: object) -> str:
     return str(v)[:60]
 
 
+def _format_relative(delta: float, baseline: float, precision: int = 1) -> str:
+    """Format relative change against absolute baseline magnitude."""
+    if baseline == 0:
+        return "—"
+    return f"{(100 * delta / abs(baseline)):+.{precision}f}%"
+
+
+def generate_delta_summary(
+    comparisons: list[ToolComparison],
+    output_dir: Path,
+) -> str:
+    """Generate a compact delta summary table from the executive metrics.
+
+    Writes to delta_summary.md and returns the table string for console output.
+    """
+    metrics = _extract_summary_metrics(comparisons)
+    if not metrics:
+        return "(no executive metrics extracted)"
+
+    lines = ["| Metric | Tool | bf16 | 4-bit | Delta | Relative |"]
+    lines.append("|--------|------|------|-------|-------|----------|")
+    for m in metrics:
+        bf16_v = m["bf16"]
+        q4_v = m["q4"]
+        if isinstance(bf16_v, (int, float)) and isinstance(q4_v, (int, float)):
+            delta = q4_v - bf16_v
+            rel = _format_relative(delta, bf16_v, precision=1)
+            lines.append(
+                f"| {m['metric']} | {m['tool']} "
+                f"| {_format_value(bf16_v)} | {_format_value(q4_v)} "
+                f"| {_format_value(delta)} | {rel} |"
+            )
+        else:
+            lines.append(
+                f"| {m['metric']} | {m['tool']} "
+                f"| {_format_value(bf16_v)} | {_format_value(q4_v)} "
+                f"| — | — |"
+            )
+
+    table = "\n".join(lines)
+    (output_dir / "delta_summary.md").write_text(table + "\n")
+    logger.info("Wrote delta summary to %s", output_dir / "delta_summary.md")
+    return table
+
+
 def generate_comparison_report(
     comparisons: list[ToolComparison],
     bf16_path: str,
@@ -680,11 +736,10 @@ def generate_comparison_report(
             q4_v = m["q4"]
             if isinstance(bf16_v, (int, float)) and isinstance(q4_v, (int, float)):
                 delta = q4_v - bf16_v
-                rel = (delta / abs(bf16_v) * 100) if bf16_v != 0 else float("inf")
                 lines.append(
                     f"| {m['metric']} | {m['tool']} | "
                     f"{_format_value(bf16_v)} | {_format_value(q4_v)} | "
-                    f"{_format_value(delta)} | {rel:+.2f}% |"
+                    f"{_format_value(delta)} | {_format_relative(delta, bf16_v, precision=2)} |"
                 )
             else:
                 lines.append(
@@ -1212,6 +1267,9 @@ def main() -> None:
     )
     logger.info("Wrote structured results to %s", output_dir / "survey_results.json")
 
+    # Generate and print delta summary
+    delta_table = generate_delta_summary(comparisons, output_dir)
+
     # Print summary
     ok_count = sum(
         1 for c in comparisons
@@ -1223,6 +1281,7 @@ def main() -> None:
     print(f"Failures: {fail_count}")
     print(f"Total time: {total_duration:.1f}s")
     print(f"Results: {output_dir}")
+    print(f"\n{delta_table}")
     print(f"{'=' * 60}")
 
 

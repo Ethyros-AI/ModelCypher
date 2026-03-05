@@ -36,6 +36,24 @@ Geometric diagnostics for LLM representations. Measures intrinsic dimension, cur
 - **Architecture**: Hexagonal (ports and adapters)
 - **Tests**: Run `poetry run pytest` for current count
 
+## Quantization Is the Endgame (2026-03-05)
+
+Full precision work is the derivation phase, not the destination.
+
+- `bf16/fp16` is where we derive and falsify geometric mechanisms.
+- Quantized models are the deployment target for real hardware constraints and throughput.
+- A method is not "done" when it works in full precision; it is done when we can explain and control its behavior under quantization.
+- Treat quantization as a deterministic geometric perturbation operator, not as a post-hoc compression trick.
+
+Required contract for new training/merge claims:
+
+`observable = f(geometry_state, architecture_state, scale_state, precision_state, measurement_operator)`
+
+If bf16 and quantized behavior diverge:
+- Do not narrate; trace the operator path.
+- Identify where invariance breaks (for example: spectral tail clipping, rank collapse, condition number inflation, projection misalignment).
+- Add the missing precision term to the mechanism and re-test.
+
 ## Token Budget For AI Review
 
 The one-shot review budget is **20,000 tokens per file**.
@@ -135,7 +153,7 @@ Required before any cross-model claim:
 - Write the scale-conditioned equation (depth/width/parameter dependence).
 - Prove measurement commensurability for the chosen operator.
 - Pre-register directional prediction and falsifier.
-- Use claim form: `observable = f(geometry_state, architecture_state, scale_state, measurement_operator)`.
+- Use claim form: `observable = f(geometry_state, architecture_state, scale_state, precision_state, measurement_operator)`.
 - Apply and cite `docs/research/FIRST_PRINCIPLES_REVIEW_PROTOCOL.md`.
 
 If any item is missing, the work is exploratory only and must not be promoted in roadmap,

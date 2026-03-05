@@ -6,6 +6,18 @@ ModelCypher's training engine derives every decision from geometry. That engine 
 
 **Personal, portable, sovereign AI identity — carried as geometry, not data.**
 
+## Hardware Reality: Quantized First
+
+Most builders cannot train or serve large models in full precision. Quantization is not optional for that world; it is the only feasible substrate.
+
+ModelCypher therefore treats full precision as a derivation tool and quantized models as the primary execution target:
+
+- We use bf16/fp16 to derive mechanisms cleanly.
+- We require those mechanisms to transfer to quantized models.
+- If transfer fails, we do not ship narratives. We isolate the broken operator and derive the missing precision term.
+
+The vision is not "compress and accept quality loss." The vision is smaller-and-smarter models: geometry-informed training and merging that maintain or improve behavior under quantization while running faster on constrained hardware.
+
 A user's LoRA adapter is not a conversation log. It is a compressed geometric representation of how that person thinks, communicates, reasons, and relates. It captures invariant relational structure — the shapes, not the words. Because it is geometric rather than lexical, it is architecture-agnostic. It sits on top of any model at inference.
 
 ## The Architecture
@@ -69,6 +81,8 @@ Standard LoRA adapters are tied to a specific model's weight dimensions. Moving 
 
 The merge pipeline already proves adapters can cross architecture boundaries when the geometric correspondence is established. Extending this to personal adapter portability is infrastructure work, not research.
 
+The same discipline applies across precision regimes. Quantized transfer is not a separate project; it is the same geometric mapping problem with an added precision-state term that must be measured and derived.
+
 ## Nightly Consolidation Mirrors Biology
 
 Human memory consolidation happens during sleep. The hippocampus replays the day's experiences and integrates them into cortical structures overnight. The architecture does the same thing:
@@ -103,4 +117,4 @@ This means the identity layer — the personal adapter — is not tied to any sp
 
 ModelCypher's mission is to train models using only geometry. The vision is what that enables: a world where AI identity is personal, portable, and sovereign — and the geometry guarantees it works across any model on any device.
 
-The training engine is step one. The identity layer is what we are building toward.
+The training engine is step one. Quantized-first geometric control is step two. The identity layer is what we are building toward.
