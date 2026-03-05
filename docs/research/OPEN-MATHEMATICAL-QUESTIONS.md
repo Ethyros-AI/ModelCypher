@@ -266,17 +266,35 @@ satisfied. Claims missing architecture/scale terms or commensurability proofs ar
                Full sublayer analysis: `docs/research/entropy_curvature_derivation.md`.
                Data: `results/entropy_curvature/entropy_curvature_results.json`.
                     ↓
-[EXPLORATORY, r=0.821] Cumulative curvature → ID
-               Measured correlation. Mechanism: accumulated directional change →
-               higher local manifold dimensionality (TwoNN). Geometrically motivated.
-               Relationship between known curvature transformations and TwoNN estimator
-               behavior: NOT DERIVED.
-               Architecture term: MISSING. Scale term: MISSING.
-               Theoretical grounding: same Bayesian manifold interpretation applies —
-               cumulative curvature accumulation = progressive Bayesian suppression steps
-               (each layer ablation causes >10× error increase in wind-tunnel tasks), and
-               the final ID corresponds to the dimension of the posterior-entropy-
-               parameterized value manifold.
+[MECHANISM_CLARIFIED, 2026-03-05] Cumulative curvature → ID
+               The r=0.821 correlation is SPURIOUS as a causal mechanism.
+               Cumulative curvature is monotonically non-decreasing by construction,
+               so Spearman(cum_curvature, ID) = Spearman(layer_index, ID). The r=0.821
+               measured whether ID increases with depth in specific models, not a
+               direct causal link from curvature accumulation to dimension growth.
+
+               Deep investigation (scripts/covariance_rank_id_analysis.py):
+               - E3: TwoNN is perfectly scale-invariant (M3 killed).
+               - D2: On synthetic Gaussians, TwoNN tracks effective rank k_eff
+                 (r=0.976). On real networks: k_eff and TwoNN ID are UNCORRELATED
+                 (r≈0) for models without extreme bottleneck layers.
+               - E1: Across 4 models / 3 families:
+                   LFM2-350M: r(k_eff,ID)=-0.03, no bottleneck (var_top1<0.26)
+                   Qwen3.5-0.8B: r(k_eff,ID)=-0.18, no bottleneck (var_top1<0.28)
+                   Llama-3.2-3B: r(k_eff,ID)=0.02, no bottleneck (var_top1<0.22)
+                   Qwen2.5-3B: r(k_eff,ID)=0.88, EXTREME bottleneck (var_top1>0.8)
+
+               Conclusion: k_eff measures global covariance spread. TwoNN measures
+               local manifold dimension. They diverge on curved manifolds (trained
+               networks). They converge only in near-Gaussian or extreme-bottleneck
+               regimes. The covariance injection hypothesis (M1) is refuted for
+               normal operating conditions.
+
+               What remains true: ID trajectory defines phases (next link, proven).
+               What is lost: the causal mechanism from curvature to ID is NOT
+               covariance rank injection. The mechanism for ID trajectory shape
+               must come from local tangent space geometry, not global covariance.
+               Data: results/covariance_rank_id/covariance_rank_id_results.json.
                     ↓
 [PROVEN]       ID → Phases
                Phases are defined by ID trajectory shape (minima = highway,

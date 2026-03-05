@@ -57,6 +57,7 @@ from modelcypher.core.domain.training.geometric_lora import (
     select_target_modules,
 )
 from modelcypher.core.domain.training.quantization_frontier_precheck import (
+    make_quantization_frontier_precheck_payload_v1,
     run_quantization_frontier_precheck_v1,
 )
 from modelcypher.core.domain.training.quantization_weyl_precheck import (
@@ -382,27 +383,12 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                         probe_texts,
                     )
                 except TrainingDerivationError as exc:
-                    result = {
-                        "operator": "quantization_frontier_precheck_v1",
-                        "valid": False,
-                        "failure_modes": ["activation_collection_failed"],
-                        "subspace_source": "hidden_probe_output",
-                        "n_probes": len(probe_texts),
-                        "n_layers": 0,
-                        "n_overlapping_layers": 0,
-                        "min_cka": None,
-                        "mean_cka": None,
-                        "per_layer_cka": {},
-                        "per_layer_gram_epsilon": {},
-                        "per_layer_cka_bound": {},
-                        "per_layer_hidden_probe_eigenvalues": {},
-                        "per_layer_hidden_probe_d_eff": {},
-                        "per_layer_hidden_probe_k_eff": {},
-                        "per_layer_hidden_probe_gap_eff": {},
-                        "per_layer_hidden_probe_rho_out": {},
-                        "raw_weyl": raw_weyl,
-                        "collection_error": exc.to_dict(),
-                    }
+                    result = make_quantization_frontier_precheck_payload_v1(
+                        n_probes=len(probe_texts),
+                        raw_weyl=raw_weyl,
+                        failure_modes=["activation_collection_failed"],
+                    )
+                    result["collection_error"] = exc.to_dict()
                 else:
                     result = run_quantization_frontier_precheck_v1(
                         fp_activations=self._stack_probe_activations(fp_activations),

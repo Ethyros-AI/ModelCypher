@@ -25,20 +25,10 @@ import math
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain.training.geometric_lora import compute_layer_geometry
+from modelcypher.core.domain.training.matrix_norms import compute_spectral_norm
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
-
-
-def _spectral_norm(matrix: Any, backend: "Backend") -> float:
-    """Exact spectral norm via top singular value."""
-    M = backend.astype(matrix, "float32")
-    backend.eval(M)
-    singular_values = backend.svd(M, compute_uv=False)
-    backend.eval(singular_values)
-    if int(singular_values.shape[0]) <= 0:
-        return 0.0
-    return float(backend.to_scalar(singular_values[0]))
 
 
 def run_quantization_weyl_precheck(
@@ -67,7 +57,7 @@ def run_quantization_weyl_precheck(
 
         error = backend.astype(fp_weight, "float32") - backend.astype(q_weight, "float32")
         backend.eval(error)
-        error_norm = _spectral_norm(error, backend)
+        error_norm = compute_spectral_norm(error, backend)
 
         if gap_half > 0.0:
             error_over_gap_half = error_norm / gap_half

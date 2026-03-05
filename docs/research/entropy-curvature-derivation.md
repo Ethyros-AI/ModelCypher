@@ -184,24 +184,62 @@ This is the explicit operator bridge missing from correlation-only claims.
 
 ## TwoNN Link: Covariance Spectrum -> Estimated ID
 
-### Lemma 3: TwoNN Local Scaling Dependence [EXPLORATORY]
+### Lemma 3: TwoNN Local Scaling Dependence [REFUTED as simple k_eff tracking, 2026-03-05]
 
-TwoNN estimates dimension from local distance-ratio scaling (`μ = r2/r1` and regression on
-`log μ`). For locally regular manifolds (A5), estimated ID increases with the number of
-non-negligible local covariance eigenvalues.
+**Original claim:** TwoNN ID increases with the number of non-negligible covariance eigenvalues
+(effective rank k_eff).
 
-Equivalent operational statement: when `Σ_y` (or `Σ_δ`) spreads mass across more significant
-eigen-directions, TwoNN ID should increase.
+**Empirical test (scripts/covariance_rank_id_analysis.py):**
 
-### Bridge Claim
+On synthetic Gaussian data, TwoNN tracks k_eff perfectly (Spearman r=0.976, p<0.001).
+On real neural network activations, the relationship breaks down:
+
+| Model | Architecture | r(k_eff, ID) | var_top1 range | Bottleneck? |
+|-------|-------------|-------------|----------------|-------------|
+| LFM2-350M | lfm2 | -0.03 | 0.14-0.26 | No |
+| Qwen3.5-0.8B | qwen3.5 | -0.18 | 0.16-0.28 | No |
+| Llama-3.2-3B | llama | 0.02 | 0.12-0.22 | No |
+| Qwen2.5-3B | qwen2.5 | **0.88** | 0.17-**0.95** | **Yes** (L4-L29) |
+
+k_eff tracks TwoNN ID only when the model has extreme variance concentration (var_top1 > 0.8),
+i.e., layers with near-1D bottlenecks. In normal operating regime (var_top1 < 0.3), the two
+quantities measure fundamentally different things:
+
+- **k_eff (global):** Number of eigenvalues contributing to total variance. Measures how many
+  directions the point cloud spreads into globally.
+- **TwoNN ID (local):** Local manifold dimension from nearest-neighbor distance ratios.
+  Measures the dimensionality of the tangent space at each point.
+
+On a curved manifold (which trained networks produce), a point cloud can spread into many
+covariance directions (high k_eff) while lying on a low-dimensional manifold (low TwoNN ID).
+Analogy: a 1D spiral in 3D has k_eff ≈ 3 but TwoNN ≈ 1.
+
+**Additional findings:**
+- TwoNN is perfectly scale-invariant (E3: max_diff = 0.0000 at 0.5x, 2x scaling). M3 killed.
+- Cumulative curvature → ID correlation equals layer_index → ID (both monotonic by construction).
+  The r=0.821 measures whether ID increases with depth, not a direct causal mechanism.
+
+**Revised status:** The bridge from covariance spectrum to TwoNN ID via k_eff is valid ONLY for
+Gaussian-like distributions or extreme bottleneck layers. For general trained-network activations,
+TwoNN ID is determined by the local manifold geometry, not the global covariance spectrum. Lemma 3
+in its original form is refuted.
+
+### Bridge Claim [AMENDED]
 
 ```
 higher H(α) -> larger attainable support -> higher-rank/more isotropic Σ_α
 -> broader Σ_y spectrum -> larger projected orthogonal update energy
--> higher E[θ] and higher TwoNN ID (through local scaling)
+-> higher E[θ]    [VALIDATED: Proposition 5]
+    BUT
+-> higher TwoNN ID   [REFUTED for non-bottleneck layers]
 ```
 
-This bridge remains `[EXPLORATORY]` until Lemma 3 is formalized with estimator-specific bounds.
+The bridge from covariance spectrum to angular curvature (Proposition 5) remains valid.
+The bridge from covariance spectrum to TwoNN ID is refuted for non-bottleneck layers.
+TwoNN ID reflects local manifold geometry, which is shaped by the cumulative effect of
+layer transformations on the tangent space — not the global covariance spectrum.
+
+Data: `results/covariance_rank_id/covariance_rank_id_results.json`.
 
 ---
 
@@ -218,10 +256,16 @@ These are not post-hoc interpretations; each is tied to the derivation structure
    `corr(H, θ_attn)` and `corr(H, θ_mlp)` is family-dependent (e.g., hybrid LFM2 may show
    attention-dominant coupling while standard transformer families may show MLP-dominant or
    mixed coupling). No universal dominance direction is assumed.
-4. **P-EC4 (ID response):** Layers with larger entropy-driven projected covariance trace
-   have higher TwoNN ID after controlling for norm scale.
+4. **P-EC4 (ID response):** ~~Layers with larger entropy-driven projected covariance trace
+   have higher TwoNN ID after controlling for norm scale.~~
+   **REFUTED (2026-03-05):** TwoNN ID does not track covariance effective rank (k_eff) on
+   real trained networks (r≈0 across 3/4 models). TwoNN measures local manifold dimension,
+   not global covariance spread. The prediction holds only for extreme bottleneck layers
+   (var_top1 > 0.8). See Lemma 3 amendment above.
 
-If these fail, the derivation fails.
+P-EC1 through P-EC3 remain testable. P-EC4 is refuted. The derivation chain from entropy
+to curvature (Propositions 1-5) remains intact. The chain from curvature to TwoNN ID is
+broken — TwoNN ID reflects local tangent space geometry, not global covariance spectrum.
 
 ---
 

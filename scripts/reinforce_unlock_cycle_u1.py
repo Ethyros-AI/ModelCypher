@@ -24,11 +24,16 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REVALIDATION_SCRIPT = REPO_ROOT / "scripts" / "reinforce_revalidation.py"
-DEFAULT_MODEL = "/Volumes/CodeCypher/models/mlx-community/LFM2-1.2B-bf16"
+DEFAULT_MODEL = "/Volumes/CodeCypher/models/mlx-community/LFM2.5-1.2B-Instruct-bf16"
 DEFAULT_TRAIN = "data/training/1p2b_reasoning_foundation_train.jsonl"
 DEFAULT_EVAL = "data/training/1p2b_reasoning_foundation_val.jsonl"
 DEFAULT_RETENTION = "data/training/retention_replay.jsonl"
 DEFAULT_OUTPUT_ROOT = Path("results/reinforce_unlock_cycle_u1")
+BOOTSTRAP_SEED = 20260224
+# Efron & Tibshirani (1993) recommend O(10^3) replicates for percentile CIs.
+# With only 5 seeds, n^2 gives 25 bootstrap draws, which collapses the tails to
+# resample extrema and makes H1/H2 decisions unstable.
+BOOTSTRAP_MIN_REPLICATES = 1000
 
 
 @dataclass(frozen=True)
@@ -151,10 +156,10 @@ def _bootstrap_mean_ci(values: list[float]) -> PairedCI:
         raise ValueError("values must be non-empty")
 
     n = len(values)
-    n_bootstrap = max(1, n * n)
+    n_bootstrap = max(BOOTSTRAP_MIN_REPLICATES, n * n)
     mean_val = sum(values) / n
 
-    rng = random.Random(20260224)
+    rng = random.Random(BOOTSTRAP_SEED)
     samples: list[float] = []
     for _ in range(n_bootstrap):
         sample = [values[rng.randrange(n)] for _ in range(n)]
@@ -234,6 +239,9 @@ def _run_e1(args: argparse.Namespace, seeds: list[int], output_root: Path) -> tu
             )
 
     summary = _aggregate(phase_root, baseline_arm="ce_control")
+    # H1 is a within-treatment causal test: does post-outcome stopping beat
+    # pre-outcome stopping for the same force-REINFORCE arm? The CE control
+    # aggregate remains valuable context, but it is not the H1 test statistic.
     h1_ci = _paired_accuracy_ci(
         phase_root=phase_root,
         arm_a="force_reinforce__stop_post_outcome__selector_all",
@@ -245,6 +253,10 @@ def _run_e1(args: argparse.Namespace, seeds: list[int], output_root: Path) -> tu
 
     decision = {
         "hypothesis": "H1 gate-lock",
+        "comparison_design": (
+            "paired treatment-vs-treatment comparison: "
+            "post_outcome vs pre_outcome within force_reinforce"
+        ),
         "paired_delta_accuracy": {
             "point_estimate": h1_ci.point_estimate,
             "ci_lower": h1_ci.ci_lower,
@@ -284,6 +296,9 @@ def _run_e2(
                 seed=seed,
             )
 
+    # E2 intentionally omits ce_control. The question is whether lost-only
+    # credit assignment beats all-problem credit assignment within the same
+    # winning stop stage, not whether either arm beats CE.
     h2_ci = _paired_accuracy_ci(
         phase_root=phase_root,
         arm_a=arm_lost,
@@ -295,6 +310,10 @@ def _run_e2(
 
     decision = {
         "hypothesis": "H2 credit-targeting",
+        "comparison_design": (
+            "paired treatment-vs-treatment comparison: "
+            "lost_only vs all within force_reinforce"
+        ),
         "paired_delta_accuracy": {
             "point_estimate": h2_ci.point_estimate,
             "ci_lower": h2_ci.ci_lower,
@@ -362,6 +381,10 @@ def _run_e2(
 
     e2_summary = {
         "phase": "e2_credit_targeting",
+        "comparison_design": (
+            "paired treatment-vs-treatment comparison; "
+            "ce_control omitted by design"
+        ),
         "winner_stop_stage": winner_stage,
         "all_arm": arm_all,
         "lost_only_arm": arm_lost,
@@ -383,6 +406,7 @@ def _run_e2(
         "",
         f"- Winner stop stage: `{winner_stage}`",
         f"- Arms: `{arm_all}` vs `{arm_lost}`",
+        "- Design: paired treatment-vs-treatment comparison; no CE control arm in E2 by design",
         f"- H2 supported: `{h2_supported}`",
         (
             "- CI (lost_only - all): "
@@ -451,6 +475,7 @@ def _write_cycle_report(
         "",
         "## H1 Gate-Lock",
         "",
+        "- Design: paired treatment-vs-treatment comparison of force_reinforce arms; CE control is contextual only",
         f"- Supported: `{e1_decision['supported']}`",
         (
             "- CI (post - pre): "
@@ -460,6 +485,7 @@ def _write_cycle_report(
         "",
         "## H2 Credit Targeting",
         "",
+        "- Design: paired treatment-vs-treatment comparison of force_reinforce arms; CE control omitted by design",
         f"- Supported: `{e2_decision['supported']}`",
         (
             "- CI (lost_only - all): "

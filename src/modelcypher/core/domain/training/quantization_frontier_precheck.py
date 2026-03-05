@@ -31,21 +31,41 @@ from modelcypher.core.domain.geometry.cka import (
     compute_gram_perturbation_ratio,
     compute_linear_cka_from_activations,
 )
+from modelcypher.core.domain.training.matrix_norms import compute_spectral_norm
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
 
 _OPERATOR = "quantization_frontier_precheck_v1"
 
-
-def _spectral_norm(matrix: Any, backend: "Backend") -> float:
-    M = backend.astype(matrix, "float32")
-    backend.eval(M)
-    singular_values = backend.svd(M, compute_uv=False)
-    backend.eval(singular_values)
-    if int(singular_values.shape[0]) <= 0:
-        return 0.0
-    return float(backend.to_scalar(singular_values[0]))
+def make_quantization_frontier_precheck_payload_v1(
+    *,
+    n_probes: int,
+    raw_weyl: dict[str, Any] | None = None,
+    subspace_source: str = "hidden_probe_output",
+    failure_modes: list[str] | None = None,
+) -> dict[str, Any]:
+    """Return the canonical v1 payload skeleton for frontier telemetry."""
+    return {
+        "operator": _OPERATOR,
+        "valid": False,
+        "failure_modes": list(failure_modes or []),
+        "subspace_source": subspace_source,
+        "n_probes": int(n_probes),
+        "n_layers": 0,
+        "n_overlapping_layers": 0,
+        "min_cka": None,
+        "mean_cka": None,
+        "per_layer_cka": {},
+        "per_layer_gram_epsilon": {},
+        "per_layer_cka_bound": {},
+        "per_layer_hidden_probe_eigenvalues": {},
+        "per_layer_hidden_probe_d_eff": {},
+        "per_layer_hidden_probe_k_eff": {},
+        "per_layer_hidden_probe_gap_eff": {},
+        "per_layer_hidden_probe_rho_out": {},
+        "raw_weyl": raw_weyl,
+    }
 
 
 def _center_rows(matrix: Any, backend: "Backend") -> Any:
@@ -105,26 +125,11 @@ def run_quantization_frontier_precheck_v1(
     subspace_source: str = "hidden_probe_output",
 ) -> dict[str, Any]:
     """Reduce paired probe activations to quantization-frontier telemetry."""
-    payload: dict[str, Any] = {
-        "operator": _OPERATOR,
-        "valid": False,
-        "failure_modes": [],
-        "subspace_source": subspace_source,
-        "n_probes": int(n_probes),
-        "n_layers": 0,
-        "n_overlapping_layers": 0,
-        "min_cka": None,
-        "mean_cka": None,
-        "per_layer_cka": {},
-        "per_layer_gram_epsilon": {},
-        "per_layer_cka_bound": {},
-        "per_layer_hidden_probe_eigenvalues": {},
-        "per_layer_hidden_probe_d_eff": {},
-        "per_layer_hidden_probe_k_eff": {},
-        "per_layer_hidden_probe_gap_eff": {},
-        "per_layer_hidden_probe_rho_out": {},
-        "raw_weyl": raw_weyl,
-    }
+    payload = make_quantization_frontier_precheck_payload_v1(
+        n_probes=n_probes,
+        raw_weyl=raw_weyl,
+        subspace_source=subspace_source,
+    )
     failure_modes: list[str] = payload["failure_modes"]
 
     if n_probes < 2:
@@ -191,7 +196,7 @@ def run_quantization_frontier_precheck_v1(
         backend.eval(delta_y)
         rho_out = None
         if gap_eff is not None and gap_eff > 0.0:
-            rho_out = _spectral_norm(delta_y, backend) / gap_eff
+            rho_out = compute_spectral_norm(delta_y, backend) / gap_eff
 
         cka = compute_linear_cka_from_activations(fp_stack, q_stack, backend)
         gram_epsilon, cka_bound = compute_gram_perturbation_ratio(
@@ -242,5 +247,7 @@ def run_quantization_frontier_precheck_v1(
     payload["per_layer_hidden_probe_rho_out"] = rho_out_by_layer
     return payload
 
-
-__all__ = ["run_quantization_frontier_precheck_v1"]
+__all__ = [
+    "make_quantization_frontier_precheck_payload_v1",
+    "run_quantization_frontier_precheck_v1",
+]

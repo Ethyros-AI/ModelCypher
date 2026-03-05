@@ -8,8 +8,28 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.training.quantization_frontier_precheck import (
+    make_quantization_frontier_precheck_payload_v1,
     run_quantization_frontier_precheck_v1,
 )
+
+
+def test_quantization_frontier_payload_helper_builds_canonical_invalid_schema() -> None:
+    payload = make_quantization_frontier_precheck_payload_v1(
+        n_probes=3,
+        raw_weyl={"n_crossing": 1},
+        failure_modes=["activation_collection_failed"],
+    )
+
+    assert payload["operator"] == "quantization_frontier_precheck_v1"
+    assert payload["valid"] is False
+    assert payload["failure_modes"] == ["activation_collection_failed"]
+    assert payload["n_probes"] == 3
+    assert payload["subspace_source"] == "hidden_probe_output"
+    assert payload["n_layers"] == 0
+    assert payload["n_overlapping_layers"] == 0
+    assert payload["per_layer_cka"] == {}
+    assert payload["per_layer_hidden_probe_rho_out"] == {}
+    assert payload["raw_weyl"] == {"n_crossing": 1}
 
 
 def test_quantization_frontier_precheck_valid_nominal_case() -> None:
