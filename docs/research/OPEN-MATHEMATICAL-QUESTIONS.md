@@ -656,7 +656,9 @@ The mechanism for negative r(H_logit_norm, θ) is now formally derived:
   drift for above-average radial tokens (`r_t > R`)
 - D3.4 `[PROVEN]`: r-dominance — O(√T) vs O(1), r wins the product θ ≈ r·sin(α)
 - D3.5 `[PROVEN]`: Architecture conditioning — f_attn determines coupling strength
-Remaining open item: validate A7 (radial-dominant downstream gradient) on real models.
+Remaining open item: ~~validate A7~~ → **A7 FALSIFIED** (2026-03-04, 5 models, 2 families,
+3 scales, 0/528 heads). R²(radial) ≈ 0.16 mean; best correlate is token position.
+See `scripts/validate_a7_assumption.py`, `scripts/diagnose_a7_gradient_structure.py`.
 All measured signs match across 3 architectures. See `entropy-curvature-derivation.md`.
 Next falsifier protocol: `docs/research/ENTROPY-CURVATURE-GQA-FALSIFIER-PROTOCOL.md`.
 

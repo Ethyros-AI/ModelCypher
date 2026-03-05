@@ -1317,14 +1317,93 @@ Compact empirical summary (2026-03-04):
 - **Corrected sign:** `partial_r(H_logit_norm, θ | depth)` is negative in all tested families.
 - **Normalization non-triviality:** `r(H_logit_norm, H_logit)` far from 1 confirms operator
   change (not cosmetic renaming).
-- **A7 status:** radial-selection training mechanism (old D3.3) is falsified; this does not
-  invalidate geometric consequence equations (D3.1/D3.2/D3.4/D3.5).
+- **A7 status:** radial-selection training mechanism (old D3.3) is falsified across 5 models
+  (0/528 heads, 2 families, 3 scales). Diagnostic: R²(radial) ≈ 0.16 mean — radial projection
+  explains <18% of gradient variance. Best correlate is token position (mean |ρ|≈0.37).
+  This does not invalidate geometric consequence equations (D3.1/D3.2/D3.4/D3.5).
 
 Numerical tables and per-head diagnostics are kept in:
 - `results/entropy_curvature_operator_split/*`
 - `results/gqa_falsifier_protocol/*`
 - [OPEN-MATHEMATICAL-QUESTIONS.md](./OPEN-MATHEMATICAL-QUESTIONS.md)
 - [causal-chain-evidence-map.md](./causal-chain-evidence-map.md)
+
+---
+
+### Proposition B6: Three-Component Decomposition [EMPIRICAL, ARCHITECTURE-DEPENDENT]
+
+**Statement:** The curvature numerator decomposes as:
+
+```
+||P_perp(h)δ||² = ||δ||² sin²(α)    where α = angle(h, δ)
+```
+
+In log space: `log(||P_perp(h)δ||²) = log(||δ||²) + 2·log(sin(α))`.
+
+Three sub-components carry independent geometric meaning:
+1. `||δ||²` = E_total — update magnitude (D3.1: centroid averaging)
+2. `sin²(α)` — tangential fraction (D3.2: tangentiality)
+3. `||h||²` = h_in_norm_sq — hidden state norm (B5/B7: norm-entropy coupling)
+
+**Question:** Which sub-component carries the H_logit_norm signal?
+
+**Method:** Depth-residualized Spearman correlation r(H_logit_norm, Y_X | depth) for each
+component X, with AR(1)-corrected effective df (Bretherton 1999), Fisher-SE MDE, and
+500-permutation exceedance test.
+
+**10-model results (2026-03-04):**
+
+| Model | L | MDE | r(δ²) | r(sin²) | r(h²) | r(num) | Dominant |
+|-------|--:|----:|------:|--------:|------:|-------:|----------|
+| LFM2-350M | 16 | 0.762 | -0.688 | +0.594 | **-0.797*** | -0.715 | ||h||² |
+| LFM2-700M | 16 | 0.762 | -0.656 | +0.750 | **-0.918*** | -0.641 | ||h||² |
+| Llama-3.2-3B | 28 | 0.487 | +0.485 | +0.339 | **+0.768*** | +0.466 | ||h||² |
+| Mistral-7B | 32 | 0.762 | +0.430 | +0.696 | +0.602 | +0.433 | NONE |
+| Qwen2.5-3B | 36 | 0.635 | -0.626 | **+0.686*** | -0.201 | -0.595 | sin²(α) |
+| Qwen3-8B | 36 | 0.762 | +0.400 | +0.225 | +0.706 | +0.414 | NONE |
+| Qwen3.5-0.8B | 24 | 0.266 | -0.256 | -0.007 | +0.099 | -0.252 | NONE |
+| Qwen3.5-2B | 24 | 0.345 | -0.238 | +0.034 | -0.043 | -0.265 | NONE |
+| Qwen3.5-4B | 32 | 0.314 | -0.174 | +0.297 | -0.067 | -0.156 | NONE |
+| Qwen3.5-4B-4bit | 32 | 0.328 | -0.201 | +0.143 | +0.113 | -0.185 | NONE |
+
+\* = resolvable (|r| > MDE). Closure checks: all 10 models PASS (max_rel_gap < eps_bf16).
+
+**D3 prediction pass rates:**
+- D3.1 (r(H, log(||δ||²)) < 0): 7/10 (70%). Fails on Llama, Mistral, Qwen3-8B (positive sign).
+- D3.2 (r(H, 2·log(sin(α))) > 0): 9/10 (90%). Fails on Qwen3.5-0.8B only.
+- D3.4 (|r_delta| > |r_sin|, magnitude dominates): 6/10 (60%).
+
+**Cross-model consistency: INCONSISTENT.** Dominant component is architecture-dependent:
+
+| Architecture group | Dominant | D3.1 sign | Models |
+|-------------------|----------|-----------|--------|
+| Hybrid conv+attn (LFM2) | ||h||² | negative (correct) | 350M, 700M |
+| Pure attention (Llama) | ||h||² | **positive** (reversed) | 3.2-3B |
+| Pure attention (Mistral) | NONE (below floor) | **positive** (reversed) | 7B |
+| GQA=8 (Qwen2.5) | sin²(α) | negative (correct) | 3B |
+| GQA=4 (Qwen3) | NONE (below floor) | **positive** (reversed) | 8B |
+| Hybrid linear+full attn (Qwen3.5) | NONE (below floor) | negative (correct) | 0.8B, 2B, 4B, 4B-4bit |
+
+**Architecture-conditioned findings:**
+1. **LFM2 + Llama: ||h||² dominant.** The hidden state norm carries the entropy signal.
+   But LFM2 has negative D3.1 (as predicted) while Llama has positive D3.1 (reversed).
+   The conv-vs-attention path difference in how ||δ|| responds to entropy is a real signal.
+2. **Qwen2.5: sin²(α) dominant.** High GQA (8) pushes the coupling into the tangential fraction.
+3. **Qwen3.5 (all 4 models): below detection floor.** Despite lowest MDE (0.27-0.33), all
+   correlations are weak (|r| < 0.30). The GatedDeltaNet + linear attention architecture
+   decouples all three sub-components from H_logit_norm.
+4. **Llama/Mistral/Qwen3-8B: D3.1 sign flip.** r(H_logit_norm, log(||δ||²)) is POSITIVE,
+   not negative. Higher normalized entropy → LARGER update magnitude in these architectures,
+   contradicting the centroid averaging prediction. This is a genuine architecture-dependent
+   reversal, not a measurement artifact (all pass closure checks).
+
+**Status: [EMPIRICAL, ARCHITECTURE-DEPENDENT].** B6 confirms the decomposition identity
+(closure: all pass) but the dominant sub-component is not universal. The which-component
+question has an architecture-dependent answer. No single sub-component explains the
+H_logit_norm → curvature coupling across all families.
+
+Source: `results/entropy_curvature_three_component/cross_model_summary.json`,
+`scripts/entropy_curvature_three_component.py`.
 
 ---
 

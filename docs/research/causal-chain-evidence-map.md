@@ -211,8 +211,9 @@ of the norm-corrected operator under an explicit architecture-conditioned local 
 - D3.2 `[PROVEN]`: Centroid tangentiality — diffuse α → sin(α) → 1 (concentration of measure).
 - D3.3 `[PROVEN under A7, A7 FALSIFIED]`: CE chain-rule selection bias — the math is correct
   *given* a radial-dominant downstream gradient, but A7 is empirically false. The downstream
-  gradient ∂L/∂δ is not radial-dominant (0/96 heads on LFM2, 0/48 on Qwen show the predicted
-  monotonicity). D3.3 is not applicable to real models.
+  gradient ∂L/∂δ is not radial-dominant (0/96 LFM2-350M, 0/48 Qwen3.5-0.8B, 0/144 LFM2-700M,
+  0/192 LFM2-1.2B, 0/48 Qwen3.5-2B — 5 models, 2 families, 3 scales). D3.3 is not applicable
+  to real models.
 - D3.4 `[PROVEN]`: r-dominance — r changes O(√T) vs sin(α) changes O(1), r wins.
 - D3.5 `[PROVEN]`: Architecture conditioning — f_attn determines which factor absorbs coupling.
 
@@ -220,9 +221,24 @@ of the norm-corrected operator under an explicit architecture-conditioned local 
 `θ_l² ≈ (α^T M_l α / ||h_l||²) sin²(α_l)` where `M_l` is the Gram matrix over `w_{l,t}`.
 D3.1+D3.2+D3.4 prove: concentration raises r, r dominates θ. This is geometry, no assumptions.
 
+**B6 three-component decomposition (2026-03-04, 10 models):**
+`||P_perp(h)δ||² = ||δ||² sin²(α)`. Which sub-component carries the H_logit_norm signal?
+- LFM2: ||h||² dominant (r=-0.80, -0.92). D3.1 sign correct (negative).
+- Llama-3.2-3B: ||h||² dominant (r=+0.77). D3.1 sign **reversed** (positive).
+- Qwen2.5-3B: sin²(α) dominant (r=+0.69). GQA=8 pushes coupling to tangential fraction.
+- Qwen3.5 (4 models): all below detection floor. GatedDeltaNet decouples all components.
+- Mistral-7B, Qwen3-8B: below detection floor. D3.1 sign reversed (positive).
+- Cross-model: INCONSISTENT. Dominant component is architecture-dependent.
+- D3.1: 7/10 pass (70%), D3.2: 9/10 pass (90%), D3.4: 6/10 pass (60%).
+Source: `results/entropy_curvature_three_component/cross_model_summary.json`.
+
 **Remaining gaps:**
-1. ~~Validate A7 in-model~~ → **A7 FALSIFIED** (2026-03-04, `scripts/validate_a7_assumption.py`).
-   Open question: what CE gradient mechanism drives attention concentration during training?
+1. ~~Validate A7 in-model~~ → **A7 FALSIFIED** (2026-03-04, 5 models, `scripts/validate_a7_assumption.py`).
+   Diagnostic (`scripts/diagnose_a7_gradient_structure.py`): R²(radial) mean=0.18 (LFM2-350M),
+   0.15 (Qwen3.5-0.8B) — radial projection explains <18% of gradient variance. Best correlate
+   is token position (mean |ρ|≈0.37), not radial geometry. Gradient is moderately concentrated
+   (k_eff/T≈0.53). Open question: what CE gradient mechanism drives attention concentration
+   during training?
 2. ~~Estimate `a_l, b_l` from measured Jacobians (`B_l`) per architecture~~ →
    **MEASURED** (2026-03-04, `scripts/estimate_bl_jacobian.py`,
    `results/bl_estimation/full_local2/`).
@@ -389,8 +405,8 @@ Curvature and ID are properties of the set `{y(x) : x ~ P(x)}`, not of a single 
 
 **Status (updated 2026-03-04):** D3.1–D3.5 formally derive the sign and architecture
 conditioning. D3.1, D3.2, D3.4, D3.5 are `[PROVEN]`; D3.3 is `[PROVEN under A7]`
-(radial-dominant downstream gradient condition). A7 is **FALSIFIED** (0/96 heads LFM2,
-0/48 heads Qwen show predicted monotonicity). `a_l, b_l` are **MEASURED** (ceiling never
+(radial-dominant downstream gradient condition). A7 is **FALSIFIED** (5 models, 2 families,
+3 scales: 0/528 heads show predicted monotonicity). `a_l, b_l` are **MEASURED** (ceiling never
 tight, quadratic remainder non-negligible). The Pinsker envelope + D3 decomposition close
 the geometric consequence; the remaining promotion blocker is identifying the cause
 mechanism (training dynamics that drive attention concentration → curvature change).

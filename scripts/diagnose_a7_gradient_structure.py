@@ -590,10 +590,10 @@ def main() -> None:
 
     if args.smoke:
         model_names = [args.models[0]] if args.models else ["LFM2-350M"]
-        probes_override = PROBE_TEXTS[:1]
+        probes = PROBE_TEXTS[:1]
     else:
         model_names = args.models if args.models else list(DIAGNOSTIC_MODELS.keys())
-        probes_override = None
+        probes = PROBE_TEXTS
 
     # Validate model paths
     for name in model_names:
@@ -610,27 +610,13 @@ def main() -> None:
     out_dir = Path(args.output) / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Temporarily override PROBE_TEXTS for smoke mode
-    global PROBE_TEXTS  # noqa: PLW0603 — needed for smoke override
-    original_probes = PROBE_TEXTS
-    if probes_override is not None:
-        # We can't reassign the imported list, so we patch the module
-        import validate_a7_assumption
-        validate_a7_assumption.PROBE_TEXTS = probes_override
-        # Also update local reference used in run_single_model
-        # (run_single_model iterates PROBE_TEXTS from the import)
-
     models_data = []
     for name in model_names:
         path = DIAGNOSTIC_MODELS[name]
         t0 = time.time()
-        model_doc = run_single_model(name, path)
+        model_doc = run_single_model(name, path, probes=probes)
         model_doc["elapsed_sec"] = time.time() - t0
         models_data.append(model_doc)
-
-    if probes_override is not None:
-        import validate_a7_assumption
-        validate_a7_assumption.PROBE_TEXTS = original_probes
 
     run_doc = {
         "run_id": run_id,
