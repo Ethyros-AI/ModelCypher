@@ -550,6 +550,8 @@ def compute_radial_projections(
                 W_O_head = W_O[..., hd:hd + head_dim]  # [hidden_dim, head_dim]
 
                 r_t_list = []
+                norm_w_t_list = []
+                norm_w_t_perp_list = []
                 for t in range(seq_len):
                     v_t = v_reshaped[0, t, head_idx, :]  # [head_dim]
                     # w_t = W_O_head @ v_t → [hidden_dim]
@@ -557,6 +559,11 @@ def compute_radial_projections(
                     # r_t = ⟨w_t, ĥ⟩
                     r_t = float(mx.sum(w_t * h_hat))
                     r_t_list.append(r_t)
+                    # ||w_t|| and ||w_t^⊥|| = sqrt(||w_t||² - r_t²)
+                    norm_w_t = float(mx.sqrt(mx.sum(w_t * w_t)))
+                    norm_w_t_perp = math.sqrt(max(norm_w_t**2 - r_t**2, 0.0))
+                    norm_w_t_list.append(norm_w_t)
+                    norm_w_t_perp_list.append(norm_w_t_perp)
 
                 # α from the query position driving the loss
                 alpha = [float(attn_weights[layer_idx][0, head_idx, _QUERY_POS, t]) for t in range(seq_len)]
@@ -566,6 +573,8 @@ def compute_radial_projections(
                     "r_t": r_t_list,
                     "R": R,
                     "r_minus_R": [r_t_list[t] - R for t in range(seq_len)],
+                    "norm_w_t": norm_w_t_list,
+                    "norm_w_t_perp": norm_w_t_perp_list,
                 }
 
         # Forward through layer to advance h
