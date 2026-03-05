@@ -120,6 +120,23 @@ If uncertainty intervals cross zero, outcome is inconclusive (not promotion, not
 3. `results/gqa_falsifier_protocol/<run_id>/within_family_trends.json`
 4. `results/gqa_falsifier_protocol/<run_id>/falsifier_outcome.json`
 
+## Artifact Integrity Check
+
+Use the validator to prevent and detect malformed/truncated run artifacts:
+
+```bash
+poetry run python scripts/validate_gqa_falsifier_artifacts.py --run-dir results/gqa_falsifier_protocol/<run_id> --schema auto
+poetry run python scripts/validate_gqa_falsifier_artifacts.py --root results/gqa_falsifier_protocol --all-runs --schema auto
+```
+
+Schema mode behavior:
+- `auto`: prefer v2 if v2 keys exist; fallback to legacy v1; otherwise fail.
+- `v2`: enforce current schema (`z_couple_regression_full`, `z_couple_regression_commensurable`, `commensurability_note`).
+- `v1`: enforce legacy schema (`z_couple_regression`).
+
+Producer guard: `scripts/gqa_falsifier_protocol.py` validates emitted artifacts in `v2`
+mode and exits non-zero if validation fails.
+
 ## Promotion Rule
 
 Promotion from exploratory to stronger claim state requires:

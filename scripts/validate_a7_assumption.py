@@ -76,7 +76,7 @@ _PRE_REGISTERED_ALPHA = 0.05
 # n_perms > 96/0.05 - 1 = 1919. Use 10× margin for stable p-value
 # estimation: 19200. (For T ≤ 8, exact test uses all T! permutations
 # regardless of this constant.)
-_MAX_HEADS_PER_MODEL = 96  # 6 attn layers × 16 heads (LFM2-350M worst case)
+_MAX_HEADS_PER_MODEL = 192  # 6 attn layers × 32 heads (LFM2-1.2B worst case)
 _N_PERMUTATIONS = int(math.ceil(10.0 * _MAX_HEADS_PER_MODEL / _PRE_REGISTERED_ALPHA))
 # Query position whose logits drive the CE loss. Under causal masking,
 # logits[-2] predicts token_ids[-1]. All perturbations and alpha
@@ -86,6 +86,9 @@ _QUERY_POS = -2
 MODELS = {
     "LFM2-350M": "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16",
     "Qwen3.5-0.8B": "/Volumes/CodeCypher/models/mlx-community/Qwen3.5-0.8B-bf16",
+    "LFM2-700M": "/Volumes/CodeCypher/models/mlx-community/LFM2-700M-bf16",
+    "LFM2-1.2B": "/Volumes/CodeCypher/models/mlx-community/LFM2.5-1.2B-Base-bf16",
+    "Qwen3.5-2B": "/Volumes/CodeCypher/models/mlx-community/Qwen3.5-2B-bf16",
 }
 
 # Probes must tokenize to T ≥ 7 for the exact permutation test (T ≤ 8)
@@ -897,13 +900,17 @@ def main():
     all_pass = all(r["overall_pass"] for r in results)
     all_fail = all(not r["overall_pass"] for r in results)
 
+    n_models = len(results)
+    n_pass_models = sum(1 for r in results if r["overall_pass"])
+    n_fail_models = n_models - n_pass_models
+
     if all_pass:
-        print("\nBoth models: A7 NOT FALSIFIED. D3.3 applicable.")
+        print(f"\nAll {n_models} models: A7 NOT FALSIFIED. D3.3 applicable.")
     elif all_fail:
-        print("\nBoth models: A7 FALSIFIED. D3.3 NOT applicable.")
+        print(f"\nAll {n_models} models: A7 FALSIFIED. D3.3 NOT applicable.")
     else:
         print(
-            "\nMIXED RESULT: One model supports, one falsifies. "
+            f"\nMIXED RESULT: {n_pass_models}/{n_models} pass, {n_fail_models}/{n_models} fail. "
             "This indicates mechanism underspecification — "
             "the observable needs an architecture_state term. "
             "See FIRST_PRINCIPLES_REVIEW_PROTOCOL.md."
@@ -984,14 +991,16 @@ def main():
         lines.append("")
 
     all_pass_final = all(r["overall_pass"] for r in results)
+    all_fail_final = all(not r["overall_pass"] for r in results)
     if all_pass_final:
-        lines.append("CONCLUSION: A7 NOT FALSIFIED across both models.")
+        lines.append(f"CONCLUSION: A7 NOT FALSIFIED across all {len(results)} models.")
         lines.append("D3.3 status: [PROVEN under A7] → [PROVEN, A7 VALIDATED]")
-    elif all_fail:
-        lines.append("CONCLUSION: A7 FALSIFIED across both models.")
+    elif all_fail_final:
+        lines.append(f"CONCLUSION: A7 FALSIFIED across all {len(results)} models.")
         lines.append("D3.3 status: [PROVEN under A7] → [PROVEN under A7, A7 FALSIFIED — D3.3 NOT APPLICABLE]")
     else:
-        lines.append("CONCLUSION: MIXED RESULT — mechanism underspecification.")
+        n_p = sum(1 for r in results if r["overall_pass"])
+        lines.append(f"CONCLUSION: MIXED RESULT ({n_p}/{len(results)} pass) — mechanism underspecification.")
 
     with open(txt_path, "w") as f:
         f.write("\n".join(lines) + "\n")

@@ -73,6 +73,7 @@ _EPS_F32 = math.ldexp(1.0, -23)
 _SQRT_EPS_F32 = math.sqrt(_EPS_F32)
 _EPS_BF16 = math.ldexp(1.0, -7)
 _SQRT_EPS_BF16 = math.sqrt(_EPS_BF16)
+_KAPPA_TARGET_F32 = 1.0 / _SQRT_EPS_F32
 _QUERY_POS = -2
 
 
@@ -366,6 +367,95 @@ def _baseline_terms(
     }
 
 
+def _ridge_for_gram(ptp: np.ndarray) -> dict[str, float]:
+    """Derive ridge for Gram system to cap condition number at 1/sqrt(eps_f32)."""
+    eigvals = np.linalg.eigvalsh(ptp)
+    lam_max = float(np.max(eigvals)) if eigvals.size else 0.0
+    lam_min = float(np.min(eigvals)) if eigvals.size else 0.0
+    kappa_target = float(_KAPPA_TARGET_F32)
+
+    if lam_min > 0.0:
+        kappa_raw = float(lam_max / max(lam_min, _SQRT_EPS_F32))
+    else:
+        kappa_raw = float("nan")
+
+    if lam_max <= _SQRT_EPS_F32:
+        ridge_lambda = float(_SQRT_EPS_F32)
+    else:
+        numer = lam_max - kappa_target * lam_min
+        denom = max(kappa_target - 1.0, 1.0)
+        ridge_cond = max(0.0, numer / denom)
+        # Ensure PSD after regularization so cond_reg is well-defined.
+        ridge_psd = max(0.0, -lam_min + _SQRT_EPS_F32 * max(lam_max, 1.0))
+        ridge_lambda = max(_SQRT_EPS_F32 * lam_max, ridge_cond, ridge_psd)
+
+    lam_min_reg = lam_min + ridge_lambda
+    if lam_min_reg > 0.0:
+        kappa_reg = float((lam_max + ridge_lambda) / lam_min_reg)
+    else:
+        kappa_reg = float("nan")
+
+    return {
+        "lam_max": lam_max,
+        "lam_min": lam_min,
+        "kappa_target": kappa_target,
+        "ridge_lambda": float(ridge_lambda),
+        "kappa_raw": kappa_raw,
+        "kappa_reg": kappa_reg,
+    }
+
+
+def _solve_scaled_linear_map(
+    P_fit: np.ndarray,
+    F_fit: np.ndarray,
+    p_val: np.ndarray,
+    ridge_lambda: float,
+) -> dict[str, Any]:
+    """Solve regularized linear map in scaled coordinates; return unscaled prediction."""
+    n_fit = int(P_fit.shape[1])
+    coeff_default = np.full((n_fit,), np.nan, dtype=np.float64)
+    f_pred_default = np.full((F_fit.shape[0],), np.nan, dtype=np.float64)
+
+    if n_fit == 0:
+        return {
+            "coeff": coeff_default,
+            "f_pred": f_pred_default,
+            "solve_ok": False,
+            "finite_ok": False,
+        }
+
+    p_scale = max(float(np.max(np.abs(P_fit))), 1.0)
+    f_scale = max(float(np.max(np.abs(F_fit))), 1.0)
+    P_fit_scaled = P_fit / p_scale
+    F_fit_scaled = F_fit / f_scale
+    p_val_scaled = p_val / p_scale
+    ptp = P_fit_scaled.T @ P_fit_scaled
+    rhs = P_fit_scaled.T @ p_val_scaled
+    eye = np.eye(n_fit, dtype=np.float64)
+
+    try:
+        coeff = np.linalg.solve(ptp + float(ridge_lambda) * eye, rhs)
+    except np.linalg.LinAlgError:
+        return {
+            "coeff": coeff_default,
+            "f_pred": f_pred_default,
+            "solve_ok": False,
+            "finite_ok": False,
+        }
+
+    with np.errstate(over="ignore", divide="ignore", invalid="ignore"):
+        f_pred_scaled = F_fit_scaled @ coeff
+    f_pred = f_pred_scaled * f_scale
+    finite_ok = bool(np.all(np.isfinite(coeff)) and np.all(np.isfinite(f_pred)))
+
+    return {
+        "coeff": coeff,
+        "f_pred": f_pred,
+        "solve_ok": True,
+        "finite_ok": finite_ok,
+    }
+
+
 def _estimate_local_coupling(
     layer: Any,
     h_in: Any,
@@ -381,16 +471,31 @@ def _estimate_local_coupling(
     seed: int,
 ) -> dict[str, Any]:
     """Estimate ||B_l|| from sampled local Jacobian factors."""
-    h_q = baseline["h_q"]
-    f_base = baseline["f_val"]
-    p_base = baseline["p_val"]
-    h_norm = baseline["h_norm"]
-    h_out_norm_sq = baseline["h_out_norm_sq"]
 
-    dim = h_q.shape[0]
-    if dim <= 1:
+    def _base_diag_defaults() -> dict[str, Any]:
         return {
-            "n_dirs": 0,
+            "n_fit_dirs": float("nan"),
+            "n_holdout_dirs": float("nan"),
+            "p_scale": float("nan"),
+            "f_scale": float("nan"),
+            "ptp_lam_max": float("nan"),
+            "ptp_lam_min": float("nan"),
+            "ptp_cond_raw": float("nan"),
+            "ridge_lambda": float("nan"),
+            "ptp_cond_reg": float("nan"),
+            "kappa_target": float("nan"),
+            "holdout_attempted": 0,
+            "holdout_used": 0,
+            "solve_fail_count": 0,
+            "nonfinite_fail_count": 0,
+            "c_l_candidates_max": float("nan"),
+            "c_l_candidates_mean": float("nan"),
+            "c_l_candidates_std": float("nan"),
+        }
+
+    def _result_with_defaults(n_dirs_out: int) -> dict[str, Any]:
+        result = {
+            "n_dirs": n_dirs_out,
             "sigma_jf_max": float("nan"),
             "sigma_jg_min": float("nan"),
             "sigma_jg_min_effective": float("nan"),
@@ -400,6 +505,18 @@ def _estimate_local_coupling(
             "c_l_measured": float("nan"),
             "b_l_measured": float("nan"),
         }
+        result.update(_base_diag_defaults())
+        return result
+
+    h_q = baseline["h_q"]
+    f_base = baseline["f_val"]
+    p_base = baseline["p_val"]
+    h_norm = baseline["h_norm"]
+    h_out_norm_sq = baseline["h_out_norm_sq"]
+
+    dim = h_q.shape[0]
+    if dim <= 1:
+        return _result_with_defaults(0)
 
     n_dirs = min(n_dirs, dim - 1)
     h_hat = h_q / max(h_norm, _SQRT_EPS_F32)
@@ -443,17 +560,7 @@ def _estimate_local_coupling(
 
     n_valid = len(f_cols)
     if n_valid < 2:
-        return {
-            "n_dirs": n_valid,
-            "sigma_jf_max": float("nan"),
-            "sigma_jg_min": float("nan"),
-            "sigma_jg_min_effective": float("nan"),
-            "sigma_jg_floor_applied": False,
-            "B_norm_measured": float("nan"),
-            "a_l_measured": float("nan"),
-            "c_l_measured": float("nan"),
-            "b_l_measured": float("nan"),
-        }
+        return _result_with_defaults(n_valid)
 
     F = np.column_stack(f_cols)  # [d, n_valid]
     P = np.column_stack(p_cols)  # [vocab, n_valid]
@@ -470,46 +577,69 @@ def _estimate_local_coupling(
     b_norm_measured = sigma_jf_max / sigma_jg_min_effective
     a_l_measured = 4.0 * (b_norm_measured ** 2) / max(h_out_norm_sq, sigma_floor)
 
+    diagnostics = _base_diag_defaults()
+    n_fit_dirs = max(2, n_valid // 2) if n_valid >= 2 else 0
+    n_fit_dirs = min(n_fit_dirs, n_valid)
+    n_holdout_dirs = max(0, n_valid - n_fit_dirs)
+    diagnostics["n_fit_dirs"] = n_fit_dirs
+    diagnostics["n_holdout_dirs"] = n_holdout_dirs
+
     # c_l proxy from hold-out residuals:
     # fit linear map on one subset of perturbations, evaluate on held-out subset.
     c_l_measured = float("nan")
     b_l_measured = float("nan")
     if n_valid >= 3:
-        n_fit = max(2, n_valid // 2)
-        P_fit = P[:, :n_fit]
-        F_fit = F[:, :n_fit]
+        P_fit = P[:, :n_fit_dirs]
+        F_fit = F[:, :n_fit_dirs]
         p_scale = max(float(np.max(np.abs(P_fit))), 1.0)
+        f_scale = max(float(np.max(np.abs(F_fit))), 1.0)
+        diagnostics["p_scale"] = p_scale
+        diagnostics["f_scale"] = f_scale
+
         P_fit_scaled = P_fit / p_scale
         ptp = P_fit_scaled.T @ P_fit_scaled
-        ptp_scale = float(np.trace(ptp)) / max(1, n_fit)
-        ridge = _SQRT_EPS_F32 * max(ptp_scale, _SQRT_EPS_F32)
-        eye = np.eye(n_fit, dtype=np.float64)
+        ridge_info = _ridge_for_gram(ptp)
+        diagnostics["ptp_lam_max"] = ridge_info["lam_max"]
+        diagnostics["ptp_lam_min"] = ridge_info["lam_min"]
+        diagnostics["ptp_cond_raw"] = ridge_info["kappa_raw"]
+        diagnostics["ridge_lambda"] = ridge_info["ridge_lambda"]
+        diagnostics["ptp_cond_reg"] = ridge_info["kappa_reg"]
+        diagnostics["kappa_target"] = ridge_info["kappa_target"]
+
         c_candidates = []
-        for j in range(n_fit, n_valid):
+        for j in range(n_fit_dirs, n_valid):
+            diagnostics["holdout_attempted"] += 1
             p_val = P[:, j]
             f_val = F[:, j]
-            p_val_scaled = p_val / p_scale
-            try:
-                with np.errstate(over="raise", divide="raise", invalid="raise"):
-                    rhs = P_fit_scaled.T @ p_val_scaled
-                    coeff = np.linalg.solve(ptp + ridge * eye, rhs)
-                    if not np.all(np.isfinite(coeff)):
-                        continue
-                    f_pred = F_fit @ coeff
-                    if not np.all(np.isfinite(f_pred)):
-                        continue
-            except FloatingPointError:
+            solve_doc = _solve_scaled_linear_map(
+                P_fit=P_fit,
+                F_fit=F_fit,
+                p_val=p_val,
+                ridge_lambda=ridge_info["ridge_lambda"],
+            )
+            if not solve_doc["solve_ok"]:
+                diagnostics["solve_fail_count"] += 1
                 continue
+            if not solve_doc["finite_ok"]:
+                diagnostics["nonfinite_fail_count"] += 1
+                continue
+
+            diagnostics["holdout_used"] += 1
+            f_pred = solve_doc["f_pred"]
             resid_norm = float(np.linalg.norm(f_val - f_pred))
             dp_norm = float(np.linalg.norm(p_val))
             denom = max(dp_norm * dp_norm, sigma_floor)
             c_candidates.append(resid_norm / denom)
 
         if c_candidates:
+            c_arr = np.array(c_candidates, dtype=np.float64)
             c_l_measured = float(max(c_candidates))
             b_l_measured = 8.0 * (c_l_measured ** 2) / max(h_out_norm_sq, sigma_floor)
+            diagnostics["c_l_candidates_max"] = float(np.max(c_arr))
+            diagnostics["c_l_candidates_mean"] = float(np.mean(c_arr))
+            diagnostics["c_l_candidates_std"] = float(np.std(c_arr))
 
-    return {
+    result = {
         "n_dirs": n_valid,
         "sigma_jf_max": sigma_jf_max,
         "sigma_jg_min": sigma_jg_min,
@@ -520,6 +650,8 @@ def _estimate_local_coupling(
         "c_l_measured": c_l_measured,
         "b_l_measured": b_l_measured,
     }
+    result.update(diagnostics)
+    return result
 
 
 def _layer_architecture_terms(layer: Any, backend: Any, mx: Any) -> dict[str, float]:
@@ -733,6 +865,23 @@ def _run_single_model(
                     "a_l_measured": measured["a_l_measured"],
                     "c_l_measured": measured["c_l_measured"],
                     "b_l_measured": measured["b_l_measured"],
+                    "n_fit_dirs": measured["n_fit_dirs"],
+                    "n_holdout_dirs": measured["n_holdout_dirs"],
+                    "p_scale": measured["p_scale"],
+                    "f_scale": measured["f_scale"],
+                    "ptp_lam_max": measured["ptp_lam_max"],
+                    "ptp_lam_min": measured["ptp_lam_min"],
+                    "ptp_cond_raw": measured["ptp_cond_raw"],
+                    "ridge_lambda": measured["ridge_lambda"],
+                    "ptp_cond_reg": measured["ptp_cond_reg"],
+                    "kappa_target": measured["kappa_target"],
+                    "holdout_attempted": measured["holdout_attempted"],
+                    "holdout_used": measured["holdout_used"],
+                    "solve_fail_count": measured["solve_fail_count"],
+                    "nonfinite_fail_count": measured["nonfinite_fail_count"],
+                    "c_l_candidates_max": measured["c_l_candidates_max"],
+                    "c_l_candidates_mean": measured["c_l_candidates_mean"],
+                    "c_l_candidates_std": measured["c_l_candidates_std"],
                     "a_measured_over_ceiling": (
                         measured["a_l_measured"] / a_l_ceiling if a_l_ceiling > _SQRT_EPS_F32 else float("nan")
                     ),
@@ -788,17 +937,37 @@ def _write_text_summary(out_path: Path, run_doc: dict[str, Any]) -> None:
         lines.append(f"  Path: {model['model_path']}")
         lines.append(f"  Attention layers measured: {model['selected_attention_layers']}")
         lines.append(f"  Probes: {model['n_probes']}")
+        holdout_attempted = 0.0
+        holdout_used = 0.0
+        for probe in model.get("per_probe", []):
+            for row in probe.get("layers", []):
+                holdout_attempted += float(row.get("holdout_attempted", 0.0))
+                holdout_used += float(row.get("holdout_used", 0.0))
+        if holdout_attempted > 0.0:
+            holdout_pct = holdout_used / holdout_attempted
+            lines.append(
+                f"  % holdouts used = {holdout_used:.0f}/{holdout_attempted:.0f} ({holdout_pct:.2%})"
+            )
+        else:
+            lines.append("  % holdouts used = 0/0 (N/A)")
         lines.append("")
-        lines.append("  layer | a_ceiling_mean | a_measured_mean | ratio_mean | b_measured_mean")
-        lines.append("  ------+----------------+-----------------+------------+---------------")
+        lines.append(
+            "  layer | a_ceiling_mean | a_measured_mean | ratio_mean | "
+            "b_measured_mean | cond_raw_mean | cond_reg_mean"
+        )
+        lines.append(
+            "  ------+----------------+-----------------+------------+---------------+---------------+---------------"
+        )
         for row in model.get("layer_summary", []):
             a_c = row.get("a_l_ceiling_mean", float("nan"))
             a_m = row.get("a_l_measured_mean", float("nan"))
             ratio = row.get("a_measured_over_ceiling_mean", float("nan"))
             b_m = row.get("b_l_measured_mean", float("nan"))
+            cond_raw = row.get("ptp_cond_raw_mean", float("nan"))
+            cond_reg = row.get("ptp_cond_reg_mean", float("nan"))
             lines.append(
                 f"  {int(row['layer_idx']):>5d} | {a_c:>14.6e} | {a_m:>15.6e} | "
-                f"{ratio:>10.6f} | {b_m:>13.6e}"
+                f"{ratio:>10.6f} | {b_m:>13.6e} | {cond_raw:>13.6e} | {cond_reg:>13.6e}"
             )
         lines.append("")
 
@@ -844,6 +1013,9 @@ def run(args: argparse.Namespace) -> Path:
     run_doc = {
         "run_id": run_id,
         "timestamp": datetime.now().isoformat(),
+        "estimator_version": "bl_jacobian_v2",
+        "ridge_rule": "kappa_target=1/sqrt(eps_f32)",
+        "sigma_floor_source": "sqrt(eps_f32)",
         "epsilon": args.epsilon,
         "epsilon_source": "sqrt(eps_bf16)",
         "query_position": _QUERY_POS,

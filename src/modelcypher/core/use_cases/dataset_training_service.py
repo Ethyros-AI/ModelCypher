@@ -62,6 +62,10 @@ from modelcypher.core.domain.training.quantization_weyl_precheck import (
 from modelcypher.core.domain.training.geometric_optimizer import (
     derive_optimizer_geometry_config,
 )
+from modelcypher.core.domain.training.pipeline_gate import (
+    PipelineGateInput,
+    evaluate_pipeline_gate,
+)
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.moe.expert_selection import ExpertTargetSelection
@@ -156,6 +160,11 @@ class DatasetTrainResult:
     moe_targets: "ExpertTargetSelection | None" = None
     moe_saturated_during_training: list[str] | None = None
     moe_router_stability: float | None = None
+    # Pipeline promotability gate (shared with derived validation)
+    pipeline_gate_operator: str | None = None
+    pipeline_gate_passed: bool | None = None
+    pipeline_gate_failure_modes: list[str] | None = None
+    pipeline_gate_checks: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert result to a JSON-serializable dictionary."""
@@ -265,6 +274,14 @@ class DatasetTrainResult:
             result["moe_saturated_during_training"] = self.moe_saturated_during_training
         if self.moe_router_stability is not None:
             result["moe_router_stability"] = self.moe_router_stability
+        if self.pipeline_gate_operator is not None:
+            result["pipeline_gate_operator"] = self.pipeline_gate_operator
+        if self.pipeline_gate_passed is not None:
+            result["pipeline_gate_passed"] = self.pipeline_gate_passed
+        if self.pipeline_gate_failure_modes is not None:
+            result["pipeline_gate_failure_modes"] = self.pipeline_gate_failure_modes
+        if self.pipeline_gate_checks is not None:
+            result["pipeline_gate_checks"] = self.pipeline_gate_checks
         if self.benchmark_baseline is not None and self.benchmark_post is not None:
             result["benchmark_delta"] = {
                 k: self.benchmark_post[k] - self.benchmark_baseline.get(k, 0.0)
@@ -312,6 +329,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             seed=derived_seed,
             auto_regime=True,
             benchmark_suite=benchmark_suite,
+            enforce_pipeline_gate=True,
         )
 
     def train_from_dataset_research(
@@ -321,9 +339,11 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         **kwargs: Any,
     ) -> DatasetTrainResult:
         """Research entrypoint exposing non-strict controls."""
+        kwargs.pop("enforce_pipeline_gate", None)
         return self.train_from_dataset(
             model_path=model_path,
             dataset_path=dataset_path,
+            enforce_pipeline_gate=False,
             **kwargs,
         )
 
@@ -377,6 +397,8 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         max_iters_cap: int | None = None,
         benchmark_suite: str | None = None,
         target_experts: list[str] | str | None = None,
+        # Internal control: strict path fails on gate violations; research reports only.
+        enforce_pipeline_gate: bool = False,
         # External gradient hook — composed with any internal format-projection hook
         gradient_hook: "Callable | None" = None,
     ) -> DatasetTrainResult:
@@ -1791,6 +1813,32 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                     "Post-training benchmark failed", exc_info=True,
                 )
 
+        epoch_metrics_payload = [m.to_dict() for m in epoch_metrics] if epoch_metrics else None
+
+        # 11.10. Pipeline promotability gate (shared with derived validation).
+        gate_eps = float(self._backend.finfo().eps)
+        gate_input = PipelineGateInput(
+            spectral_bounds_ok=bool(spectral_bounds_ok),
+            stop_reason=stop_reason,
+            per_layer_cka=per_layer_cka,
+            per_layer_cka_bound=per_layer_cka_bound,
+            adapter_saturation_median_ratio=adapter_saturation_median_ratio,
+            max_effective_gain_ratio=max_gain_ratio,
+            epoch_metrics=epoch_metrics_payload,
+            strict_fail_closed_core=bool(enforce_pipeline_gate),
+        )
+        pipeline_gate_verdict = evaluate_pipeline_gate(gate_input, eps=gate_eps)
+        if enforce_pipeline_gate and not pipeline_gate_verdict.passed:
+            verdict_dict = pipeline_gate_verdict.to_dict()
+            raise TrainingDerivationError(
+                failure_class="pipeline_gate_failed",
+                detail=(
+                    "Pipeline gate failed: "
+                    + ", ".join(pipeline_gate_verdict.failure_modes)
+                ),
+                diagnostics=verdict_dict,
+            )
+
         # 12. Save if requested
         saved_adapter_path: str | None = None
         if output_dir is not None:
@@ -1929,7 +1977,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             spectral_bounds_ok=spectral_bounds_ok,
             max_spectral_ratio=max_spectral_ratio,
             training_time_seconds=training_time_seconds,
-            epoch_metrics=[m.to_dict() for m in epoch_metrics] if epoch_metrics else None,
+            epoch_metrics=epoch_metrics_payload,
             min_cka=min_cka,
             mean_cka=mean_cka,
             per_layer_cka=per_layer_cka,
@@ -1980,6 +2028,13 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             moe_targets=moe_targets,
             moe_saturated_during_training=moe_saturated_during_training,
             moe_router_stability=moe_router_stability,
+            pipeline_gate_operator=pipeline_gate_verdict.operator,
+            pipeline_gate_passed=pipeline_gate_verdict.passed,
+            pipeline_gate_failure_modes=list(pipeline_gate_verdict.failure_modes),
+            pipeline_gate_checks={
+                name: check.to_dict()
+                for name, check in pipeline_gate_verdict.checks.items()
+            },
         )
 
 __all__ = ["DatasetTrainResult", "DatasetTrainingService"]

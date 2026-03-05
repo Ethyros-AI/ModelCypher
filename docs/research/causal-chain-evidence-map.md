@@ -221,10 +221,19 @@ D3.1+D3.2+D3.4 prove: concentration raises r, r dominates θ. This is geometry, 
 **Remaining gaps:**
 1. ~~Validate A7 in-model~~ → **A7 FALSIFIED** (2026-03-04, `scripts/validate_a7_assumption.py`).
    Open question: what CE gradient mechanism drives attention concentration during training?
-2. Estimate `a_l, b_l` from measured Jacobians (`B_l`) per architecture.
-   - Implementation artifact added: `scripts/estimate_bl_jacobian.py`
-     (architecture ceiling + input-conditioned Jacobian measurement, output to
-     `results/bl_estimation/`).
+2. ~~Estimate `a_l, b_l` from measured Jacobians (`B_l`) per architecture~~ →
+   **MEASURED** (2026-03-04, `scripts/estimate_bl_jacobian.py`,
+   `results/bl_estimation/full_local2/`).
+   - LFM2-350M (σ_d(W_u) = 2.733): ceiling ratio ∈ [0.002, 0.042], increases with depth.
+     b_l ∈ [2.5e+04, 2.6e+05].
+   - Qwen3.5-0.8B (σ_d(W_u) = 3.534): ceiling ratio ∈ [0.085, 0.204], roughly flat.
+     b_l ∈ [4.8e+03, 2.3e+05].
+   - Estimator schema now versioned (`estimator_version=bl_jacobian_v2`) and records
+     conditioning diagnostics (`ptp_cond_raw`, `ptp_cond_reg`, `ridge_lambda`) plus
+     holdout quality counters (`holdout_attempted`, `holdout_used`, `solve_fail_count`,
+     `nonfinite_fail_count`) for numerical auditability.
+   - Ceiling never tight (input-state dominates). Quadratic remainder non-negligible
+     (b_l ≫ a_l at several layers). Full tables in `entropy-curvature-derivation.md`.
 3. Qwen3.5 anomaly: effective f_attn may differ from nominal (linear attention has partial coupling).
 
 **arXiv 2512.23752 contribution:** Entropy-aligned axis appears robust across larger model
@@ -378,9 +387,11 @@ Curvature and ID are properties of the set `{y(x) : x ~ P(x)}`, not of a single 
 
 **Status (updated 2026-03-04):** D3.1–D3.5 formally derive the sign and architecture
 conditioning. D3.1, D3.2, D3.4, D3.5 are `[PROVEN]`; D3.3 is `[PROVEN under A7]`
-(radial-dominant downstream gradient condition). The Pinsker envelope + D3 decomposition
-close the mechanism at derivation level; promotion now depends on validating A7 and
-estimating architecture-conditioned coefficients (`a_l, b_l`).
+(radial-dominant downstream gradient condition). A7 is **FALSIFIED** (0/96 heads LFM2,
+0/48 heads Qwen show predicted monotonicity). `a_l, b_l` are **MEASURED** (ceiling never
+tight, quadratic remainder non-negligible). The Pinsker envelope + D3 decomposition close
+the geometric consequence; the remaining promotion blocker is identifying the cause
+mechanism (training dynamics that drive attention concentration → curvature change).
 Formal derivation: `entropy-curvature-derivation.md`.
 
 ---
@@ -394,7 +405,7 @@ Formal derivation: `entropy-curvature-derivation.md`.
 | QK alignment → selectivity → highway | `[EXPLORATORY]` | Formal derivation: alignment → expected crossing depth |
 | Attention selectivity ↔ H_attn | `[PROVEN]` | — |
 | H_attn ↔ H_logit | `[EXPLORATORY]` | ACT-016: corr(H_attn, H_logit) per family; determine if proxies |
-| H_logit → Δcurvature | `[EXPLORATORY, SIGN-REVERSED]` | D3.1+D3.2+D3.4 derive consequence (concentration → curvature). D3.3 (cause: radial selection) FALSIFIED. Geometric consequence map is proven; training dynamics cause is open. Promote after cause mechanism identified and `a_l,b_l` estimation. |
+| H_logit → Δcurvature | `[EXPLORATORY, SIGN-REVERSED]` | D3.1+D3.2+D3.4 derive consequence (concentration → curvature). D3.3 (cause: radial selection) FALSIFIED. `a_l, b_l` MEASURED (ceiling never tight; quadratic remainder non-negligible). Geometric consequence map is proven; remaining blocker is cause mechanism (training dynamics). |
 | Cumulative curvature → ID | `[EXPLORATORY]` | Derive: TwoNN behavior under curvature transformations |
 | ID → Phases | `[PROVEN]` | — |
 

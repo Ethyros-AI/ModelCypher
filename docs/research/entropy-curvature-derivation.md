@@ -1169,8 +1169,61 @@ Interpretation: architecture terms bound the ceiling (`W_O,W_V,W_Q,W_K,d_k,W_u`)
 input-state terms (`alpha,p,r,Cov_alpha(v,k),sigma_min(J_g)`) tighten the realized value.
 This is the required architecture/input split for the Gap-2 measurable.
 
+#### Gap-2 Measurement Results (2026-03-04)
+
+Measured via `scripts/estimate_bl_jacobian.py` on 3 probes per layer.
+Full data: `results/bl_estimation/full_local2/`.
+Perturbation scale ε = √(eps_bf16) = 8.84e-02 (IEEE 754 derived).
+
+**LFM2-350M** (σ_d(W_u) = 2.733, 6 attention layers of 16):
+
+| Layer | a_l ceiling | a_l measured | ratio | b_l measured |
+|------:|------------:|-------------:|------:|-------------:|
+| 2 | 7.33e+09 | 1.83e+07 | 0.0024 | 2.46e+07 |
+| 5 | 7.62e+06 | 2.43e+04 | 0.0036 | 1.63e+05 |
+| 8 | 2.16e+05 | 1.33e+03 | 0.0063 | 1.07e+05 |
+| 10 | 1.33e+05 | 1.77e+03 | 0.013 | 2.56e+05 |
+| 12 | 5.14e+04 | 1.11e+03 | 0.022 | 6.97e+04 |
+| 14 | 1.11e+07 | 4.26e+05 | 0.042 | 7.77e+04 |
+
+**Qwen3.5-0.8B** (σ_d(W_u) = 3.534, 6 full-attention layers of 24):
+
+| Layer | a_l ceiling | a_l measured | ratio | b_l measured |
+|------:|------------:|-------------:|------:|-------------:|
+| 3 | 1.51e+04 | 1.68e+03 | 0.111 | 7.90e+04 |
+| 7 | 1.09e+04 | 1.72e+03 | 0.157 | 2.34e+05 |
+| 11 | 1.17e+04 | 1.01e+03 | 0.085 | 1.35e+05 |
+| 15 | 3.96e+03 | 7.82e+02 | 0.204 | 7.56e+04 |
+| 19 | 3.90e+03 | 7.95e+02 | 0.201 | 1.44e+04 |
+| 23 | 1.26e+06 | 1.43e+05 | 0.125 | 4.76e+03 |
+
+**Interpretation:**
+
+1. **Ceiling is never tight.** Ratio ∈ [0.002, 0.042] for LFM2, [0.085, 0.204] for Qwen3.5.
+   Input-state terms dominate the realized coupling — the architecture ceiling is 5–400×
+   above the measured value.
+
+2. **Depth trend differs by architecture.** LFM2 ratio increases with depth (0.002 → 0.042),
+   meaning deeper layers use a larger fraction of their architectural capacity. Qwen3.5 ratio
+   is roughly flat (~0.1–0.2). This is consistent with the architecture conditioning in D3.5.
+
+3. **Quadratic remainder is non-negligible.** At several layers b_l ≫ a_l (e.g., LFM2
+   layer 10: b_l = 2.56e+05 vs a_l = 1.77e+03). The Pinsker envelope
+   `sin²(θ) ≤ a_l·D + b_l·D²` needs both coefficients — the linear term alone understates
+   the coupling strength at large KL divergence.
+
 Detailed derivation steps (previous C1-C5 expansion) are preserved in project artifacts and
 summarized in [OPEN-MATHEMATICAL-QUESTIONS.md](./OPEN-MATHEMATICAL-QUESTIONS.md).
+
+**Runbook: reading `cond_raw` vs `cond_reg` in `results/bl_estimation/*`:**
+- `cond_raw` is the condition number of `P_fit^T P_fit` before ridge.
+- `cond_reg` is the condition number after adding `ridge_lambda I`.
+- Target rule is fixed by IEEE precision: `kappa_target = 1/sqrt(eps_f32)`.
+- `cond_reg <= kappa_target` means the local solve is numerically resolved at float32 scale.
+- Large gap (`cond_raw >> cond_reg`) indicates ridge is doing essential stabilization.
+- High `solve_fail_count` or `nonfinite_fail_count` with low `holdout_used/attempted`
+  marks layers where local Jacobian inversion remains fragile and should be interpreted
+  as measurement-limited, not mechanism-falsifying.
 
 ### Prediction Contract (MISSION.md:51 — written before measurement)
 

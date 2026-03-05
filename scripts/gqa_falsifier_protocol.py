@@ -36,6 +36,7 @@ from pathlib import Path
 
 import numpy as np
 from scipy import stats as sp_stats
+import validate_gqa_falsifier_artifacts as artifact_validator
 
 logging.basicConfig(
     level=logging.INFO,
@@ -1038,6 +1039,26 @@ def _overall_verdict(outcomes: dict) -> str:
     return "INCONCLUSIVE"
 
 
+def _validate_emitted_artifacts_or_raise(out_dir: Path) -> dict:
+    """Validate emitted artifacts and raise on integrity failure."""
+    validation = artifact_validator.validate_run_dir(out_dir, schema_mode="v2")
+    if not validation["ok"]:
+        logger.error("Artifact integrity validation FAILED for %s", out_dir)
+        for error in validation["errors"]:
+            logger.error("  %s", error)
+        raise RuntimeError(f"Artifact integrity validation failed for {out_dir}")
+
+    for warning in validation["warnings"]:
+        logger.warning("Artifact validator warning: %s", warning)
+
+    logger.info(
+        "Artifact integrity validation: PASS (schema=%s, files_checked=%d)",
+        validation.get("detected_schema", "unknown"),
+        len(validation.get("files_checked", [])),
+    )
+    return validation
+
+
 # ============================================================================
 # Section 10: CLI
 # ============================================================================
@@ -1253,6 +1274,7 @@ def run_full(
         run_id, records, z_reg, c_reg, falsifiers, z_diag, c_diag,
         z_regression_comm=z_reg_comm,
     )
+    _validate_emitted_artifacts_or_raise(out_dir)
     logger.info("Artifacts written to %s", out_dir)
 
     overall = _overall_verdict(falsifiers)
