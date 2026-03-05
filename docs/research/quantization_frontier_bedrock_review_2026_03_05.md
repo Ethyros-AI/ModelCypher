@@ -276,8 +276,10 @@ So the current frontier proxy mixes two different objects:
 
 ### The strongest code-level tension
 
-`dataset_training_service.py` treats any detected raw crossing as a hard block
-unless `research_allow_quantization_crossing=True`.
+`dataset_training_service.py` originally treated any detected raw crossing as a
+hard block unless the legacy crossing override was enabled. The current
+frontier gate instead blocks only when the activation-aware operator cannot be
+measured, unless `research_allow_quantization_frontier_invalid=True`.
 
 That is stronger than the measured local evidence supports. The repo already
 contains an 8-bit result where all layers violate the raw frontier but major
@@ -301,7 +303,10 @@ Then use
 `rho_act,l = ||A_l||_2 / gap_eff,l`
 
 where `gap_eff,l` separates the output covariance subspace we actually care
-about.
+about. In practice this gap must be conditioned on the effective dimensions of
+the activation distribution, not the full hidden dimension: `D_eff` should be
+measured from the activation-relevant output spectrum, then `gap_eff,l` taken at
+that `D_eff`-conditioned boundary.
 
 This matches perturbation theory on the output-producing operator rather than
 the raw weight matrix.
@@ -325,6 +330,17 @@ ModelCypher already has the exact lower bound:
 
 So if the mission question is "what explains the CKA floor?", this bound is
 closer to bedrock than `max(error/(gap/2))`.
+
+### What this precheck can and cannot predict
+
+An activation-aware frontier precheck predicts the **base** perturbation between
+the quantized model and its full-precision reference on measured probes. It does
+not by itself predict corrective reach. The deep-dive correction experiments
+show that recovery is compensatory rather than restorative: the correction acts
+in the observed activation subspace and need not reduce `E_q` in weight space.
+So the frontier observable should gate measurability of base divergence first,
+not pretend to upper-bound post-correction CKA without an additional model of
+the correction operator.
 
 ## Consequences For The Open Question
 
@@ -355,7 +371,8 @@ Before any new experiment:
    to
    `Delta K_c`
    and the existing CKA lower bound.
-2. Define `gap_eff` on either output covariance or centered Gram spectra.
+2. Define `gap_eff` on the `D_eff`-conditioned effective dimensions of the
+   output covariance or centered Gram spectra, not the full ambient space.
 3. Implement an activation-weighted precheck alongside the raw Weyl precheck.
 4. Only then run the 4-bit confirmation pass.
 
@@ -379,6 +396,9 @@ the same models and bitwidths.
 
 ### External
 
+- Citation check (2026-03-05): the previously questioned arXiv entries
+  `2507.18553` and `2602.02001` were verified against arXiv before this note
+  was retained.
 - GPTQ geometry: https://arxiv.org/abs/2507.18553
 - AWQ: https://arxiv.org/abs/2306.00978
 - SmoothQuant: https://arxiv.org/abs/2211.10438

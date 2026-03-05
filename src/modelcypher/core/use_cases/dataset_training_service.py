@@ -56,6 +56,9 @@ from modelcypher.core.domain.training.geometric_lora import (
     estimate_nb_lora_parameter_count,
     select_target_modules,
 )
+from modelcypher.core.domain.training.quantization_frontier_precheck import (
+    run_quantization_frontier_precheck_v1,
+)
 from modelcypher.core.domain.training.quantization_weyl_precheck import (
     run_quantization_weyl_precheck,
 )
@@ -130,7 +133,7 @@ class DatasetTrainResult:
     regime_global: str | None = None
     regime_per_type: dict[str, Any] | None = None
     regime_headroom: dict[str, Any] | None = None
-    quantization_precheck: dict[str, Any] | None = None
+    quantization_frontier_precheck: dict[str, Any] | None = None
     # Derived validation split diagnostics (when eval split is auto-derived)
     validation_split: dict[str, Any] | None = None
     # Number of retention samples auto-collected from training prompts.
@@ -228,8 +231,8 @@ class DatasetTrainResult:
             result["regime_per_type"] = self.regime_per_type
         if self.regime_headroom is not None:
             result["regime_headroom"] = self.regime_headroom
-        if self.quantization_precheck is not None:
-            result["quantization_precheck"] = self.quantization_precheck
+        if self.quantization_frontier_precheck is not None:
+            result["quantization_frontier_precheck"] = self.quantization_frontier_precheck
         if self.validation_split is not None:
             result["validation_split"] = self.validation_split
         if self.max_effective_gain_ratio is not None:
@@ -301,6 +304,119 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         self._adapter = adapter
         self._backend = backend
         self._progress_reporter: Any | None = None
+
+    def _load_training_model(
+        self,
+        model_path: Path,
+    ) -> tuple[Any, Any, bool]:
+        """Load model + tokenizer with the same path semantics used for training."""
+        from modelcypher.backends._mlx_qwen35_vl_encoder import (  # noqa: PLC0415
+            is_qwen35_vl,
+            load_qwen35_vl_model,
+        )
+
+        model_path_str = str(model_path)
+        vl_model = is_qwen35_vl(model_path_str)
+        if vl_model:
+            logger.info(
+                "Detected Qwen3.5-VL model (vision_config present). "
+                "Loading text + visual encoder.",
+            )
+            model, tokenizer = load_qwen35_vl_model(model_path_str)
+            return model, tokenizer, True
+        model, tokenizer = self._backend.load_model(model_path_str)
+        return model, tokenizer, False
+
+    def _run_quantization_frontier_precheck(
+        self,
+        *,
+        model: Any,
+        tokenizer: Any,
+        model_path: Path,
+        fp_reference_path: Path,
+        probe_texts: list[str],
+    ) -> dict[str, Any]:
+        """Measure activation-aware frontier telemetry on base quantized vs FP."""
+        logger.info(
+            "Running quantization frontier precheck: reference=%s, candidate=%s, probes=%d",
+            fp_reference_path,
+            model_path,
+            len(probe_texts),
+        )
+        fp_model, fp_tokenizer, _ = self._load_training_model(fp_reference_path)
+        try:
+            try:
+                fp_weights = self._adapter.extract_weight_matrices(fp_model)
+                candidate_weights = self._adapter.extract_weight_matrices(model)
+                raw_weyl = run_quantization_weyl_precheck(
+                    fp_weights=fp_weights,
+                    quantized_weights=candidate_weights,
+                    backend=self._backend,
+                )
+            except Exception as exc:
+                raw_weyl = {
+                    "measurement_error": {
+                        "exception_type": type(exc).__name__,
+                        "exception_message": str(exc),
+                    },
+                }
+
+            if len(probe_texts) < 2:
+                result = run_quantization_frontier_precheck_v1(
+                    fp_activations={},
+                    quantized_activations={},
+                    n_probes=len(probe_texts),
+                    backend=self._backend,
+                    raw_weyl=raw_weyl,
+                )
+            else:
+                try:
+                    fp_activations = self._collect_probe_activations_from_texts(
+                        fp_model,
+                        fp_tokenizer,
+                        probe_texts,
+                    )
+                    quantized_activations = self._collect_probe_activations_from_texts(
+                        model,
+                        tokenizer,
+                        probe_texts,
+                    )
+                except TrainingDerivationError as exc:
+                    result = {
+                        "operator": "quantization_frontier_precheck_v1",
+                        "valid": False,
+                        "failure_modes": ["activation_collection_failed"],
+                        "subspace_source": "hidden_probe_output",
+                        "n_probes": len(probe_texts),
+                        "n_layers": 0,
+                        "n_overlapping_layers": 0,
+                        "min_cka": None,
+                        "mean_cka": None,
+                        "per_layer_cka": {},
+                        "per_layer_gram_epsilon": {},
+                        "per_layer_cka_bound": {},
+                        "per_layer_hidden_probe_eigenvalues": {},
+                        "per_layer_hidden_probe_d_eff": {},
+                        "per_layer_hidden_probe_k_eff": {},
+                        "per_layer_hidden_probe_gap_eff": {},
+                        "per_layer_hidden_probe_rho_out": {},
+                        "raw_weyl": raw_weyl,
+                        "collection_error": exc.to_dict(),
+                    }
+                else:
+                    result = run_quantization_frontier_precheck_v1(
+                        fp_activations=self._stack_probe_activations(fp_activations),
+                        quantized_activations=self._stack_probe_activations(quantized_activations),
+                        n_probes=len(probe_texts),
+                        backend=self._backend,
+                        raw_weyl=raw_weyl,
+                    )
+            result["reference_model_path"] = str(fp_reference_path)
+            result["candidate_model_path"] = str(model_path)
+            return result
+        finally:
+            del fp_model, fp_tokenizer
+            self._backend.clear_cache()
 
     def train_from_dataset_strict(
         self,
@@ -392,7 +508,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         research_outcome_selector: str = "all",
         research_online_eval_problem_set_path: str | Path | None = None,
         quantization_reference_model_path: str | Path | None = None,
-        research_allow_quantization_crossing: bool = False,
+        research_allow_quantization_frontier_invalid: bool = False,
         no_save: bool = False,
         max_iters_cap: int | None = None,
         benchmark_suite: str | None = None,
@@ -445,129 +561,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
 
         # 1. Load model + tokenizer
         logger.info("Loading model from %s", model_path)
-        from modelcypher.backends._mlx_qwen35_vl_encoder import (  # noqa: PLC0415
-            is_qwen35_vl,
-            load_qwen35_vl_model,
-        )
-
-        model_path_str = str(model_path)
-        vl_model = is_qwen35_vl(model_path_str)
-        if vl_model:
-            logger.info(
-                "Detected Qwen3.5-VL model (vision_config present). "
-                "Loading text + visual encoder.",
-            )
-            model, tokenizer = load_qwen35_vl_model(model_path_str)
-        else:
-            model, tokenizer = self._backend.load_model(model_path_str)
-
-        quantization_precheck_result: dict[str, Any] | None = None
-        if quantization_reference_model_path is not None:
-            fp_reference_path = Path(quantization_reference_model_path).expanduser().resolve()
-            if not fp_reference_path.exists():
-                raise FileNotFoundError(
-                    f"quantization_reference_model_path does not exist: {fp_reference_path}",
-                )
-            logger.info(
-                "Running quantization Weyl precheck: reference=%s, candidate=%s",
-                fp_reference_path,
-                model_path,
-            )
-            fp_model, _ = self._backend.load_model(str(fp_reference_path))
-            fp_weights = self._adapter.extract_weight_matrices(fp_model)
-            candidate_weights = self._adapter.extract_weight_matrices(model)
-            quantization_precheck_result = run_quantization_weyl_precheck(
-                fp_weights=fp_weights,
-                quantized_weights=candidate_weights,
-                backend=self._backend,
-            )
-            crossing_detected = not bool(
-                quantization_precheck_result.get("all_non_crossing", False),
-            )
-            logger.info(
-                "Quantization precheck: layers=%d, crossing=%d, max(error/(gap/2))=%.6f",
-                int(quantization_precheck_result.get("n_layers", 0)),
-                int(quantization_precheck_result.get("n_crossing", 0)),
-                float(quantization_precheck_result.get("max_error_over_gap_half", 0.0)),
-            )
-            if crossing_detected and not research_allow_quantization_crossing:
-                raise TrainingDerivationError(
-                    failure_class="quantization_crossing_detected",
-                    detail=(
-                        "Quantization Weyl precheck measured spectral-gap crossing; "
-                        "training is blocked unless research_allow_quantization_crossing=True."
-                    ),
-                    diagnostics={
-                        "reference_model_path": str(fp_reference_path),
-                        "candidate_model_path": str(model_path),
-                        "n_layers": int(quantization_precheck_result.get("n_layers", 0)),
-                        "n_crossing": int(quantization_precheck_result.get("n_crossing", 0)),
-                        "crossing_layers": list(
-                            quantization_precheck_result.get("crossing_layers", []),
-                        ),
-                    },
-                )
-
-        if init_adapter is not None:
-            if not hasattr(self._adapter, "apply_standard_lora_adapter"):
-                raise ValueError(
-                    "Adapter does not support initialization from an existing LoRA adapter",
-                )
-            merged_layers = self._adapter.apply_standard_lora_adapter(model, init_adapter)
-            logger.info(
-                "Initialized model from adapter %s (merged_layers=%d)",
-                init_adapter,
-                merged_layers,
-            )
-
-        # 1.1. Unpack packed MoE expert tensors for per-expert geometry + training.
-        # Lossless identity operation: same weights, different layout.
-        # After unpacking, each expert is a standard nn.Linear that NB-LoRA can target.
-        n_unpacked = self._backend.prepare_model_for_training(model, str(model_path))
-        if n_unpacked > 0:
-            logger.info(
-                "MoE model: %d layers unpacked for per-expert training",
-                n_unpacked,
-            )
-
-        # 1.5. Pre-training benchmark (optional, when --benchmark is set)
-        benchmark_baseline_scores: dict[str, float] | None = None
-        _benchmark_service = None
-        _benchmark_generate_fn = None
-        if benchmark_suite is not None:
-            from modelcypher.core.use_cases.benchmark_service import BenchmarkService
-
-            logger.info("Running pre-training benchmark suite: %s", benchmark_suite)
-            _benchmark_service = BenchmarkService()
-            _backend_ref = self._backend
-
-            def _benchmark_generate_fn(m, t, prompt, max_tokens, verbose=False):
-                return _backend_ref.generate(m, t, prompt, max_tokens=max_tokens)
-
-            try:
-                baseline_suite = _benchmark_service.run_suite(
-                    model=model,
-                    tokenizer=tokenizer,
-                    suite_name=benchmark_suite,
-                    generate_fn=_benchmark_generate_fn,
-                    limit_per_benchmark=10,
-                    max_failures=5,
-                )
-                benchmark_baseline_scores = {
-                    r.benchmark: r.accuracy for r in baseline_suite.benchmarks
-                }
-                benchmark_baseline_scores["overall"] = baseline_suite.overall_accuracy
-                logger.info(
-                    "Pre-training benchmark: %s",
-                    ", ".join(
-                        f"{k}={v:.1%}" for k, v in benchmark_baseline_scores.items()
-                    ),
-                )
-            except Exception:
-                logger.warning(
-                    "Pre-training benchmark failed — continuing without",
-                    exc_info=True,
-                )
+        model, tokenizer, vl_model = self._load_training_model(model_path)
 
         # 2. Load + split dataset
         logger.info("Loading dataset from %s", dataset_path)
@@ -651,6 +645,117 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 "Using derived split from pilot loss variance: %d train / %d eval",
                 len(train_samples), len(eval_samples),
             )
+
+        quantization_frontier_precheck_result: dict[str, Any] | None = None
+        if quantization_reference_model_path is not None:
+            fp_reference_path = Path(quantization_reference_model_path).expanduser().resolve()
+            if not fp_reference_path.exists():
+                raise FileNotFoundError(
+                    f"quantization_reference_model_path does not exist: {fp_reference_path}",
+                )
+            probe_texts = self._derive_probe_texts(eval_samples, tokenizer, int(seq_length))
+            quantization_frontier_precheck_result = self._run_quantization_frontier_precheck(
+                model=model,
+                tokenizer=tokenizer,
+                model_path=model_path,
+                fp_reference_path=fp_reference_path,
+                probe_texts=probe_texts,
+            )
+            logger.info(
+                "Quantization frontier precheck: valid=%s, probes=%d, layers=%d, raw_weyl_max=%.6f",
+                bool(quantization_frontier_precheck_result.get("valid", False)),
+                int(quantization_frontier_precheck_result.get("n_probes", 0)),
+                int(quantization_frontier_precheck_result.get("n_layers", 0)),
+                float(
+                    (
+                        quantization_frontier_precheck_result.get("raw_weyl") or {}
+                    ).get("max_error_over_gap_half", 0.0)
+                ),
+            )
+            if (
+                not bool(quantization_frontier_precheck_result.get("valid", False))
+                and not research_allow_quantization_frontier_invalid
+            ):
+                raise TrainingDerivationError(
+                    failure_class="quantization_frontier_unavailable",
+                    detail=(
+                        "Quantization frontier precheck could not measure activation-aware "
+                        "centered-Gram diagnostics; training is blocked unless "
+                        "research_allow_quantization_frontier_invalid=True."
+                    ),
+                    diagnostics={
+                        "reference_model_path": str(fp_reference_path),
+                        "candidate_model_path": str(model_path),
+                        "failure_modes": list(
+                            quantization_frontier_precheck_result.get("failure_modes", [])
+                        ),
+                        "n_probes": int(
+                            quantization_frontier_precheck_result.get("n_probes", 0)
+                        ),
+                        "raw_weyl": quantization_frontier_precheck_result.get("raw_weyl"),
+                    },
+                )
+
+        if init_adapter is not None:
+            if not hasattr(self._adapter, "apply_standard_lora_adapter"):
+                raise ValueError(
+                    "Adapter does not support initialization from an existing LoRA adapter",
+                )
+            merged_layers = self._adapter.apply_standard_lora_adapter(model, init_adapter)
+            logger.info(
+                "Initialized model from adapter %s (merged_layers=%d)",
+                init_adapter,
+                merged_layers,
+            )
+
+        # 2.1. Unpack packed MoE expert tensors for per-expert geometry + training.
+        # Lossless identity operation: same weights, different layout.
+        # Split derivation and quantization frontier checks run first on the base model.
+        n_unpacked = self._backend.prepare_model_for_training(model, str(model_path))
+        if n_unpacked > 0:
+            logger.info(
+                "MoE model: %d layers unpacked for per-expert training",
+                n_unpacked,
+            )
+
+        # 2.2. Pre-training benchmark (optional, when --benchmark is set)
+        benchmark_baseline_scores: dict[str, float] | None = None
+        _benchmark_service = None
+        _benchmark_generate_fn = None
+        if benchmark_suite is not None:
+            from modelcypher.core.use_cases.benchmark_service import BenchmarkService
+
+            logger.info("Running pre-training benchmark suite: %s", benchmark_suite)
+            _benchmark_service = BenchmarkService()
+            _backend_ref = self._backend
+
+            def _benchmark_generate_fn(m, t, prompt, max_tokens, verbose=False):
+                return _backend_ref.generate(m, t, prompt, max_tokens=max_tokens)
+
+            try:
+                baseline_suite = _benchmark_service.run_suite(
+                    model=model,
+                    tokenizer=tokenizer,
+                    suite_name=benchmark_suite,
+                    generate_fn=_benchmark_generate_fn,
+                    limit_per_benchmark=10,
+                    max_failures=5,
+                )
+                benchmark_baseline_scores = {
+                    r.benchmark: r.accuracy for r in baseline_suite.benchmarks
+                }
+                benchmark_baseline_scores["overall"] = baseline_suite.overall_accuracy
+                logger.info(
+                    "Pre-training benchmark: %s",
+                    ", ".join(
+                        f"{k}={v:.1%}" for k, v in benchmark_baseline_scores.items()
+                    ),
+                )
+            except Exception:
+                logger.warning(
+                    "Pre-training benchmark failed — continuing without",
+                    exc_info=True,
+                )
 
         # 2.5. Retention replay: merge retention samples into training data
         auto_retention_samples_collected = 0
@@ -1999,7 +2104,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             regime_global=regime_global,
             regime_per_type=regime_per_type,
             regime_headroom=regime_headroom,
-            quantization_precheck=quantization_precheck_result,
+            quantization_frontier_precheck=quantization_frontier_precheck_result,
             validation_split=validation_split_info,
             auto_retention_samples_collected=auto_retention_samples_collected,
             max_effective_gain_ratio=max_gain_ratio,

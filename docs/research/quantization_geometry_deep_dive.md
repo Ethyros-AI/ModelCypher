@@ -495,6 +495,13 @@ E[||ΔW x||²] = tr(ΔW Σ_x ΔWᵀ) = ||ΔW Σ_x^{1/2}||_F²
 
 Activation weighting is **right-side**: SVD of `E_q @ sqrt(Σ_x)`, NOT left-side. `Σ_x = (1/N) Σ xᵢᵀ xᵢ` is the input covariance collected from 32 calibration samples.
 
+**Important scope note:** Any `gap_eff` built from activation-aware observables must be
+conditioned on the effective dimensions of the activation distribution, not on the full
+ambient hidden dimension. In the correction experiments below, the strongest ceiling result
+comes from the input-covariance effective dimension (`D_eff ≈ 3`), which is a different
+object from a hidden-output probe `D_eff` used for CKA telemetry. They should not be
+compared numerically as if they were the same quantity.
+
 **Implementation:** Two covariances per layer:
 - `Σ_attn` from `input_layernorm(h)` — exact for q/k/v projections
 - `Σ_mlp` from `post_attention_layernorm(h)` — exact for up/gate projections
@@ -846,6 +853,8 @@ The three measurements unify into one explanation:
 4. **Weight-space metrics are anti-correlated with success.** ‖E‖_F slightly INCREASES with correction rounds. Any metric based on weight proximity will show "degradation" while the model is actually improving. This is a fundamental failure mode for weight-space evaluation of fine-tuning.
 
 5. **The original convergence criterion (signal_rank → 0) is falsified.** Signal_rank 425.3 is a property of the quantization grid's interaction with the weight matrix structure. It cannot change through activation-based correction. The criterion was based on the false assumption that training reduces weight-space error.
+
+6. **A precheck can predict base divergence, not correction reach.** The correction delta is compensatory (`ΔW ⊥ E`, measured cos ≈ 0.0003), not restorative. A frontier metric based on base FP-vs-quantized activations can tell you whether quantization displaced the base geometry, but it cannot by itself tell you how much corrective training will recover, because correction operates in the observed activation subspace rather than by shrinking `E_q`.
 
 ### Experiment 5: 4-bit Extension `[COMPLETE — GATE PASSES]`
 

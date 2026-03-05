@@ -297,8 +297,49 @@ class _DatasetTrainingServiceHelperMixin:
                     },
                 )
 
-            # Backend returns dict[layer_idx, Array[batch, seq, hidden]]
-            # We collect one text at a time and mean-pool over seq dim
+            activations = self._collect_probe_activations_from_texts(
+                model,
+                tokenizer,
+                probe_texts,
+            )
+            logger.info(
+                "Collected base activations: %d probes, %d layers",
+                len(probe_texts), len(activations),
+            )
+            return activations
+        except TrainingDerivationError:
+            raise
+        except Exception as exc:
+            raise TrainingDerivationError(
+                failure_class="unavailable_measurement",
+                detail="CKA verification failed while collecting base activations.",
+                diagnostics={
+                    "measurement": "cka_base_activations",
+                    "exception_type": type(exc).__name__,
+                    "exception_message": str(exc),
+                },
+            ) from exc
+
+    def _collect_probe_activations_from_texts(
+        self,
+        model: Any,
+        tokenizer: Any,
+        probe_texts: list[str],
+    ) -> dict[int, list]:
+        """Collect per-layer hidden activations for an explicit probe-text list."""
+        if not probe_texts:
+            raise TrainingDerivationError(
+                failure_class="unavailable_measurement",
+                detail="CKA verification requested but no probe texts are available.",
+                diagnostics={
+                    "measurement": "cka_base_activations",
+                    "n_probe_texts": 0,
+                },
+            )
+
+        # Backend returns dict[layer_idx, Array[batch, seq, hidden]]
+        # We collect one text at a time and mean-pool over seq dim
+        try:
             activations: dict[int, list] = {}
             for text in probe_texts:
                 acts = self._backend.collect_hidden_activations(
@@ -320,11 +361,6 @@ class _DatasetTrainingServiceHelperMixin:
                         "n_probe_texts": len(probe_texts),
                     },
                 )
-
-            logger.info(
-                "Collected base activations: %d probes, %d layers",
-                len(probe_texts), len(activations),
-            )
             return activations
         except TrainingDerivationError:
             raise
@@ -338,6 +374,20 @@ class _DatasetTrainingServiceHelperMixin:
                     "exception_message": str(exc),
                 },
             ) from exc
+
+    def _stack_probe_activations(
+        self,
+        activations: dict[int, list],
+    ) -> dict[int, Any]:
+        """Stack per-probe activation lists into [n_probes, hidden] arrays."""
+        stacked: dict[int, Any] = {}
+        for layer_idx, layer_acts in activations.items():
+            if not layer_acts:
+                continue
+            layer_stack = self._backend.stack(layer_acts)
+            self._backend.eval(layer_stack)
+            stacked[layer_idx] = layer_stack
+        return stacked
 
     def _collect_inference_probe_activations(
         self,

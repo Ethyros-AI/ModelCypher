@@ -1118,7 +1118,77 @@ def test_auto_regime_ceiling_bound_forces_ce_only_behavior(
     assert captured_train_loop_kwargs["entropy_regularization"] is False
 
 
-def test_quantization_precheck_crossing_fails_closed_without_override(
+def test_quantization_frontier_precheck_runs_before_init_adapter_merge(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    ref_model_dir = tmp_path / "model_fp"
+    ref_model_dir.mkdir()
+    init_adapter_dir = tmp_path / "adapter"
+    init_adapter_dir.mkdir()
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(train_path, [{"text": "train 1"}])
+    _write_jsonl(eval_path, [{"text": "eval 1"}])
+
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
+    _patch_lightweight_training(monkeypatch, service)
+    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
+
+    candidate_model = _FlowModel()
+    candidate_model.merged = False
+    reference_model = _FlowModel()
+    monkeypatch.setattr(
+        service._backend,
+        "load_model",
+        lambda model_path: (
+            candidate_model if model_path == str(model_dir) else reference_model,
+            object(),
+        ),
+    )
+    order: list[str] = []
+
+    def _frontier(**kwargs):
+        assert kwargs["model"] is candidate_model
+        assert candidate_model.merged is False
+        order.append("frontier")
+        return {
+            "valid": True,
+            "failure_modes": [],
+            "n_probes": 1,
+            "n_layers": 1,
+            "raw_weyl": {"n_crossing": 1, "all_non_crossing": False},
+        }
+
+    def _merge(model, _adapter_path):
+        assert order == ["frontier"]
+        model.merged = True
+        order.append("merge")
+        return 1
+
+    monkeypatch.setattr(service, "_run_quantization_frontier_precheck", _frontier)
+    monkeypatch.setattr(
+        service._adapter,
+        "apply_standard_lora_adapter",
+        _merge,
+        raising=False,
+    )
+
+    service.train_from_dataset(
+        model_path=model_dir,
+        dataset_path=train_path,
+        eval_dataset_path=eval_path,
+        auto_regime=False,
+        quantization_reference_model_path=ref_model_dir,
+        init_adapter_path=init_adapter_dir,
+        no_save=True,
+    )
+    assert order == ["frontier", "merge"]
+
+
+def test_quantization_frontier_validity_allows_raw_weyl_crossing(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1135,14 +1205,72 @@ def test_quantization_precheck_crossing_fails_closed_without_override(
     _patch_lightweight_training(monkeypatch, service)
     monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(
-        dataset_training_service_module,
-        "run_quantization_weyl_precheck",
+        service,
+        "_run_quantization_frontier_precheck",
         lambda **_kwargs: {
+            "operator": "quantization_frontier_precheck_v1",
+            "valid": True,
+            "failure_modes": [],
+            "n_probes": 3,
             "n_layers": 1,
-            "n_crossing": 1,
-            "all_non_crossing": False,
-            "crossing_layers": ["model.layers.0.self_attn.q_proj.weight"],
-            "per_layer": [],
+            "min_cka": 0.92,
+            "mean_cka": 0.92,
+            "per_layer_cka": {0: 0.92},
+            "per_layer_gram_epsilon": {0: 0.04},
+            "per_layer_cka_bound": {0: 0.90},
+            "per_layer_hidden_probe_d_eff": {0: 2.0},
+            "per_layer_hidden_probe_k_eff": {0: 2},
+            "per_layer_hidden_probe_gap_eff": {0: 0.5},
+            "per_layer_hidden_probe_rho_out": {0: 0.2},
+            "subspace_source": "hidden_probe_output",
+            "raw_weyl": {
+                "n_layers": 1,
+                "n_crossing": 1,
+                "all_non_crossing": False,
+                "max_error_over_gap_half": 1700.5,
+            },
+        },
+    )
+
+    result = service.train_from_dataset(
+        model_path=model_dir,
+        dataset_path=train_path,
+        eval_dataset_path=eval_path,
+        auto_regime=False,
+        quantization_reference_model_path=ref_model_dir,
+        no_save=True,
+    )
+
+    payload = result.to_dict()
+    assert payload["quantization_frontier_precheck"]["valid"] is True
+    assert payload["quantization_frontier_precheck"]["raw_weyl"]["all_non_crossing"] is False
+    assert payload["quantization_frontier_precheck"]["raw_weyl"]["n_crossing"] == 1
+
+
+def test_quantization_frontier_invalid_fails_closed_without_override(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    ref_model_dir = tmp_path / "model_fp"
+    ref_model_dir.mkdir()
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(train_path, [{"text": "train 1"}])
+    _write_jsonl(eval_path, [{"text": "eval 1"}])
+
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
+    _patch_lightweight_training(monkeypatch, service)
+    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        service,
+        "_run_quantization_frontier_precheck",
+        lambda **_kwargs: {
+            "valid": False,
+            "failure_modes": ["degenerate_centered_gram"],
+            "n_probes": 3,
+            "raw_weyl": {"n_crossing": 1},
         },
     )
 
@@ -1155,10 +1283,10 @@ def test_quantization_precheck_crossing_fails_closed_without_override(
             quantization_reference_model_path=ref_model_dir,
             no_save=True,
         )
-    assert excinfo.value.failure_class == "quantization_crossing_detected"
+    assert excinfo.value.failure_class == "quantization_frontier_unavailable"
 
 
-def test_quantization_precheck_crossing_allows_explicit_research_override(
+def test_quantization_frontier_invalid_allows_explicit_research_override(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1175,14 +1303,13 @@ def test_quantization_precheck_crossing_allows_explicit_research_override(
     _patch_lightweight_training(monkeypatch, service)
     monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(
-        dataset_training_service_module,
-        "run_quantization_weyl_precheck",
+        service,
+        "_run_quantization_frontier_precheck",
         lambda **_kwargs: {
-            "n_layers": 1,
-            "n_crossing": 1,
-            "all_non_crossing": False,
-            "crossing_layers": ["model.layers.0.self_attn.q_proj.weight"],
-            "per_layer": [],
+            "valid": False,
+            "failure_modes": ["degenerate_centered_gram"],
+            "n_probes": 3,
+            "raw_weyl": {"n_crossing": 1},
         },
     )
 
@@ -1192,13 +1319,47 @@ def test_quantization_precheck_crossing_allows_explicit_research_override(
         eval_dataset_path=eval_path,
         auto_regime=False,
         quantization_reference_model_path=ref_model_dir,
-        research_allow_quantization_crossing=True,
+        research_allow_quantization_frontier_invalid=True,
         no_save=True,
     )
 
     payload = result.to_dict()
-    assert payload["quantization_precheck"]["all_non_crossing"] is False
-    assert payload["quantization_precheck"]["n_crossing"] == 1
+    assert payload["quantization_frontier_precheck"]["valid"] is False
+    assert payload["quantization_frontier_precheck"]["failure_modes"] == [
+        "degenerate_centered_gram"
+    ]
+
+
+def test_quantization_frontier_precheck_not_run_without_reference_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(train_path, [{"text": "train 1"}])
+    _write_jsonl(eval_path, [{"text": "eval 1"}])
+
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
+    _patch_lightweight_training(monkeypatch, service)
+    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        service,
+        "_run_quantization_frontier_precheck",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("frontier should not run")),
+    )
+
+    result = service.train_from_dataset(
+        model_path=model_dir,
+        dataset_path=train_path,
+        eval_dataset_path=eval_path,
+        auto_regime=False,
+        no_save=True,
+    )
+
+    payload = result.to_dict()
+    assert "quantization_frontier_precheck" not in payload
 
 
 def test_research_online_eval_problem_set_path_overrides_generated_eval_problems(
