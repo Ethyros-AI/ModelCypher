@@ -160,12 +160,43 @@ def _minimum_detectable_effect(n_eff: float, n_controls: int = 1) -> float:
 # ============================================================================
 
 
+def _load_vocab_size(model_name: str) -> int | None:
+    """Load vocab_size from model config.json.
+
+    Handles standard config (vocab_size at top level) and Qwen3.5-style
+    (vocab_size nested under text_config).
+    """
+    info = MODEL_REGISTRY.get(model_name) or SMOLLM3_ENTRY.get(model_name)
+    if info is None:
+        return None
+    config_path = Path(info["path"]) / "config.json"
+    if not config_path.exists():
+        return None
+    with open(config_path) as f:
+        cfg = json.load(f)
+    v = cfg.get("vocab_size")
+    if v is not None:
+        return int(v)
+    tc = cfg.get("text_config", {})
+    v = tc.get("vocab_size")
+    if v is not None:
+        return int(v)
+    return None
+
+
 def compute_z_couple(model_name: str) -> dict:
     """Compute operator coupling z_couple from stored operator_split data.
 
     Loads operator_split.json, filters to attention layers, depth-residualizes
     H_logit and H_attn, computes Pearson r, Fisher-z transform, Bretherton
     n_eff, and MDE.
+
+    Also computes commensurability gate: the depth-residualized H_logit range
+    must exceed log(2) nats for the entropy operator to resolve at least one
+    bit of posterior concentration variation across layers. This is a post-hoc
+    measurement-operator validity criterion (not part of the pre-registered
+    protocol). Below log(2), z_couple correlates precision-level fluctuations
+    in a near-saturated entropy signal.
     """
     op_path = OPERATOR_SPLIT_DIR / model_name / "operator_split.json"
     if not op_path.exists():
@@ -195,6 +226,26 @@ def compute_z_couple(model_name: str) -> dict:
     h_logit_resid = _residualize_ols(h_logit, depth)
     h_attn_resid = _residualize_ols(h_attn, depth)
 
+    # --- Commensurability gate ---
+    # Applied to the SAME depth-residualized signal used for z_couple,
+    # not the raw H_logit. This is a post-hoc measurement-operator validity
+    # criterion, not part of the pre-registered protocol.
+    #
+    # Criterion: depth-residualized H_logit range must exceed log(2) nats
+    # (one bit of posterior concentration variation). Below this, the
+    # entropy operator doesn't resolve meaningful concentration differences
+    # across layers — z_couple is correlating noise.
+    h_logit_resid_range = float(h_logit_resid.max() - h_logit_resid.min())
+    commensurable = h_logit_resid_range >= np.log(2)
+
+    # H_logit saturation ratio: mean(H_logit) / log(V) across attention layers.
+    # When s ≈ 1, D_KL(p||uniform) → 0 and k_eff ≈ V everywhere.
+    vocab_size = _load_vocab_size(model_name)
+    if vocab_size is not None and vocab_size > 1:
+        h_logit_saturation = float(np.mean(h_logit) / np.log(vocab_size))
+    else:
+        h_logit_saturation = None
+
     # Pearson correlation on residuals
     r_val, p_val = sp_stats.pearsonr(h_logit_resid, h_attn_resid)
 
@@ -223,6 +274,10 @@ def compute_z_couple(model_name: str) -> dict:
         "se_z": se_z,
         "mde": mde,
         "above_mde": bool(abs(r_val) >= mde),
+        # Commensurability gate (post-hoc measurement-operator validity)
+        "commensurable": bool(commensurable),
+        "h_logit_resid_range": h_logit_resid_range,
+        "h_logit_saturation": h_logit_saturation,
     }
 
 
@@ -525,6 +580,10 @@ def assemble_design_matrix(
             "mde_z": z.get("mde"),
             "r_pearson": z.get("r_pearson"),
             "above_mde_z": z.get("above_mde"),
+            # Commensurability (post-hoc measurement-operator validity)
+            "commensurable": z.get("commensurable"),
+            "h_logit_resid_range": z.get("h_logit_resid_range"),
+            "h_logit_saturation": z.get("h_logit_saturation"),
             # c_cancel
             "c_cancel": c.get("c_cancel"),
             "beta_num": c.get("beta_num"),
@@ -782,10 +841,39 @@ def adjudicate_falsifiers(
     if len(lfm2) >= 2:
         # Sort by GQA
         lfm2_sorted = sorted(lfm2, key=lambda r: r["GQA"])
-        # Check if both are below MDE
-        all_below_mde = all(not r.get("above_mde_z", False) for r in lfm2_sorted)
 
-        if all_below_mde:
+        # Check commensurability first: if both models have saturated H_logit
+        # (depth-residualized range < log(2) nats), z_couple is correlating
+        # precision-level fluctuations in a near-uniform distribution.
+        # The observable is not the same quantity as z_couple for desaturated
+        # models — comparison is mathematically invalid.
+        all_incommensurable = all(
+            r.get("commensurable") is False for r in lfm2_sorted
+        )
+
+        if all_incommensurable:
+            outcomes["F3"] = {
+                "status": "INCOMMENSURABLE",
+                "reason": (
+                    "Both LFM2 models have saturated H_logit "
+                    "(depth-residualized range < log(2) nats). "
+                    "z_couple correlates precision-level fluctuations, "
+                    "not posterior concentration gradients. "
+                    "Within-family comparison is mathematically invalid."
+                ),
+                "models": [
+                    {
+                        "model": r["model"], "GQA": r["GQA"],
+                        "z_couple": r["z_couple"],
+                        "h_logit_resid_range": r.get("h_logit_resid_range"),
+                        "h_logit_saturation": r.get("h_logit_saturation"),
+                        "commensurable": r.get("commensurable"),
+                    }
+                    for r in lfm2_sorted
+                ],
+            }
+        # Check if both are below MDE
+        elif all(not r.get("above_mde_z", False) for r in lfm2_sorted):
             outcomes["F3"] = {
                 "status": "BELOW_MEASUREMENT_RESOLUTION",
                 "reason": "Both LFM2 models below MDE — within-family trend not resolvable",
@@ -862,6 +950,7 @@ def emit_artifacts(
     falsifier_outcomes: dict,
     z_diagnostics: dict,
     c_diagnostics: dict,
+    z_regression_comm: dict | None = None,
 ) -> Path:
     """Write 4 JSON files per protocol spec."""
     out_dir = OUTPUT_BASE / run_id
@@ -873,6 +962,9 @@ def emit_artifacts(
         "timestamp": datetime.now().isoformat(),
         "protocol": "F-GQA-01",
         "n_models": len(records),
+        "n_commensurable": sum(1 for r in records if r.get("commensurable") is True),
+        "n_incommensurable": sum(1 for r in records if r.get("commensurable") is False),
+        "commensurability_threshold": "log(2) nats on depth-residualized H_logit range",
         "models": records,
     }
     with open(out_dir / "model_table.json", "w") as f:
@@ -882,10 +974,17 @@ def emit_artifacts(
     # 2. regression_summary.json
     regression_summary = {
         "run_id": run_id,
-        "z_couple_regression": z_regression,
+        "z_couple_regression_full": z_regression,
+        "z_couple_regression_commensurable": z_regression_comm,
         "c_cancel_regression": c_regression,
         "z_couple_diagnostics": z_diagnostics,
         "c_cancel_diagnostics": c_diagnostics,
+        "commensurability_note": (
+            "z_couple_regression_full includes incommensurable models "
+            "(H_logit saturated, z_couple correlates noise). Use for exploratory "
+            "analysis only. z_couple_regression_commensurable is the scientifically "
+            "valid comparison but may be underpowered."
+        ),
     }
     with open(out_dir / "regression_summary.json", "w") as f:
         json.dump(regression_summary, f, indent=2)
@@ -930,7 +1029,11 @@ def _overall_verdict(outcomes: dict) -> str:
         return "FALSIFIED"
     if all(s == "SUPPORTED" or s == "CONSISTENT" for s in statuses):
         return "SUPPORTED"
-    if all(s in ("UNDERPOWERED", "BELOW_MEASUREMENT_RESOLUTION", "INSUFFICIENT_DATA") for s in statuses):
+    non_adjudicating = (
+        "UNDERPOWERED", "BELOW_MEASUREMENT_RESOLUTION",
+        "INSUFFICIENT_DATA", "INCOMMENSURABLE",
+    )
+    if all(s in non_adjudicating for s in statuses):
         return "UNDERPOWERED"
     return "INCONCLUSIVE"
 
@@ -1005,13 +1108,25 @@ def run_full(
         z = compute_z_couple(name)
         z_results[name] = z
         if z.get("z_couple") is not None:
+            comm_flag = "COMM" if z.get("commensurable") else "INCOMM"
+            sat_val = z.get("h_logit_saturation")
+            sat_str = f"{sat_val:.4f}" if sat_val is not None else "N/A"
             logger.info(
-                "  %s: z=%.4f, r=%.4f, n_eff=%.1f, mde=%.3f, above=%s",
+                "  %s: z=%.4f, r=%.4f, n_eff=%.1f, mde=%.3f, above=%s, "
+                "h_logit_resid_range=%.4f, saturation=%s [%s]",
                 name, z["z_couple"], z["r_pearson"], z["n_eff_z"],
                 z["mde"], z["above_mde"],
+                z.get("h_logit_resid_range", float("nan")),
+                sat_str,
+                comm_flag,
             )
         else:
             logger.info("  %s: SKIPPED (%s)", name, z.get("error", "unknown"))
+
+    n_comm = sum(1 for z in z_results.values() if z.get("commensurable"))
+    n_incomm = sum(1 for z in z_results.values() if z.get("commensurable") is False)
+    logger.info("  Commensurability: %d commensurable, %d incommensurable (threshold=log(2)=%.3f nats)",
+                n_comm, n_incomm, float(np.log(2)))
 
     # --- c_cancel ---
     logger.info("\n--- c_cancel computation ---")
@@ -1072,11 +1187,17 @@ def run_full(
 
     # --- Regressions ---
     logger.info("\n--- Regressions ---")
-    z_reg = weighted_ols_regression(records, "z_couple", "n_eff_z", "z_couple ~ log(GQA) + I(hybrid) + log(d)")
+
+    # Full regression (all models — EXPLORATORY ONLY, includes incommensurable models)
+    z_reg = weighted_ols_regression(
+        records, "z_couple", "n_eff_z",
+        "z_couple ~ log(GQA) + I(hybrid) + log(d) [EXPLORATORY: includes incommensurable models]",
+    )
     c_reg = weighted_ols_regression(records, "c_cancel", "n_eff_c", "c_cancel ~ log(GQA) + I(hybrid) + log(d)")
 
     if "error" not in z_reg:
-        logger.info("  z_couple regression (n=%d, DOF=%d, R²=%.3f):", z_reg["n"], z_reg["dof"], z_reg["r_squared"])
+        logger.info("  z_couple FULL regression (n=%d, DOF=%d, R²=%.3f) [EXPLORATORY — includes incommensurable]:",
+                     z_reg["n"], z_reg["dof"], z_reg["r_squared"])
         for name, coeff in z_reg["coefficients"].items():
             logger.info(
                 "    %s: %.4f (SE=%.4f, t=%.2f, p=%.4f, CI=[%.4f, %.4f])",
@@ -1084,9 +1205,30 @@ def run_full(
                 coeff["p_value"], coeff["ci_95"][0], coeff["ci_95"][1],
             )
     else:
-        logger.info("  z_couple regression: %s", z_reg.get("error"))
+        logger.info("  z_couple FULL regression: %s", z_reg.get("error"))
         if z_reg.get("note"):
             logger.info("    %s", z_reg["note"])
+
+    # Commensurable-only z_couple regression
+    comm_records = [r for r in records if r.get("commensurable") is True]
+    z_reg_comm = weighted_ols_regression(
+        comm_records, "z_couple", "n_eff_z",
+        "z_couple ~ log(GQA) + I(hybrid) + log(d) [COMMENSURABLE ONLY]",
+    )
+    if "error" not in z_reg_comm:
+        logger.info("  z_couple COMMENSURABLE regression (n=%d, DOF=%d, R²=%.3f):",
+                     z_reg_comm["n"], z_reg_comm["dof"], z_reg_comm["r_squared"])
+        for name, coeff in z_reg_comm["coefficients"].items():
+            logger.info(
+                "    %s: %.4f (SE=%.4f, t=%.2f, p=%.4f, CI=[%.4f, %.4f])",
+                name, coeff["estimate"], coeff["se"], coeff["t_stat"],
+                coeff["p_value"], coeff["ci_95"][0], coeff["ci_95"][1],
+            )
+    else:
+        logger.info("  z_couple COMMENSURABLE regression: %s (n=%d)",
+                     z_reg_comm.get("error", "unknown"), z_reg_comm.get("n", 0))
+        if z_reg_comm.get("note"):
+            logger.info("    %s", z_reg_comm["note"])
 
     if "error" not in c_reg:
         logger.info("  c_cancel regression (n=%d, DOF=%d, R²=%.3f):", c_reg["n"], c_reg["dof"], c_reg["r_squared"])
@@ -1107,7 +1249,10 @@ def run_full(
 
     # --- Artifact emission ---
     logger.info("\n--- Artifact emission ---")
-    out_dir = emit_artifacts(run_id, records, z_reg, c_reg, falsifiers, z_diag, c_diag)
+    out_dir = emit_artifacts(
+        run_id, records, z_reg, c_reg, falsifiers, z_diag, c_diag,
+        z_regression_comm=z_reg_comm,
+    )
     logger.info("Artifacts written to %s", out_dir)
 
     overall = _overall_verdict(falsifiers)

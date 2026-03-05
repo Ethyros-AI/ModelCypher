@@ -55,7 +55,6 @@ from pathlib import Path
 
 # IEEE 754 constants
 _EPS_F32 = math.ldexp(1.0, -23)
-_SQRT_EPS_F32 = math.sqrt(_EPS_F32)
 _EPS_BF16 = math.ldexp(1.0, -7)
 _SQRT_EPS_BF16 = math.sqrt(_EPS_BF16)
 # IEEE 754 float32 minimum positive normal number (for log floor)
@@ -869,7 +868,7 @@ def run_experiment(model_name: str, model_path: str) -> dict:
 def main():
     print("A7 Assumption Validator")
     print("Radial-dominant downstream gradient test")
-    print(f"ε = sqrt(eps_f32) = {_EPSILON:.6e}")
+    print(f"ε = sqrt(eps_bf16) = {_EPSILON:.6e}")
     print(f"α = {_PRE_REGISTERED_ALPHA}")
     print(f"Permutations: {_N_PERMUTATIONS}")
     print(f"Probes: {len(PROBE_TEXTS)}")
@@ -960,7 +959,7 @@ def main():
     txt_path = output_dir / "a7_validation.txt"
     lines = [
         "A7 Assumption Validation Results",
-        f"ε = {_EPSILON:.6e} (sqrt(eps_f32), IEEE 754)",
+        f"ε = {_EPSILON:.6e} (sqrt(eps_bf16), IEEE 754)",
         f"α = {_PRE_REGISTERED_ALPHA}",
         f"Acceptance: ≥80% of (layer, head) pairs pass both tests",
         "",

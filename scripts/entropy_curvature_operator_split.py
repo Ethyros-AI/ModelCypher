@@ -121,12 +121,6 @@ MODEL_REGISTRY = {
         "architecture": "qwen2.5",
         "gqa_ratio": 8,
     },
-    "Qwen3.5-4B": {
-        "path": f"{MODELS_BASE}/mlx-community/Qwen3.5-4B-bf16",
-        "L": 32, "d": 2560,
-        "architecture": "qwen3.5",
-        "gqa_ratio": 4,
-    },
     "Llama-3.2-3B": {
         "path": f"{MODELS_BASE}/mlx-community/Llama-3.2-3B-Instruct-bf16",
         "L": 28, "d": 3072,
@@ -451,9 +445,11 @@ def collect_logit_entropy(model, tokenizer, prompts: list[str], num_layers: int,
     if layers is None or embed is None:
         raise RuntimeError("Cannot resolve model backbone for logit entropy")
 
-    # Resolve final norm for H_logit_norm (matches model's actual readout path).
-    # Pattern from curvature_accumulation_analysis.py:418-419.
-    final_norm = getattr(base, "embedding_norm", None) or getattr(base, "norm", None)
+    # Resolve final norm for H_logit_norm in the same order as backend readout:
+    # norm (Qwen/Llama) first, then embedding_norm (LFM2). These are mutually
+    # exclusive in supported families, but order consistency guarantees operator
+    # commensurability if a model exposes both.
+    final_norm = getattr(base, "norm", None) or getattr(base, "embedding_norm", None)
     if final_norm is None:
         logger.warning("No final norm found on backbone; H_logit_norm will equal H_logit")
 

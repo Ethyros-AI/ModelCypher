@@ -37,6 +37,20 @@ entropy of QK softmax weights). The empirically measured r=0.507 uses H_logit (E
 project h_l through unembedding, compute token distribution entropy). Whether H_attn and H_logit
 proxy the same underlying posterior uncertainty is open (CR-EC-001). See ACT-016.
 
+## Pipeline Boundary (Vision Scope)
+
+What this chain controls for `mc train run`:
+- Geometric monitoring operators (curvature/budget diagnostics) are valid when derived on
+  the norm-corrected operator path (`H_logit_norm`, depth-controlled statistics).
+- Consequence map is usable now: concentration geometry determines curvature response under
+  the bedrock operator equation.
+
+What this chain does **not** currently gate:
+- Objective selection (CE vs REINFORCE variants) — this is determined by CI-based baseline
+  headroom/regime selection, not by D3.3/A7.
+- CLI promotion of the training pipeline — A7 falsification narrows mechanism claims but does
+  not invalidate the derived training controls already wired into `mc train run`.
+
 ---
 
 ## Link-by-Link Evidence
@@ -208,6 +222,9 @@ D3.1+D3.2+D3.4 prove: concentration raises r, r dominates θ. This is geometry, 
 1. ~~Validate A7 in-model~~ → **A7 FALSIFIED** (2026-03-04, `scripts/validate_a7_assumption.py`).
    Open question: what CE gradient mechanism drives attention concentration during training?
 2. Estimate `a_l, b_l` from measured Jacobians (`B_l`) per architecture.
+   - Implementation artifact added: `scripts/estimate_bl_jacobian.py`
+     (architecture ceiling + input-conditioned Jacobian measurement, output to
+     `results/bl_estimation/`).
 3. Qwen3.5 anomaly: effective f_attn may differ from nominal (linear attention has partial coupling).
 
 **arXiv 2512.23752 contribution:** Entropy-aligned axis appears robust across larger model
@@ -224,13 +241,19 @@ H_logit (posterior certainty / Bayesian manifold), not H_attn (attention weight 
 **GQA conditioning on norm-entropy coupling (2026-03-04, B5 test):** Spearman(GQA, R²(H→||h||²))
 = -0.632, p=0.250 (exact permutation, N=4). Direction consistent with B5 but not significant.
 
-**F-GQA-01 falsifier protocol (2026-03-04, full 9-model run with GPU collection):**
-- z_couple regression (R²=0.686): b_g = -0.503 (p=0.063). F1: INCONCLUSIVE (CI crosses zero).
+**F-GQA-01 falsifier protocol (2026-03-04, updated with H_logit commensurability gate):**
+- z_couple full regression (R²=0.686): b_g = -0.503 (p=0.063). **EXPLORATORY ONLY** —
+  5 of 9 models have incommensurable z_couple (H_logit saturated, z_couple correlates noise).
+- z_couple commensurable-only regression (n=4, DOF=0): **UNDERPOWERED** — cannot adjudicate.
+- F1: INCONCLUSIVE (full regression CI crosses zero; commensurable-only underpowered).
 - c_cancel regression (R²=0.854): d_g = 0.535 (p=0.003). F2: **SUPPORTED** — higher GQA
-  produces less complete numerator/denominator cancellation.
-- F3 (within-family LFM2): FALSIFIED — z_couple increases with GQA (0.548→0.590), n=2.
-- Overall: FALSIFIED (F3 triggered). But cancellation pathway (F2) is strongly supported
-  as a standalone finding. Artifacts: `results/gqa_falsifier_protocol/*/`.
+  produces less complete numerator/denominator cancellation. Unaffected by commensurability
+  (c_cancel uses all layers, H_logit has real variation even for saturated models).
+- F3 (within-family LFM2): **INCOMMENSURABLE** — both LFM2 models have saturated H_logit
+  (depth-residualized range 0.007 and 0.022, both far below log(2)=0.693 nats).
+  z_couple comparison is mathematically invalid.
+- Overall: INCONCLUSIVE (F3 no longer triggered — incommensurable, not contradicted).
+  Artifacts: `results/gqa_falsifier_protocol/*/`.
 
 **What promotes this to `[VALIDATED]`:**
 First, reconcile the operator (ACT-016): determine whether H_attn ≈ H_logit or whether

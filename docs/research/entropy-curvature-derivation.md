@@ -801,18 +801,20 @@ the very quantity (||h||²) that H_logit most strongly predicts.
 Design matrix `[1, log(GQA), I(hybrid), log(d)]` with 9 models. VIF(log(GQA)) = 1.22
 (well-identified). cond(X'X) = 37952 (driven by intercept scale, not predictor collinearity).
 
-z_couple regression (n=9, DOF=5, R²=0.686):
+z_couple regression (n=9, DOF=5, R²=0.686) [EXPLORATORY — includes incommensurable models]:
 - b_g = -0.503 (SE=0.211, t=-2.39, p=0.063, 95% CI [-1.044, 0.038])
 - CI crosses zero → **F1: INCONCLUSIVE** (direction consistent but not significant at 95%)
 
-c_cancel regression (n=9, DOF=5, R²=0.854):
-- d_g = 0.535 (SE=0.102, t=5.27, p=0.003, 95% CI [0.274, 0.796])
-- CI excludes zero, predicted sign → **F2: SUPPORTED**
-- Higher GQA produces less complete cancellation between θ² components.
+Commensurable-only regression (n=4, DOF=0): **UNDERPOWERED** (zero degrees of freedom).
 
-F3 (within-family LFM2): z_couple increases with GQA (0.548→0.590), contradicts
-prediction. LFM2-700M barely above MDE (r=0.530 vs MDE=0.521). **F3: FALSIFIED.**
-Note: only 2 data points with 6 attention layers each — low statistical power.
+c_cancel regression (n=9, DOF=5, R²=0.854):
+- d_g = 0.535 (p=0.003, CI excludes zero) → **F2: SUPPORTED**. Unaffected by
+  commensurability (c_cancel uses all layers, not attention-only).
+
+F3 (within-family LFM2): **INCOMMENSURABLE.** Both LFM2 models have saturated H_logit
+(resid range 0.007, 0.022 < log(2)=0.693 nats). z_couple correlates noise, not posterior
+concentration. See `ENTROPY-CURVATURE-GQA-FALSIFIER-PROTOCOL.md` for full commensurability
+table and H_logit Saturation Gate derivation (5/9 models incommensurable).
 
 Artifacts: `results/gqa_falsifier_protocol/*/`
 
@@ -1139,6 +1141,155 @@ d sin^2(theta) / d H_logit_norm = -a_l + O(D) <= 0
 
 This gives the corrected sign prediction: higher normalized posterior entropy implies lower
 angular curvature to first order, matching the observed sign reversal.
+
+### Derivation C: `B_l` Jacobian Factorization (Gap-2 Target)
+
+Gap-2 from `causal-chain-evidence-map.md` asks for measurable `a_l, b_l` from a depth-local
+Jacobian object. This section states what `B_l` is algebraically and what must be measured.
+
+#### C1. `B_l` as a local linear map on simplex tangent `[PROVEN: definition]`
+
+At fixed layer `l`, define:
+
+```
+f_l(h) = P_perp(h) delta(h),   g_l(h) = p(h) - u_V
+```
+
+with local model:
+
+```
+f_l(h) = B_l g_l(h) + r_l(h),   ||r_l(h)|| <= c_l ||g_l(h)||^2
+```
+
+On a local chart (direction coordinates), `B_l` is the first-order best linear predictor:
+
+```
+B_l = J_f J_g^+,
+J_f = d f_l / d xi,   J_g = d g_l / d xi
+```
+
+where `xi` spans the sphere tangent at `hat(h)`.
+
+Equivalent operator-norm form:
+
+```
+||B_l|| <= ||J_f|| * ||J_g^+|| = ||J_f|| / sigma_min(J_g)
+```
+
+(`sigma_min` over nonzero singular directions in the measured local subspace.)
+
+#### C2. Attention chain rule decomposition for `J_f` `[PROVEN: algebra, EXPLORATORY: dominance]`
+
+For attention head `i` (query position `q`):
+
+```
+delta_i = W_O^(i) sum_t alpha_t^(i) v_t^(i)
+```
+
+Differentiate w.r.t. query input state:
+
+```
+d delta_i / d h = (value path, alpha fixed) + (score path, V fixed)
+```
+
+Value path:
+
+```
+d delta_i / d h |_(alpha fixed)
+  = alpha_q^(i) W_O^(i) W_V^(i) J_LN(h)
+```
+
+Score path (softmax Jacobian expanded):
+
+```
+d delta_i / d h |_(V fixed)
+  = (1/sqrt(d_k)) W_O^(i)
+    [sum_t alpha_t (v_t - delta_i) k_t^T]
+    (W_Q^(i))^T J_LN(h)
+```
+
+The bracketed term is the attention-weighted value-key covariance:
+
+```
+Cov_alpha(v, k) = sum_t alpha_t (v_t - delta_i) k_t^T
+```
+
+Thus:
+
+```
+||d delta_i / d h||
+  <= sigma(O_i)sigma(V_i)||J_LN||
+   + sigma(O_i)||Cov_alpha(v,k)||sigma(Q_i)||J_LN||/sqrt(d_k)
+```
+
+Because `f_l(h) = P_perp(h) delta(h)`, projection variation contributes:
+
+```
+||J_f|| <= ||d delta / d h|| + ||(d P_perp / d h) delta||
+```
+
+and locally `||(d P_perp / d h) delta|| = O(r_l)` with `r_l = ||delta||/||h||`.
+
+#### C3. Posterior Jacobian factorization for `J_g` `[PROVEN: algebra]`
+
+With normalized readout:
+
+```
+p(h) = softmax(W_u RMSNorm(h))
+```
+
+so
+
+```
+J_g = J_softmax(z) W_u J_RMSNorm(h)
+J_softmax(z) = diag(p) - p p^T
+```
+
+`J_RMSNorm` acts on tangential directions and removes radial sensitivity (D1).
+
+Hence `sigma_min(J_g)` is controlled by three factors:
+1. softmax local sensitivity (`diag(p)-pp^T`),
+2. readout geometry (`W_u` singular structure on active subspace),
+3. RMSNorm tangent scaling.
+
+#### C4. Architecture/Input factorization of `a_l` `[PROVEN: decomposition]`
+
+From Bedrock-B:
+
+```
+a_l = 4 ||B_l||^2 / ||h + delta||^2
+```
+
+Using C1-C3:
+
+```
+a_l <= 4 ||J_f||^2 / ( ||h+delta||^2 sigma_min(J_g)^2 )
+```
+
+Architecture-determined terms:
+- `sigma(W_O), sigma(W_V), sigma(W_Q), sigma(W_K)`
+- `d_k`, layer norm gain parameters
+- readout operator structure `W_u`
+
+Input-dependent terms:
+- `alpha`, `p`
+- `||h||`, `r = ||delta||/||h||`
+- `Cov_alpha(v,k)`
+- local `sigma_min(J_g)` (posterior sensitivity at current state)
+
+This is the exact split needed for Gap-2: ceiling from architecture terms, tightening from
+measured input-state Jacobians.
+
+#### C5. Geometric interpretation `[EXPLORATORY: layer-role mapping]`
+
+- Large `||B_l||`: tangential update strongly coupled to posterior displacement.
+- Small `||B_l||`: update mostly posterior-insensitive (generic transport/highway behavior).
+- Small `theta` can arise from distinct causes:
+  1. small coupling (`||B_l||` small),
+  2. small posterior displacement (`D` small),
+  3. large denominator scale (`||h+delta||` large).
+
+`B_l` estimation disambiguates these mechanisms.
 
 **Consequences for the causal chain:**
 - The r=0.507 raw (H_logit → θ_total) is contaminated by norm confound
