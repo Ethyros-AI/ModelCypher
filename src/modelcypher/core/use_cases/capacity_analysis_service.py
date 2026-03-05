@@ -32,6 +32,7 @@ from modelcypher.core.domain.geometry.spectral_capacity import (
     SpectralCapacityAnalyzer,
     SpectralDecayType,
 )
+from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -174,9 +175,28 @@ class CapacityAnalysisService:
         failed_layers = state.failed_layers
         processed_layers = state.processed_layers
 
-        for layer_name, tensor in self._iter_weight_items(model_path_resolved):
+        # Pre-load all weights so dequantize_if_needed() can look up
+        # scales/biases by key for quantized models.
+        all_params: dict[str, object] = {}
+        for name, tensor in self._iter_weight_items(model_path_resolved):
+            all_params[name] = tensor
+
+        for layer_name in sorted(all_params.keys()):
             if layer_name in processed_layers:
                 continue
+
+            # Skip quantization metadata tensors — they are not model weights.
+            if layer_name.endswith(".scales") or layer_name.endswith(".biases"):
+                processed_layers.add(layer_name)
+                continue
+
+            tensor = all_params[layer_name]
+
+            # Dequantize packed-int weight tensors before analysis.
+            if layer_name.endswith(".weight"):
+                tensor = dequantize_if_needed(
+                    tensor, layer_name, all_params, self._backend
+                )
 
             shape = getattr(tensor, "shape", None)
             param_count = _tensor_parameter_count(tensor)

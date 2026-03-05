@@ -410,6 +410,9 @@ conditioning. D3.1, D3.2, D3.4, D3.5 are `[PROVEN]`; D3.3 is `[PROVEN under A7]`
 tight, quadratic remainder non-negligible). The Pinsker envelope + D3 decomposition close
 the geometric consequence; the remaining promotion blocker is identifying the cause
 mechanism (training dynamics that drive attention concentration → curvature change).
+B6 three-component decomposition (10 models) shows the dominant sub-component is
+architecture-dependent: ||h||² for LFM2/Llama, sin²(α) for Qwen2.5, below floor
+for Qwen3.5. D3.1 sign reversed on Llama/Mistral/Qwen3-8B.
 Formal derivation: `entropy-curvature-derivation.md`.
 
 ---

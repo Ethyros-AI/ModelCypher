@@ -564,13 +564,27 @@ def _extract_summary_metrics(comparisons: list[ToolComparison]) -> list[dict]:
                     })
 
         elif comp.tool_name == "reasoning-flow" and comp.prompt_index is None:
-            for key in ["mean_curvature", "smoothness", "directness", "arc_length"]:
-                if key in bf16 and key in q4:
+            # Metrics are nested under results[i].overall, not at top level.
+            # Average across all probes to get aggregate executive metrics.
+            bf16_results = bf16.get("results", [])
+            q4_results = q4.get("results", [])
+            for key in ["mean_curvature", "smoothness", "directness", "total_arc_length"]:
+                bf16_vals = [
+                    r["overall"][key]
+                    for r in bf16_results
+                    if isinstance(r, dict) and "overall" in r and key in r["overall"]
+                ]
+                q4_vals = [
+                    r["overall"][key]
+                    for r in q4_results
+                    if isinstance(r, dict) and "overall" in r and key in r["overall"]
+                ]
+                if bf16_vals and q4_vals:
                     metrics.append({
-                        "metric": key,
+                        "metric": f"avg_{key}",
                         "tool": comp.tool_name,
-                        "bf16": bf16[key],
-                        "q4": q4[key],
+                        "bf16": sum(bf16_vals) / len(bf16_vals),
+                        "q4": sum(q4_vals) / len(q4_vals),
                     })
 
         elif comp.tool_name == "benchmark":

@@ -77,7 +77,7 @@ def run_benchmark(
         model_loader = get_model_loader()
         inference_engine = get_inference_engine()
 
-        loaded_model, tokenizer = model_loader.load(model)
+        loaded_model, tokenizer = model_loader.load_model(model)
 
         def generate_fn(m, t, prompt, max_tokens, verbose=False):
             return inference_engine.generate(m, t, prompt, max_tokens=max_tokens)
@@ -284,7 +284,7 @@ def knowledge_type_analysis(
 
     try:
         model_loader = get_model_loader()
-        loaded_model, tokenizer = model_loader.load(model)
+        loaded_model, tokenizer = model_loader.load_model(model)
 
         analyzer = get_knowledge_analyzer()
         result = analyzer.analyze_statement(
@@ -410,7 +410,7 @@ def curriculum_profile(
 
         # Load model
         model_loader = get_model_loader()
-        loaded_model, tokenizer = model_loader.load(model)
+        loaded_model, tokenizer = model_loader.load_model(model)
 
         # Create profiler and profile problems
         profiler = get_curriculum_profiler(loaded_model, tokenizer, layer_idx=layer)

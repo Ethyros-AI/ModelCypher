@@ -86,6 +86,7 @@ from .geometric import (
     concept_volume_analysis,
     safety_attention_collapse,
     safety_attention_sink,
+    safety_chain_profile,
     safety_dimension_profile,
     safety_entropy_trajectory,
     safety_expansion_ratio,
@@ -129,6 +130,7 @@ app.command("reasoning-flow")(safety_reasoning_flow)
 app.command("spectral-trajectory")(safety_spectral_trajectory)
 app.command("jacobian-trace")(safety_jacobian_trace)
 app.command("verification-depth-profile")(safety_verification_depth_profile)
+app.command("chain-profile")(safety_chain_profile)
 
 # Behavioral commands
 app.command("adapter-probe")(safety_adapter_probe)

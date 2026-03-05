@@ -662,6 +662,14 @@ See `scripts/validate_a7_assumption.py`, `scripts/diagnose_a7_gradient_structure
 All measured signs match across 3 architectures. See `entropy-curvature-derivation.md`.
 Next falsifier protocol: `docs/research/ENTROPY-CURVATURE-GQA-FALSIFIER-PROTOCOL.md`.
 
+**B6 three-component decomposition (2026-03-04, 10 models):**
+`||P_perp(h)δ||² = ||δ||² sin²(α)` — which sub-component carries H_logit_norm coupling?
+Result: ARCHITECTURE-DEPENDENT. ||h||² dominant for LFM2/Llama, sin²(α) for Qwen2.5 (GQA=8),
+below floor for Qwen3.5 (GatedDeltaNet). D3.1 sign reversed on 3/10 models (Llama, Mistral,
+Qwen3-8B show positive r(H,log(||δ||²)), contradicting centroid averaging prediction).
+D3.1: 7/10 (70%), D3.2: 9/10 (90%), D3.4: 6/10 (60%). Cross-model inconsistent.
+Full table: `entropy-curvature-derivation.md` (B6), `results/entropy_curvature_three_component/`.
+
 **NORM CONFOUND DISCOVERED (2026-03-04):** The Entropy-Lens does NOT apply the model's
 final RMSNorm before unembedding projection. Since `h @ W.T = ||h|| × (ĥ @ W.T)`,
 softmax sharpness scales with ||h||, creating r(H_logit, ||h||²) ≈ -0.99 — a measurement

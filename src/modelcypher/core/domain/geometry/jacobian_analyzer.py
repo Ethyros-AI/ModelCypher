@@ -445,7 +445,9 @@ def trace_jacobian_spectrum(
     input_ids = b.array([token_ids])
 
     # Get model structure
-    base_model = getattr(model, "model", model)
+    from modelcypher.core.domain.geometry.model_utils import resolve_model_base
+
+    base_model = resolve_model_base(model)
     layers = getattr(base_model, "layers", None)
     embed_module = getattr(base_model, "embed_tokens", None)
 

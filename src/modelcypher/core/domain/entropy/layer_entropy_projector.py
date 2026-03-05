@@ -256,11 +256,47 @@ class LayerEntropyProjector:
             )
             return self._unembedding_source
 
-        # Strategy 3: Tied weights via model.model.embed_tokens
-        # NOTE: Using input embeddings as output embeddings assumes the distributional
-        # hypothesis holds (Bertolotti & Cazzola, ICML 2024). This is valid for most
-        # language models trained on natural text, where semantic similarity (encoded
-        # in input embeddings) aligns with contextual similarity (output embeddings).
+        # Strategy 3: Qwen3.5 layout — model.language_model.model.embed_tokens
+        # NOTE: Tied-weight strategies assume the distributional hypothesis
+        # (Bertolotti & Cazzola, ICML 2024).
+        if hasattr(model, "language_model"):
+            lm = model.language_model
+            lm_inner = getattr(lm, "model", None)
+            if lm_inner is not None and hasattr(lm_inner, "embed_tokens"):
+                embed = lm_inner.embed_tokens
+                if hasattr(embed, "weight"):
+                    weight = embed.weight
+                    self._unembedding_matrix = b.astype(weight, "float32")
+                    self._vocab_size = weight.shape[0]
+                    self._hidden_dim = weight.shape[1]
+                    self._unembedding_source = "embed_tokens_transposed"
+                    logger.info(
+                        f"Using language_model.model.embed_tokens (tied): "
+                        f"vocab={self._vocab_size}, hidden={self._hidden_dim}"
+                    )
+                    logger.debug(
+                        "Tied embeddings assume distributional hypothesis "
+                        "(Bertolotti & Cazzola 2024)"
+                    )
+                    return self._unembedding_source
+            # Fallback: model.language_model.embed_tokens (no inner .model)
+            if hasattr(lm, "embed_tokens") and hasattr(lm.embed_tokens, "weight"):
+                weight = lm.embed_tokens.weight
+                self._unembedding_matrix = b.astype(weight, "float32")
+                self._vocab_size = weight.shape[0]
+                self._hidden_dim = weight.shape[1]
+                self._unembedding_source = "embed_tokens_transposed"
+                logger.info(
+                    f"Using language_model.embed_tokens (tied): "
+                    f"vocab={self._vocab_size}, hidden={self._hidden_dim}"
+                )
+                logger.debug(
+                    "Tied embeddings assume distributional hypothesis "
+                    "(Bertolotti & Cazzola 2024)"
+                )
+                return self._unembedding_source
+
+        # Strategy 4: Tied weights via model.model.embed_tokens
         if hasattr(model, "model") and hasattr(model.model, "embed_tokens"):
             embed = model.model.embed_tokens
             if hasattr(embed, "weight"):
@@ -279,7 +315,7 @@ class LayerEntropyProjector:
                 )
                 return self._unembedding_source
 
-        # Strategy 4: Direct embed_tokens (same distributional hypothesis caveat)
+        # Strategy 5: Direct embed_tokens (same distributional hypothesis caveat)
         if hasattr(model, "embed_tokens") and hasattr(model.embed_tokens, "weight"):
             weight = model.embed_tokens.weight
             self._unembedding_matrix = b.astype(weight, "float32")
