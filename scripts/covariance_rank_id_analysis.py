@@ -19,11 +19,17 @@ Three candidate mechanisms:
 - M3 (KILLED by E3): Pure scale change. TwoNN uses mu=r2/r1 which is
   scale-invariant. Verified empirically below.
 
-Phases:
-  E3: Scale invariance verification (kills M3)
-  E1: Covariance rank (k_eff) vs TwoNN ID correlation
-  D2: Synthetic verification that TwoNN tracks effective rank of anisotropic Gaussian
+Phase 1 (completed):
+  E3: Scale invariance verification (kills M3) — PASS
+  D2: Synthetic verification that TwoNN tracks k_eff (Gaussian) — PASS (r=0.976)
+  E1: Global k_eff vs TwoNN ID on real models — FAIL (r≈0 for 3/4 models)
   E4: Per-layer curvature vs per-layer effective rank change
+
+Phase 2 (this run):
+  E5: LOCAL effective rank (kNN-patch covariance) vs TwoNN ID
+  E6: Expanded model registry (8+ models for statistical power)
+  E2: Curvature bias calibration (TwoNN on d-spheres with known curvature)
+  E7: Per-sample ID decomposition (local dimension variance within layers)
 
 Usage:
     poetry run python scripts/covariance_rank_id_analysis.py
@@ -98,9 +104,15 @@ def _resolve_model_base(model) -> object:
 
 
 MODEL_REGISTRY = {
+    # --- Small models (fast iteration) ---
     "LFM2-350M": {
         "path": f"{MODELS_BASE}/mlx-community/LFM2-350M-MLX-bf16",
         "L": 16, "d": 1024,
+        "architecture": "lfm2",
+    },
+    "LFM2-700M": {
+        "path": f"{MODELS_BASE}/mlx-community/LFM2-700M-bf16",
+        "L": 16, "d": 1536,
         "architecture": "lfm2",
     },
     "Qwen3.5-0.8B": {
@@ -108,16 +120,38 @@ MODEL_REGISTRY = {
         "L": 24, "d": 1024,
         "architecture": "qwen3.5",
     },
+    # --- Medium models ---
+    "LFM2.5-1.2B": {
+        "path": f"{MODELS_BASE}/mlx-community/LFM2.5-1.2B-Instruct-bf16",
+        "L": 16, "d": 2048,
+        "architecture": "lfm2",
+    },
+    "Qwen3.5-2B": {
+        "path": f"{MODELS_BASE}/mlx-community/Qwen3.5-2B-bf16",
+        "L": 24, "d": 2048,
+        "architecture": "qwen3.5",
+    },
     "Qwen2.5-3B": {
         "path": f"{MODELS_BASE}/mlx-community/Qwen2.5-3B-Instruct-bf16",
         "L": 36, "d": 2048,
         "architecture": "qwen2.5",
+    },
+    "SmolLM3-3B": {
+        "path": f"{MODELS_BASE}/mlx-community/SmolLM3-3B-bf16",
+        "L": 36, "d": 2048,
+        "architecture": "smollm3",
     },
     "Llama-3.2-3B": {
         "path": f"{MODELS_BASE}/mlx-community/Llama-3.2-3B-Instruct-bf16",
         "L": 28, "d": 3072,
         "architecture": "llama",
     },
+    "Qwen3.5-4B": {
+        "path": f"{MODELS_BASE}/mlx-community/Qwen3.5-4B-bf16",
+        "L": 32, "d": 2560,
+        "architecture": "qwen3.5",
+    },
+    # --- Large models (final validation only) ---
     "Qwen3-8B": {
         "path": _resolve_existing_path(
             f"{MODELS_BASE}/mlx-community/Qwen3-8B-bf16",
@@ -600,9 +634,10 @@ def compute_e1_correlations(metrics: list[dict]) -> dict:
 
 
 def run_e1_single_model(
-    model_name: str, model_info: dict, probes: list[str], backend
+    model_name: str, model_info: dict, probes: list[str], backend,
+    *, run_e7: bool = True,
 ) -> dict:
-    """Run E1 analysis for one model."""
+    """Run E1 + E5 + E7 analysis for one model."""
     logger.info(f"Loading model: {model_name} from {model_info['path']}")
     model, tokenizer = backend.load_model(model_info["path"])
 
@@ -619,13 +654,29 @@ def run_e1_single_model(
     logger.info(f"  Activation collection: {time.time() - t0:.1f}s")
 
     t0 = time.time()
-    metrics = compute_layer_metrics(stage_activations)
-    logger.info(f"  Metric computation: {time.time() - t0:.1f}s")
+    metrics = compute_layer_metrics_with_local(stage_activations)
+    logger.info(f"  Metric computation (with local k_eff): {time.time() - t0:.1f}s")
 
-    correlations = compute_e1_correlations(metrics)
+    # E7: Per-sample ID decomposition
+    if run_e7:
+        t0 = time.time()
+        for i, m in enumerate(metrics):
+            h_out = stage_activations[i + 1]
+            e7_stats = compute_local_id_stats(h_out, backend)
+            m.update({
+                "e7_mean_local_id": e7_stats["mean_local_id"],
+                "e7_std_local_id": e7_stats["std_local_id"],
+                "e7_cv_local_id": e7_stats["cv_local_id"],
+                "e7_modal_local_id": e7_stats["modal_local_id"],
+                "e7_n_deficient": e7_stats["n_deficient"],
+            })
+        logger.info(f"  E7 local ID decomposition: {time.time() - t0:.1f}s")
+
+    correlations = compute_e1_correlations_extended(metrics)
 
     # Log key results
     r_keff_id = correlations.get("spearman_keff_vs_id", 0.0)
+    r_keff_local_id = correlations.get("spearman_keff_local_vs_id", float("nan"))
     r_delta_curv = correlations.get("spearman_delta_keff_vs_curvature", 0.0)
     r_cum_id = correlations.get("spearman_cum_curvature_vs_id", 0.0)
     r_layer_id = correlations.get("spearman_layer_idx_vs_id", 0.0)
@@ -633,8 +684,9 @@ def run_e1_single_model(
     r_dk_grad = correlations.get("spearman_delta_keff_vs_id_gradient", 0.0)
     r_vt1_id = correlations.get("spearman_var_top1_vs_id", 0.0)
 
-    logger.info(f"  Spearman(k_eff, TwoNN_ID)       = {r_keff_id:.4f}")
-    logger.info(f"  Spearman(var_top1, TwoNN_ID)    = {r_vt1_id:.4f}")
+    logger.info(f"  Spearman(k_eff_GLOBAL, TwoNN_ID) = {r_keff_id:.4f}")
+    logger.info(f"  Spearman(k_eff_LOCAL,  TwoNN_ID) = {r_keff_local_id:.4f}")
+    logger.info(f"  Spearman(var_top1, TwoNN_ID)     = {r_vt1_id:.4f}")
     logger.info(f"  Spearman(delta_k_eff, curvature) = {r_delta_curv:.4f}")
     logger.info(f"  Spearman(cum_curvature, ID)      = {r_cum_id:.4f}")
     logger.info(f"  Spearman(layer_idx, ID)          = {r_layer_id:.4f}")
@@ -643,12 +695,16 @@ def run_e1_single_model(
 
     # Per-layer detail
     for m in metrics:
+        kl = m.get("k_eff_local", float("nan"))
+        e7_cv = m.get("e7_cv_local_id", float("nan"))
         logger.info(
             f"    L{m['layer_idx']:2d}: k_eff={m['k_eff']:.2f}, "
+            f"k_eff_local={kl:.2f}, "
             f"vt1={m['var_top1']:.3f}, "
             f"ID={m['id_twonn']:.2f}, "
             f"theta={m['mean_curvature']:.4f}, "
-            f"dk_eff={m['delta_k_eff']:+.2f}"
+            f"dk_eff={m['delta_k_eff']:+.2f}, "
+            f"cv_localID={e7_cv:.3f}"
         )
 
     # Clean up
@@ -667,12 +723,353 @@ def run_e1_single_model(
 
 
 # =============================================================================
+# Phase E5: Local Effective Rank vs TwoNN ID
+# =============================================================================
+
+
+def compute_local_keff(points: np.ndarray, k: int) -> float:
+    """Compute mean LOCAL effective rank over kNN patches.
+
+    For each point, finds its k nearest neighbors, computes the
+    covariance eigenvalues of that local patch, and returns the
+    mean effective rank across all points.
+
+    This is the fix to M1: TwoNN is a LOCAL estimator, so we should
+    compare it to LOCAL covariance rank, not global.
+    """
+    from scipy.spatial import KDTree
+
+    N, D = points.shape
+    k_use = min(k, N - 1)
+    if k_use < 2:
+        return float("nan")
+
+    tree = KDTree(points)
+    # Query k+1 because the point itself is included
+    _, indices = tree.query(points, k=k_use + 1)
+
+    local_ranks = []
+    for i in range(N):
+        # Neighbors of point i (exclude self — first entry)
+        nbr_idx = indices[i, 1:]
+        patch = points[nbr_idx]  # [k_use, D]
+
+        # Local covariance eigenvalues
+        centered = patch - patch.mean(axis=0, keepdims=True)
+        if k_use < D:
+            gram = centered @ centered.T
+            eigs = np.linalg.eigvalsh(gram)
+        else:
+            gram = centered.T @ centered
+            eigs = np.linalg.eigvalsh(gram)
+        eigs = np.maximum(eigs[::-1], 0.0)
+        local_ranks.append(compute_effective_rank_from_eigenvalues(eigs))
+
+    return float(np.mean(local_ranks))
+
+
+def compute_layer_metrics_with_local(
+    stage_activations: list[np.ndarray],
+    k_local: int | None = None,
+) -> list[dict]:
+    """Compute all metrics per layer including LOCAL k_eff (E5).
+
+    Extends compute_layer_metrics with k_eff_local per layer.
+    If k_local is None, uses the same k that TwoNN would use
+    (derived from Berry & Sauer 2016 connectivity criterion).
+    """
+    from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
+
+    num_layers = len(stage_activations) - 1
+    metrics = []
+
+    for i in range(num_layers):
+        h_in = stage_activations[i]
+        h_out = stage_activations[i + 1]
+        N = h_out.shape[0]
+
+        # --- Global covariance spectrum of h_out ---
+        centered = h_out - h_out.mean(axis=0, keepdims=True)
+        if centered.shape[0] < centered.shape[1]:
+            gram = centered @ centered.T
+            eigenvalues = np.linalg.eigvalsh(gram)
+        else:
+            gram = centered.T @ centered
+            eigenvalues = np.linalg.eigvalsh(gram)
+        eigenvalues = np.maximum(eigenvalues[::-1], 0.0)
+        k_eff = compute_effective_rank_from_eigenvalues(eigenvalues)
+
+        # Variance concentration: top-1 eigenvalue fraction
+        total_var = eigenvalues.sum()
+        var_top1 = float(eigenvalues[0] / total_var) if total_var > 0 else 0.0
+
+        # --- Global k_eff of h_in ---
+        centered_in = h_in - h_in.mean(axis=0, keepdims=True)
+        if centered_in.shape[0] < centered_in.shape[1]:
+            gram_in = centered_in @ centered_in.T
+            eig_in = np.linalg.eigvalsh(gram_in)
+        else:
+            gram_in = centered_in.T @ centered_in
+            eig_in = np.linalg.eigvalsh(gram_in)
+        eig_in = np.maximum(eig_in[::-1], 0.0)
+        k_eff_in = compute_effective_rank_from_eigenvalues(eig_in)
+
+        # --- TwoNN intrinsic dimension ---
+        min_samples = IntrinsicDimension.local_dimension_min_samples()
+        if N >= min_samples:
+            try:
+                estimate = IntrinsicDimension.compute_two_nn(h_out)
+                id_twonn = estimate.intrinsic_dimension
+            except Exception:
+                id_twonn = float("nan")
+        else:
+            id_twonn = float("nan")
+
+        # --- LOCAL effective rank (E5) ---
+        # Derive k from TwoNN convention: ceil(log2(N)) per Berry & Sauer 2016
+        k_for_local = k_local if k_local is not None else max(3, int(np.ceil(np.log2(N))))
+        if N > k_for_local + 1:
+            k_eff_local = compute_local_keff(h_out, k=k_for_local)
+        else:
+            k_eff_local = float("nan")
+
+        # --- Per-layer angular curvature ---
+        angles = []
+        for j in range(N):
+            angles.append(angular_change(h_in[j], h_out[j]))
+        mean_curvature = float(np.mean(angles))
+
+        # --- Delta k_eff ---
+        delta_k_eff = k_eff - k_eff_in
+
+        metrics.append({
+            "layer_idx": i,
+            "k_eff": k_eff,
+            "k_eff_in": k_eff_in,
+            "k_eff_local": k_eff_local,
+            "delta_k_eff": delta_k_eff,
+            "var_top1": var_top1,
+            "id_twonn": id_twonn,
+            "mean_curvature": mean_curvature,
+            "n_samples": N,
+            "k_local_used": k_for_local,
+        })
+
+    return metrics
+
+
+def compute_e1_correlations_extended(metrics: list[dict]) -> dict:
+    """Compute E1 + E5 correlations: global k_eff, local k_eff, delta_k_eff vs TwoNN ID."""
+    from scipy import stats
+
+    valid = [m for m in metrics if not np.isnan(m["id_twonn"])]
+    n_valid = len(valid)
+    result = {"n_valid_layers": n_valid}
+
+    if n_valid < 5:
+        result["note"] = f"Insufficient layers ({n_valid} < 5)"
+        return result
+
+    k_effs = [m["k_eff"] for m in valid]
+    k_effs_local = [m["k_eff_local"] for m in valid]
+    ids = [m["id_twonn"] for m in valid]
+    delta_k_effs = [m["delta_k_eff"] for m in valid]
+    curvatures = [m["mean_curvature"] for m in valid]
+    var_top1s = [m["var_top1"] for m in valid]
+    layer_indices = [m["layer_idx"] for m in valid]
+
+    # --- E1: Global k_eff vs TwoNN ID ---
+    r_keff_id, p_keff_id = stats.spearmanr(k_effs, ids)
+    result["spearman_keff_vs_id"] = float(r_keff_id)
+    result["p_keff_vs_id"] = float(p_keff_id)
+
+    r_pear, p_pear = stats.pearsonr(k_effs, ids)
+    result["pearson_keff_vs_id"] = float(r_pear)
+    result["p_pearson_keff_vs_id"] = float(p_pear)
+
+    # --- E5: LOCAL k_eff vs TwoNN ID ---
+    valid_local = [i for i, k in enumerate(k_effs_local) if not np.isnan(k)]
+    if len(valid_local) >= 5:
+        kl = [k_effs_local[i] for i in valid_local]
+        id_l = [ids[i] for i in valid_local]
+        r_local, p_local = stats.spearmanr(kl, id_l)
+        result["spearman_keff_local_vs_id"] = float(r_local)
+        result["p_keff_local_vs_id"] = float(p_local)
+        r_local_pear, p_local_pear = stats.pearsonr(kl, id_l)
+        result["pearson_keff_local_vs_id"] = float(r_local_pear)
+        result["p_pearson_keff_local_vs_id"] = float(p_local_pear)
+
+    # Var_top1 vs TwoNN ID
+    r_vt1_id, p_vt1_id = stats.spearmanr(var_top1s, ids)
+    result["spearman_var_top1_vs_id"] = float(r_vt1_id)
+    result["p_var_top1_vs_id"] = float(p_vt1_id)
+
+    # delta_k_eff vs curvature
+    r_delta_curv, p_delta_curv = stats.spearmanr(delta_k_effs, curvatures)
+    result["spearman_delta_keff_vs_curvature"] = float(r_delta_curv)
+    result["p_delta_keff_vs_curvature"] = float(p_delta_curv)
+
+    # Control: layer index vs ID
+    r_layer_id, p_layer_id = stats.spearmanr(layer_indices, ids)
+    result["spearman_layer_idx_vs_id"] = float(r_layer_id)
+    result["p_layer_idx_vs_id"] = float(p_layer_id)
+
+    # Cumulative curvature vs ID
+    cum_curvature = np.cumsum(curvatures).tolist()
+    r_cum_id, p_cum_id = stats.spearmanr(cum_curvature, ids)
+    result["spearman_cum_curvature_vs_id"] = float(r_cum_id)
+    result["p_cum_curvature_vs_id"] = float(p_cum_id)
+
+    # ID gradient correlations
+    id_gradient = np.gradient(ids).tolist()
+    r_curv_grad, p_curv_grad = stats.spearmanr(curvatures, id_gradient)
+    result["spearman_curvature_vs_id_gradient"] = float(r_curv_grad)
+    result["p_curvature_vs_id_gradient"] = float(p_curv_grad)
+
+    r_dk_grad, p_dk_grad = stats.spearmanr(delta_k_effs, id_gradient)
+    result["spearman_delta_keff_vs_id_gradient"] = float(r_dk_grad)
+    result["p_delta_keff_vs_id_gradient"] = float(p_dk_grad)
+
+    return result
+
+
+# =============================================================================
+# Phase E2: Curvature Bias Calibration (TwoNN on d-spheres)
+# =============================================================================
+
+
+def run_e2_curvature_bias(backend) -> dict:
+    """Measure TwoNN bias on d-spheres with known curvature.
+
+    For a d-sphere of radius R, the curvature kappa = 1/R.
+    If TwoNN gives d_hat on S^d (true dim = d), then
+    bias = d_hat - d measures curvature's effect on TwoNN.
+
+    If bias is large at observed curvature magnitudes, M2 explains
+    the discrepancy between k_eff and TwoNN ID on real models.
+    """
+    from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
+
+    logger.info("=" * 60)
+    logger.info("E2: CURVATURE BIAS CALIBRATION (TwoNN on d-spheres)")
+    logger.info("=" * 60)
+
+    rng = np.random.default_rng(seed=314)
+    results = []
+
+    # Test spheres: S^d embedded in (d+1)-space, varying radius
+    for true_d in [3, 5, 10, 20]:
+        for radius in [0.1, 1.0, 10.0, 100.0]:
+            N = 300
+            # Sample uniformly on S^d: normal in (d+1)-space, then normalize
+            points = rng.standard_normal((N, true_d + 1))
+            norms = np.linalg.norm(points, axis=1, keepdims=True)
+            points = points / norms * radius
+
+            estimate = IntrinsicDimension.compute_two_nn(points.tolist(), backend=backend)
+            id_hat = estimate.intrinsic_dimension
+            bias = id_hat - true_d
+            kappa = 1.0 / radius  # curvature
+
+            result = {
+                "true_d": true_d,
+                "radius": radius,
+                "kappa": kappa,
+                "id_hat": id_hat,
+                "bias": bias,
+                "relative_bias": bias / true_d if true_d > 0 else 0.0,
+            }
+            results.append(result)
+
+            logger.info(
+                f"  S^{true_d} R={radius:6.1f} (κ={kappa:.4f}): "
+                f"ID={id_hat:.2f}, bias={bias:+.2f} ({bias/true_d*100:+.1f}%)"
+            )
+
+    # Aggregate: does bias grow with curvature?
+    from scipy import stats
+
+    kappas = [r["kappa"] for r in results]
+    biases = [r["relative_bias"] for r in results]
+    r_spearman, p_spearman = stats.spearmanr(kappas, biases)
+
+    logger.info(f"  Spearman(κ, relative_bias) = {r_spearman:.4f} (p={p_spearman:.6f})")
+
+    # M2 verdict: if high-curvature spheres show significant bias
+    high_kappa_biases = [r["relative_bias"] for r in results if r["kappa"] >= 1.0]
+    mean_high_kappa_bias = float(np.mean(high_kappa_biases)) if high_kappa_biases else 0.0
+
+    # Bias > 20% at high curvature would make M2 viable
+    m2_viable = abs(mean_high_kappa_bias) > 0.2
+
+    logger.info(
+        f"  Mean bias at κ≥1: {mean_high_kappa_bias:.3f} "
+        f"({'M2 VIABLE' if m2_viable else 'M2 INSUFFICIENT'})"
+    )
+
+    return {
+        "test": "E2_curvature_bias",
+        "results": results,
+        "spearman_kappa_vs_bias": float(r_spearman),
+        "p_kappa_vs_bias": float(p_spearman),
+        "mean_high_kappa_bias": mean_high_kappa_bias,
+        "m2_viable": m2_viable,
+        "verdict": "M2_viable" if m2_viable else "M2_insufficient",
+    }
+
+
+# =============================================================================
+# Phase E7: Per-Sample ID Decomposition
+# =============================================================================
+
+
+def compute_local_id_stats(points: np.ndarray, backend) -> dict:
+    """Compute per-point local ID and return variance statistics.
+
+    Uses the existing IntrinsicDimension.local_dimension_map() to get
+    per-point intrinsic dimension estimates. Reports mean, std, and
+    coefficient of variation of local ID within the point cloud.
+
+    High variance means the layer's ID trajectory is an average over
+    heterogeneous local structures — the single TwoNN number hides
+    important structure.
+    """
+    from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
+
+    estimator = IntrinsicDimension(backend)
+    try:
+        local_map = estimator.local_dimension_map(points.tolist())
+    except Exception as e:
+        logger.debug(f"  local_dimension_map failed: {e}")
+        return {
+            "mean_local_id": float("nan"),
+            "std_local_id": float("nan"),
+            "cv_local_id": float("nan"),
+            "modal_local_id": float("nan"),
+            "n_deficient": 0,
+        }
+
+    mean_id = local_map.mean_dimension
+    std_id = local_map.std_dimension
+    modal_id = local_map.modal_dimension
+    cv = std_id / mean_id if mean_id > 0 else float("nan")
+
+    return {
+        "mean_local_id": mean_id,
+        "std_local_id": std_id,
+        "cv_local_id": cv,
+        "modal_local_id": modal_id,
+        "n_deficient": len(local_map.deficient_indices),
+    }
+
+
+# =============================================================================
 # Cross-Model Summary & Falsifier Assessment
 # =============================================================================
 
 
 def compute_cross_model_summary(all_results: list[dict]) -> dict:
-    """Compute cross-model M1 falsifier: Spearman(k_eff, ID) > 0.8 for ALL models."""
+    """Compute cross-model summary: global k_eff vs local k_eff vs TwoNN ID."""
     from scipy import stats
 
     summary = {
@@ -680,48 +1077,87 @@ def compute_cross_model_summary(all_results: list[dict]) -> dict:
         "per_model": {},
     }
 
-    all_keffs = []
+    all_keffs_global = []
+    all_keffs_local = []
     all_ids = []
 
     for r in all_results:
         name = r["model_name"]
         corr = r["correlations"]
         r_keff_id = corr.get("spearman_keff_vs_id", 0.0)
+        r_keff_local_id = corr.get("spearman_keff_local_vs_id", float("nan"))
         r_cum_id = corr.get("spearman_cum_curvature_vs_id", 0.0)
         r_layer_id = corr.get("spearman_layer_idx_vs_id", 0.0)
 
-        passes_m1 = abs(r_keff_id) > 0.5
+        passes_m1_global = abs(r_keff_id) > 0.5
+        passes_m1_local = (
+            abs(r_keff_local_id) > 0.5
+            if not np.isnan(r_keff_local_id)
+            else False
+        )
+
+        # E7: mean CV of local ID across layers
+        e7_cvs = [
+            m.get("e7_cv_local_id", float("nan"))
+            for m in r["per_layer"]
+            if not np.isnan(m.get("e7_cv_local_id", float("nan")))
+        ]
+        mean_e7_cv = float(np.mean(e7_cvs)) if e7_cvs else float("nan")
 
         summary["per_model"][name] = {
-            "spearman_keff_vs_id": r_keff_id,
+            "spearman_keff_global_vs_id": r_keff_id,
+            "spearman_keff_local_vs_id": r_keff_local_id,
             "spearman_cum_curvature_vs_id": r_cum_id,
             "spearman_layer_idx_vs_id": r_layer_id,
-            "M1_passes": passes_m1,
+            "M1_global_passes": passes_m1_global,
+            "M1_local_passes": passes_m1_local,
+            "e7_mean_cv_local_id": mean_e7_cv,
         }
 
         # Pool all valid layer data for cross-model test
         for m in r["per_layer"]:
             if not np.isnan(m["id_twonn"]):
-                all_keffs.append(m["k_eff"])
+                all_keffs_global.append(m["k_eff"])
                 all_ids.append(m["id_twonn"])
+                if not np.isnan(m.get("k_eff_local", float("nan"))):
+                    all_keffs_local.append(m["k_eff_local"])
 
-    # Cross-model pooled correlation
-    if len(all_keffs) >= 10:
-        r_pooled, p_pooled = stats.spearmanr(all_keffs, all_ids)
-        summary["pooled_spearman_keff_vs_id"] = float(r_pooled)
-        summary["pooled_p_keff_vs_id"] = float(p_pooled)
-        summary["pooled_n"] = len(all_keffs)
+    # Cross-model pooled correlations
+    if len(all_keffs_global) >= 10:
+        r_pooled, p_pooled = stats.spearmanr(all_keffs_global, all_ids)
+        summary["pooled_spearman_keff_global_vs_id"] = float(r_pooled)
+        summary["pooled_p_keff_global_vs_id"] = float(p_pooled)
+        summary["pooled_n_global"] = len(all_keffs_global)
 
-    # M1 falsifier: passes if k_eff tracks ID for all models
-    all_pass = all(
-        v["M1_passes"] for v in summary["per_model"].values()
+    if len(all_keffs_local) >= 10:
+        # Local pool uses only layers where both local k_eff and ID exist
+        ids_for_local = all_ids[:len(all_keffs_local)]
+        r_pooled_l, p_pooled_l = stats.spearmanr(all_keffs_local, ids_for_local)
+        summary["pooled_spearman_keff_local_vs_id"] = float(r_pooled_l)
+        summary["pooled_p_keff_local_vs_id"] = float(p_pooled_l)
+        summary["pooled_n_local"] = len(all_keffs_local)
+
+    # M1 falsifier: global passes
+    all_pass_global = all(
+        v["M1_global_passes"] for v in summary["per_model"].values()
     )
-    summary["M1_all_pass"] = all_pass
-    summary["M1_verdict"] = (
-        "M1_confirmed: k_eff tracks TwoNN ID across all models"
-        if all_pass
-        else "M1_insufficient: k_eff does NOT consistently track TwoNN ID"
+    all_pass_local = all(
+        v["M1_local_passes"] for v in summary["per_model"].values()
     )
+    summary["M1_global_all_pass"] = all_pass_global
+    summary["M1_local_all_pass"] = all_pass_local
+
+    if all_pass_local:
+        summary["M1_verdict"] = "M1_LOCAL_confirmed: local k_eff tracks TwoNN ID"
+    elif all_pass_global:
+        summary["M1_verdict"] = "M1_GLOBAL_confirmed: global k_eff tracks TwoNN ID"
+    else:
+        n_local_pass = sum(1 for v in summary["per_model"].values() if v["M1_local_passes"])
+        n_global_pass = sum(1 for v in summary["per_model"].values() if v["M1_global_passes"])
+        summary["M1_verdict"] = (
+            f"M1_insufficient: global passes {n_global_pass}/{len(all_results)}, "
+            f"local passes {n_local_pass}/{len(all_results)}"
+        )
 
     return summary
 
