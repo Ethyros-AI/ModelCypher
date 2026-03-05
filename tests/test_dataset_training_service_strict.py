@@ -890,6 +890,21 @@ def test_train_from_dataset_strict_exposes_pipeline_gate_metadata(monkeypatch, t
     service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
     _patch_lightweight_training(monkeypatch, service)
     _patch_auto_regime_measurements(monkeypatch)
+    monkeypatch.setattr(
+        service,
+        "_collect_probe_activations",
+        lambda *_args, **_kwargs: {0: [object()]},
+    )
+    monkeypatch.setattr(
+        service,
+        "_verify_capability_preservation",
+        lambda *_args, **_kwargs: {
+            "min_cka": 0.99,
+            "mean_cka": 0.99,
+            "per_layer_cka": {"0": 0.99},
+            "per_layer_cka_bound": {"0": 0.99},
+        },
+    )
     monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
 
     result = service.train_from_dataset_strict(

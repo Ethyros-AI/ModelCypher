@@ -1985,9 +1985,12 @@ def run_experiment(args: argparse.Namespace) -> None:
 
     logger.info("\nOperator comparison:")
     for model, comp in cross_summary.get("operator_comparison", {}).items():
-        logger.info("  %s: stronger = %s (partial_r: logit=%.3f, attn=%.3f)",
-                     model, comp["stronger_operator"],
-                     comp["partial_r_logit"], comp["partial_r_attn"])
+        if "stronger_operator" in comp:
+            logger.info("  %s: stronger = %s (partial_r: logit=%.3f, attn=%.3f)",
+                         model, comp["stronger_operator"],
+                         comp["partial_r_logit"], comp["partial_r_attn"])
+        else:
+            logger.info("  %s: %s", model, json.dumps(comp, default=str))
 
     logger.info("\nFalsifier table:")
     for fname, fdata in falsifier_table.items():
