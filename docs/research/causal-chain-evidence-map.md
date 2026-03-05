@@ -224,6 +224,14 @@ H_logit (posterior certainty / Bayesian manifold), not H_attn (attention weight 
 **GQA conditioning on norm-entropy coupling (2026-03-04, B5 test):** Spearman(GQA, R²(H→||h||²))
 = -0.632, p=0.250 (exact permutation, N=4). Direction consistent with B5 but not significant.
 
+**F-GQA-01 falsifier protocol (2026-03-04, full 9-model run with GPU collection):**
+- z_couple regression (R²=0.686): b_g = -0.503 (p=0.063). F1: INCONCLUSIVE (CI crosses zero).
+- c_cancel regression (R²=0.854): d_g = 0.535 (p=0.003). F2: **SUPPORTED** — higher GQA
+  produces less complete numerator/denominator cancellation.
+- F3 (within-family LFM2): FALSIFIED — z_couple increases with GQA (0.548→0.590), n=2.
+- Overall: FALSIFIED (F3 triggered). But cancellation pathway (F2) is strongly supported
+  as a standalone finding. Artifacts: `results/gqa_falsifier_protocol/*/`.
+
 **What promotes this to `[VALIDATED]`:**
 First, reconcile the operator (ACT-016): determine whether H_attn ≈ H_logit or whether
 H_logit is the correct quantity to derive from. Then derive from the population map

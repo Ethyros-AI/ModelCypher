@@ -414,10 +414,11 @@ but the mechanism for the negative direction remains open.
    relationship to angular curvature must be derived from the unembedding geometry, not from
    the attention operator V/W_O path.
 
-3. **The GQA-conditioning hypothesis (open, testable):** Current data supports a directional
-   cross-family trend (higher GQA tends to weaker H_attn/H_logit coupling), but the same-GQA
-   split (Qwen3 vs Qwen3.5, both GQA=4) shows architecture terms are required. The correct
-   claim form is GQA + architecture, not a 1D monotone GQA law.
+3. **The GQA-conditioning hypothesis (F-GQA-01, INCONCLUSIVE):** Cross-family regression
+   (n=9) gives b_g = -0.503 (p=0.063), direction consistent but CI crosses zero. Within-family
+   LFM2 shows opposite sign (z_couple increases with GQA). The correct claim form is
+   GQA + architecture, not a 1D monotone GQA law. See GQA Conditioning Hypothesis section
+   for full F-GQA-01 results.
 
 4. **Two separate derivation targets:**
    - **Target A (Steps 1–3 above):** H_attn → Cov[y] → curvature (theoretically clean;
@@ -794,7 +795,26 @@ the very quantity (||h||²) that H_logit most strongly predicts.
 
 ### GQA Conditioning Hypothesis
 
-**Status: PASSES** (updated 2026-03-04 with n=10 models, proper Qwen3.5 decomposition)
+**Status: PASSES (operator coupling), INCONCLUSIVE (regression falsifier)** (updated 2026-03-04)
+
+**F-GQA-01 Falsifier Protocol (2026-03-04):** Pre-registered test of GQA modulation claim.
+Design matrix `[1, log(GQA), I(hybrid), log(d)]` with 9 models. VIF(log(GQA)) = 1.22
+(well-identified). cond(X'X) = 37952 (driven by intercept scale, not predictor collinearity).
+
+z_couple regression (n=9, DOF=5, R²=0.686):
+- b_g = -0.503 (SE=0.211, t=-2.39, p=0.063, 95% CI [-1.044, 0.038])
+- CI crosses zero → **F1: INCONCLUSIVE** (direction consistent but not significant at 95%)
+
+c_cancel regression (n=9, DOF=5, R²=0.854):
+- d_g = 0.535 (SE=0.102, t=5.27, p=0.003, 95% CI [0.274, 0.796])
+- CI excludes zero, predicted sign → **F2: SUPPORTED**
+- Higher GQA produces less complete cancellation between θ² components.
+
+F3 (within-family LFM2): z_couple increases with GQA (0.548→0.590), contradicts
+prediction. LFM2-700M barely above MDE (r=0.530 vs MDE=0.521). **F3: FALSIFIED.**
+Note: only 2 data points with 6 attention layers each — low statistical power.
+
+Artifacts: `results/gqa_falsifier_protocol/*/`
 
 **Original test (n=3 families, H_attn vs H_logit operator correlation):**
 
