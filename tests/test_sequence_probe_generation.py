@@ -24,10 +24,12 @@ token sequences that activate null-space directions.
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
+from modelcypher.core.domain.geometry.null_space import (
     SequenceProbeResult,
-    compute_null_space_basis,
     compute_numerical_rank,
+    compute_null_space_basis,
+)
+from modelcypher.core.domain.geometry.probe_generator import (
     score_tokens_for_null_space,
 )
 

@@ -73,7 +73,7 @@ class PortRegistry:
         from modelcypher.adapters.filesystem_storage import FileSystemStore
         from modelcypher.adapters.local_exporter import LocalExporter
         from modelcypher.adapters.local_manifold_profile_store import LocalManifoldProfileStore
-        from modelcypher.adapters.model_loader import get_model_loader
+        from modelcypher.adapters.model_loader import ModelLoader
         from modelcypher.backends import (
             default_backend,
             get_activation_provider,
@@ -99,7 +99,7 @@ class PortRegistry:
             hidden_state_engine=inference_engine,
             exporter=LocalExporter(),
             activation_provider=get_activation_provider(),
-            model_loader=get_model_loader(),
+            model_loader=ModelLoader(),
             model_probe=get_model_probe(),
             backend=default_backend(),
             base_dir=fs_store.paths.base,

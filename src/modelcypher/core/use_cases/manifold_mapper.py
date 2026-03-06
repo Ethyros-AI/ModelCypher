@@ -36,9 +36,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
-    compute_numerical_rank,
-)
+from modelcypher.core.domain.geometry.null_space import compute_numerical_rank
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.atlas.unified_atlas import AtlasProbe
@@ -379,8 +377,10 @@ class ManifoldMapper:
                     model, tokenizer, batch_texts
                 )
             except Exception as e:
-                logger.warning("MANIFOLD MAPPER: Batch collection failed: %s", e)
-                continue
+                raise RuntimeError(
+                    f"Manifold mapper batch collection failed: {e}. "
+                    f"Cannot build manifold from partial data."
+                ) from e
 
             # Track domains and probe metadata
             for probe in batch_probes:

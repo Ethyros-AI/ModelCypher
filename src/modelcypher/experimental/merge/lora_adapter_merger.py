@@ -182,7 +182,14 @@ class LoRAAdapterMerger:
                 f"Only adapters produced by the current pipeline are mergeable."
             )
 
-        capability_transfer = cap_transfer_str.lower() != "false"
+        normalized_cap_transfer = cap_transfer_str.strip().lower()
+        if normalized_cap_transfer not in {"true", "false"}:
+            raise MergeError(
+                f"Adapter {directory} has invalid capability_transfer={cap_transfer_str!r}. "
+                "Expected literal 'true' or 'false' from pipeline provenance metadata."
+            )
+
+        capability_transfer = normalized_cap_transfer == "true"
         if not capability_transfer:
             raise MergeError(
                 f"Adapter {directory} has capability_transfer=false "

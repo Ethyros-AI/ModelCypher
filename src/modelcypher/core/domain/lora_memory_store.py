@@ -473,10 +473,9 @@ def compute_spectral_regularization_loss(
 ) -> tuple[float, float]:
     """Compute spectral regularization loss for LoRA training.
 
-    .. deprecated::
-        NB-LoRA (Cayley transform) guarantees spectral bounds by construction,
-        making soft regularization unnecessary. Prefer ``create_nb_lora_from_base_weight``
-        for new code. Retained for non-NB-LoRA training paths.
+    NB-LoRA (Cayley transform) guarantees spectral bounds by construction, so
+    this helper only applies to explicit soft-constraint experiments outside the
+    canonical NB-LoRA training path.
 
     Soft constraint that penalizes ||B @ A||_spectral exceeding sigma_k.
     This encourages the LoRA delta to respect the geometry-derived scale bound
@@ -540,9 +539,9 @@ def compute_spectral_regularization_gradient(
 ) -> tuple["Array", "Array", float]:
     """Compute gradients for spectral regularization.
 
-    .. deprecated::
-        NB-LoRA (Cayley transform) guarantees spectral bounds by construction.
-        Retained for non-NB-LoRA training paths.
+    NB-LoRA (Cayley transform) guarantees spectral bounds by construction, so
+    this helper only applies to explicit soft-constraint experiments outside the
+    canonical NB-LoRA training path.
 
     Computes approximate gradients of the spectral regularization loss
     with respect to A and B for manual gradient descent.
@@ -814,15 +813,8 @@ class LoRAMemoryStore:
     def _derive_optimizer_geometry(
         self, weight_views: dict[str, "Array"]
     ) -> OptimizerGeometryConfig:
-        """Derive optimizer geometry with compatibility for legacy/new signatures."""
-        try:
-            return derive_optimizer_geometry_config(
-                weight_views,
-                self._backend,
-                min_shape=1,
-            )
-        except TypeError:
-            return derive_optimizer_geometry_config(weight_views, self._backend)
+        """Derive optimizer geometry from the canonical optimizer interface."""
+        return derive_optimizer_geometry_config(weight_views, self._backend)
 
     def _derive_spectral_proxy_learning_rate(self) -> float:
         """Derive η from spectral proxy (η = 1/max_sigma) with safe fallback."""

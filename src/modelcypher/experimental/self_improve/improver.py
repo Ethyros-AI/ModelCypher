@@ -231,21 +231,10 @@ class AutonomousSelfImprover:
                         vec.strength_range[1],
                     )
                 except Exception:
-                    logger.exception(
-                        "  %s: steering vector extraction failed, falling back to prime",
-                        cap.name,
-                    )
-                    log.actions.append(
-                        ImprovementAction(
-                            capability=cap.name,
-                            action_type="apply_prime",
-                            details={
-                                "prime": analysis.best_prime,
-                                "accuracy_improvement": (
-                                    analysis.accuracy_primed - analysis.accuracy_raw
-                                ),
-                            },
-                        )
+                    raise RuntimeError(
+                        f"Steering vector extraction failed for {cap.name}. "
+                        f"Falling back to 'apply_prime' is a different operation — "
+                        f"fix the extraction, don't silently substitute."
                     )
 
         # Phase 3: GENERATE (for true gaps)

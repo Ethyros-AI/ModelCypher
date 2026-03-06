@@ -45,8 +45,8 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 
 if TYPE_CHECKING:
-    from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
-        TrajectoryResult,
+    from modelcypher.core.domain.geometry.trajectory_analysis import TrajectoryResult
+    from modelcypher.core.domain.geometry.trajectory_projection import (
         TrajectoryTangentResult,
     )
     from modelcypher.ports.backend import Array, Backend
@@ -615,7 +615,7 @@ def reconstruct_weight_spectral_corrected(
         S_ratio = S_out_common / S_in_safe
         b.eval(S_ratio)
 
-        # Geometric mean for logging (compatible with old interface)
+        # Geometric mean summarizes multiplicative scale change for logging.
         log_ratio = b.log(b.maximum(S_ratio, b.full(S_ratio.shape, eps)))
         mean_log = b.mean(log_ratio)
         b.eval(mean_log)
@@ -1427,7 +1427,7 @@ def compute_trajectory_tangent_projector(
     Returns:
         TrajectoryTangentProjector, or None if computation fails.
     """
-    from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
+    from modelcypher.core.domain.geometry.trajectory_projection import (
         compute_trajectory_tangent_null_space,
     )
 
@@ -1482,7 +1482,7 @@ def apply_trajectory_tangent_projection(
     Returns:
         Projected delta [out_dim, in_dim].
     """
-    from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
+    from modelcypher.core.domain.geometry.trajectory_projection import (
         project_delta_to_trajectory_tangent,
     )
 

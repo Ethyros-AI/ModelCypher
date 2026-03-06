@@ -8,10 +8,10 @@ import random
 from pathlib import Path
 
 from modelcypher.backends import initialize_default_backend
+from modelcypher.adapters.model_loader import ModelLoader
 from modelcypher.cli.composition import (
     get_capacity_analysis_service,
     get_dataset_training_service,
-    get_model_loader,
 )
 from modelcypher.core.domain.continual_learning_metrics import get_continual_learning_metrics
 from modelcypher.core.domain.geometry.cka import compute_linear_cka_gram
@@ -545,7 +545,7 @@ def main() -> None:
     backend = initialize_default_backend()
     cpu_metrics = get_continual_learning_metrics(None)
     dataset_service = get_dataset_training_service()
-    model_loader = get_model_loader()
+    model_loader = ModelLoader(backend)
     capacity_service = get_capacity_analysis_service()
     eps = float(backend.finfo().eps)
 

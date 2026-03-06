@@ -54,8 +54,8 @@ def load_tokenizer(model_path: str, model_loader: "ModelLoaderPort | None" = Non
         return None
 
     try:
-        # Fall back to ModelLoaderPort (hexagonal architecture)
-        _, tokenizer = model_loader.load_model_for_training(model_path)
+        # Use the injected ModelLoaderPort to resolve the tokenizer.
+        _, tokenizer = model_loader.load_model(model_path)
         return tokenizer
     except Exception as exc:
         logger.warning("Failed to load tokenizer: %s", exc)
@@ -72,7 +72,7 @@ def load_model_for_probing(
 
     try:
         logger.info("Loading model from %s for activation probing...", model_path)
-        model, _ = model_loader.load_model_for_training(model_path)
+        model, _ = model_loader.load_model(model_path)
         logger.info("Model loaded successfully: %s", type(model).__name__)
         return model
     except Exception as exc:

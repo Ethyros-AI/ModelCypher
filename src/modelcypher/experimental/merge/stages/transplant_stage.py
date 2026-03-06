@@ -336,13 +336,13 @@ def stage_transplant(
         metrics["core_probes"] = len(core_probe_ids)
     else:
         # Profile/trajectory path: no per-probe filtering, graft based on density_weights only
-        path_label = "trajectory" if is_trajectory_path else "legacy"
+        path_label = "trajectory" if is_trajectory_path else "profile"
         logger.info("TRANSPLANT: %s path - grafting based on density_weights only", path_label)
         core_probe_ids = set()
         graft_mask = None  # Disable graft filtering
         metrics["core_probes"] = 0
         metrics["trajectory_path"] = is_trajectory_path
-        metrics["legacy_profile_path"] = not is_trajectory_path
+        metrics["profile_path"] = not is_trajectory_path
 
     metrics["density_only_path"] = True  # Always geometry-driven now
 
@@ -889,7 +889,7 @@ def stage_transplant(
             stitch_dims['src_v'] = int(v_stitch_output.shape[1])
             stitch_dims['tgt_v'] = int(v_stitch_output.shape[0])
 
-        # Handle both formats: list of 1D arrays (legacy) or 2D array (memory-optimized)
+        # Accept either the per-probe stacked array or an iterable of per-probe rows.
         if hasattr(layer_acts, 'shape') and len(b.shape(layer_acts)) == 2:
             # Already a 2D array [n_probes, hidden_dim] - use directly
             stacked = layer_acts

@@ -23,7 +23,7 @@ import click
 
 
 def apply_typer_compat() -> None:
-    # _patch_option_flag_value was removed - it added deprecated flag_value param
+    # _patch_option_flag_value was removed upstream; do not resurrect the old flag_value path.
     _patch_make_metavar()
 
 

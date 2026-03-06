@@ -184,8 +184,8 @@ class TestEvaluateCorrectness:
         assert result.per_type_accuracy["math"] == 1.0
         assert result.per_type_accuracy["logic"] == 1.0
 
-    def test_generation_failure_counts_as_incorrect(self):
-        """Failed generation → incorrect."""
+    def test_generation_failure_excluded_from_scoring(self):
+        """Failed generation excluded from scoring — not counted as incorrect."""
         problems = [_make_problem("p1", "yes")]
 
         def gen_fn(prompt, max_tokens):
@@ -199,7 +199,7 @@ class TestEvaluateCorrectness:
         )
 
         assert result.n_correct == 0
-        assert result.n_total == 1
+        assert result.n_total == 0
 
     def test_exact_set_drop_tracks_raw_but_not_significance(self):
         """A one-problem drop is recorded in raw counters even if not significant."""

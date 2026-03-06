@@ -115,7 +115,7 @@ class EvaluationService:
 
         # Load model via port (hexagonal architecture)
         logger.info(f"Loading model from {model} (adapter={adapter})")
-        llm_model, tokenizer = self._model_loader.load_model_for_training(
+        llm_model, tokenizer = self._model_loader.load_model(
             model,
             adapter_path=str(adapter) if adapter else None,
         )

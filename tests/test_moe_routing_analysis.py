@@ -47,7 +47,7 @@ def test_task_relevant_and_underutilized_use_uniform_baseline():
     }
     profile = RoutingProfile.from_routing_decisions(routing, topology)
 
-    # uniform = 1/4 = 0.25, relevant threshold = 3 * uniform = 0.75
+    # Layer 0 entropy-derived threshold ≈ 0.57, layer 1 threshold = 1.0
     assert profile.task_relevant_experts() == [(0, 0), (1, 1)]
     assert profile.underutilized_experts(0) == [(0, 2), (0, 3)]
 

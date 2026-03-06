@@ -106,12 +106,10 @@ def augment_training_data_with_geometry(
             })
 
         except Exception as e:
-            logger.warning("Failed to compute geometry for sample: %s", e)
-            # Include original sample without augmentation
-            augmented.append({
-                "prompt": prompt,
-                "completion": completion,
-            })
+            raise RuntimeError(
+                f"Geometry computation failed for sample: {e}. "
+                f"Mixed augmented/unaugmented datasets are not valid training data."
+            ) from e
 
     logger.info(
         "Augmented %d/%d samples with geometric context",

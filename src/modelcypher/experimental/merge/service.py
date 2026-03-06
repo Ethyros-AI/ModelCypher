@@ -131,8 +131,8 @@ class MergePipelineService:
 
         # Load models once for entire pipeline
         logger.info("Loading models...")
-        source_model, source_tokenizer = self._model_loader.load_model_for_training(source_path)
-        target_model, target_tokenizer = self._model_loader.load_model_for_training(target_path)
+        source_model, source_tokenizer = self._model_loader.load_model(source_path)
+        target_model, target_tokenizer = self._model_loader.load_model(target_path)
         logger.info("Models loaded successfully")
 
         # Stage 1: Execute merge

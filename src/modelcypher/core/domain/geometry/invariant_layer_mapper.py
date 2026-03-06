@@ -353,7 +353,7 @@ class InvariantLayerMapper:
         Returns:
             Tuple of (probe_ids, sequence_invariants, atlas_probes)
             - probe_ids: All probe IDs for fingerprint matching
-            - sequence_invariants: SequenceInvariant objects (for backward compat)
+            - sequence_invariants: SequenceInvariant objects for direct sequence mapping
             - atlas_probes: AtlasProbe objects (for multi-atlas mode)
         """
         probes = list(get_atlas_probes())

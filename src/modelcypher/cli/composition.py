@@ -101,11 +101,6 @@ def get_backend() -> "Backend":
     return _get_registry().backend
 
 
-def get_model_loader() -> "ModelLoaderPort":
-    """Get ModelLoaderPort from the registry."""
-    return _get_registry().model_loader
-
-
 def get_activation_provider() -> "ActivationProvider":
     """Get ActivationProvider from the registry."""
     return _get_registry().activation_provider
@@ -227,7 +222,7 @@ def get_geometry_safety_service(
         training_service=get_geometry_training_service(),
         drift_thresholds=drift_thresholds,
         vulnerability_thresholds=vulnerability_thresholds,
-        model_loader=get_model_loader(),
+        model_loader=_get_registry().model_loader,
         backend=get_backend(),
     )
 

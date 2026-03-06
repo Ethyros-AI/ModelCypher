@@ -527,6 +527,10 @@ class CUDABackend(Backend):
                 Zₖ₊₁ = ½ T Zₖ
 
             A^{1/2} ≈ Y_final * sqrt(norm(A))
+
+        Iteration count derivation (Higham 2008, Ch. 6):
+            Cubic convergence: n = ceil(log₃(log(1/eps) × κ_F)).
+            Default 15 covers float32 precision with κ_F ≤ ~5×10⁵.
         """
         # Ensure float32 for stability
         A_f32 = A.to(dtype=self.torch.float32)

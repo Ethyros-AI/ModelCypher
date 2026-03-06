@@ -314,7 +314,7 @@ class DaemonConfig:
     batch_size: int = 10
     check_interval: float = 1.0
     min_candidates: int = 5
-    enable_auto_consolidate: bool = True
+    enable_auto_consolidate: bool = True  # TODO: derive from geometry; remove toggle
     on_probe_complete: Callable[[ProbeCandidate, Any], None] | None = None
     on_consolidation: Callable[["ConsolidationStats"], None] | None = None
 

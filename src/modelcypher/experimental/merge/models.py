@@ -196,18 +196,23 @@ class LayerSemanticProfile:
 
         Returns:
             0.0 = don't touch (at stability edge)
-            1.0 = fully safe (unconstrained)
-
-        If boundary radii haven't been computed, returns 1.0 (permissive fallback).
+            1.0 = fully safe (largest measured headroom in this profile)
         """
         if not self.boundary_radii:
-            return 1.0  # Fallback if not computed
+            raise ValueError(
+                "Transfer safety requires measured boundary_radii; none were provided."
+            )
 
         max_radius = max(self.boundary_radii.values())
         if max_radius <= 0:
-            return 1.0  # Avoid division by zero
+            return 0.0
 
-        layer_radius = self.boundary_radii.get(layer_idx, max_radius)
+        if layer_idx not in self.boundary_radii:
+            raise KeyError(
+                f"Layer {layer_idx} missing boundary radius; transfer safety is undefined."
+            )
+
+        layer_radius = self.boundary_radii[layer_idx]
         return layer_radius / max_radius
 
     def compute_highway_layers(self) -> list[int]:

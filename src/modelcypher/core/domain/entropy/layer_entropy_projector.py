@@ -80,7 +80,7 @@ logger = logging.getLogger("modelcypher.entropy.layer_projector")
 class ProjectorLayerEntropyResult:
     """Entropy measurement for a single layer.
 
-    Note: Also exported as LayerEntropyResult for backwards compatibility.
+    Exported as LayerEntropyResult throughout entropy-facing services.
 
     Attributes
     ----------
@@ -109,7 +109,7 @@ class ProjectorLayerEntropyResult:
     max_entropy: float = 0.0
 
 
-# Alias for backwards compatibility
+# Canonical exported result name used across entropy-facing services.
 LayerEntropyResult = ProjectorLayerEntropyResult
 
 

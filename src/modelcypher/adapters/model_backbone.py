@@ -140,14 +140,17 @@ def _resolve_layer_mask(layer, numeric_mask):
 
 
 def _apply_layer_with_mask(layer, hidden, mask):
-    """Apply a transformer layer with best-effort mask handling."""
-    try:
-        return layer(hidden, mask=mask)
-    except (TypeError, ValueError):
-        try:
-            return layer(hidden, mask)
-        except (TypeError, ValueError):
-            return layer(hidden)
+    """Apply a transformer layer with mask.
+
+    Mask is resolved by _resolve_layer_mask before this call:
+    - Attention layers: "causal" (LFM2) or numeric mask (standard)
+    - Conv layers: None
+
+    All mlx-lm layer implementations accept mask= as keyword argument.
+    If a layer rejects it, that is a bug in model architecture integration
+    that must be fixed at the source, not silently worked around here.
+    """
+    return layer(hidden, mask=mask)
 
 
 def forward_through_backbone(

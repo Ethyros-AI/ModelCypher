@@ -997,89 +997,72 @@ def compute_cka_split(
     # n_shared=2, n_novel=815 when novel_cka=0.9999).
     # =================================================================
 
-    try:
-        subspace_result = compute_subspace_overlap(aligned, target_arr, b)
+    subspace_result = compute_subspace_overlap(aligned, target_arr, b)
 
-        # Get shared and novel ranks
-        shared_rank = subspace_result.shared_rank
-        source_rank = subspace_result.source_rank
-        novel_rank = max(0, source_rank - shared_rank)
+    # Get shared and novel ranks
+    shared_rank = subspace_result.shared_rank
+    source_rank = subspace_result.source_rank
+    novel_rank = max(0, source_rank - shared_rank)
 
-        # Overlap fraction is the fraction of source subspace that aligns with target
-        shared_fraction = subspace_result.overlap_fraction
-        novel_fraction = 1.0 - shared_fraction
+    # Overlap fraction is the fraction of source subspace that aligns with target
+    shared_fraction = subspace_result.overlap_fraction
+    novel_fraction = 1.0 - shared_fraction
 
-        # Compute CKA on projections to shared/novel subspaces
-        shared_cka = 0.0
-        novel_cka = 0.0
+    # Compute CKA on projections to shared/novel subspaces
+    shared_cka = 0.0
+    novel_cka = 0.0
 
-        # Shared subspace CKA
-        shared_basis_shape = b.shape(subspace_result.shared_basis)
-        if int(shared_basis_shape[0]) > 0:
-            # Project both aligned source and target onto shared subspace
-            shared_src_proj = project_to_subspace(aligned, subspace_result.shared_basis, b)
-            shared_tgt_proj = project_to_subspace(target_arr, subspace_result.shared_basis, b)
-            b.eval(shared_src_proj, shared_tgt_proj)
+    # Shared subspace CKA
+    shared_basis_shape = b.shape(subspace_result.shared_basis)
+    if int(shared_basis_shape[0]) > 0:
+        # Project both aligned source and target onto shared subspace
+        shared_src_proj = project_to_subspace(aligned, subspace_result.shared_basis, b)
+        shared_tgt_proj = project_to_subspace(target_arr, subspace_result.shared_basis, b)
+        b.eval(shared_src_proj, shared_tgt_proj)
 
-            # CKA on shared subspace projections.
-            # 1-feature projection → rank-1 Gram → CKA = 1.0 trivially (uninformative).
-            if int(b.shape(shared_src_proj)[1]) >= 2:
-                shared_result = compute_cka(shared_src_proj, shared_tgt_proj, backend)
-                shared_cka = shared_result.cka if shared_result.is_valid else 0.0
+        # CKA on shared subspace projections.
+        # 1-feature projection → rank-1 Gram → CKA = 1.0 trivially (uninformative).
+        if int(b.shape(shared_src_proj)[1]) >= 2:
+            shared_result = compute_cka(shared_src_proj, shared_tgt_proj, backend)
+            shared_cka = shared_result.cka if shared_result.is_valid else 0.0
 
-        # Novel subspace CKA
-        novel_basis_shape = b.shape(subspace_result.novel_basis)
-        if int(novel_basis_shape[0]) > 0:
-            # Project both onto novel subspace
-            novel_src_proj = project_to_subspace(aligned, subspace_result.novel_basis, b)
-            novel_tgt_proj = project_to_subspace(target_arr, subspace_result.novel_basis, b)
-            b.eval(novel_src_proj, novel_tgt_proj)
+    # Novel subspace CKA
+    novel_basis_shape = b.shape(subspace_result.novel_basis)
+    if int(novel_basis_shape[0]) > 0:
+        # Project both onto novel subspace
+        novel_src_proj = project_to_subspace(aligned, subspace_result.novel_basis, b)
+        novel_tgt_proj = project_to_subspace(target_arr, subspace_result.novel_basis, b)
+        b.eval(novel_src_proj, novel_tgt_proj)
 
-            # CKA on novel subspace projections.
-            # Low CKA here validates that these directions ARE truly novel.
-            # 1-feature → rank-1 Gram → CKA degenerates (see shared subspace comment).
-            if int(b.shape(novel_src_proj)[1]) >= 2:
-                novel_result = compute_cka(novel_src_proj, novel_tgt_proj, backend)
-                novel_cka = novel_result.cka if novel_result.is_valid else 0.0
+        # CKA on novel subspace projections.
+        # Low CKA here validates that these directions ARE truly novel.
+        # 1-feature → rank-1 Gram → CKA degenerates (see shared subspace comment).
+        if int(b.shape(novel_src_proj)[1]) >= 2:
+            novel_result = compute_cka(novel_src_proj, novel_tgt_proj, backend)
+            novel_cka = novel_result.cka if novel_result.is_valid else 0.0
 
-        logger.debug(
-            "Split CKA (rank-derived): shared_rank=%d, novel_rank=%d, "
-            "shared_cka=%.4f, novel_cka=%.4f, overlap=%.2f%%",
-            shared_rank,
-            novel_rank,
-            shared_cka,
-            novel_cka,
-            shared_fraction * 100,
-        )
+    logger.debug(
+        "Split CKA (rank-derived): shared_rank=%d, novel_rank=%d, "
+        "shared_cka=%.4f, novel_cka=%.4f, overlap=%.2f%%",
+        shared_rank,
+        novel_rank,
+        shared_cka,
+        novel_cka,
+        shared_fraction * 100,
+    )
 
-        return SplitCKAResult(
-            shared_cka=shared_cka,
-            novel_cka=novel_cka,
-            full_cka=full_cka,
-            shared_fraction=shared_fraction,
-            novel_fraction=novel_fraction,
-            n_shared=shared_rank,
-            n_novel=novel_rank,
-            n_total=source_rank,
-            source_response_mean=source_resp_mean,
-            target_response_mean=target_resp_mean,
-        )
-
-    except Exception as e:
-        # Fallback: if subspace analysis fails, return degenerate result
-        logger.warning("Subspace analysis failed, returning degenerate split: %s", e)
-        return SplitCKAResult(
-            shared_cka=full_cka,  # Use full CKA as shared
-            novel_cka=0.0,
-            full_cka=full_cka,
-            shared_fraction=1.0,
-            novel_fraction=0.0,
-            n_shared=n,
-            n_novel=0,
-            n_total=n,
-            source_response_mean=source_resp_mean,
-            target_response_mean=target_resp_mean,
-        )
+    return SplitCKAResult(
+        shared_cka=shared_cka,
+        novel_cka=novel_cka,
+        full_cka=full_cka,
+        shared_fraction=shared_fraction,
+        novel_fraction=novel_fraction,
+        n_shared=shared_rank,
+        n_novel=novel_rank,
+        n_total=source_rank,
+        source_response_mean=source_resp_mean,
+        target_response_mean=target_resp_mean,
+    )
 
 
 # =============================================================================

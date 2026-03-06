@@ -67,16 +67,16 @@ def run_benchmark(
     from modelcypher.cli.composition import (
         get_backend,
         get_benchmark_service,
-        get_model_loader,
     )
+    from modelcypher.adapters.model_loader import ModelLoader
 
     context = get_context(ctx)
 
     typer.echo(f"Running benchmark suite: {suite} (limit={limit} per benchmark)")
 
     try:
-        model_loader = get_model_loader()
         backend = get_backend()
+        model_loader = ModelLoader(backend)
 
         loaded_model, tokenizer = model_loader.load_model(model, adapter_path=adapter)
 
@@ -279,14 +279,15 @@ def knowledge_type_analysis(
             --counterfactual "The capital of France is Madrid" \\
             --layer 12
     """
-    from modelcypher.cli.composition import get_knowledge_analyzer, get_model_loader
+    from modelcypher.adapters.model_loader import ModelLoader
+    from modelcypher.cli.composition import get_backend, get_knowledge_analyzer
 
     context = get_context(ctx)
 
     typer.echo(f"Analyzing knowledge type at layer {layer}")
 
     try:
-        model_loader = get_model_loader()
+        model_loader = ModelLoader(get_backend())
         loaded_model, tokenizer = model_loader.load_model(model)
 
         analyzer = get_knowledge_analyzer()
@@ -412,7 +413,10 @@ def curriculum_profile(
         typer.echo(f"Loaded {len(problems)} problems from {problems_file}")
 
         # Load model
-        model_loader = get_model_loader()
+        from modelcypher.adapters.model_loader import ModelLoader
+        from modelcypher.cli.composition import get_backend
+
+        model_loader = ModelLoader(get_backend())
         loaded_model, tokenizer = model_loader.load_model(model)
 
         # Create profiler and profile problems

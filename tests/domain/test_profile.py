@@ -233,10 +233,9 @@ def test_save_and_load_activations_all_types_and_legacy(any_backend, tmp_path) -
     with pytest.raises(FileNotFoundError):
         load_activations(tmp_path / "missing", b)
 
-    # Legacy key parsing branch: layer_{idx} -> hidden_{idx}.
-    legacy_dir = tmp_path / "legacy"
-    legacy_dir.mkdir()
-    (legacy_dir / profile_mod.PROFILE_ACTIVATIONS_FILE).write_bytes(b"placeholder")
+    invalid_dir = tmp_path / "invalid"
+    invalid_dir.mkdir()
+    (invalid_dir / profile_mod.PROFILE_ACTIVATIONS_FILE).write_bytes(b"placeholder")
 
     proxy = _BackendLoadProxy(
         b,
@@ -245,6 +244,5 @@ def test_save_and_load_activations_all_types_and_legacy(any_backend, tmp_path) -
             "embedding": b.array([[0.1, 0.2]]),
         },
     )
-    legacy_loaded = load_activations(legacy_dir, proxy)
-    assert 3 in legacy_loaded.hidden
-    assert legacy_loaded.embedding is not None
+    with pytest.raises(ValueError, match="Unsupported activation tensor key"):
+        load_activations(invalid_dir, proxy)

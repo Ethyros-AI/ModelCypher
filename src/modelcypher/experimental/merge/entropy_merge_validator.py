@@ -377,7 +377,7 @@ class EntropyMergeValidator:
         model_name = model_dir.name
 
         # Load model
-        model, tokenizer = model_loader.load_model_for_training(model_path)
+        model, tokenizer = model_loader.load_model(model_path)
 
         # Create Entropy-Lens projector
         backend = get_default_backend()

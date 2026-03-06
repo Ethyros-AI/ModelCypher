@@ -522,6 +522,10 @@ class Backend(Protocol):
 
         Converges to A^{1/2} for positive semi-definite A.
         Runs entirely on GPU.
+
+        Iteration count derivation (Higham 2008, Ch. 6):
+            Cubic convergence: n = ceil(log₃(log(1/eps) × κ_F)).
+            Default 15 covers float32 precision with κ_F ≤ ~5×10⁵.
         """
         ...
 

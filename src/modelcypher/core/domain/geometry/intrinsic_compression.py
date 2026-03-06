@@ -45,9 +45,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
-    compute_variance_null_space,
-)
+from modelcypher.core.domain.geometry.null_space import compute_variance_null_space
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend

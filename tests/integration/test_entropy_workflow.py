@@ -112,7 +112,7 @@ class TestEntropyWindowIntegration:
         backend = get_default_backend()
         eps = division_epsilon(backend, backend.array([0.0]))
 
-        # window_size=5 (was derived from sqrt(25)=5 in old interface)
+        # window_size=5 follows the current sqrt(sample_count) derivation.
         window = EntropyWindow(baseline=self._make_baseline(), window_size=5)
 
         samples = [(1.0 + 0.1 * i, 0.2 + 0.01 * i, i) for i in range(8)]
@@ -130,7 +130,7 @@ class TestEntropyWindowIntegration:
 
     def test_window_empty_status(self) -> None:
         """Empty window returns zeroed measurements."""
-        # window_size=4 (was derived from sqrt(16)=4 in old interface)
+        # window_size=4 follows the current sqrt(sample_count) derivation.
         window = EntropyWindow(baseline=self._make_baseline(), window_size=4)
         status = window.status()
 

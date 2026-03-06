@@ -60,9 +60,10 @@ class ActivationProviderAdapter:
         if self._model_path is None:
             raise RuntimeError("No model_path provided to ActivationProvider")
 
-        from modelcypher.adapters.model_loader import load_model_for_training
+        from modelcypher.adapters.model_loader import ModelLoader
 
-        self._model, self._tokenizer = load_model_for_training(str(self._model_path))
+        loader = ModelLoader(self._backend)
+        self._model, self._tokenizer = loader.load_model(str(self._model_path))
         return self._model, self._tokenizer
 
     def _get_backbone(self, model: Any) -> tuple[Any, Any, Any]:

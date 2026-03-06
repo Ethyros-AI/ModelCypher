@@ -374,7 +374,7 @@ class DomainGeometryWaypointService:
                 "modelcypher.core.use_cases.atlas_bootstrap.register_default_atlas_inventories() "
                 "before computing spatial geometry."
             )
-        model, tokenizer = self._model_loader.load_model_for_training(model_path)
+        model, tokenizer = self._model_loader.load_model(model_path)
 
         # Extract activations for spatial probes
         activations = self._extract_activations(
@@ -425,7 +425,7 @@ class DomainGeometryWaypointService:
                 "modelcypher.core.use_cases.atlas_bootstrap.register_default_atlas_inventories() "
                 "before computing social geometry."
             )
-        model, tokenizer = self._model_loader.load_model_for_training(model_path)
+        model, tokenizer = self._model_loader.load_model(model_path)
 
         # Extract activations for social probes
         activations = self._extract_activations(
@@ -467,7 +467,7 @@ class DomainGeometryWaypointService:
                 "modelcypher.core.use_cases.atlas_bootstrap.register_default_atlas_inventories() "
                 "before computing temporal geometry."
             )
-        model, tokenizer = self._model_loader.load_model_for_training(model_path)
+        model, tokenizer = self._model_loader.load_model(model_path)
 
         # Extract activations for temporal probes
         activations = self._extract_activations(
@@ -512,7 +512,7 @@ class DomainGeometryWaypointService:
                 "modelcypher.core.use_cases.atlas_bootstrap.register_default_atlas_inventories() "
                 "before computing value geometry."
             )
-        model, tokenizer = self._model_loader.load_model_for_training(model_path)
+        model, tokenizer = self._model_loader.load_model(model_path)
 
         # Extract activations for value probes
         activations = self._extract_activations(

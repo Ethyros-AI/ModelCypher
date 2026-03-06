@@ -36,7 +36,7 @@ class LocalExporter(Exporter):
         output_path : str
             Destination path for exported model.
         export_format : str
-            Target format (safetensors only - npz is deprecated).
+            Target format. Only `safetensors` is supported.
 
         Returns
         -------
@@ -55,7 +55,7 @@ class LocalExporter(Exporter):
         output_path : str
             Destination path for exported checkpoint.
         export_format : str
-            Target format (safetensors only - npz is deprecated).
+            Target format. Only `safetensors` is supported.
 
         Returns
         -------

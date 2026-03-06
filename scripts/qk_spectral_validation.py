@@ -68,13 +68,13 @@ def main() -> None:
         sys.exit(1)
 
     # Load model
-    from modelcypher.adapters.model_loader import load_model_for_training
+    from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.backends import initialize_default_backend
     from modelcypher.core.use_cases.qk_spectral_service import QKSpectralService
 
     backend = initialize_default_backend()
     logger.info("Loading model from %s ...", model_path)
-    model, _tokenizer = load_model_for_training(str(model_path))
+    model, _tokenizer = ModelLoader(backend).load_model(str(model_path))
 
     service = QKSpectralService(backend)
 

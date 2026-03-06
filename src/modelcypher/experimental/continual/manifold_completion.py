@@ -224,11 +224,7 @@ class ManifoldCompletion:
             external_attractor: tuple[Array, float] | None = None
             if self._retrieval_fn is not None:
                 sparse_embedding = b.take(probe_embeddings, b.array([sparse_idx]), axis=0)[0]
-                try:
-                    external_attractor = self._retrieval_fn(sparse_embedding, neighbors)
-                except Exception:
-                    # Retrieval failed - continue with local geometry only
-                    external_attractor = None
+                external_attractor = self._retrieval_fn(sparse_embedding, neighbors)
 
             # Compute constraint target, blending local geometry with external knowledge
             target_position = self._solve_constraints(

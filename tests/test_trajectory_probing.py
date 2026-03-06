@@ -22,7 +22,7 @@ from __future__ import annotations
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
+from modelcypher.core.domain.geometry.trajectory_analysis import (
     TrajectoryResult,
     TrajectorySubspaceResult,
     compute_trajectory_null_space,

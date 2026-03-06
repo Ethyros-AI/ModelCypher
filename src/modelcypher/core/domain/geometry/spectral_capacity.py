@@ -24,10 +24,13 @@ with explicit cutoffs documented in classify_spectral_decay().
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
 
 from modelcypher.core.domain._backend import get_default_backend
 
@@ -468,21 +471,37 @@ def _compute_singular_values(weight: "Array", backend: "Backend") -> tuple[list[
             return [float(values)], "svd"
         return sorted((float(v) for v in values), reverse=True), "svd"
     except Exception:
-        pass
+        logger.warning(
+            "SVD failed (known MLX crash on ill-conditioned matrices). "
+            "Falling back to gram eigenvalues — spectral accuracy degraded.",
+            exc_info=True,
+        )
 
     try:
         gram_values = _gram_eigh_singular_values(weight_f32, b)
         if gram_values:
             return gram_values, "gram_eigh"
     except Exception:
-        pass
+        logger.warning(
+            "Gram eigenvalue fallback also failed. "
+            "Falling back to power deflation — spectral accuracy severely degraded.",
+            exc_info=True,
+        )
 
     iterative_values = _iterative_singular_values(weight_f32, b)
     if iterative_values:
+        logger.warning(
+            "Using power deflation for singular values. "
+            "Budget bounds computed from this method are unreliable."
+        )
         return iterative_values, "power_deflation"
 
     spectral_fallback = _spectral_norm_power_iteration(weight_f32, b)
     if spectral_fallback > 0.0:
+        logger.warning(
+            "Using single power-iteration spectral norm. "
+            "Only σ_max available — all spectral analysis is unreliable."
+        )
         return [spectral_fallback], "power_iteration"
 
     raise RuntimeError("Singular spectrum computation failed across all methods.")

@@ -99,13 +99,14 @@ def _compute_dimension_projection(
 ) -> "Array":
     """Compute a dimension projection matrix.
 
-    Deprecated. Prefer projection derived from alignment transforms.
+    Same-dimension identity case only. Cross-dimension projections must come
+    from measured alignment transforms.
 
     Returns identity when src_dim == tgt_dim; otherwise raises RuntimeError to
     signal that alignment-derived stitching is required.
     """
     if src_dim == tgt_dim:
-        # Same dimensions is fine - identity is correct
+        # Same dimensions: identity is exact.
         dtype = backend.eye(1).dtype
         return backend.eye(src_dim, dtype=dtype)
 

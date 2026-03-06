@@ -18,7 +18,7 @@
 """Statistics utilities with optional backend acceleration.
 
 This module provides basic statistical functions that can work with either
-Python lists (for backward compatibility) or backend arrays (for GPU acceleration).
+Python lists or backend arrays.
 
 When working with backend arrays, use the backend-accelerated versions
 (mean_array, std_array, percentile_array) to avoid CPU round-trips.
@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 
 
 # =============================================================================
-# List-based functions (backward compatible, for small data)
+# List-based functions for scalar workflows and tests
 # =============================================================================
 
 

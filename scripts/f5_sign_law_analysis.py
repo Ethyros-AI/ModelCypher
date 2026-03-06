@@ -291,9 +291,6 @@ def analyze_model(model_result: dict) -> dict:
         h = m.get("H_logit")
         th_t = m.get("theta_total")
         th_core = m.get("theta_core")
-        if th_core is None:
-            # Backward compatibility with pre-core artifacts.
-            th_core = m.get("theta_attn")
         th_m = m.get("theta_mlp")
         core_op = m.get("core_operator")
         d = m.get("depth_fraction")

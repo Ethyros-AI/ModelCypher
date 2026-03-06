@@ -441,11 +441,12 @@ class LoRASafetyService:
         Returns:
             TargetModuleResult with ranked module recommendations
         """
-        from modelcypher.adapters.model_loader import load_model_for_training
+        from modelcypher.adapters.model_loader import ModelLoader
         from modelcypher.core.domain._backend import get_default_backend
 
         backend = get_default_backend()
-        model, tokenizer = load_model_for_training(str(model_path))
+        loader = ModelLoader(backend)
+        model, tokenizer = loader.load_model(str(model_path))
 
         # Get model architecture
         from modelcypher.adapters.model_architecture import get_model_architecture
@@ -516,14 +517,15 @@ class LoRASafetyService:
         Returns:
             BarrierSafetyResult with safety assessment
         """
-        from modelcypher.adapters.model_loader import load_model_for_training
+        from modelcypher.adapters.model_loader import ModelLoader
         from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 
         backend = get_default_backend()
+        loader = ModelLoader(backend)
 
         # Load base model and collect activations
-        base_model, base_tokenizer = load_model_for_training(str(base_path))
+        base_model, base_tokenizer = loader.load_model(str(base_path))
         from modelcypher.adapters.model_architecture import get_model_architecture
 
         base_arch = get_model_architecture(base_model, model_path=str(base_path))
@@ -537,7 +539,7 @@ class LoRASafetyService:
         )
 
         # Load target model and collect activations
-        target_model, target_tokenizer = load_model_for_training(str(target_path))
+        target_model, target_tokenizer = loader.load_model(str(target_path))
         target_arch = get_model_architecture(target_model, model_path=str(target_path))
 
         target_activations = self._collect_activations(
@@ -601,13 +603,14 @@ class LoRASafetyService:
         Returns:
             CurriculumScoreResult with quality distribution and top problems
         """
-        from modelcypher.adapters.model_loader import load_model_for_training
+        from modelcypher.adapters.model_loader import ModelLoader
         from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.goldilocks_quality import (
             compute_goldilocks_quality,
         )
 
         backend = get_default_backend()
+        loader = ModelLoader(backend)
 
         # Default reference prompts (simple arithmetic)
         if reference_prompts is None:
@@ -619,7 +622,7 @@ class LoRASafetyService:
             ]
 
         # Load model
-        model, tokenizer = load_model_for_training(str(model_path))
+        model, tokenizer = loader.load_model(str(model_path))
         from modelcypher.adapters.model_architecture import get_model_architecture
 
         arch = get_model_architecture(model, model_path=str(model_path))
@@ -1004,9 +1007,9 @@ class LoRASafetyService:
             raise FileNotFoundError(f"No LoRA weights found in {adapter_path}")
 
         # Load model and weights
-        from modelcypher.adapters.model_loader import load_model_for_training
+        from modelcypher.adapters.model_loader import ModelLoader
 
-        model, _ = load_model_for_training(str(model_path))
+        model, _ = ModelLoader(backend).load_model(str(model_path))
         base_model = getattr(model, "model", model)
 
         # Load LoRA weights
@@ -1194,7 +1197,7 @@ class LoRASafetyService:
                 Default 1.0 applies the measured geometric bound directly.
                 Use <1.0 only if you explicitly want extra conservatism.
             use_eigengap: If True, use eigengap-tightened bound when available.
-                Default True for tighter, safer bounds.
+                The default path enables the tighter eigengap-derived bound.
 
         Returns:
             The modified model and a dict of applied scales per layer

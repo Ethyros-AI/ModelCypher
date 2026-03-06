@@ -61,10 +61,11 @@ def main():
 
     # Load weights
     print("Loading model weights...")
-    from modelcypher.adapters.model_loader import load_model_weights_only
+    from modelcypher.adapters.model_loader import ModelLoader
 
-    source_weights = load_model_weights_only(str(source_model))
-    target_weights = load_model_weights_only(str(target_model))
+    loader = ModelLoader()
+    source_weights = loader.load_weights(str(source_model))
+    target_weights = loader.load_weights(str(target_model))
 
     print(f"  Source weights: {len(source_weights)} tensors")
     print(f"  Target weights: {len(target_weights)} tensors")

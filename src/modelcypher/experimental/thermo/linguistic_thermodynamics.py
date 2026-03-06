@@ -735,5 +735,5 @@ class MultilingualMeasurement:
         )
 
 
-# Alias for backward compatibility
+# Canonical exported modifier alias.
 LinguisticModifier = ThermoLinguisticModifier

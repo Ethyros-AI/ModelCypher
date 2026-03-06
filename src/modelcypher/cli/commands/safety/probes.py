@@ -184,7 +184,8 @@ def safety_calibrate(
     - safeDeltaHSamples
     - attackEntropySamples
     """
-    from modelcypher.cli.composition import get_backend, get_model_loader
+    from modelcypher.adapters.model_loader import ModelLoader
+    from modelcypher.cli.composition import get_backend
     from modelcypher.core.domain.entropy.logit_entropy_calculator import (
         LogitEntropyCalculator,
     )
@@ -192,7 +193,7 @@ def safety_calibrate(
     context = get_context(ctx)
     prompt_list = _load_prompts(prompts=prompts, prompt=prompt)
     backend = get_backend()
-    model_loader = get_model_loader()
+    model_loader = ModelLoader(backend)
     entropy_calculator = LogitEntropyCalculator(backend=backend)
 
     model_obj, tokenizer = model_loader.load_model(model, adapter_path=adapter)

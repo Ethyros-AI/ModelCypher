@@ -225,7 +225,7 @@ def align_layers(
         backend=backend,
     )
 
-    # Convert soft coupling to hard assignment for backward compatibility
+    # Convert the transport coupling into a discrete layer assignment.
     layer_mapping = coupling_to_assignment(
         hot_result.layer_coupling,
         hot_result.source_layers,

@@ -84,7 +84,7 @@ class TwoLevelCache(Generic[T]):
         cache_directory: Path,
         serializer: Callable[[T], dict],
         deserializer: Callable[[dict], T],
-        memory_limit: int = 100,
+        memory_limit: int | None = None,
         disk_ttl_seconds: float = 7 * 24 * 60 * 60,
         cache_version: int = 1,
     ):
@@ -96,6 +96,7 @@ class TwoLevelCache(Generic[T]):
             serializer: Function to convert T to dict for JSON storage
             deserializer: Function to convert dict back to T
             memory_limit: Initial memory limit before WSS data is available.
+                Defaults to _MIN_MEMORY_LIMIT (cold-start floor).
                 Will be adjusted based on Working Set Size (Denning 1968).
             disk_ttl_seconds: Time-to-live for disk cache entries in seconds
             cache_version: Cache format version for invalidation on schema changes
@@ -103,7 +104,7 @@ class TwoLevelCache(Generic[T]):
         self.cache_directory = cache_directory
         self._serializer = serializer
         self._deserializer = deserializer
-        self._memory_limit = memory_limit
+        self._memory_limit = memory_limit if memory_limit is not None else self._MIN_MEMORY_LIMIT
         self._disk_ttl_seconds = disk_ttl_seconds
         self._cache_version = cache_version
         self._memory_cache: dict[str, tuple[T, float]] = {}

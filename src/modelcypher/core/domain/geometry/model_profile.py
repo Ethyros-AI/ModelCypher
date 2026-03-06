@@ -1278,7 +1278,7 @@ class ModelProfileExtractor:
                 "Pass an ActivationProvider implementation to the constructor."
             )
 
-        model, tokenizer = self._model_loader.load_model_for_training(model_path)
+        model, tokenizer = self._model_loader.load_model(model_path)
 
         # Determine which layers to analyze
         if layers is None:

@@ -220,7 +220,7 @@ class LinguisticCalorimeter:
 
         # Load model via port (hexagonal architecture)
         logger.info(f"Loading model from {self.model_path}")
-        self._model, self._tokenizer = self._model_loader.load_model_for_training(
+        self._model, self._tokenizer = self._model_loader.load_model(
             str(self.model_path),
             adapter_path=str(self.adapter_path) if self.adapter_path else None,
         )

@@ -848,10 +848,11 @@ def load_activations(
         elif key.startswith("mean_pooled_"):
             layer_idx = int(key.split("_")[2])
             result.mean_pooled[layer_idx] = tensor
-        elif key.startswith("layer_"):
-            # Legacy format: layer_{idx} -> hidden_{idx}
-            layer_idx = int(key.split("_")[1])
-            result.hidden[layer_idx] = tensor
+        else:
+            raise ValueError(
+                f"Unsupported activation tensor key {key!r} in {activations_path}. "
+                "Profile activations must use canonical tensor names."
+            )
 
     total_count = (
         len(result.hidden)

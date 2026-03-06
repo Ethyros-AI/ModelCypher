@@ -119,17 +119,24 @@ class RoutingProfile:
             return 0.0
         return 1.0 / float(self.num_experts)
 
-    def task_relevant_experts(
-        self,
-        affinity_threshold: float = 3.0,
-    ) -> list[tuple[int, int]]:
-        """Experts with routing >= threshold * uniform fair-share baseline."""
-        threshold = affinity_threshold * self.uniform_frequency
-        selected = [
-            key
-            for key, value in self.stats.items()
-            if value.frequency >= threshold
-        ]
+    def task_relevant_experts(self) -> list[tuple[int, int]]:
+        """Experts with routing frequency above entropy-derived threshold.
+
+        Threshold per layer = 1 / exp(H) where H is Shannon entropy of
+        routing frequencies.  Selects experts above the fair-share baseline
+        among *effective active* experts (not all K).
+
+        When routing is uniform: threshold = 1/K, all experts near boundary.
+        When routing is concentrated on M experts: threshold ≈ 1/M.
+        """
+        layers = sorted({layer for (layer, _) in self.stats})
+        selected: list[tuple[int, int]] = []
+        for layer_idx in layers:
+            h = self.layer_routing_entropy(layer_idx)
+            threshold = 1.0 / math.exp(h) if h > 0 else 1.0
+            for key, value in self.stats.items():
+                if key[0] == layer_idx and value.frequency >= threshold:
+                    selected.append(key)
         return sorted(selected)
 
     def underutilized_experts(

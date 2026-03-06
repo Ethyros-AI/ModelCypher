@@ -108,15 +108,16 @@ def geodesic_profile(
     from modelcypher.cli.composition import (
         get_activation_provider,
         get_backend,
-        get_model_loader,
     )
+    from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.core.use_cases.geodesic_trajectory_service import (
         GeodesicTrajectoryService,
     )
 
-    loader = get_model_loader()
+    backend = get_backend()
+    loader = ModelLoader(backend)
     service = GeodesicTrajectoryService(
-        backend=get_backend(),
+        backend=backend,
         activation_provider=get_activation_provider(),
     )
 

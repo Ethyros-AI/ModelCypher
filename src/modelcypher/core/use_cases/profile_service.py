@@ -171,7 +171,7 @@ class ProfileService:
             probe_mode: Probe mode ("atlas" or "atlas_full")
             max_batches: Optional maximum batches for testing (None = no limit)
             full: If True, collect ALL activation types (intermediate, gate, embedding)
-                  for profile-based merging. Default False for backward compatibility.
+                  for profile-based merging.
 
         Returns:
             ProfileResult with computed profile
@@ -312,9 +312,7 @@ class ProfileService:
         This bridges the new trajectory-based mapping to the existing profile format.
         """
         from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
-        from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
-            compute_numerical_rank,
-        )
+        from modelcypher.core.domain.geometry.null_space import compute_numerical_rank
         from modelcypher.core.use_cases.manifold_mapper import ManifoldMapResult
 
         assert isinstance(map_result, ManifoldMapResult)
@@ -592,9 +590,7 @@ class ProfileService:
     ) -> GeometricProfile:
         """Compute geometric profile from collected activations."""
         from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
-        from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
-            compute_numerical_rank,
-        )
+        from modelcypher.core.domain.geometry.null_space import compute_numerical_rank
 
         b = self._backend
 

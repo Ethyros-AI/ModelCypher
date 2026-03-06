@@ -161,3 +161,12 @@ class TestGeodesicDeviationAnalyzer:
         assert hasattr(result, "deviation_rates")
         b.eval(result.deviation_rates)
         assert result.deviation_rates.shape[0] == 3
+
+    def test_local_edge_length_requires_neighbors(self, backend):
+        """Local edge length is undefined without measured graph connectivity."""
+        b = backend
+        analyzer = GeodesicDeviationAnalyzer(b)
+        points = b.array([[0.0, 0.0]])
+
+        with pytest.raises(ValueError, match="no neighbors"):
+            analyzer._get_local_edge_length(points, 0, adjacency={0: []}, backend=b)

@@ -40,7 +40,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from modelcypher.adapters.model_backbone import forward_through_backbone, resolve_model_backbone
-from modelcypher.adapters.model_loader import load_model_for_training
+from modelcypher.adapters.model_loader import ModelLoader
 from modelcypher.backends import initialize_default_backend
 from modelcypher.core.domain.geometry.cka import compute_cka
 from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
@@ -691,7 +691,7 @@ def collect_layer_activations(
     layers_to_collect: list[int],
     backend: Any,
 ) -> dict[int, Any]:
-    model, tokenizer = load_model_for_training(model_path)
+    model, tokenizer = ModelLoader(backend).load_model(model_path)
     backbone = resolve_model_backbone(model)
     if not backbone:
         raise RuntimeError(f"Could not resolve model backbone for {model_path}")
@@ -1118,7 +1118,7 @@ def evaluate_model_accuracy(
     cases: list[EvalCase],
     max_tokens: int,
 ) -> dict[str, Any]:
-    model, tokenizer = load_model_for_training(model_path)
+    model, tokenizer = ModelLoader().load_model(model_path)
     correct = 0
     by_split_method: dict[str, dict[str, int]] = {}
     sample_errors: list[dict[str, Any]] = []

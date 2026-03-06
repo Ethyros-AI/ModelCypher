@@ -52,10 +52,10 @@ class TestGramAlignerPublicAPI:
 
         # Verify old/wrong name doesn't exist
         assert not hasattr(aligner, "optimize_alignment"), (
-            "GramAligner has deprecated optimize_alignment - use find_perfect_alignment"
+            "GramAligner must expose only find_perfect_alignment"
         )
         assert not hasattr(aligner, "align"), (
-            "GramAligner has deprecated align - use find_perfect_alignment"
+            "GramAligner must expose only find_perfect_alignment"
         )
 
     def test_find_alignment_function_exists(self) -> None:

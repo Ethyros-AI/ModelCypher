@@ -24,7 +24,6 @@ NO framework imports here - they live ONLY in backends/.
 from __future__ import annotations
 
 import json
-import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator
 
@@ -32,8 +31,6 @@ from modelcypher.ports.model_loader import ModelLoaderPort
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
-
-logger = logging.getLogger(__name__)
 
 
 class ModelLoader(ModelLoaderPort):
@@ -147,97 +144,4 @@ class ModelLoader(ModelLoaderPort):
         return self._backend.generate(model, tokenizer, prompt, max_tokens, **kwargs)
 
 
-# Convenience functions for backwards compatibility
-def load_model(model_path: str | Path, adapter_path: str | None = None) -> tuple[Any, Any]:
-    """Load model and tokenizer."""
-    return ModelLoader().load_model(str(model_path), adapter_path)
-
-
-def load_model_for_training(model_path: str, adapter_path: str | None = None) -> tuple[Any, Any]:
-    """Load model for training (same as load_model)."""
-    return ModelLoader().load_model(model_path, adapter_path)
-
-
-def get_model_loader(backend: "Backend | None" = None) -> ModelLoader:
-    """Get a model loader instance."""
-    return ModelLoader(backend)
-
-
-def load_model_weights_only(
-    model_id: str,
-    backend: "Backend | None" = None,
-) -> dict[str, Any]:
-    """Load only the weight tensors from a model without instantiation.
-
-    This is a lightweight function for operations that only need the raw
-    weight tensors (e.g., SVD computation for LoRA transfer) without loading
-    the full model into memory.
-
-    Args:
-        model_id: HuggingFace model ID or local path to model directory
-
-    Returns:
-        Dict mapping weight names to backend-native arrays.
-
-    Raises:
-        FileNotFoundError: If model weights cannot be found
-        RuntimeError: If weight loading fails
-    """
-    from modelcypher.core.domain._backend import get_default_backend
-
-    b = backend or get_default_backend()
-    model_path = Path(model_id)
-
-    def _load_paths(paths: list[Path]) -> dict[str, Any]:
-        if not paths:
-            return {}
-        loaded_weights: dict[str, Any] = {}
-        for path in paths:
-            if not path.exists():
-                continue
-            shard_weights = b.load_safetensors(str(path))
-            loaded_weights.update(shard_weights)
-        if loaded_weights:
-            b.eval(*loaded_weights.values())
-        return loaded_weights
-
-    if model_path.exists():
-        safetensors_files = list(model_path.glob("*.safetensors"))
-        if not safetensors_files:
-            index_file = model_path / "model.safetensors.index.json"
-            if index_file.exists():
-                with open(index_file) as f:
-                    index = json.load(f)
-                weight_files = sorted(set(index.get("weight_map", {}).values()))
-                safetensors_files = [model_path / wf for wf in weight_files]
-
-        weights = _load_paths(safetensors_files)
-        if not weights:
-            raise FileNotFoundError(f"No safetensors files found in {model_path}")
-        return weights
-
-    # Resolve from Hugging Face Hub into local cache and load through backend.
-    try:
-        from huggingface_hub import hf_hub_download, list_repo_files
-
-        repo_files = list_repo_files(model_id)
-        safetensors_files = [f for f in repo_files if f.endswith(".safetensors")]
-        if not safetensors_files:
-            raise FileNotFoundError(f"No safetensors files found in {model_id}")
-
-        local_paths = [Path(hf_hub_download(model_id, sf_file)) for sf_file in safetensors_files]
-        weights = _load_paths(local_paths)
-        if not weights:
-            raise FileNotFoundError(f"Could not load safetensors for {model_id}")
-        return weights
-    except Exception as e:
-        raise RuntimeError(f"Cannot load weights from {model_id}: {e}") from e
-
-
-__all__ = [
-    "ModelLoader",
-    "load_model",
-    "load_model_for_training",
-    "get_model_loader",
-    "load_model_weights_only",
-]
+__all__ = ["ModelLoader"]

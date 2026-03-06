@@ -448,7 +448,9 @@ class GeodesicDeviationAnalyzer:
 
         neighbors = adjacency.get(idx, [])
         if not neighbors:
-            return 1.0  # Fallback
+            raise ValueError(
+                f"k-NN graph has no neighbors for point {idx}; local edge length is undefined."
+            )
 
         min_dist = float("inf")
         for j in neighbors:
@@ -460,7 +462,11 @@ class GeodesicDeviationAnalyzer:
             if d < min_dist:
                 min_dist = d
 
-        return min_dist if min_dist < float("inf") else 1.0
+        if min_dist == float("inf"):
+            raise ValueError(
+                f"k-NN graph distances for point {idx} are undefined; local edge length is undefined."
+            )
+        return min_dist
 
     def _compute_arc_lengths(
         self,

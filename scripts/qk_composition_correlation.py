@@ -163,7 +163,7 @@ def main() -> None:
 
     args.output.mkdir(parents=True, exist_ok=True)
 
-    from modelcypher.adapters.model_loader import load_model_for_training
+    from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.backends import initialize_default_backend
 
     backend = initialize_default_backend()
@@ -176,7 +176,8 @@ def main() -> None:
 
     # --- Phase 1: Measure FP baseline ---
     logger.info("=== Phase 1: FP baseline ===")
-    fp_model, fp_tokenizer = load_model_for_training(str(fp_path))
+    loader = ModelLoader(backend)
+    fp_model, fp_tokenizer = loader.load_model(str(fp_path))
 
     logger.info("Measuring FP QK products...")
     results["fp_qk"] = measure_qk_products(fp_model, backend)
@@ -193,7 +194,7 @@ def main() -> None:
 
     # --- Phase 2: Measure quantized model ---
     logger.info("=== Phase 2: Quantized model ===")
-    q_model, q_tokenizer = load_model_for_training(str(q_path))
+    q_model, q_tokenizer = loader.load_model(str(q_path))
 
     logger.info("Measuring quantized QK products...")
     results["q_qk"] = measure_qk_products(q_model, backend)
@@ -208,7 +209,7 @@ def main() -> None:
     logger.info("=== Phase 3: Tikhonov correction ===")
 
     # Reload FP for correction reference
-    fp_model_ref, _ = load_model_for_training(str(fp_path))
+    fp_model_ref, _ = loader.load_model(str(fp_path))
     apply_correction(q_model, fp_model_ref, backend, args.probes)
     del fp_model_ref
     gc.collect()

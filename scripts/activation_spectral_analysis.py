@@ -167,7 +167,7 @@ def analyze_model(model_path: str, model_tag: str, probe_groups: dict[str, list]
     logger.info("Loading model: %s", model_tag)
 
     from modelcypher.backends import initialize_default_backend
-    from modelcypher.adapters.model_loader import load_model_for_training
+    from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.adapters.model_backbone import resolve_model_backbone
     from modelcypher.core.domain.geometry.spectral_capacity import (
         compute_full_energy_curve,
@@ -175,7 +175,7 @@ def analyze_model(model_path: str, model_tag: str, probe_groups: dict[str, list]
     )
 
     backend = initialize_default_backend()
-    model, tokenizer = load_model_for_training(model_path)
+    model, tokenizer = ModelLoader(backend).load_model(model_path)
     backbone = resolve_model_backbone(model)
 
     if backbone is None:

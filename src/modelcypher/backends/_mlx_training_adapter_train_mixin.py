@@ -815,20 +815,11 @@ class _MLXTrainingAdapterTrainMixin:
                         if proj_residuals:
                             projected_residual_max = max(proj_residuals)
                 except Exception:
-                    logger.warning(
-                        "Adapter spectral-budget monitoring failed; "
-                        "falling back to verify_bounds for this epoch.",
-                        exc_info=True,
+                    raise RuntimeError(
+                        "Adapter spectral-budget monitoring failed. "
+                        "Weyl bound exists to prevent spectral damage — "
+                        "cannot continue training without budget verification."
                     )
-                    # Fallback: simple verify_bounds
-                    try:
-                        _, max_ratio, _ = self.verify_bounds(model)
-                    except Exception:
-                        logger.warning(
-                            "Fallback verify_bounds also failed; "
-                            "continuing epoch without budget telemetry.",
-                            exc_info=True,
-                        )
 
                 # 5. Entropy and repetition probe
                 mean_entropy, rep_rate = self._probe_entropy_and_repetition(

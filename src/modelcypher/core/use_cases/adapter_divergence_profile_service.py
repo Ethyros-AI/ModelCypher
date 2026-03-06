@@ -143,8 +143,6 @@ class AdapterDivergenceProfileService:
 
             pairwise_payload[pair_key] = {
                 "dominant_adapter_rate": dominant_adapter_rate,
-                # Alias retained for compatibility with earlier experimental payloads.
-                "layer_agreement_rate": dominant_adapter_rate,
                 "mean_kl_gap": self._mean(state["kl_gaps"]),
                 "mean_cosine_gap": self._mean(state["cosine_gaps"]),
             }

@@ -15,10 +15,11 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Numerical stability utilities with model-driven precision.
+"""Canonical numerical stability exports with model-driven precision.
 
-This module re-exports from focused submodules for backward compatibility.
-For new code, import directly from the submodules:
+This module is the geometry-wide import surface for numerical precision,
+decomposition, alignment, and validation helpers. The focused submodules remain
+the implementation units:
 
 - scalars: Backend scalar helpers (sqrt_scalar, is_finite, etc.)
 - precision: Dtype detection, epsilon/threshold utilities
@@ -31,13 +32,13 @@ For new code, import directly from the submodules:
 
 from __future__ import annotations
 
-# Re-export from alignment
+# Canonical exports from alignment
 from .alignment import (
     geodesic_invariant_alignment,
     invariant_alignment,
 )
 
-# Re-export from decomposition
+# Canonical exports from decomposition
 from .decomposition import (
     geodesic_pinv,
     geodesic_svd,
@@ -51,7 +52,7 @@ from .decomposition import (
     svd_auto_rank,
 )
 
-# Re-export precision internals used across geometry submodules
+# Precision internals used across geometry submodules
 from .precision import _float_dtype_for as _float_dtype_for  # noqa: F401
 from .precision import _mask_sum as _mask_sum  # noqa: F401
 from .precision import _promote_precision as _promote_precision  # noqa: F401
@@ -59,7 +60,7 @@ from .precision import (  # noqa: F401
     _promote_precision_float32 as _promote_precision_float32,
 )
 
-# Re-export from precision (public API)
+# Canonical public exports from precision
 from .precision import (
     compute_precision_for_merge,
     condition_threshold,
@@ -79,7 +80,7 @@ from .precision import (
     tiny_value,
 )
 
-# Re-export from scalars
+# Canonical exports from scalars
 from .scalars import (
     acos_scalar,
     all_finite,
@@ -103,13 +104,13 @@ from .scalars import (
     ulp_scalar,
 )
 
-# Re-export from spectral_init
+# Canonical exports from spectral_init
 from .spectral_init import (
     spectral_normalized_init,
     spectral_normalized_lora_init,
 )
 
-# Re-export from statistics
+# Canonical exports from statistics
 from .statistics import (
     compute_median,
     compute_median_nonzero,

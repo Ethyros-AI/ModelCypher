@@ -220,7 +220,6 @@ def test_compute_profile_pairwise_comparison_for_two_adapters(
     pair = profile["pairwise"]["adapter_alpha_vs_adapter_beta"]
 
     assert pair["dominant_adapter_rate"] == pytest.approx(0.75)
-    assert pair["layer_agreement_rate"] == pytest.approx(0.75)
     assert pair["mean_kl_gap"] > 0.0
     assert pair["mean_cosine_gap"] > 0.0
 

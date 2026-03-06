@@ -41,7 +41,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
+from modelcypher.core.domain.geometry.trajectory_projection import (
     TrajectoryTangentResult,
 )
 from modelcypher.core.use_cases.manifold_mapper import ManifoldMapper

@@ -327,7 +327,7 @@ class MLXBackend(_MLXBackendActivationMixin, Backend):
         Let Python's GC run on its own schedule; mx.clear_cache() is sufficient
         for releasing GPU memory.
         """
-        # Use mx.clear_cache() (not mx.metal.clear_cache which is deprecated)
+        # Prefer the current MLX cache API, with the older location only as a backend equivalent.
         if hasattr(self.mx, "clear_cache"):
             self.mx.clear_cache()
         elif hasattr(self.mx, "metal") and hasattr(self.mx.metal, "clear_cache"):
@@ -713,6 +713,13 @@ class MLXBackend(_MLXBackendActivationMixin, Backend):
 
             A^{1/2}   ≈ Y_final * sqrt(norm(A))
             A^{-1/2}  ≈ Z_final / sqrt(norm(A))
+
+        Iteration count derivation (Higham 2008, Ch. 6):
+            Cubic convergence: error at eigenvalue λ ≤ (1 - λ/||A||_F)^(3^n).
+            For float32 target (eps ≈ 1.2e-7) and Frobenius condition number κ_F:
+              n = ceil(log₃(log(1/eps) × κ_F))
+            κ_F ≈ 10⁵ → n = 13;  κ_F ≈ 10⁶ → n = 16.
+            Default 15 covers κ_F ≤ ~5×10⁵ (practical range for LLM weight matrices).
         """
         # Ensure float32 for stability
         A_f32 = self.astype(A, "float32")

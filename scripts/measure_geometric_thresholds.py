@@ -715,9 +715,9 @@ def main():
         logger.info("========== %s: %s ==========", model_name, model_path)
 
         # Load model
-        from modelcypher.adapters.model_loader import load_model_for_training
+        from modelcypher.adapters.model_loader import ModelLoader
         from modelcypher.adapters.model_backbone import resolve_model_backbone
-        model, tokenizer = load_model_for_training(model_path)
+        model, tokenizer = ModelLoader().load_model(model_path)
         backbone = resolve_model_backbone(model)
         _, layers, _ = backbone
         n_layers = len(layers)

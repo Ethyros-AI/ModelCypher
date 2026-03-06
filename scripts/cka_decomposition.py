@@ -217,12 +217,13 @@ def phase2_collect_activations(
     """
     import mlx.core as mx
 
-    from modelcypher.adapters.model_loader import load_model
+    from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.backends import initialize_default_backend
     from modelcypher.core.domain._backend import get_default_backend
 
     initialize_default_backend()
     backend = get_default_backend()
+    loader = ModelLoader(backend)
 
     # Load eval samples for probes
     eval_path = Path(EVAL_DATA)
@@ -245,7 +246,7 @@ def phase2_collect_activations(
 
     # -- Base model activations --
     log.info("  Loading base model...")
-    model_base, tokenizer = load_model(MODEL_PATH)
+    model_base, tokenizer = loader.load_model(MODEL_PATH)
 
     log.info("  Collecting base activations...")
     base_acts: dict[int, list] = {}
@@ -267,7 +268,7 @@ def phase2_collect_activations(
 
     # -- Adapted model activations --
     log.info("  Loading adapted model (adapter=%s)...", adapter_path)
-    model_adapted, _ = load_model(MODEL_PATH, adapter_path=adapter_path)
+    model_adapted, _ = loader.load_model(MODEL_PATH, adapter_path=adapter_path)
 
     log.info("  Collecting adapted activations...")
     adapted_acts: dict[int, list] = {}
@@ -371,13 +372,13 @@ def m3_signal_null_decomposition(
     """
     import mlx.core as mx
 
-    from modelcypher.adapters.model_loader import load_model_weights_only
+    from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.core.domain.training.geometric_lora import compute_layer_geometry
 
     log.info("M3: Signal/null decomposition at LoRA layers...")
 
     # Load base weights for SVD decomposition
-    weights = load_model_weights_only(MODEL_PATH, backend)
+    weights = ModelLoader(backend).load_weights(MODEL_PATH)
 
     results: dict[int, dict[str, Any]] = {}
 
@@ -501,17 +502,18 @@ def m4_spectral_budget_usage(
     """
     import mlx.core as mx
 
-    from modelcypher.adapters.model_loader import load_model, load_model_weights_only
+    from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.core.domain.training.geometric_lora import compute_layer_geometry
 
     log.info("M4: Computing spectral budget usage via weight diff...")
 
     # Load base weights from safetensors
-    base_weights = load_model_weights_only(MODEL_PATH, backend)
+    loader = ModelLoader(backend)
+    base_weights = loader.load_weights(MODEL_PATH)
 
     # Load adapted model (adapter fused into weights)
     log.info("  Loading adapted model for weight diff...")
-    model_adapted, _ = load_model(MODEL_PATH, adapter_path=adapter_path)
+    model_adapted, _ = loader.load_model(MODEL_PATH, adapter_path=adapter_path)
 
     results: dict[int, dict[str, float]] = {}
 

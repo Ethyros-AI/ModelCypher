@@ -55,6 +55,17 @@ _FILE_PATTERNS: dict[str, list[str]] = {
         # REINFORCE ⊥ CE derivation (2026-03-06)
         "--auto-regime",
     ],
+    "src/modelcypher/adapters/model_loader.py": [
+        "def load_model_for_training(",
+        "def get_model_loader(",
+        "def load_model_weights_only(",
+        "backwards compatibility",
+    ],
+    "src/modelcypher/experimental/merge/lora_adapter_merger.py": [
+        'capability_transfer: bool = True',
+        'get("capability_transfer", "true")',
+        'get("training_objective", "unknown")',
+    ],
 }
 
 

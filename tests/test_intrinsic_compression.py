@@ -339,7 +339,7 @@ class TestNullSpaceContribution:
         activations = _make_low_rank_activations(b, n_samples, in_dim, intrinsic_rank)
 
         # Get null space basis
-        from modelcypher.core.domain.geometry.orthogonal_probe_generator import (
+        from modelcypher.core.domain.geometry.null_space import (
             compute_variance_null_space,
         )
         variance_result = compute_variance_null_space(activations, b)

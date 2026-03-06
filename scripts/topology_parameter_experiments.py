@@ -748,7 +748,7 @@ def run_all_real(model_name: str, n_samples: int, max_tokens: int, output_dir: P
     choice for predicting correct vs incorrect answers.
     """
     from modelcypher.adapters.activation_provider import ActivationProviderAdapter
-    from modelcypher.adapters.model_loader import load_model_for_training
+    from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.backends import initialize_default_backend
     from modelcypher.core.domain.statistics import cohens_d_two_groups
     from modelcypher.core.use_cases.curriculum.benchmark_loader import BenchmarkLoader
@@ -765,7 +765,7 @@ def run_all_real(model_name: str, n_samples: int, max_tokens: int, output_dir: P
 
     logger.info(f"Loading model from {model_path}")
     backend = initialize_default_backend()
-    model, tokenizer = load_model_for_training(model_path)
+    model, tokenizer = ModelLoader(backend).load_model(model_path)
     provider = ActivationProviderAdapter(backend=backend, model_path=model_path)
     logger.info("Model loaded")
 

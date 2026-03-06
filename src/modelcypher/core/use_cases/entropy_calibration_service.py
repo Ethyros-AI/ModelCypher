@@ -284,7 +284,7 @@ class EntropyCalibrationService:
         logger.info("Starting entropy calibration for %s with %d prompts", model_dir, len(prompts))
 
         # Load model via ModelLoaderPort (hexagonal architecture)
-        model, tokenizer = model_loader.load_model_for_training(str(model_dir))
+        model, tokenizer = model_loader.load_model(str(model_dir))
         max_tokens_per_prompt = self._derive_generation_params(
             model_dir=model_dir,
             tokenizer=tokenizer,

@@ -252,10 +252,10 @@ class DimensionCascade:
         self, points: "Array", target_dim: int
     ) -> tuple["Array", "Array"]:
         """
-        Legacy entry point for projection.
+        Projection entry point delegating to the geodesic-preserving embedding.
 
-        Geodesic manifolds require geodesic-preserving embeddings. This method
-        is retained for compatibility but now delegates to Isomap.
+        Geodesic manifolds require geodesic-preserving embeddings, so the PCA-
+        named internal entry point delegates to Isomap.
 
         Args:
             points: Source points [n_points, source_dim]

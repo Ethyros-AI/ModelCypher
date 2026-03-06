@@ -192,7 +192,7 @@ def validate_full_rank_coverage(
         tgt_deficit = tgt_dim - tgt_rank
         total_deficit = src_deficit + tgt_deficit
 
-        # For backward compatibility, keep alignment_rank as min
+        # The shared usable rank is the minimum rank across source and target.
         alignment_rank = min(src_rank, tgt_rank)
 
         results[layer_idx] = {

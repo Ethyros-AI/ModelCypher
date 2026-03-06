@@ -199,7 +199,7 @@ class AttentionTopologyExperiment:
 
     def _load_model(self):
         from modelcypher.adapters.activation_provider import ActivationProviderAdapter
-        from modelcypher.adapters.model_loader import load_model_for_training
+        from modelcypher.adapters.model_loader import ModelLoader
         from modelcypher.backends import initialize_default_backend
 
         model_path = MODEL_PATHS.get(self.model_name)
@@ -208,7 +208,7 @@ class AttentionTopologyExperiment:
 
         logger.info(f"Loading model from {model_path}")
         self.backend = initialize_default_backend()
-        self.model, self.tokenizer = load_model_for_training(model_path)
+        self.model, self.tokenizer = ModelLoader(self.backend).load_model(model_path)
         self.provider = ActivationProviderAdapter(
             backend=self.backend, model_path=model_path,
         )

@@ -64,7 +64,7 @@ class IsometryMetrics:
     rank_original: int
     rank_modified: int
 
-    # Legacy: Combined Isometry Ratio (deprecated, kept for compatibility)
+    # Composite scalar summary of the measured spectral terms.
     isometry_ratio: float
 
 
@@ -424,7 +424,7 @@ def compute_isometry_metrics(
     # 5. Relative Frobenius Deviation
     rfd = _compute_relative_frobenius_deviation(weight_original, delta_w, backend)
 
-    # Legacy isometry ratio (deprecated)
+    # Composite scalar summary of the measured spectral terms.
     isometry_ratio = spr * (1.0 - spectral_angle / 90.0)
 
     return IsometryMetrics(

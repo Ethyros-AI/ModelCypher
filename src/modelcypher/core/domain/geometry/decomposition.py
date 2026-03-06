@@ -192,8 +192,8 @@ def orthogonalize_alignment_full(
     This enables direction-dependent scale correction by providing the
     full spectral structure, not just the mean singular value.
 
-    For backward compatibility, use orthogonalize_alignment() which
-    returns (U_orth, mean_scale) as before.
+    Use orthogonalize_alignment() when only the orthogonal factor and
+    mean singular scale are needed.
 
     Mathematical note:
         Polar decomposition: F = U_orth @ P where P = sqrt(F.T @ F)

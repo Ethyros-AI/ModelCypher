@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import math
 import statistics
 from dataclasses import dataclass
 
@@ -94,9 +95,27 @@ def select_expert_targets(
     expert_geometries: dict[tuple[int, int], dict[str, LayerGeometry]],
     topology: MoETopology,
 ) -> ExpertTargetSelection:
-    """Select experts by routing affinity and geometric headroom."""
+    """Select experts by routing affinity and geometric headroom.
+
+    Primary threshold per layer is derived from routing entropy:
+      effective_K = exp(H)  where H = Shannon entropy of routing frequencies
+      threshold   = 1 / effective_K
+
+    When routing is uniform (H = log K): threshold = 1/K, all experts near boundary.
+    When routing is concentrated on M experts (H ≈ log M): threshold ≈ 1/M.
+    This replaces a fixed 3× multiplier with a measurement-derived value.
+    """
     uniform = topology.uniform_routing_frequency
-    primary_threshold = 3.0 * uniform
+
+    # Per-layer entropy-derived primary threshold.
+    per_layer_threshold: dict[int, float] = {}
+    for layer_idx in topology.moe_layer_indices:
+        h = routing_profile.layer_routing_entropy(layer_idx)
+        if h > 0:
+            per_layer_threshold[layer_idx] = 1.0 / math.exp(h)
+        else:
+            # H=0: all routing to one expert; threshold = 1.0
+            per_layer_threshold[layer_idx] = 1.0
 
     tail_dims_all: list[int] = []
     representative: dict[tuple[int, int], LayerGeometry] = {}
@@ -124,7 +143,8 @@ def select_expert_targets(
         if rep is None:
             skipped.append(key)
             continue
-        if stats.frequency >= primary_threshold and rep.tail_dims > 0:
+        layer_threshold = per_layer_threshold.get(key[0], uniform)
+        if stats.frequency >= layer_threshold and rep.tail_dims > 0:
             targets.append(ExpertTarget(
                 layer_idx=key[0],
                 expert_idx=key[1],
@@ -134,7 +154,7 @@ def select_expert_targets(
                 rank=rep.tail_dims,
             ))
             primary_layers.add(key[0])
-        elif stats.frequency >= primary_threshold and rep.tail_dims == 0:
+        elif stats.frequency >= layer_threshold and rep.tail_dims == 0:
             saturated.append(key)
 
     # Pass 2: expansion in layers that already have primary experts.

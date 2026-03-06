@@ -112,8 +112,8 @@ class InputDivergenceReport:
 def main():
     import mlx.core as mx
 
+    from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.backends import initialize_default_backend
-    from modelcypher.adapters.model_loader import load_model
     from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.cka import (
         compute_linear_cka_from_activations,
@@ -138,13 +138,14 @@ def main():
     # ── Load base model ──
     print("\nLoading base model...")
     t0 = time.time()
-    model_base, tokenizer = load_model(BASE_MODEL)
+    loader = ModelLoader(backend)
+    model_base, tokenizer = loader.load_model(BASE_MODEL)
     print(f"  Base model loaded in {time.time()-t0:.1f}s")
 
     # ── Load adapted model ──
     print("Loading adapted model...")
     t0 = time.time()
-    model_adapted, _ = load_model(BASE_MODEL, adapter_path=ADAPTER_PATH)
+    model_adapted, _ = loader.load_model(BASE_MODEL, adapter_path=ADAPTER_PATH)
     print(f"  Adapted model loaded in {time.time()-t0:.1f}s")
 
     # Count layers

@@ -204,7 +204,7 @@ class BehavioralAnalyzer:
                 dist = self._geodesic_min_distance(anchor_matrix, response_emb)
                 distances.append(dist)
             except Exception:
-                continue
+                raise
 
         if not distances:
             return RefusalBoundaryResult(
@@ -261,7 +261,7 @@ class BehavioralAnalyzer:
                 if not math.isnan(sens):
                     sensitivities.append(sens)
             except Exception:
-                continue
+                raise
 
         if not sensitivities:
             return CapabilityPreservationResult(
@@ -316,7 +316,7 @@ class BehavioralAnalyzer:
                     if idx in hidden:
                         current_acts[idx].append(hidden[idx])
             except Exception:
-                continue
+                raise
 
         # Stack activations per layer
         stacked_current: dict[int, "Array"] = {}
@@ -401,7 +401,7 @@ class BehavioralAnalyzer:
                 if not math.isnan(entropy):
                     entropies.append(entropy)
             except Exception:
-                continue
+                raise
 
         if not entropies:
             return EntropyAnalysisResult(
@@ -624,7 +624,7 @@ class BehavioralAnalyzer:
                     if idx in hidden:
                         layer_acts[idx].append(hidden[idx])
             except Exception:
-                continue
+                raise
 
         # Mean-pool activations for each layer
         pooled_acts: dict[int, "Array"] = {}
@@ -685,7 +685,7 @@ class BehavioralAnalyzer:
                     if idx in hidden:
                         baseline_acts[idx].append(hidden[idx])
             except Exception:
-                continue
+                raise
 
         result = {}
         for idx in layer_indices:
@@ -927,7 +927,7 @@ class BehavioralAnalyzer:
                 if layer_idx in hidden:
                     embeddings.append(hidden[layer_idx])
             except Exception:
-                continue
+                raise
 
         if len(embeddings) < 2:
             return 1.0  # Default if calibration fails
@@ -1003,7 +1003,7 @@ class BehavioralAnalyzer:
                 if not math.isnan(entropy):
                     entropies.append(entropy)
             except Exception:
-                continue
+                raise
 
         if len(entropies) < 2:
             # Cannot compute meaningful statistics with < 2 samples

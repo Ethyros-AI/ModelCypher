@@ -173,7 +173,7 @@ def curiosity_weights(
             elif activations_path.suffix in (".npy", ".npz"):
                 error = ErrorDetail(
                     code="MC-1071",
-                    title="Legacy format not supported",
+                    title="Unsupported activation format",
                     detail=f"NumPy format not supported: {activations}. Please convert to .safetensors format.",
                     hint="Convert using: python -c \"import numpy as np; from safetensors.numpy import save_file; data = np.load('file.npz'); save_file({'data': data['arr_0']}, 'file.safetensors')\"",
                     trace_id=context.trace_id,

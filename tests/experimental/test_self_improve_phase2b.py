@@ -178,9 +178,5 @@ def test_phase2b_falls_back_to_prime_on_steering_failure(
 
     monkeypatch.setattr(steering_mod, "FeatureSteering", FailingFeatureSteering)
 
-    log = improver.improve([capability], accuracy_threshold=1.0)
-
-    assert all(action.action_type != "steering" for action in log.actions)
-    fallback_actions = [action for action in log.actions if action.action_type == "apply_prime"]
-    assert len(fallback_actions) == 1
-    assert fallback_actions[0].details["prime"] == "say"
+    with pytest.raises(RuntimeError, match="Steering vector extraction failed"):
+        improver.improve([capability], accuracy_threshold=1.0)

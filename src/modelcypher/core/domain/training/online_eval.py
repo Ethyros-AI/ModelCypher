@@ -142,11 +142,13 @@ def evaluate_correctness(
         try:
             response = generate_fn(prompt, max_tokens)
         except Exception:
-            logger.debug(
-                "Generation failed for problem %s", problem.problem_id,
+            logger.warning(
+                "Generation failed for problem %s — excluding from scoring",
+                problem.problem_id,
                 exc_info=True,
             )
-            response = ""
+            n_total -= 1
+            continue
 
         if problem.verify_response(response):
             correct_ids.add(problem.problem_id)

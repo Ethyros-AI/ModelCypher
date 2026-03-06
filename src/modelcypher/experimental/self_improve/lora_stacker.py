@@ -83,9 +83,9 @@ class AdapterInfo:
             barrier_contribution=data["barrier_contribution"],
             cka_from_base=data["cka_from_base"],
             difficulty_level=data["difficulty_level"],
-            training_samples=data.get("training_samples", 0),
-            target_modules=data.get("target_modules", []),
-            exit_convergence=data.get("exit_convergence", 0.0),
+            training_samples=data["training_samples"],
+            target_modules=data["target_modules"],
+            exit_convergence=data["exit_convergence"],
         )
 
 
@@ -210,13 +210,13 @@ class StackedLoRAState:
         return cls(
             base_model_path=Path(data["base_model_path"]),
             policy=policy,
-            adapters=[AdapterInfo.from_dict(a) for a in data.get("adapters", [])],
-            cumulative_barrier=data.get("cumulative_barrier", 0.0),
-            cumulative_cka_drift=data.get("cumulative_cka_drift", 0.0),
-            current_difficulty=data.get("current_difficulty", 0),
-            merges_performed=data.get("merges_performed", 0),
-            convergence_detected=data.get("convergence_detected", False),
-            base_exit_convergence=data.get("base_exit_convergence", 0.0),
+            adapters=[AdapterInfo.from_dict(a) for a in data["adapters"]],
+            cumulative_barrier=data["cumulative_barrier"],
+            cumulative_cka_drift=data["cumulative_cka_drift"],
+            current_difficulty=data["current_difficulty"],
+            merges_performed=data["merges_performed"],
+            convergence_detected=data["convergence_detected"],
+            base_exit_convergence=data["base_exit_convergence"],
         )
 
     def save(self, path: Path) -> None:

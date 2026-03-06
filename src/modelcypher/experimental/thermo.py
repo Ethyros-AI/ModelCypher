@@ -54,12 +54,13 @@ def _context(ctx: typer.Context) -> CLIContext:
 
 
 def _get_thermo_service(embedder=None):
-    from modelcypher.cli.composition import get_model_loader
+    from modelcypher.adapters.model_loader import ModelLoader
+    from modelcypher.cli.composition import get_backend
     from modelcypher.core.use_cases.thermo_service import ThermoService
 
     return ThermoService(
         embedder=embedder,
-        model_loader=get_model_loader(),
+        model_loader=ModelLoader(get_backend()),
     )
 
 
@@ -759,11 +760,12 @@ def thermo_benchmark(
         raise typer.Exit(code=1)
 
     # Create calorimeter
-    from modelcypher.cli.composition import get_model_loader
+    from modelcypher.adapters.model_loader import ModelLoader
+    from modelcypher.cli.composition import get_backend
 
     calorimeter = LinguisticCalorimeter(
         model_path=model,
-        model_loader=get_model_loader(),
+        model_loader=ModelLoader(get_backend()),
     )
 
     # Run benchmark
@@ -857,7 +859,8 @@ def thermo_parity(
     )
 
     # Create calorimeter and calibrator
-    from modelcypher.cli.composition import get_model_loader
+    from modelcypher.adapters.model_loader import ModelLoader
+    from modelcypher.cli.composition import get_backend
     from modelcypher.experimental.thermo.linguistic_calorimeter import LinguisticCalorimeter
     from modelcypher.experimental.thermo.linguistic_thermodynamics import (
         LinguisticModifier,
@@ -867,7 +870,7 @@ def thermo_parity(
 
     calorimeter = LinguisticCalorimeter(
         model_path=model,
-        model_loader=get_model_loader(),
+        model_loader=ModelLoader(get_backend()),
     )
     calibrator = MultilingualCalibrator()
 
@@ -1019,11 +1022,12 @@ def thermo_calibrate(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    from modelcypher.cli.composition import get_model_loader
+    from modelcypher.adapters.model_loader import ModelLoader
+    from modelcypher.cli.composition import get_backend
 
     calibrator = ThermoCalibrator(
         model_path=model,
-        model_loader=get_model_loader(),
+        model_loader=ModelLoader(get_backend()),
     )
 
     # Progress callback for text output
