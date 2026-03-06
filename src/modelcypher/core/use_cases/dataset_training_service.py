@@ -302,22 +302,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         model_path: Path,
     ) -> tuple[Any, Any, bool]:
         """Load model + tokenizer with the same path semantics used for training."""
-        from modelcypher.backends._mlx_qwen35_vl_encoder import (  # noqa: PLC0415
-            is_qwen35_vl,
-            load_qwen35_vl_model,
-        )
-
-        model_path_str = str(model_path)
-        vl_model = is_qwen35_vl(model_path_str)
-        if vl_model:
-            logger.info(
-                "Detected Qwen3.5-VL model (vision_config present). "
-                "Loading text + visual encoder.",
-            )
-            model, tokenizer = load_qwen35_vl_model(model_path_str)
-            return model, tokenizer, True
-        model, tokenizer = self._backend.load_model(model_path_str)
-        return model, tokenizer, False
+        return self._adapter.load_training_model(str(model_path), backend=self._backend)
 
     def _run_quantization_frontier_precheck(
         self,
@@ -767,13 +752,16 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 raise ValueError(
                     "Dataset contains image_path entries but model has no vision_config."
                 )
-            from modelcypher.backends._mlx_vl_preprocessor import (  # noqa: PLC0415
-                VLPreprocessor,
+            train_dataset = self._adapter.prepare_vl_dataset(
+                train_samples,
+                tokenizer,
+                str(model_path),
             )
-
-            vl_preprocessor = VLPreprocessor.from_model_path(str(model_path))
-            train_dataset = vl_preprocessor.prepare_vl_dataset(train_samples, tokenizer)
-            eval_dataset = vl_preprocessor.prepare_vl_dataset(eval_samples, tokenizer)
+            eval_dataset = self._adapter.prepare_vl_dataset(
+                eval_samples,
+                tokenizer,
+                str(model_path),
+            )
             logger.info(
                 "Prepared VL datasets: %d train / %d eval (image-conditioned)",
                 len(train_dataset), len(eval_dataset),

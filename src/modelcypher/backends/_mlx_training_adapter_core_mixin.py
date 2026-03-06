@@ -48,6 +48,33 @@ class _MLXTrainingAdapterCoreMixin:
     def __init__(self, backend: "Backend"):
         self._backend = backend
 
+    def load_training_model(self, model_path: str, backend: "Backend" | None = None) -> tuple[Any, Any, bool]:
+        """Load training model/tokenizer and report whether it is vision-language."""
+        from modelcypher.backends._mlx_qwen35_vl_encoder import (  # noqa: PLC0415
+            is_qwen35_vl,
+            load_qwen35_vl_model,
+        )
+
+        _ = backend
+        resolved_model_path = str(model_path)
+        if is_qwen35_vl(resolved_model_path):
+            logger.info(
+                "Detected Qwen3.5-VL model (vision_config present). "
+                "Loading text + visual encoder.",
+            )
+            model, tokenizer = load_qwen35_vl_model(resolved_model_path)
+            return model, tokenizer, True
+
+        model, tokenizer = self._backend.load_model(resolved_model_path)
+        return model, tokenizer, False
+
+    def prepare_vl_dataset(self, samples: list[dict[str, Any]], tokenizer, model_path: str) -> list[dict]:
+        """Prepare a vision-language dataset for MLX training."""
+        from modelcypher.backends._mlx_vl_preprocessor import VLPreprocessor  # noqa: PLC0415
+
+        vl_preprocessor = VLPreprocessor.from_model_path(str(model_path))
+        return vl_preprocessor.prepare_vl_dataset(samples, tokenizer)
+
     def prepare_dataset(self, samples: list[dict[str, Any]], tokenizer) -> list[tuple[Any, int]]:
         """Tokenize samples into mlx-lm iterate_batches format.
 

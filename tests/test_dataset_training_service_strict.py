@@ -56,7 +56,14 @@ class _DummyBackend:
 
 
 class _DummyAdapter:
-    pass
+    def load_training_model(self, model_path: str, backend=None):
+        if backend is None:
+            return object(), object(), False
+        model, tokenizer = backend.load_model(model_path)
+        return model, tokenizer, False
+
+    def prepare_vl_dataset(self, samples: list[dict], _tokenizer, _model_path: str) -> list[dict]:
+        return list(samples)
 
 
 @dataclass
@@ -110,6 +117,25 @@ class _FlowBackend(_DummyBackend):
 
 
 class _FlowAdapter:
+    def load_training_model(self, model_path: str, backend=None):
+        from modelcypher.backends._mlx_qwen35_vl_encoder import (
+            is_qwen35_vl,
+            load_qwen35_vl_model,
+        )
+
+        if is_qwen35_vl(model_path):
+            model, tokenizer = load_qwen35_vl_model(model_path)
+            return model, tokenizer, True
+        if backend is None:
+            return _FlowModel(), object(), False
+        model, tokenizer = backend.load_model(model_path)
+        return model, tokenizer, False
+
+    def prepare_vl_dataset(self, samples: list[dict], _tokenizer, _model_path: str) -> list[dict]:
+        from modelcypher.backends._mlx_vl_preprocessor import VLPreprocessor
+
+        return VLPreprocessor.from_model_path(_model_path).prepare_vl_dataset(samples, _tokenizer)
+
     def prepare_dataset(self, samples: list[dict], _tokenizer) -> list[dict]:
         return list(samples)
 
