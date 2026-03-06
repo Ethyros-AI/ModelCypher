@@ -164,6 +164,8 @@ class DatasetTrainResult:
     pipeline_gate_passed: bool | None = None
     pipeline_gate_failure_modes: list[str] | None = None
     pipeline_gate_checks: dict[str, Any] | None = None
+    # Adapter provenance: which CE variant produced this adapter
+    training_objective: str = "ce"
 
     def to_dict(self) -> dict[str, Any]:
         """Convert result to a JSON-serializable dictionary."""
@@ -1684,6 +1686,13 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 diagnostics=verdict_dict,
             )
 
+        # Detect training objective from data format flags
+        training_objective = "ce"
+        if eos_exclude:
+            training_objective = "ce_eos_excluded"
+        if answer_masked_train:
+            training_objective = "ce_answer_masked"
+
         # 12. Save if requested
         saved_adapter_path: str | None = None
         if output_dir is not None:
@@ -1696,6 +1705,8 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 "method": "nb_lora_cayley",
                 "safety_margin": str(effective_safety_margin),
                 "optimizer": "cayley_stiefel",
+                "training_objective": training_objective,
+                "capability_transfer": "true",
             }
             if min_cka is not None:
                 metadata["min_cka"] = f"{min_cka:.4f}"
@@ -1836,6 +1847,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 name: check.to_dict()
                 for name, check in pipeline_gate_verdict.checks.items()
             },
+            training_objective=training_objective,
         )
 
 __all__ = ["DatasetTrainResult", "DatasetTrainingService"]

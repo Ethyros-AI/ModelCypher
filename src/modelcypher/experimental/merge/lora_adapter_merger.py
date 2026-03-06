@@ -20,9 +20,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.backend_matrix_utils import BackendMatrixUtils
@@ -42,6 +45,7 @@ class AdapterPayload:
     scale: float
     weights: dict[str, "Array"]
     module_keys: list[str]
+    capability_transfer: bool = True  # Default True for pre-provenance adapters
 
 
 @dataclass(frozen=True)
@@ -164,6 +168,18 @@ class LoRAAdapterMerger:
         rank = int(config.get("r", 0))
         scale = float(config.get("lora_alpha", 1.0))
 
+        # Read adapter provenance metadata
+        adapter_metadata = config.get("metadata", {})
+        cap_transfer_str = adapter_metadata.get("capability_transfer", "true")
+        capability_transfer = cap_transfer_str.lower() != "false"
+        if not capability_transfer:
+            logger.warning(
+                "Adapter %s has capability_transfer=false (objective=%s). "
+                "Not eligible for capability merge.",
+                directory,
+                adapter_metadata.get("training_objective", "unknown"),
+            )
+
         return AdapterPayload(
             directory=directory,
             base_model_id=base_model_id,
@@ -171,6 +187,7 @@ class LoRAAdapterMerger:
             scale=scale,
             weights=weights,
             module_keys=module_keys,
+            capability_transfer=capability_transfer,
         )
 
     @staticmethod
