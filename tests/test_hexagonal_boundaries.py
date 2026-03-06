@@ -33,6 +33,8 @@ _BACKENDS_ALLOWLIST = {
     "modelcypher/core/domain/_backend.py",
     # System service needs backend probing for readiness checks
     "modelcypher/core/use_cases/system_service.py",
+    # Training service needs VL encoder detection and preprocessing
+    "modelcypher/core/use_cases/dataset_training_service.py",
 }
 
 # Services that legitimately need adapter access for their core function

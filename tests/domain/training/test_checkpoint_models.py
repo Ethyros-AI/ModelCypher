@@ -41,10 +41,8 @@ class TestOptimizerStateMetadata:
         assert restored.vector_hyperparameters == original.vector_hyperparameters
 
     def test_from_dict_defaults(self):
-        restored = OptimizerStateMetadata.from_dict({})
-        assert restored.type_name == "unknown"
-        assert restored.state_file == ""
-        assert restored.checksum == ""
+        with pytest.raises(ValueError, match="missing required fields"):
+            OptimizerStateMetadata.from_dict({})
 
 
 class TestFineTunedModelMetadata:
@@ -83,7 +81,6 @@ class TestModelArchitectureSpec:
             hidden_size=4096,
             num_layers=32,
             num_heads=32,
-            memory_overrides={"kv_cache": 1024},
         )
         d = original.to_dict()
         restored = ModelArchitectureSpec.from_dict(d)
@@ -93,15 +90,10 @@ class TestModelArchitectureSpec:
         assert restored.hidden_size == original.hidden_size
         assert restored.num_layers == original.num_layers
         assert restored.num_heads == original.num_heads
-        assert restored.memory_overrides == original.memory_overrides
 
     def test_defaults(self):
-        restored = ModelArchitectureSpec.from_dict({})
-        assert restored.model_type == "simple_transformer"
-        assert restored.vocabulary_size == 32000
-        assert restored.hidden_size == 4096
-        assert restored.num_layers == 32
-        assert restored.num_heads == 32
+        with pytest.raises(ValueError, match="missing required fields"):
+            ModelArchitectureSpec.from_dict({})
 
 
 class TestCheckpointMetadataV2:
@@ -135,17 +127,23 @@ class TestCheckpointMetadataV2:
             "timestamp": "2026-01-15T12:00:00",
             "checksum": "abc",
             "weights_file": "w.safetensors",
+            "loss_history": [],
         }
         restored = CheckpointMetadataV2.from_dict(d)
         assert restored.timestamp == datetime(2026, 1, 15, 12, 0, 0)
 
-    def test_timestamp_none_uses_now(self):
-        """Missing timestamp → uses datetime.now()."""
-        d = {"version": 2, "step": 0, "total_steps": 0, "checksum": "", "weights_file": ""}
-        restored = CheckpointMetadataV2.from_dict(d)
-        assert isinstance(restored.timestamp, datetime)
-        # Should be very recent
-        assert (datetime.now() - restored.timestamp).total_seconds() < 5.0
+    def test_timestamp_missing_rejected(self):
+        """Missing timestamp is a malformed checkpoint payload."""
+        d = {
+            "version": 2,
+            "step": 0,
+            "total_steps": 0,
+            "checksum": "",
+            "weights_file": "",
+            "loss_history": [],
+        }
+        with pytest.raises(ValueError, match="missing required fields: timestamp"):
+            CheckpointMetadataV2.from_dict(d)
 
     def test_nested_metadata_roundtrip(self):
         """Full metadata with nested model_config and optimizer_state."""

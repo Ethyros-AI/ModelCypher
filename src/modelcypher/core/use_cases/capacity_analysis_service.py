@@ -177,9 +177,15 @@ class CapacityAnalysisService:
 
         # Pre-load all weights so dequantize_if_needed() can look up
         # scales/biases by key for quantized models.
+        # If loading is interrupted, analyze whatever was loaded so far
+        # and checkpoint progress before re-raising.
         all_params: dict[str, object] = {}
-        for name, tensor in self._iter_weight_items(model_path_resolved):
-            all_params[name] = tensor
+        _preload_exc: BaseException | None = None
+        try:
+            for name, tensor in self._iter_weight_items(model_path_resolved):
+                all_params[name] = tensor
+        except Exception as exc:
+            _preload_exc = exc
 
         for layer_name in sorted(all_params.keys()):
             if layer_name in processed_layers:
@@ -285,6 +291,23 @@ class CapacityAnalysisService:
                 failed_layers=failed_layers,
                 processed_layers=processed_layers,
             )
+
+        # If pre-loading was interrupted, checkpoint whatever was analyzed
+        # so the next run can resume, then re-raise the original exception.
+        if _preload_exc is not None:
+            _write_checkpoint_state(
+                checkpoint_file,
+                model_path=model_path_resolved,
+                target_modules=normalized_targets,
+                min_dim=min_dim,
+                max_dim=max_dim,
+                total_parameters=total_parameters,
+                analyzed_parameters=analyzed_parameters,
+                layer_reports=layer_reports,
+                failed_layers=failed_layers,
+                processed_layers=processed_layers,
+            )
+            raise _preload_exc
 
         if not layer_reports:
             filter_desc = _filter_description(

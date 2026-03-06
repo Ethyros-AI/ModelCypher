@@ -30,6 +30,24 @@ from pathlib import Path
 from typing import Any
 
 
+def _require_exact_keys(
+    data: dict[str, Any],
+    *,
+    required: set[str],
+    optional: set[str] | None = None,
+    context: str,
+) -> None:
+    """Reject missing or unknown serialized fields."""
+    optional = optional or set()
+    missing = sorted(required.difference(data))
+    if missing:
+        raise ValueError(f"{context} missing required fields: {', '.join(missing)}")
+
+    unknown = sorted(set(data).difference(required | optional))
+    if unknown:
+        raise ValueError(f"{context} contains unknown fields: {', '.join(unknown)}")
+
+
 class CheckpointErrorKind(str, Enum):
     """Kind of checkpoint error."""
 
@@ -72,12 +90,23 @@ class OptimizerStateMetadata:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> OptimizerStateMetadata:
         """Create from dictionary."""
+        _require_exact_keys(
+            data,
+            required={
+                "type_name",
+                "state_file",
+                "checksum",
+                "scalar_hyperparameters",
+                "vector_hyperparameters",
+            },
+            context="OptimizerStateMetadata",
+        )
         return cls(
-            type_name=data.get("type_name", "unknown"),
-            state_file=data.get("state_file", ""),
-            checksum=data.get("checksum", ""),
-            scalar_hyperparameters=data.get("scalar_hyperparameters", {}),
-            vector_hyperparameters=data.get("vector_hyperparameters", {}),
+            type_name=data["type_name"],
+            state_file=data["state_file"],
+            checksum=data["checksum"],
+            scalar_hyperparameters=data["scalar_hyperparameters"],
+            vector_hyperparameters=data["vector_hyperparameters"],
         )
 
 
@@ -117,9 +146,15 @@ class FineTunedModelMetadata:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> FineTunedModelMetadata:
         """Create from dictionary."""
+        _require_exact_keys(
+            data,
+            required={"base_model_id", "tokenizer_strategy"},
+            optional={"lora_config", "quantization_config", "hyperparameters"},
+            context="FineTunedModelMetadata",
+        )
         return cls(
-            base_model_id=data.get("base_model_id", ""),
-            tokenizer_strategy=data.get("tokenizer_strategy", "default"),
+            base_model_id=data["base_model_id"],
+            tokenizer_strategy=data["tokenizer_strategy"],
             lora_config=data.get("lora_config"),
             quantization_config=data.get("quantization_config"),
             hyperparameters=data.get("hyperparameters"),
@@ -145,32 +180,36 @@ class ModelArchitectureSpec:
     num_heads: int
     """Number of attention heads."""
 
-    memory_overrides: dict[str, Any] | None = None
-    """Optional overrides that influence memory estimation heuristics."""
-
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
-        result: dict[str, Any] = {
+        return {
             "model_type": self.model_type,
             "vocabulary_size": self.vocabulary_size,
             "hidden_size": self.hidden_size,
             "num_layers": self.num_layers,
             "num_heads": self.num_heads,
         }
-        if self.memory_overrides is not None:
-            result["memory_overrides"] = self.memory_overrides
-        return result
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ModelArchitectureSpec:
         """Create from dictionary."""
+        _require_exact_keys(
+            data,
+            required={
+                "model_type",
+                "vocabulary_size",
+                "hidden_size",
+                "num_layers",
+                "num_heads",
+            },
+            context="ModelArchitectureSpec",
+        )
         return cls(
-            model_type=data.get("model_type", "simple_transformer"),
-            vocabulary_size=data.get("vocabulary_size", 32000),
-            hidden_size=data.get("hidden_size", 4096),
-            num_layers=data.get("num_layers", 32),
-            num_heads=data.get("num_heads", 32),
-            memory_overrides=data.get("memory_overrides"),
+            model_type=data["model_type"],
+            vocabulary_size=data["vocabulary_size"],
+            hidden_size=data["hidden_size"],
+            num_layers=data["num_layers"],
+            num_heads=data["num_heads"],
         )
 
 
@@ -234,6 +273,20 @@ class CheckpointMetadataV2:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CheckpointMetadataV2:
         """Create from dictionary."""
+        _require_exact_keys(
+            data,
+            required={
+                "version",
+                "step",
+                "total_steps",
+                "timestamp",
+                "checksum",
+                "weights_file",
+                "loss_history",
+            },
+            optional={"model_config", "optimizer_state", "fine_tuned_model"},
+            context="CheckpointMetadataV2",
+        )
         model_config = None
         if "model_config" in data and data["model_config"]:
             model_config = ModelArchitectureSpec.from_dict(data["model_config"])
@@ -246,20 +299,18 @@ class CheckpointMetadataV2:
         if "fine_tuned_model" in data and data["fine_tuned_model"]:
             fine_tuned_model = FineTunedModelMetadata.from_dict(data["fine_tuned_model"])
 
-        timestamp = data.get("timestamp")
+        timestamp = data["timestamp"]
         if isinstance(timestamp, str):
             timestamp = datetime.fromisoformat(timestamp)
-        elif timestamp is None:
-            timestamp = datetime.now()
 
         return cls(
-            version=data.get("version", 2),
-            step=data.get("step", 0),
-            total_steps=data.get("total_steps", 0),
+            version=data["version"],
+            step=data["step"],
+            total_steps=data["total_steps"],
             timestamp=timestamp,
-            checksum=data.get("checksum", ""),
-            weights_file=data.get("weights_file", ""),
-            loss_history=data.get("loss_history", []),
+            checksum=data["checksum"],
+            weights_file=data["weights_file"],
+            loss_history=data["loss_history"],
             model_config=model_config,
             optimizer_state=optimizer_state,
             fine_tuned_model=fine_tuned_model,

@@ -73,28 +73,6 @@ def test_geometry_metric_key_helpers() -> None:
     assert GeometryMetricKey.persona_position("v1") == "geometry/persona/v1/position"
 
 
-def test_flatness_score_branches_and_clamping(any_backend, monkeypatch) -> None:
-    monkeypatch.setattr(metrics_mod, "get_default_backend", lambda: any_backend)
-
-    assert GeometricTrainingMetrics(top_hessian_eigenvalue=None).flatness_score is None
-    assert GeometricTrainingMetrics(top_hessian_eigenvalue=0.0).flatness_score is None
-
-    flat = GeometricTrainingMetrics(top_hessian_eigenvalue=0.001).flatness_score
-    sharp = GeometricTrainingMetrics(top_hessian_eigenvalue=100.0).flatness_score
-    tiny = GeometricTrainingMetrics(top_hessian_eigenvalue=1e-12).flatness_score
-    huge = GeometricTrainingMetrics(top_hessian_eigenvalue=1e12).flatness_score
-
-    assert flat is not None
-    assert sharp is not None
-    assert tiny is not None
-    assert huge is not None
-
-    assert flat == pytest.approx(1.0, abs=1e-6)
-    assert sharp == pytest.approx(0.0, abs=1e-3)
-    for score in [flat, sharp, tiny, huge]:
-        assert 0.0 <= score <= 1.0
-
-
 def test_to_metrics_dict_full_payload(any_backend, monkeypatch) -> None:
     monkeypatch.setattr(metrics_mod, "get_default_backend", lambda: any_backend)
 
@@ -138,9 +116,6 @@ def test_to_metrics_dict_full_payload(any_backend, monkeypatch) -> None:
     assert payload[GeometryMetricKey.layer_grad_norm("mlp.down")] == pytest.approx(1.0, abs=1e-8)
     assert payload[GeometryMetricKey.layer_grad_fraction("attn.q")] == pytest.approx(0.6, abs=1e-8)
     assert payload[GeometryMetricKey.layer_grad_fraction("mlp.down")] == pytest.approx(0.4, abs=1e-8)
-
-    assert GeometryMetricKey.flatness_score in payload
-    assert 0.0 <= payload[GeometryMetricKey.flatness_score] <= 1.0
 
 
 def test_from_progress_metrics_parsing_and_thresholds(any_backend, monkeypatch) -> None:
@@ -260,7 +235,6 @@ def test_geometric_metrics_history_roundtrip_and_malformed_entries(any_backend, 
         ),
     )
 
-    assert history.flatness_history == [(2, pytest.approx(history.entries[1].metrics.flatness_score, abs=1e-8))]
     assert history.snr_history == [(2, 3.0)]
     assert history.divergence_history == [(2, 0.2)]
 

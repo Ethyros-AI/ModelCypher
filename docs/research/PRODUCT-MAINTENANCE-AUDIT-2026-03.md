@@ -52,6 +52,9 @@ Runtime result:
 | P2 | Adapter injection preserved global scale-bound override | `src/modelcypher/backends/_mlx_training_adapter_core_mixin.py:569-621` | `scale_bound_override` bypassed per-layer spectral safety. | Delete | NB-LoRA scale bound is always `(sigma_k / 2) * (1 - sqrt(eps))`. |
 | P2 | Merge injection-layer environment override | `src/modelcypher/experimental/merge/pipeline.py:860-882` and `src/modelcypher/experimental/merge/stages/probe_from_profile.py:255-275` | `MC_INJECTION_LAYER` let callers force a merge location outside measured alignment. | Delete | Injection layer comes only from measured profile alignment or measured transmission geometry. |
 | P2 | Embedding transplant environment overrides | `src/modelcypher/experimental/merge/stages/transplant_embeddings.py:60-114` | `MC_SKIP_EMBEDDING_TRANSPLANT` and `MC_FORCE_EMBEDDING_TRANSPLANT` turned a hard geometry boundary into a manual escape hatch. | Delete | Unsafe cross-vocab embedding transplant stays blocked; no environment override path remains. |
+| P1 | Permissive checkpoint deserialization defaults | `src/modelcypher/core/domain/training/checkpoint_models.py:32-300` | Checkpoint metadata constructors invented missing schema fields (`unknown`, empty strings, `datetime.now()`, default dimensions) instead of validating serialized structure. | Refactor | All checkpoint `from_dict()` paths now require explicit required keys and reject unknown fields. |
+| P2 | Memory-estimation override contract in checkpoint metadata | `src/modelcypher/core/domain/training/checkpoint_models.py:148-173` | `memory_overrides` encoded a supported override surface inside a supposedly descriptive architecture record. | Delete | `ModelArchitectureSpec` now serializes only measured architecture fields; no memory-override payload exists. |
+| P2 | Runtime heuristic “flatness score” | `src/modelcypher/core/domain/training/geometric_training_metrics.py:93-190` and `src/modelcypher/core/use_cases/geometry_training_service.py:112-159` | A log-mapped score converted raw Hessian eigenvalues into a hand-chosen 0..1 visualization metric and exported it in runtime payloads. | Delete | Runtime metrics expose raw Hessian measurements only; no normalized flatness heuristic remains. |
 
 ## Exact Alternates Kept
 
@@ -98,8 +101,6 @@ These are the highest-value remaining doctrine violations because they preserve 
 | Path / line | Problem | Decision direction |
 | --- | --- | --- |
 | `src/modelcypher/core/use_cases/lora_memory_service.py:326` | Rank override language still treats manual rank injection as supported. | Remove once the memory-store path is aligned to the same single derived rank rule as main training. |
-| `src/modelcypher/core/domain/training/checkpoint_models.py:149` | Memory-estimation metadata still describes optional override fields. | Replace with measured-memory inputs or remove the optional override contract. |
-| `src/modelcypher/core/domain/training/geometric_training_metrics.py:153-155` | A monitoring-only heuristic score remains explicitly heuristic. | Re-derive or demote out of doctrine-critical code paths. |
 
 ## Guardrails Added
 

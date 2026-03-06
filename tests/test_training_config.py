@@ -334,7 +334,6 @@ class TestModelArchitectureSpec:
         assert cfg.model_type == "llama"
         assert cfg.vocabulary_size == 32000
         assert cfg.hidden_size == 4096
-        assert cfg.memory_overrides is None
 
     def test_to_dict_from_dict_roundtrip(self):
         """Serialization and deserialization should be consistent."""
@@ -344,7 +343,6 @@ class TestModelArchitectureSpec:
             hidden_size=4096,
             num_layers=32,
             num_heads=32,
-            memory_overrides={"kv_cache_size": 1024},
         )
 
         data = cfg.to_dict()
@@ -352,7 +350,6 @@ class TestModelArchitectureSpec:
 
         assert restored.model_type == cfg.model_type
         assert restored.hidden_size == cfg.hidden_size
-        assert restored.memory_overrides == cfg.memory_overrides
 
 
 class TestFineTunedModelMetadata:

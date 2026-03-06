@@ -148,14 +148,9 @@ class TestOptimizerStateMetadata:
         assert meta.scalar_hyperparameters == {"weight_decay": 0.01}
 
     def test_from_dict_missing_fields(self):
-        """Test from_dict handles missing fields with defaults."""
-        data = {}
-
-        meta = OptimizerStateMetadata.from_dict(data)
-
-        assert meta.type_name == "unknown"
-        assert meta.state_file == ""
-        assert meta.checksum == ""
+        """Test from_dict rejects missing required fields."""
+        with pytest.raises(ValueError, match="missing required fields"):
+            OptimizerStateMetadata.from_dict({})
 
     def test_roundtrip(self):
         """Test to_dict/from_dict roundtrip."""
@@ -260,13 +255,9 @@ class TestFineTunedModelMetadata:
         assert meta.lora_config == {"rank": 16}
 
     def test_from_dict_missing_fields(self):
-        """Test from_dict handles missing fields."""
-        data = {}
-
-        meta = FineTunedModelMetadata.from_dict(data)
-
-        assert meta.base_model_id == ""
-        assert meta.tokenizer_strategy == "default"
+        """Test from_dict rejects missing required fields."""
+        with pytest.raises(ValueError, match="missing required fields"):
+            FineTunedModelMetadata.from_dict({})
 
 
 class TestModelArchitectureSpec:
@@ -288,33 +279,8 @@ class TestModelArchitectureSpec:
         assert config.num_layers == 32
         assert config.num_heads == 32
 
-    def test_memory_overrides_default(self):
-        """Test memory_overrides defaults to None."""
-        config = ModelArchitectureSpec(
-            model_type="llama",
-            vocabulary_size=32000,
-            hidden_size=4096,
-            num_layers=32,
-            num_heads=32,
-        )
-
-        assert config.memory_overrides is None
-
-    def test_memory_overrides_set(self):
-        """Test memory_overrides can be set."""
-        config = ModelArchitectureSpec(
-            model_type="llama",
-            vocabulary_size=32000,
-            hidden_size=4096,
-            num_layers=32,
-            num_heads=32,
-            memory_overrides={"activation_checkpointing": True},
-        )
-
-        assert config.memory_overrides == {"activation_checkpointing": True}
-
     def test_to_dict_minimal(self):
-        """Test to_dict without memory_overrides."""
+        """Test to_dict emits the exact required architecture fields."""
         config = ModelArchitectureSpec(
             model_type="mistral",
             vocabulary_size=32000,
@@ -333,21 +299,6 @@ class TestModelArchitectureSpec:
             "num_heads": 32,
         }
 
-    def test_to_dict_with_overrides(self):
-        """Test to_dict with memory_overrides."""
-        config = ModelArchitectureSpec(
-            model_type="llama",
-            vocabulary_size=32000,
-            hidden_size=4096,
-            num_layers=32,
-            num_heads=32,
-            memory_overrides={"key": "value"},
-        )
-
-        result = config.to_dict()
-
-        assert result["memory_overrides"] == {"key": "value"}
-
     def test_from_dict(self):
         """Test from_dict deserialization."""
         data = {
@@ -364,17 +315,10 @@ class TestModelArchitectureSpec:
         assert config.vocabulary_size == 152064
         assert config.hidden_size == 3584
 
-    def test_from_dict_defaults(self):
-        """Test from_dict uses defaults for missing fields."""
-        data = {}
-
-        config = ModelArchitectureSpec.from_dict(data)
-
-        assert config.model_type == "simple_transformer"
-        assert config.vocabulary_size == 32000
-        assert config.hidden_size == 4096
-        assert config.num_layers == 32
-        assert config.num_heads == 32
+    def test_from_dict_missing_fields(self):
+        """Test from_dict rejects missing required fields."""
+        with pytest.raises(ValueError, match="missing required fields"):
+            ModelArchitectureSpec.from_dict({})
 
 
 class TestCheckpointMetadataV2:
@@ -525,6 +469,7 @@ class TestCheckpointMetadataV2:
             "timestamp": "2025-01-15T12:00:00",
             "checksum": "hash",
             "weights_file": "weights.safetensors",
+            "loss_history": [],
             "model_config": {
                 "model_type": "mistral",
                 "vocabulary_size": 32000,
@@ -536,6 +481,8 @@ class TestCheckpointMetadataV2:
                 "type_name": "AdamW",
                 "state_file": "opt.safetensors",
                 "checksum": "opt_hash",
+                "scalar_hyperparameters": {},
+                "vector_hyperparameters": {},
             },
         }
 
@@ -547,19 +494,9 @@ class TestCheckpointMetadataV2:
         assert meta.optimizer_state.type_name == "AdamW"
 
     def test_from_dict_defaults(self):
-        """Test from_dict uses defaults for missing fields."""
-        data = {}
-
-        meta = CheckpointMetadataV2.from_dict(data)
-
-        assert meta.version == 2
-        assert meta.step == 0
-        assert meta.total_steps == 0
-        assert meta.checksum == ""
-        assert meta.weights_file == ""
-        assert meta.loss_history == []
-        assert meta.model_config is None
-        assert meta.optimizer_state is None
+        """Test from_dict rejects missing required checkpoint fields."""
+        with pytest.raises(ValueError, match="missing required fields"):
+            CheckpointMetadataV2.from_dict({})
 
     def test_roundtrip(self):
         """Test to_dict/from_dict roundtrip."""

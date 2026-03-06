@@ -117,7 +117,6 @@ class GeometryTrainingService:
             "_schema": "mc.geometry.training_status.v1",
             "jobId": job_id,
             "step": step,
-            "flatnessScore": metrics.flatness_score,
             "hessianTraceEstimate": metrics.hessian_trace_estimate
             if output_format == "full"
             else None,
@@ -141,9 +140,6 @@ class GeometryTrainingService:
     def training_history_payload(self, job_id: str) -> dict:
         history = self.get_history(job_id)
 
-        flatness_history = [
-            {"step": step, "value": value} for step, value in history.flatness_history
-        ]
         snr_history = [{"step": step, "value": value} for step, value in history.snr_history]
         divergence_history = [
             {"step": step, "value": value} for step, value in history.divergence_history
@@ -155,7 +151,6 @@ class GeometryTrainingService:
             "startStep": history.entries[0].step if history.entries else 0,
             "endStep": history.entries[-1].step if history.entries else 0,
             "sampleCount": len(history.entries),
-            "flatnessHistory": flatness_history or None,
             "snrHistory": snr_history or None,
             "circuitBreakerHistory": None,
             "parameterDivergenceHistory": divergence_history or None,

@@ -23,7 +23,6 @@ from enum import Enum
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
-    log_scalar,
     machine_epsilon,
     precision_dtype,
 )
@@ -90,7 +89,6 @@ class GeometryMetricKey:
     hessian_trace = "geometry/hessian_trace"
     top_eigenvalue = "geometry/top_eigenvalue"
     condition_proxy = "geometry/condition_proxy"
-    flatness_score = "geometry/flatness_score"
     gradient_variance = "geometry/gradient_variance"
     gradient_snr = "geometry/gradient_snr"
     effective_step_ratio = "geometry/effective_step_ratio"
@@ -148,24 +146,6 @@ class GeometricTrainingMetrics:
     drifting_traits: list[str] = field(default_factory=list)
     circuit_breaker_severity: float | None = None
 
-    @property
-    def flatness_score(self) -> float | None:
-        """Monitoring-only heuristic mapping λ_max(H) to [0, 1].
-
-        [HEURISTIC] 0.001 offset prevents log(0); log base 10 maps
-        typical eigenvalue decades (1e-2..1e2) to a readable range.
-        These are visualization choices, not geometry-derived bounds.
-        """
-        if self.top_hessian_eigenvalue is None or self.top_hessian_eigenvalue <= 0:
-            return None
-        _b = get_default_backend()
-        log_eigen = log_scalar(self.top_hessian_eigenvalue + 0.001, _b) / log_scalar(10.0, _b)
-        normalized = 1 - (log_eigen + 1) / 3
-        return max(0.0, min(1.0, normalized))
-
-    # NOTE: flatness_assessment and snr_assessment properties were removed.
-    # Use flatness_score and gradient_snr directly - caller interprets meaning.
-
     def to_metrics_dict(self) -> dict[str, float]:
         metrics: dict[str, float] = {}
         if self.hessian_trace_estimate is not None:
@@ -186,9 +166,6 @@ class GeometricTrainingMetrics:
             metrics[GeometryMetricKey.param_cosine_similarity] = float(
                 self.parameter_cosine_similarity
             )
-        if self.flatness_score is not None:
-            metrics[GeometryMetricKey.flatness_score] = float(self.flatness_score)
-
         for layer, norm in self.per_layer_gradient_norms.items():
             metrics[GeometryMetricKey.layer_grad_norm(layer)] = float(norm)
         for layer, fraction in self.per_layer_gradient_fractions.items():
@@ -347,16 +324,6 @@ class GeometricMetricsHistory:
 
     def append(self, step: int, metrics: GeometricTrainingMetrics) -> None:
         self.entries.append(MetricEntry(step=step, metrics=metrics))
-
-    @property
-    def flatness_history(self) -> list[tuple[int, float]]:
-        history: list[tuple[int, float]] = []
-        for entry in self.entries:
-            score = entry.metrics.flatness_score
-            if score is None:
-                continue
-            history.append((entry.step, score))
-        return history
 
     @property
     def snr_history(self) -> list[tuple[int, float]]:
