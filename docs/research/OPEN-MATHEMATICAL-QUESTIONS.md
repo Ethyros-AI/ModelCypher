@@ -295,6 +295,13 @@ satisfied. Claims missing architecture/scale terms or commensurability proofs ar
                covariance rank injection. The mechanism for ID trajectory shape
                must come from local tangent space geometry, not global covariance.
                Data: results/covariance_rank_id/covariance_rank_id_results.json.
+               Phase 2 code-review note (2026-03-05): do not promote
+               `covariance_rank_id_phase2_results.json` yet. The current E5
+               local-rank operator is neighborhood-size capped and not commensurable
+               with the geodesic TwoNN operator, E2 uses `kappa = 1/R` instead of
+               the sphere curvature quantity under test, and the cross-model summary
+               can falsely confirm M1 when zero models are measured. See
+               `docs/research/covariance_rank_id_phase2_review_2026_03_05.md`.
                     ↓
 [PROVEN]       ID → Phases
                Phases are defined by ID trajectory shape (minima = highway,

@@ -1,6 +1,6 @@
 # Research Roadmap
 
-**Updated:** 2026-03-03
+**Updated:** 2026-03-05
 
 Consolidated research document: external foundations, internal progress, open questions, and future directions.
 
@@ -208,7 +208,12 @@ Pre-registered closure workflow (current priority order):
    - Tikhonov correction on 1.7B 4-bit: CKA +0.014, PPL -0.06, degeneration -0.047 — all three improved simultaneously (2026-02-27).
    - Pending: generalization to 8B (`scripts/closedform_sequential_correction.py`).
 3. **G4/G2 boundary closure (quantization frontier)** `[EMPIRICAL]`
-   - Run Weyl precheck across FP↔quant pairs and attach CKA artifacts
+   - 2026-03-05 implementation: `quantization_frontier_precheck_v1` now gates on
+     activation-aware centered-Gram measurability for FP-vs-quantized probe
+     activations; raw Weyl is nested telemetry only. See
+     `docs/research/quantization_frontier_precheck_v1_implementation_2026_03_05.md`.
+   - Pending empirical closure: run paired FP↔quant artifacts across bit-depths
+     and attach CKA outputs
      (`scripts/weyl_quantization_validation.py --cka-artifacts ...`).
 4. **Documentation promotion/falsification**
    - Promote only claims with linked artifacts + evidence labels.
@@ -527,6 +532,7 @@ poetry run mc analyze dimension-profile --model /path -t -q
 | `docs/research/OPEN-MATHEMATICAL-QUESTIONS.md` | Derivations, proofs, solved questions |
 | `docs/research/geometric_capacity_paper_experiment_matrix.md` | Paper-to-experiment mapping with pass/falsify criteria |
 | `docs/LFM2-350M-WORK-SUMMARY.md` | LFM2 project status |
+| `docs/research/quantization_frontier_precheck_v1_implementation_2026_03_05.md` | Quantization frontier gate implementation summary |
 | `data/experiments/archive/geometric_fingerprint_discovery.md` | expansion_ratio findings |
 | `docs/research/lr_derivation_analysis.md` | MASS step size analysis + fallback candidates |
 | `docs/research/field_map_external_methods.md` | External methods landscape (2024-2026) with ModelCypher mappings |

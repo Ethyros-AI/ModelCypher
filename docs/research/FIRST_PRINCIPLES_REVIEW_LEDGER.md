@@ -23,6 +23,9 @@ Tracks doctrine and research documents audited under
 | 2026-03-03 | `docs/research/linear_accessible_information_derivation.md` | Created | Q3 frontier artifact: protocol-compliant replacement of invalid MI-depth claims with linear-accessible observable |
 | 2026-03-03 | `docs/research/quantization_geometry_deep_dive.md` | Updated | Normalized `MEASURED` tags to `EMPIRICAL` |
 | 2026-03-03 | `docs/research/geometric_hyperparameter_rosetta_stone.md` | Updated | Removed `SUPERSEDED` evidence tags; kept supersession as prose metadata |
+| 2026-03-05 | `docs/research/covariance_rank_id_phase2_review_2026_03_05.md` | Created | Captured Phase 2 review findings for `scripts/covariance_rank_id_analysis.py`: local-rank ceiling, sphere-curvature operator mismatch, and empty-run false confirmation |
+| 2026-03-05 | `docs/research/FIRST_PRINCIPLES_REVIEW_PROTOCOL.md` | Updated | Added `precision_state` to the mandatory claim form and required claim fields for promoted claims |
+| 2026-03-05 | `docs/research/quantized_smarter_execution_closeout_2026_03_05.md` | Created | Captured quantized-smarter implementation scope: benchmark adapter support, Qwen3.5 corrective-LoRA compatibility checks, orchestrator, tests, and deferred gate work |
 
 ---
 
