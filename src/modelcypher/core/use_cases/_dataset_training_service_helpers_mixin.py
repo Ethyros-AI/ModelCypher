@@ -822,26 +822,6 @@ class _DatasetTrainingServiceHelperMixin:
             "sqrt_eps": sqrt_eps,
         }
 
-    def _filter_outcome_problems_by_regime(
-        self,
-        outcome_problems: list[Any],
-        per_type_regime: dict[str, Any],
-    ) -> tuple[list[Any], dict[str, int]]:
-        """Keep REINFORCE-capable problem types; drop CE-only types."""
-        filtered: list[Any] = []
-        dropped_counts: dict[str, int] = {}
-
-        for problem in outcome_problems:
-            problem_type = str(getattr(problem, "problem_type", "unknown"))
-            per_type = per_type_regime.get(problem_type)
-            regime = "ce" if per_type is None else str(getattr(per_type, "regime", "ce"))
-            if regime == "ce":
-                dropped_counts[problem_type] = dropped_counts.get(problem_type, 0) + 1
-                continue
-            filtered.append(problem)
-
-        return filtered, dropped_counts
-
     def _derive_validation_split_from_losses(
         self,
         *,
@@ -1149,99 +1129,6 @@ class _DatasetTrainingServiceHelperMixin:
                     break
                 digest.update(chunk)
         return digest.hexdigest()
-
-    def _derive_regime_n_from_ci(self) -> int:
-        """Derive regime problem count from Clopper-Pearson CI resolution.
-
-        For each problem type, finds the minimum N such that the CI half-width
-        at the chance operating point (k = round(chance * N)) is less than the
-        chance rate itself.  This ensures the CI can resolve whether the model
-        is above chance for that type.
-
-        The CI is Clopper-Pearson exact binomial (1934, Biometrika 26(4))
-        with alpha = 1/N (data-derived confidence level).
-
-        Returns the max across all types — the strictest requirement.
-        """
-        from scipy.stats import beta as beta_dist
-
-        from modelcypher.core.domain.training.regime_selection import (
-            DEFAULT_PROBLEM_TYPE_CHANCE_RATES,
-        )
-
-        eps_f64 = math.ulp(1.0)
-        machine_limit_n = int(math.ceil(1.0 / eps_f64))
-
-        per_type_n: dict[str, int] = {}
-        for problem_type, chance_rate in DEFAULT_PROBLEM_TYPE_CHANCE_RATES.items():
-            chance = float(chance_rate)
-
-            def ci_resolves(n: int) -> bool:
-                alpha = 1.0 / n
-                if chance <= 0.0:
-                    # Exact-match: derive at k=n (perfect signal). Any single
-                    # correct answer distinguishes from chance=0.
-                    k = n
-                else:
-                    k = max(0, min(n, int(round(chance * n))))
-                lower = (
-                    0.0
-                    if k == 0
-                    else float(beta_dist.ppf(alpha / 2.0, k, n - k + 1))
-                )
-                upper = (
-                    1.0
-                    if k == n
-                    else float(beta_dist.ppf(1.0 - alpha / 2.0, k + 1, n - k))
-                )
-                if not (math.isfinite(lower) and math.isfinite(upper)):
-                    return False
-                half_width = (upper - lower) / 2.0
-                # CI must resolve: half-width < max(chance, 1/n) to be useful.
-                # When chance=0 (no-guess baseline), the smallest detectable
-                # effect at sample size n is 1/n (one correct out of n).
-                # Clopper-Pearson: CI_upper for k=0 ≈ 1-(α)^(1/n) ≈ -ln(α)/n.
-                # With α ≈ 1/n, target ≈ 1/n.
-                target = chance if chance > 0.0 else 1.0 / n
-                return half_width <= target
-
-            lower_n = 1
-            upper_n = 2
-            while upper_n < machine_limit_n and not ci_resolves(upper_n):
-                lower_n = upper_n
-                upper_n = min(machine_limit_n, upper_n * 2)
-
-            if not ci_resolves(upper_n):
-                raise TrainingDerivationError(
-                    failure_class="unavailable_measurement",
-                    detail=(
-                        f"Regime-N CI derivation failed for type={problem_type} "
-                        f"(chance={chance:.3f}): CI did not resolve before "
-                        f"machine precision limit (n={machine_limit_n})."
-                    ),
-                    diagnostics={
-                        "problem_type": problem_type,
-                        "chance_rate": chance,
-                        "machine_limit_n": machine_limit_n,
-                    },
-                )
-
-            while upper_n - lower_n > 1:
-                mid_n = lower_n + (upper_n - lower_n) // 2
-                if ci_resolves(mid_n):
-                    upper_n = mid_n
-                else:
-                    lower_n = mid_n
-
-            per_type_n[problem_type] = upper_n
-
-        if not per_type_n:
-            raise TrainingDerivationError(
-                failure_class="unavailable_measurement",
-                detail="No problem types available for regime-N CI derivation.",
-                diagnostics={},
-            )
-        return max(per_type_n.values())
 
 
 

@@ -1078,11 +1078,11 @@ class DerivedTrainingValidationService:
                 probe_problems=[],
             )
 
-        effective_probe_count = (
-            int(probe_count)
-            if probe_count is not None
-            else self._derive_phase5_probe_count()
-        )
+        if probe_count is None:
+            raise ValueError(
+                "phase5 probe_count is required (regime-based auto-derivation removed)"
+            )
+        effective_probe_count = int(probe_count)
         if effective_probe_count <= 0:
             raise ValueError("phase5 probe count must be positive")
 
@@ -1372,17 +1372,6 @@ class DerivedTrainingValidationService:
             build_forward_prompt(problem, demonstrations=n_demonstrations)
             for problem in problems
         ]
-
-    def _derive_phase5_probe_count(self) -> int:
-        derive_fn = getattr(self._dataset_training_service, "_derive_regime_n_from_ci", None)
-        if not callable(derive_fn):
-            raise ValueError(
-                "Phase 5 probe count derivation requires dataset training service "
-                "method _derive_regime_n_from_ci().",
-            )
-        ci_n = int(derive_fn())
-        n_types = len(StarProblemGenerator.PROBLEM_TYPES)
-        return ci_n * n_types
 
     @staticmethod
     def _derive_phase5_probe_seed(

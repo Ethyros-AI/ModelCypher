@@ -132,7 +132,7 @@ class PhaseScheduler:
         """Record mastery evaluation result for a skill.
 
         Call this after running the model on the held-out eval set for the skill
-        and computing the regime via regime_selection.select_training_regime().
+        and computing the mastery evaluation result.
         """
         if record.skill_name not in {n.name for n in self._dag.nodes}:
             raise ValueError(

@@ -105,6 +105,11 @@ def train_run(
         "--benchmark",
         help="Run benchmark suite before/after training (quick, reasoning, factual, comprehensive)",
     ),
+    entropy_reg: bool = typer.Option(
+        False,
+        "--entropy-reg/--no-entropy-reg",
+        help="Enable entropy floor regularization during CE training (prevents overconfident logits)",
+    ),
 ) -> None:
     """Strict model+dataset-only training path.
 
@@ -118,7 +123,6 @@ def train_run(
         finalLoss: Final training loss
         ckaRetention: CKA similarity between pre/post-training activations (1.0 = no drift)
         adapterPath: Path to saved adapter weights
-        regime: Training objective used (ce, reinforce, or hybrid)
         derivedHyperparameters: All geometry-derived settings (learning rate, rank, etc.)
         benchmarkBaseline: Pre-training benchmark scores (with --benchmark)
         benchmarkPost: Post-training benchmark scores (with --benchmark)
@@ -151,6 +155,7 @@ def train_run(
             output_path=output,
             eval_dataset_path=eval_data,
             benchmark_suite=benchmark,
+            entropy_regularization=entropy_reg,
         )
     except TrainingDerivationError as exc:
         _write_training_derivation_error(exc, context)
@@ -188,11 +193,6 @@ def train_run_research(
         "--dim-monitor/--no-dim-monitor",
         help="Track dimensional expansion/contraction per epoch using TwoNN.",
     ),
-    auto_regime: bool = typer.Option(
-        True,
-        "--auto-regime/--no-auto-regime",
-        help="Derive training objective (CE/REINFORCE/hybrid) from baseline eval (default: on)",
-    ),
     benchmark: str = typer.Option(
         None,
         "--benchmark",
@@ -207,8 +207,8 @@ def train_run_research(
     """Research path with explicit training controls.
 
     Same NB-LoRA pipeline as `mc train run` but exposes research-only
-    instrumentation: topology monitoring, dimension tracking, manual
-    learning rate override, and regime selection control. Use this for
+    instrumentation: topology monitoring, dimension tracking, and manual
+    learning rate override. Use this for
     experiments; use `mc train run` for production.
 
     Output fields (when --json):
@@ -255,7 +255,6 @@ def train_run_research(
             seed=seed,
             topo_monitor=topo_monitor,
             dim_monitor=dim_monitor,
-            auto_regime=auto_regime,
             no_save=no_save,
             benchmark_suite=benchmark,
             target_experts=target_experts,

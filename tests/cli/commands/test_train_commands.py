@@ -356,25 +356,6 @@ class TestFailFastCoverage:
         assert payload["error"]["failure_class"] == "insufficient_adapter_geometry"
 
 
-def test_train_run_auto_regime_enabled_by_default(monkeypatch, tmp_path):
-    model_dir = tmp_path / "model"
-    model_dir.mkdir()
-    data_path = tmp_path / "train.jsonl"
-    data_path.write_text('{"text":"hello"}\n', encoding="utf-8")
-
-    capture = _CaptureDatasetService()
-    monkeypatch.setattr(
-        "modelcypher.cli.composition.get_dataset_training_service",
-        lambda: capture,
-    )
-
-    result = runner.invoke(
-        app,
-        ["train", "run-research", "--model", str(model_dir), "--data", str(data_path)],
-    )
-    assert result.exit_code == 0
-    assert capture.calls
-    assert capture.calls[0]["auto_regime"] is True
 
 
 def test_train_validate_derived_fails_on_counterexample(monkeypatch, tmp_path):

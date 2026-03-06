@@ -38,8 +38,6 @@ from modelcypher.backends.mlx_training_adapter_core import (
     iterate_structured_batches,
     make_constrained_loss,
     make_geometric_reshaping_loss,
-    make_outcome_loss,
-    prepare_outcome_batches,
 )
 
 
@@ -60,6 +58,4 @@ __all__ = [
     "make_constrained_loss",
     "calibrate_geometric_weights",
     "NBLoRALinear",
-    "make_outcome_loss",
-    "prepare_outcome_batches",
 ]

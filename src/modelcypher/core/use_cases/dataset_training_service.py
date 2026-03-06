@@ -84,7 +84,6 @@ _MLX_SIMD_WIDTH = 32
 # PRNG stream offsets: distinct integers → non-overlapping streams.
 # Values are arbitrary-but-fixed for reproducibility (Knuth TAOCP §3.2.1).
 _EVAL_SEED_OFFSET = 1
-_OUTCOME_SEED_OFFSET = 2
 
 
 @dataclass
@@ -130,10 +129,6 @@ class DatasetTrainResult:
     rss_final_cosine: float | None = None
     rss_final_spearman: float | None = None
     rss_final_top1: float | None = None
-    # Auto-regime selection metadata (when auto_regime=True)
-    regime_global: str | None = None
-    regime_per_type: dict[str, Any] | None = None
-    regime_headroom: dict[str, Any] | None = None
     quantization_frontier_precheck: dict[str, Any] | None = None
     # Derived validation split diagnostics (when eval split is auto-derived)
     validation_split: dict[str, Any] | None = None
@@ -226,12 +221,6 @@ class DatasetTrainResult:
             result["rss_final_spearman"] = self.rss_final_spearman
         if self.rss_final_top1 is not None:
             result["rss_final_top1"] = self.rss_final_top1
-        if self.regime_global is not None:
-            result["regime_global"] = self.regime_global
-        if self.regime_per_type is not None:
-            result["regime_per_type"] = self.regime_per_type
-        if self.regime_headroom is not None:
-            result["regime_headroom"] = self.regime_headroom
         if self.quantization_frontier_precheck is not None:
             result["quantization_frontier_precheck"] = self.quantization_frontier_precheck
         if self.validation_split is not None:
@@ -411,6 +400,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         output_path: str | Path | None = None,
         eval_dataset_path: str | Path | None = None,
         benchmark_suite: str | None = None,
+        entropy_regularization: bool = False,
     ) -> DatasetTrainResult:
         """Strict training entrypoint: model+dataset only."""
         resolved_model_path = Path(model_path).expanduser().resolve()
@@ -429,8 +419,8 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             output_path=output_path,
             eval_dataset_path=eval_dataset_path,
             seed=derived_seed,
-            auto_regime=True,
             benchmark_suite=benchmark_suite,
+            entropy_regularization=entropy_regularization,
             enforce_pipeline_gate=True,
         )
 
@@ -469,10 +459,6 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         online_eval: bool = False,
         online_eval_n_problems: int | None = None,
         entropy_regularization: bool = False,
-        outcome_training: bool = False,
-        outcome_n_problems: int | None = None,
-        auto_regime: bool = True,
-        regime_n_problems: int | None = None,
         # Answer-span masked CE training
         answer_mask: bool = False,
         retention_dataset_path: str | Path | None = None,
@@ -486,12 +472,6 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         rss_monitor: bool = False,
         # Ablation experiment params (research only, not CLI-exposed)
         entropy_floor_fraction: float | None = None,  # Research only — NOT in strict CLI
-        kl_reference_penalty: bool = False,
-        outcome_signal_density_gate: float = 0.0,
-        outcome_post_eval: bool = False,
-        outcome_rollback_on_degradation: bool = True,
-        research_online_eval_stop_stage: str = "pre_outcome",
-        research_outcome_selector: str = "all",
         research_online_eval_problem_set_path: str | Path | None = None,
         quantization_reference_model_path: str | Path | None = None,
         research_allow_quantization_frontier_invalid: bool = False,
@@ -524,16 +504,6 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             # Encodes provenance (model), method (nblora), uniqueness (seed).
             output_dir = model_path.parent / "adapters" / f"{model_path.name}-nblora-{seed}"
             logger.info("Auto-derived output path: %s", output_dir)
-
-        if research_online_eval_stop_stage not in {"pre_outcome", "post_outcome"}:
-            raise ValueError(
-                "research_online_eval_stop_stage must be "
-                "'pre_outcome' or 'post_outcome'",
-            )
-        if research_outcome_selector not in {"all", "lost_only"}:
-            raise ValueError(
-                "research_outcome_selector must be 'all' or 'lost_only'",
-            )
 
         # Emit training started progress event
         rp = self._progress_reporter
@@ -1276,55 +1246,11 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             else:
                 gradient_hook = _external_hook
 
-        # 8.9. Regime-selection setup: auto mode derives online-eval + outcome flags
-        effective_online_eval = online_eval
-        effective_online_eval_n_problems = online_eval_n_problems
-        effective_entropy_regularization = entropy_regularization
-        effective_outcome_training = outcome_training
-        effective_outcome_n_problems = outcome_n_problems
-
-        if auto_regime:
-            # Derive regime_n_problems from Clopper-Pearson CI resolution when
-            # not explicitly provided.  We find the minimum N such that the CI
-            # half-width at the chance operating point is < chance_rate for every
-            # problem type.  This is fully determined by the binomial distribution
-            # and the per-type chance rates (data-derived from problem structure).
-            if regime_n_problems is None:
-                regime_n_problems = self._derive_regime_n_from_ci()
-                logger.info(
-                    "Derived regime_n_problems=%d from Clopper-Pearson CI resolution",
-                    regime_n_problems,
-                )
-            if regime_n_problems <= 1:
-                raise ValueError(
-                    "auto_regime requires regime_n_problems > 1 "
-                    "(confidence derivation uses alpha=1/N)."
-                )
-            if not online_eval:
-                effective_online_eval = True
-            if (
-                online_eval_n_problems is None
-                and research_online_eval_problem_set_path is None
-            ):
-                from modelcypher.core.domain.star.problem_generator import (
-                    StarProblemGenerator,
-                )
-
-                effective_online_eval_n_problems = (
-                    regime_n_problems * len(StarProblemGenerator.PROBLEM_TYPES)
-                )
-            logger.info(
-                "Auto regime enabled: deriving online_eval/outcome/entropy flags "
-                "from baseline with N=%d problems",
-                regime_n_problems,
-            )
-
         # 8.10. Online eval: create problems + measure baseline (optional)
         eval_problems = None
         eval_baseline_correct_ids: frozenset[str] = frozenset()
         baseline_result = None
-        regime_result = None
-        if effective_online_eval:
+        if online_eval:
             from modelcypher.core.domain.training.online_eval import (
                 create_eval_problem_set,
                 evaluate_correctness,
@@ -1362,28 +1288,28 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                         "research_online_eval_problem_set_path contains no problems",
                     )
                 if (
-                    effective_online_eval_n_problems is not None
-                    and effective_online_eval_n_problems != len(eval_problems)
+                    online_eval_n_problems is not None
+                    and online_eval_n_problems != len(eval_problems)
                 ):
                     raise ValueError(
                         "online_eval_n_problems does not match the loaded research "
                         "online eval problem set length",
                     )
-                effective_online_eval_n_problems = len(eval_problems)
+                online_eval_n_problems = len(eval_problems)
                 logger.info(
                     "Loaded %d online eval problems from %s",
                     len(eval_problems),
                     eval_problem_path,
                 )
             else:
-                if effective_online_eval_n_problems is None:
+                if online_eval_n_problems is None:
                     raise ValueError(
                         "--online-eval requires --online-eval-n <N> "
                         "(number of eval problems is a compute budget choice, not derivable)"
                     )
                 eval_seed = seed + _EVAL_SEED_OFFSET
                 eval_problems = create_eval_problem_set(
-                    n_problems=effective_online_eval_n_problems,
+                    n_problems=online_eval_n_problems,
                     seed=eval_seed,
                 )
                 logger.info(
@@ -1496,143 +1422,9 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 model, tokenizer, eval_problems,
             )
 
-        # 8.11. Auto regime selection: derive outcome/entropy from baseline geometry
-        if auto_regime:
-            if baseline_result is None:
-                raise TrainingDerivationError(
-                    failure_class="insufficient_baseline_measurement",
-                    detail=(
-                        "Auto-regime requires baseline online evaluation, but "
-                        "no baseline result was available."
-                    ),
-                    diagnostics={
-                        "auto_regime": True,
-                        "effective_online_eval": effective_online_eval,
-                        "effective_online_eval_n_problems": effective_online_eval_n_problems,
-                    },
-                )
-            from modelcypher.core.domain.training.regime_selection import (
-                select_training_regime,
-            )
-
-            try:
-                regime_result = select_training_regime(baseline_result)
-            except ValueError as exc:
-                raise TrainingDerivationError(
-                    failure_class="insufficient_baseline_measurement",
-                    detail=(
-                        "Auto-regime could not derive a valid training regime "
-                        "from baseline measurements."
-                    ),
-                    diagnostics={
-                        "reason": str(exc),
-                        "baseline_n_total": baseline_result.n_total,
-                        "baseline_n_correct": baseline_result.n_correct,
-                        "baseline_per_type_total": dict(baseline_result.per_type_total),
-                    },
-                ) from exc
-
-            if not outcome_training:
-                effective_outcome_training = regime_result.use_outcome_training
-                if effective_outcome_training and outcome_n_problems is None:
-                    effective_outcome_n_problems = regime_n_problems
-
-            if not entropy_regularization:
-                effective_entropy_regularization = (
-                    regime_result.use_entropy_regularization
-                )
-
-            if regime_result.ceiling_bound:
-                effective_outcome_training = False
-                effective_entropy_regularization = False
-
-            logger.info(
-                "Auto regime decision: global=%s confidence=%.4f "
-                "(use_ce=%s, use_outcome_training=%s, "
-                "use_entropy_regularization=%s)",
-                regime_result.global_regime,
-                regime_result.confidence_level,
-                regime_result.use_ce,
-                regime_result.use_outcome_training,
-                regime_result.use_entropy_regularization,
-            )
-            logger.info(
-                "Auto regime headroom: baseline_ci=[%.6f, %.6f], "
-                "headroom_upper=%.6f, resolution=%.6f, ceiling_bound=%s",
-                regime_result.baseline_ci_lower,
-                regime_result.baseline_ci_upper,
-                regime_result.headroom_upper,
-                regime_result.headroom_resolution,
-                regime_result.ceiling_bound,
-            )
-            if regime_result.ceiling_bound:
-                logger.info(
-                    "Auto regime ceiling override active: %s",
-                    regime_result.ceiling_rationale,
-                )
-            for problem_type in sorted(regime_result.per_type):
-                per_type = regime_result.per_type[problem_type]
-                logger.info(
-                    "  %s: %d/%d (acc=%.3f, ci=[%.3f, %.3f], chance=%.3f) -> %s",
-                    problem_type,
-                    per_type.n_correct,
-                    per_type.n_total,
-                    per_type.observed_accuracy,
-                    per_type.ci_lower,
-                    per_type.ci_upper,
-                    per_type.chance_rate,
-                    per_type.regime,
-                )
-
-        # 8.12. Outcome training: create problem set for REINFORCE (optional)
-        outcome_problems = None
-        if effective_outcome_training:
-            if effective_outcome_n_problems is None:
-                raise ValueError(
-                    "--outcome requires --outcome-n <N> "
-                    "(number of outcome problems is a compute budget choice, not derivable)"
-                )
-            from modelcypher.core.domain.training.online_eval import (
-                create_eval_problem_set,
-            )
-
-            outcome_seed = seed + _OUTCOME_SEED_OFFSET
-            all_outcome_problems = create_eval_problem_set(
-                n_problems=effective_outcome_n_problems,
-                seed=outcome_seed,
-            )
-            outcome_problems = all_outcome_problems
-            if auto_regime and regime_result is not None:
-                outcome_problems, ce_filtered_counts = (
-                    self._filter_outcome_problems_by_regime(
-                        all_outcome_problems,
-                        regime_result.per_type,
-                    )
-                )
-                logger.info(
-                    "Auto regime outcome filter: retained %d/%d problems for REINFORCE "
-                    "(dropped CE-only types: %s)",
-                    len(outcome_problems),
-                    len(all_outcome_problems),
-                    ce_filtered_counts if ce_filtered_counts else "{}",
-                )
-            logger.info(
-                "Created %d outcome problems for REINFORCE (seed=%d, derived from training seed+2)",
-                len(outcome_problems), outcome_seed,
-            )
-
         # 9. Train — ScaledGD + Weyl adapter saturation + validation loss stopping
         if rp is not None:
             rp.training_loop_started(max_iters=resolved_max_iters_cap)
-        if (
-            research_online_eval_stop_stage != "pre_outcome"
-            or research_outcome_selector != "all"
-        ):
-            logger.info(
-                "Research controls enabled: online_eval_stop_stage=%s, outcome_selector=%s",
-                research_online_eval_stop_stage,
-                research_outcome_selector,
-            )
         train_start = time.time()
         losses, stop_reason, epoch_metrics = self._adapter.train_loop(
             model=model,
@@ -1661,11 +1453,9 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             template_groups=template_groups,
             geometric_reshape=use_geometric_reshape,
             gradient_hook=gradient_hook,
-            entropy_regularization=effective_entropy_regularization,
+            entropy_regularization=entropy_regularization,
             online_eval_problems=eval_problems,
             online_eval_baseline_ids=eval_baseline_correct_ids,
-            outcome_training=effective_outcome_training,
-            outcome_problems=outcome_problems,
             answer_masked_dataset=answer_masked_train,
             answer_masked_eval=answer_masked_val,
             eval_interval=eval_interval,
@@ -1673,14 +1463,6 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             rss_monitor=rss_monitor,
             base_activations=base_activations if rss_monitor else None,
             entropy_floor_fraction=entropy_floor_fraction,
-            kl_reference_penalty=kl_reference_penalty,
-            outcome_signal_density_gate=outcome_signal_density_gate,
-            outcome_post_eval=(
-                outcome_post_eval or outcome_rollback_on_degradation
-            ),
-            outcome_rollback_on_degradation=outcome_rollback_on_degradation,
-            research_online_eval_stop_stage=research_online_eval_stop_stage,
-            research_outcome_selector=research_outcome_selector,
             degen_prompts=degen_prompts_for_training,
             degen_baseline_max=degen_baseline_max,
             degen_ngram_order=degen_ngram_order,
@@ -1971,36 +1753,6 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             )
             saved_adapter_path = str(saved_path)
 
-        regime_global = None
-        regime_per_type = None
-        regime_headroom = None
-        if regime_result is not None:
-            regime_global = regime_result.global_regime
-            regime_per_type = {
-                problem_type: {
-                    "problem_type": per_type.problem_type,
-                    "n_correct": per_type.n_correct,
-                    "n_total": per_type.n_total,
-                    "observed_accuracy": per_type.observed_accuracy,
-                    "ci_lower": per_type.ci_lower,
-                    "ci_upper": per_type.ci_upper,
-                    "chance_rate": per_type.chance_rate,
-                    "regime": per_type.regime,
-                    "rationale": per_type.rationale,
-                }
-                for problem_type, per_type in regime_result.per_type.items()
-            }
-            regime_headroom = {
-                "baseline_ci_lower": regime_result.baseline_ci_lower,
-                "baseline_ci_upper": regime_result.baseline_ci_upper,
-                "headroom_upper": regime_result.headroom_upper,
-                "headroom_resolution": regime_result.headroom_resolution,
-                "ceiling_bound": regime_result.ceiling_bound,
-                "ceiling_rationale": regime_result.ceiling_rationale,
-                "confidence_level": regime_result.confidence_level,
-                "n_total": regime_result.n_total,
-            }
-
         moe_saturated_during_training: list[str] | None = None
         moe_saturation_threshold = max(
             0.0,
@@ -2087,9 +1839,6 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             rss_final_cosine=rss_final_cosine,
             rss_final_spearman=rss_final_spearman,
             rss_final_top1=rss_final_top1,
-            regime_global=regime_global,
-            regime_per_type=regime_per_type,
-            regime_headroom=regime_headroom,
             quantization_frontier_precheck=quantization_frontier_precheck_result,
             validation_split=validation_split_info,
             auto_retention_samples_collected=auto_retention_samples_collected,

@@ -83,7 +83,6 @@ class _FakeDatasetTrainingService:
     def __init__(self, results: list[_FakeTrainResult]):
         self._results = list(results)
         self.calls: list[dict] = []
-        self.derive_regime_calls = 0
 
     def train_from_dataset_research(self, **kwargs):
         self.calls.append(dict(kwargs))
@@ -91,9 +90,6 @@ class _FakeDatasetTrainingService:
             raise RuntimeError("No fake result available")
         return self._results.pop(0)
 
-    def _derive_regime_n_from_ci(self) -> int:
-        self.derive_regime_calls += 1
-        return 2
 
 
 def _make_online_eval_result(
@@ -160,7 +156,6 @@ def test_validate_all_trials_pass_when_metrics_improve(tmp_path):
     assert len(result.counterexamples) == 0
     assert len(fake.calls) == 2
     for call in fake.calls:
-        assert call["auto_regime"] is True
         assert call["no_save"] is True
 
 
@@ -682,6 +677,7 @@ def test_phase5_cka_shift_inference_healthy(tmp_path, monkeypatch):
         eval_dataset_path=None,
         trials=1,
         base_seed=1,
+        phase5_probe_count=10,
         enable_phase5_inference=True,
         artifact_root=tmp_path / "artifacts",
     )
@@ -726,6 +722,7 @@ def test_phase5_online_eval_drop_triggers_failure(tmp_path, monkeypatch):
         eval_dataset_path=None,
         trials=1,
         base_seed=1,
+        phase5_probe_count=10,
         enable_phase5_inference=True,
         artifact_root=tmp_path / "artifacts",
     )
@@ -768,6 +765,7 @@ def test_phase5_fourgram_crossing_triggers_failure(tmp_path, monkeypatch):
         eval_dataset_path=None,
         trials=1,
         base_seed=1,
+        phase5_probe_count=10,
         enable_phase5_inference=True,
         artifact_root=tmp_path / "artifacts",
     )
@@ -812,6 +810,7 @@ def test_argmax_not_certified_triggers_inference_failure(tmp_path, monkeypatch):
         eval_dataset_path=None,
         trials=1,
         base_seed=1,
+        phase5_probe_count=10,
         enable_phase5_inference=True,
         artifact_root=tmp_path / "artifacts",
     )
@@ -857,6 +856,7 @@ def test_argmax_certified_does_not_trigger_failure(tmp_path, monkeypatch):
         eval_dataset_path=None,
         trials=1,
         base_seed=1,
+        phase5_probe_count=10,
         enable_phase5_inference=True,
         artifact_root=tmp_path / "artifacts",
     )
@@ -901,6 +901,7 @@ def test_argmax_cert_none_does_not_trigger_failure(tmp_path, monkeypatch):
         eval_dataset_path=None,
         trials=1,
         base_seed=1,
+        phase5_probe_count=10,
         enable_phase5_inference=True,
         artifact_root=tmp_path / "artifacts",
     )
@@ -1038,6 +1039,7 @@ def test_phase5_argmax_certificate_fields_round_trip_in_trial_dict(
         eval_dataset_path=None,
         trials=1,
         base_seed=1,
+        phase5_probe_count=10,
         enable_phase5_inference=True,
         artifact_root=tmp_path / "artifacts",
     )
@@ -1103,6 +1105,7 @@ def test_phase5_probe_derivation_is_deterministic(tmp_path, monkeypatch):
         eval_dataset_path=None,
         trials=1,
         base_seed=1,
+        phase5_probe_count=10,
         enable_phase5_inference=True,
         artifact_root=tmp_path / "artifacts_a",
     )
@@ -1112,6 +1115,7 @@ def test_phase5_probe_derivation_is_deterministic(tmp_path, monkeypatch):
         eval_dataset_path=None,
         trials=1,
         base_seed=1,
+        phase5_probe_count=10,
         enable_phase5_inference=True,
         artifact_root=tmp_path / "artifacts_b",
     )
@@ -1119,8 +1123,6 @@ def test_phase5_probe_derivation_is_deterministic(tmp_path, monkeypatch):
     assert result_a.phase5_probe_count == 10
     assert result_b.phase5_probe_count == 10
     assert result_a.phase5_probe_seed == result_b.phase5_probe_seed
-    assert service_a._dataset_training_service.derive_regime_calls == 1
-    assert service_b._dataset_training_service.derive_regime_calls == 1
 
 
 def test_null_space_diagnostics_round_trip_and_summaries(tmp_path):

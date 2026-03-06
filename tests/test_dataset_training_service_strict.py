@@ -17,7 +17,6 @@ from modelcypher.cli.app import app
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 from modelcypher.core.domain.training.geometric_lora import LayerGeometry
-from modelcypher.core.domain.training.regime_selection import PerTypeRegime
 from modelcypher.core.domain.star.problem_generator import StarProblemGenerator
 from modelcypher.core.use_cases.dataset_training_service import (
     DatasetTrainResult,
@@ -230,69 +229,6 @@ def _patch_lightweight_training(monkeypatch: pytest.MonkeyPatch, service: Datase
     )
 
 
-def _patch_auto_regime_measurements(monkeypatch: pytest.MonkeyPatch) -> None:
-    from modelcypher.core.domain.training.online_eval import OnlineEvalResult
-    from modelcypher.core.domain.training.regime_selection import (
-        PerTypeRegime as RegimePerType,
-    )
-    from modelcypher.core.domain.training.regime_selection import TrainingRegime
-
-    baseline_result = OnlineEvalResult(
-        epoch=0,
-        accuracy=0.0,
-        n_correct=0,
-        n_total=5,
-        correct_ids=frozenset(),
-        baseline_n_correct=0,
-        baseline_accuracy=0.0,
-        n_lost=0,
-        n_gained=0,
-        degraded=False,
-        per_type_accuracy={"syllogistic_chain": 0.0},
-        per_type_correct={"syllogistic_chain": 0},
-        per_type_total={"syllogistic_chain": 5},
-    )
-    regime_result = TrainingRegime(
-        global_regime="ce",
-        per_type={
-            "syllogistic_chain": RegimePerType(
-                problem_type="syllogistic_chain",
-                n_correct=0,
-                n_total=5,
-                observed_accuracy=0.0,
-                ci_lower=0.0,
-                ci_upper=0.1,
-                chance_rate=0.5,
-                regime="ce",
-                rationale="k=0",
-            ),
-        },
-        use_ce=True,
-        use_outcome_training=False,
-        use_entropy_regularization=False,
-        confidence_level=0.8,
-        n_total=5,
-        baseline_ci_lower=0.0,
-        baseline_ci_upper=0.6,
-        headroom_upper=0.6,
-        headroom_resolution=0.2,
-        ceiling_bound=False,
-        ceiling_rationale="test",
-        derivation_log=("test",),
-    )
-    monkeypatch.setattr(
-        "modelcypher.core.domain.training.online_eval.create_eval_problem_set",
-        lambda **_kwargs: [object()],
-    )
-    monkeypatch.setattr(
-        "modelcypher.core.domain.training.online_eval.evaluate_correctness",
-        lambda **_kwargs: baseline_result,
-    )
-    monkeypatch.setattr(
-        "modelcypher.core.domain.training.regime_selection.select_training_regime",
-        lambda _baseline_result: regime_result,
-    )
-
 
 def test_pilot_variance_split_meets_target_standard_error():
     service = DatasetTrainingService(adapter=_DummyAdapter(), backend=_DummyBackend())
@@ -341,69 +277,6 @@ def test_pilot_variance_split_uses_ieee754_sqrt_eps():
     assert split_info["sqrt_eps"] == pytest.approx(expected_sqrt_eps, rel=1e-12)
 
 
-def test_train_from_dataset_auto_regime_default_is_enabled():
-    signature = inspect.signature(DatasetTrainingService.train_from_dataset)
-    assert signature.parameters["auto_regime"].default is True
-
-
-def test_auto_regime_outcome_filter_drops_ce_types():
-    service = DatasetTrainingService(adapter=_DummyAdapter(), backend=_DummyBackend())
-
-    problems = [
-        SimpleNamespace(problem_type="syllogistic_chain"),
-        SimpleNamespace(problem_type="contrapositive"),
-        SimpleNamespace(problem_type="multi_step_arithmetic"),
-        SimpleNamespace(problem_type="unknown_type"),
-    ]
-    per_type_regime = {
-        "syllogistic_chain": PerTypeRegime(
-            problem_type="syllogistic_chain",
-            n_correct=0,
-            n_total=5,
-            observed_accuracy=0.0,
-            ci_lower=0.0,
-            ci_upper=0.1,
-            chance_rate=0.5,
-            regime="ce",
-            rationale="k=0",
-        ),
-        "contrapositive": PerTypeRegime(
-            problem_type="contrapositive",
-            n_correct=2,
-            n_total=5,
-            observed_accuracy=0.4,
-            ci_lower=0.2,
-            ci_upper=0.8,
-            chance_rate=0.5,
-            regime="reinforce_entropy",
-            rationale="ci lower below chance",
-        ),
-        "multi_step_arithmetic": PerTypeRegime(
-            problem_type="multi_step_arithmetic",
-            n_correct=3,
-            n_total=5,
-            observed_accuracy=0.6,
-            ci_lower=0.3,
-            ci_upper=0.9,
-            chance_rate=0.0,
-            regime="reinforce",
-            rationale="ci lower above chance",
-        ),
-    }
-
-    filtered, dropped = service._filter_outcome_problems_by_regime(
-        problems,
-        per_type_regime,
-    )
-
-    assert [p.problem_type for p in filtered] == [
-        "contrapositive",
-        "multi_step_arithmetic",
-    ]
-    assert dropped["syllogistic_chain"] == 1
-    # Unknown problem type defaults to CE for conservative filtering
-    assert dropped["unknown_type"] == 1
-
 
 def test_train_run_strict_hides_research_flags(monkeypatch, tmp_path: Path):
     model_dir = tmp_path / "model"
@@ -438,39 +311,6 @@ def test_train_run_strict_hides_research_flags(monkeypatch, tmp_path: Path):
         "benchmark_suite",
     }
 
-
-def test_train_run_research_exposes_auto_regime_flag(monkeypatch, tmp_path: Path):
-    model_dir = tmp_path / "model"
-    model_dir.mkdir()
-    data_path = tmp_path / "train.jsonl"
-    data_path.write_text('{"text":"hello"}\n', encoding="utf-8")
-
-    capture = _CliCaptureDatasetService()
-    monkeypatch.setattr(
-        "modelcypher.cli.composition.get_dataset_training_service",
-        lambda: capture,
-    )
-
-    help_result = runner.invoke(app, ["train", "run-research", "--help"])
-    assert help_result.exit_code == 0
-    assert "--auto-regime" in help_result.stdout
-    assert "--no-auto-regime" in help_result.stdout
-
-    result = runner.invoke(
-        app,
-        [
-            "train",
-            "run-research",
-            "--model",
-            str(model_dir),
-            "--data",
-            str(data_path),
-            "--no-auto-regime",
-        ],
-    )
-    assert result.exit_code == 0
-    assert capture.research_calls
-    assert capture.research_calls[0]["auto_regime"] is False
 
 
 def test_pilot_variance_split_requires_two_samples():
@@ -755,98 +595,6 @@ def test_collect_auto_retention_default_uses_all_training_prompts():
     assert len(backend.generate_calls) == 250
 
 
-def test_train_from_dataset_auto_regime_adds_regime_metadata(monkeypatch, tmp_path: Path):
-    from modelcypher.core.domain.training.online_eval import OnlineEvalResult
-    from modelcypher.core.domain.training.regime_selection import (
-        PerTypeRegime as RegimePerType,
-    )
-    from modelcypher.core.domain.training.regime_selection import (
-        TrainingRegime,
-    )
-
-    model_dir = tmp_path / "model"
-    model_dir.mkdir()
-    train_path = tmp_path / "train.jsonl"
-    eval_path = tmp_path / "eval.jsonl"
-    _write_jsonl(train_path, [{"text": "train 1"}, {"text": "train 2"}])
-    _write_jsonl(eval_path, [{"text": "eval 1"}])
-
-    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
-    _patch_lightweight_training(monkeypatch, service)
-    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
-
-    baseline_result = OnlineEvalResult(
-        epoch=0,
-        accuracy=0.0,
-        n_correct=0,
-        n_total=5,
-        correct_ids=frozenset(),
-        baseline_n_correct=0,
-        baseline_accuracy=0.0,
-        n_lost=0,
-        n_gained=0,
-        degraded=False,
-        per_type_accuracy={"syllogistic_chain": 0.0},
-        per_type_correct={"syllogistic_chain": 0},
-        per_type_total={"syllogistic_chain": 5},
-    )
-    regime_result = TrainingRegime(
-        global_regime="ce",
-        per_type={
-            "syllogistic_chain": RegimePerType(
-                problem_type="syllogistic_chain",
-                n_correct=0,
-                n_total=5,
-                observed_accuracy=0.0,
-                ci_lower=0.0,
-                ci_upper=0.2,
-                chance_rate=0.5,
-                regime="ce",
-                rationale="k=0",
-            ),
-        },
-        use_ce=True,
-        use_outcome_training=False,
-        use_entropy_regularization=False,
-        confidence_level=0.8,
-        n_total=5,
-        baseline_ci_lower=0.0,
-        baseline_ci_upper=0.6,
-        headroom_upper=0.6,
-        headroom_resolution=0.2,
-        ceiling_bound=False,
-        ceiling_rationale="test",
-        derivation_log=("test",),
-    )
-
-    monkeypatch.setattr(
-        "modelcypher.core.domain.training.online_eval.create_eval_problem_set",
-        lambda **_kwargs: [object()],
-    )
-    monkeypatch.setattr(
-        "modelcypher.core.domain.training.online_eval.evaluate_correctness",
-        lambda **_kwargs: baseline_result,
-    )
-    monkeypatch.setattr(
-        "modelcypher.core.domain.training.regime_selection.select_training_regime",
-        lambda _baseline_result: regime_result,
-    )
-
-    result = service.train_from_dataset(
-        model_path=model_dir,
-        dataset_path=train_path,
-        eval_dataset_path=eval_path,
-        no_save=True,
-    )
-
-    assert result.regime_global == "ce"
-    assert result.regime_per_type is not None
-    assert result.regime_per_type["syllogistic_chain"]["regime"] == "ce"
-    payload = result.to_dict()
-    assert payload["regime_global"] == "ce"
-    assert payload["regime_per_type"]["syllogistic_chain"]["regime"] == "ce"
-    assert payload["regime_headroom"]["ceiling_bound"] is False
-
 
 def test_train_from_dataset_strict_fails_pipeline_gate(monkeypatch, tmp_path: Path):
     model_dir = tmp_path / "model"
@@ -861,7 +609,7 @@ def test_train_from_dataset_strict_fails_pipeline_gate(monkeypatch, tmp_path: Pa
         backend=_FlowBackend(),
     )
     _patch_lightweight_training(monkeypatch, service)
-    _patch_auto_regime_measurements(monkeypatch)
+
     monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
 
     with pytest.raises(TrainingDerivationError) as excinfo:
@@ -889,7 +637,7 @@ def test_train_from_dataset_strict_exposes_pipeline_gate_metadata(monkeypatch, t
 
     service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
     _patch_lightweight_training(monkeypatch, service)
-    _patch_auto_regime_measurements(monkeypatch)
+
     monkeypatch.setattr(
         service,
         "_collect_probe_activations",
@@ -937,7 +685,7 @@ def test_train_from_dataset_research_reports_failed_pipeline_gate(monkeypatch, t
         backend=_FlowBackend(),
     )
     _patch_lightweight_training(monkeypatch, service)
-    _patch_auto_regime_measurements(monkeypatch)
+
     monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
 
     result = service.train_from_dataset_research(
@@ -954,168 +702,6 @@ def test_train_from_dataset_research_reports_failed_pipeline_gate(monkeypatch, t
     assert payload["pipeline_gate_passed"] is False
     assert "spectral_bounds_violation" in payload["pipeline_gate_failure_modes"]
 
-
-def test_auto_regime_preserves_explicit_entropy_regularization(monkeypatch, tmp_path: Path):
-    from modelcypher.core.domain.training.online_eval import OnlineEvalResult
-    from modelcypher.core.domain.training.regime_selection import TrainingRegime
-
-    model_dir = tmp_path / "model"
-    model_dir.mkdir()
-    train_path = tmp_path / "train.jsonl"
-    eval_path = tmp_path / "eval.jsonl"
-    _write_jsonl(train_path, [{"text": "train 1"}])
-    _write_jsonl(eval_path, [{"text": "eval 1"}])
-
-    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
-    _patch_lightweight_training(monkeypatch, service)
-    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
-
-    baseline_result = OnlineEvalResult(
-        epoch=0,
-        accuracy=0.0,
-        n_correct=0,
-        n_total=5,
-        correct_ids=frozenset(),
-        baseline_n_correct=0,
-        baseline_accuracy=0.0,
-        n_lost=0,
-        n_gained=0,
-        degraded=False,
-        per_type_accuracy={"syllogistic_chain": 0.0},
-        per_type_correct={"syllogistic_chain": 0},
-        per_type_total={"syllogistic_chain": 5},
-    )
-    regime_result = TrainingRegime(
-        global_regime="ce",
-        per_type={},
-        use_ce=True,
-        use_outcome_training=False,
-        use_entropy_regularization=False,
-        confidence_level=0.8,
-        n_total=5,
-        baseline_ci_lower=0.0,
-        baseline_ci_upper=0.6,
-        headroom_upper=0.6,
-        headroom_resolution=0.2,
-        ceiling_bound=False,
-        ceiling_rationale="test",
-        derivation_log=("test",),
-    )
-
-    monkeypatch.setattr(
-        "modelcypher.core.domain.training.online_eval.create_eval_problem_set",
-        lambda **_kwargs: [object()],
-    )
-    monkeypatch.setattr(
-        "modelcypher.core.domain.training.online_eval.evaluate_correctness",
-        lambda **_kwargs: baseline_result,
-    )
-    monkeypatch.setattr(
-        "modelcypher.core.domain.training.regime_selection.select_training_regime",
-        lambda _baseline_result: regime_result,
-    )
-
-    captured_train_loop_kwargs: dict[str, object] = {}
-
-    def _capture_train_loop(**kwargs):
-        captured_train_loop_kwargs.update(kwargs)
-        return [(1, 1.0, 1.0)], "max_iters", []
-
-    monkeypatch.setattr(service._adapter, "train_loop", _capture_train_loop)
-
-    service.train_from_dataset(
-        model_path=model_dir,
-        dataset_path=train_path,
-        eval_dataset_path=eval_path,
-        entropy_regularization=True,
-        no_save=True,
-    )
-
-    assert captured_train_loop_kwargs["entropy_regularization"] is True
-
-
-def test_auto_regime_ceiling_bound_forces_ce_only_behavior(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    from modelcypher.core.domain.training.online_eval import OnlineEvalResult
-    from modelcypher.core.domain.training.regime_selection import TrainingRegime
-
-    model_dir = tmp_path / "model"
-    model_dir.mkdir()
-    train_path = tmp_path / "train.jsonl"
-    eval_path = tmp_path / "eval.jsonl"
-    _write_jsonl(train_path, [{"text": "train 1"}])
-    _write_jsonl(eval_path, [{"text": "eval 1"}])
-
-    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
-    _patch_lightweight_training(monkeypatch, service)
-    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
-
-    baseline_result = OnlineEvalResult(
-        epoch=0,
-        accuracy=1.0,
-        n_correct=5,
-        n_total=5,
-        correct_ids=frozenset(),
-        baseline_n_correct=5,
-        baseline_accuracy=1.0,
-        n_lost=0,
-        n_gained=0,
-        degraded=False,
-        per_type_accuracy={"syllogistic_chain": 1.0},
-        per_type_correct={"syllogistic_chain": 5},
-        per_type_total={"syllogistic_chain": 5},
-    )
-    regime_result = TrainingRegime(
-        global_regime="reinforce",
-        per_type={},
-        use_ce=True,
-        use_outcome_training=True,
-        use_entropy_regularization=True,
-        confidence_level=0.8,
-        n_total=5,
-        baseline_ci_lower=0.8,
-        baseline_ci_upper=1.0,
-        headroom_upper=0.0,
-        headroom_resolution=0.2,
-        ceiling_bound=True,
-        ceiling_rationale="ceiling",
-        derivation_log=("test",),
-    )
-
-    monkeypatch.setattr(
-        "modelcypher.core.domain.training.online_eval.create_eval_problem_set",
-        lambda **_kwargs: [object()],
-    )
-    monkeypatch.setattr(
-        "modelcypher.core.domain.training.online_eval.evaluate_correctness",
-        lambda **_kwargs: baseline_result,
-    )
-    monkeypatch.setattr(
-        "modelcypher.core.domain.training.regime_selection.select_training_regime",
-        lambda _baseline_result: regime_result,
-    )
-
-    captured_train_loop_kwargs: dict[str, object] = {}
-
-    def _capture_train_loop(**kwargs):
-        captured_train_loop_kwargs.update(kwargs)
-        return [(1, 1.0, 1.0)], "max_iters", []
-
-    monkeypatch.setattr(service._adapter, "train_loop", _capture_train_loop)
-
-    service.train_from_dataset(
-        model_path=model_dir,
-        dataset_path=train_path,
-        eval_dataset_path=eval_path,
-        outcome_training=True,
-        entropy_regularization=True,
-        no_save=True,
-    )
-
-    assert captured_train_loop_kwargs["outcome_training"] is False
-    assert captured_train_loop_kwargs["entropy_regularization"] is False
 
 
 def test_quantization_frontier_precheck_runs_before_init_adapter_merge(
@@ -1180,7 +766,6 @@ def test_quantization_frontier_precheck_runs_before_init_adapter_merge(
         model_path=model_dir,
         dataset_path=train_path,
         eval_dataset_path=eval_path,
-        auto_regime=False,
         quantization_reference_model_path=ref_model_dir,
         init_adapter_path=init_adapter_dir,
         no_save=True,
@@ -1236,7 +821,6 @@ def test_quantization_frontier_validity_allows_raw_weyl_crossing(
         model_path=model_dir,
         dataset_path=train_path,
         eval_dataset_path=eval_path,
-        auto_regime=False,
         quantization_reference_model_path=ref_model_dir,
         no_save=True,
     )
@@ -1279,7 +863,6 @@ def test_quantization_frontier_invalid_fails_closed_without_override(
             model_path=model_dir,
             dataset_path=train_path,
             eval_dataset_path=eval_path,
-            auto_regime=False,
             quantization_reference_model_path=ref_model_dir,
             no_save=True,
         )
@@ -1317,7 +900,6 @@ def test_quantization_frontier_invalid_allows_explicit_research_override(
         model_path=model_dir,
         dataset_path=train_path,
         eval_dataset_path=eval_path,
-        auto_regime=False,
         quantization_reference_model_path=ref_model_dir,
         research_allow_quantization_frontier_invalid=True,
         no_save=True,
@@ -1354,7 +936,6 @@ def test_quantization_frontier_precheck_not_run_without_reference_path(
         model_path=model_dir,
         dataset_path=train_path,
         eval_dataset_path=eval_path,
-        auto_regime=False,
         no_save=True,
     )
 
@@ -1431,7 +1012,6 @@ def test_research_online_eval_problem_set_path_overrides_generated_eval_problems
         model_path=model_dir,
         dataset_path=train_path,
         eval_dataset_path=eval_path,
-        auto_regime=False,
         online_eval=True,
         research_online_eval_problem_set_path=problem_set_path,
         no_save=True,
@@ -1443,63 +1023,6 @@ def test_research_online_eval_problem_set_path_overrides_generated_eval_problems
     assert problems[0].problem_id == problem.problem_id
     assert len(captured_train_loop_kwargs["online_eval_problems"]) == 1
 
-
-def test_auto_regime_selection_failure_raises_training_derivation_error(
-    monkeypatch,
-    tmp_path: Path,
-):
-    from modelcypher.core.domain.training.online_eval import OnlineEvalResult
-
-    model_dir = tmp_path / "model"
-    model_dir.mkdir()
-    train_path = tmp_path / "train.jsonl"
-    eval_path = tmp_path / "eval.jsonl"
-    _write_jsonl(train_path, [{"text": "train 1"}])
-    _write_jsonl(eval_path, [{"text": "eval 1"}])
-
-    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
-    _patch_lightweight_training(monkeypatch, service)
-    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
-
-    baseline_result = OnlineEvalResult(
-        epoch=0,
-        accuracy=0.0,
-        n_correct=0,
-        n_total=5,
-        correct_ids=frozenset(),
-        baseline_n_correct=0,
-        baseline_accuracy=0.0,
-        n_lost=0,
-        n_gained=0,
-        degraded=False,
-        per_type_accuracy={},
-        per_type_correct={},
-        per_type_total={},
-    )
-
-    monkeypatch.setattr(
-        "modelcypher.core.domain.training.online_eval.create_eval_problem_set",
-        lambda **_kwargs: [object()],
-    )
-    monkeypatch.setattr(
-        "modelcypher.core.domain.training.online_eval.evaluate_correctness",
-        lambda **_kwargs: baseline_result,
-    )
-    monkeypatch.setattr(
-        "modelcypher.core.domain.training.regime_selection.select_training_regime",
-        lambda _baseline_result: (_ for _ in ()).throw(ValueError("no per-type totals")),
-    )
-
-    with pytest.raises(TrainingDerivationError) as excinfo:
-        service.train_from_dataset(
-            model_path=model_dir,
-            dataset_path=train_path,
-            eval_dataset_path=eval_path,
-        )
-
-    err = excinfo.value
-    assert err.failure_class == "insufficient_baseline_measurement"
-    assert "reason" in (err.diagnostics or {})
 
 
 def test_train_from_dataset_auto_retention_mix_fraction(monkeypatch, tmp_path: Path):
@@ -1541,7 +1064,6 @@ def test_train_from_dataset_auto_retention_mix_fraction(monkeypatch, tmp_path: P
         model_path=model_dir,
         dataset_path=train_path,
         eval_dataset_path=eval_path,
-        auto_regime=False,
         no_save=True,
     )
 
@@ -1595,7 +1117,6 @@ def test_train_from_dataset_manual_retention_skips_auto(monkeypatch, tmp_path: P
         dataset_path=train_path,
         eval_dataset_path=eval_path,
         retention_dataset_path=retention_path,
-        auto_regime=False,
         no_save=True,
     )
 
@@ -1639,7 +1160,6 @@ def test_train_from_dataset_seq_length_includes_manual_retention(monkeypatch, tm
         dataset_path=train_path,
         eval_dataset_path=eval_path,
         retention_dataset_path=retention_path,
-        auto_regime=False,
         no_save=True,
     )
 
@@ -1668,7 +1188,6 @@ def test_train_from_dataset_seq_length_includes_eval_data(monkeypatch, tmp_path:
         model_path=model_dir,
         dataset_path=train_path,
         eval_dataset_path=eval_path,
-        auto_regime=False,
         no_save=True,
     )
 
@@ -1677,67 +1196,6 @@ def test_train_from_dataset_seq_length_includes_eval_data(monkeypatch, tmp_path:
     expected_seq_length = ((max_tokens + simd_width - 1) // simd_width) * simd_width
     assert result.seq_length_used == expected_seq_length
 
-
-def test_train_from_dataset_passes_research_controls_to_train_loop(
-    monkeypatch,
-    tmp_path: Path,
-):
-    model_dir = tmp_path / "model"
-    model_dir.mkdir()
-    train_path = tmp_path / "train.jsonl"
-    eval_path = tmp_path / "eval.jsonl"
-    _write_jsonl(train_path, [{"text": "train 1"}])
-    _write_jsonl(eval_path, [{"text": "eval 1"}])
-
-    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
-    _patch_lightweight_training(monkeypatch, service)
-    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
-
-    captured_train_loop_kwargs: dict[str, object] = {}
-
-    def _capture_train_loop(**kwargs):
-        captured_train_loop_kwargs.update(kwargs)
-        return [(1, 1.0, 1.0)], "max_iters", []
-
-    monkeypatch.setattr(service._adapter, "train_loop", _capture_train_loop)
-
-    service.train_from_dataset(
-        model_path=model_dir,
-        dataset_path=train_path,
-        eval_dataset_path=eval_path,
-        auto_regime=False,
-        research_online_eval_stop_stage="post_outcome",
-        research_outcome_selector="lost_only",
-        no_save=True,
-    )
-
-    assert captured_train_loop_kwargs["research_online_eval_stop_stage"] == "post_outcome"
-    assert captured_train_loop_kwargs["research_outcome_selector"] == "lost_only"
-
-
-def test_train_from_dataset_research_controls_validate_values(tmp_path: Path):
-    model_dir = tmp_path / "model"
-    model_dir.mkdir()
-    train_path = tmp_path / "train.jsonl"
-    _write_jsonl(train_path, [{"text": "train 1"}])
-
-    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
-
-    with pytest.raises(ValueError, match="research_online_eval_stop_stage"):
-        service.train_from_dataset(
-            model_path=model_dir,
-            dataset_path=train_path,
-            auto_regime=False,
-            research_online_eval_stop_stage="invalid_stage",
-        )
-
-    with pytest.raises(ValueError, match="research_outcome_selector"):
-        service.train_from_dataset(
-            model_path=model_dir,
-            dataset_path=train_path,
-            auto_regime=False,
-            research_outcome_selector="invalid_selector",
-        )
 
 
 def test_train_from_dataset_populates_moe_targets(monkeypatch, tmp_path: Path):
@@ -1796,7 +1254,6 @@ def test_train_from_dataset_populates_moe_targets(monkeypatch, tmp_path: Path):
         model_path=model_dir,
         dataset_path=train_path,
         eval_dataset_path=eval_path,
-        auto_regime=False,
         no_save=True,
         target_experts="L0.E2",
     )
