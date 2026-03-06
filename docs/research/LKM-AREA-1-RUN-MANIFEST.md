@@ -1,7 +1,7 @@
 # LKM Area 1: Run Manifest and Artifact Schema
 
-**Status:** Draft
-**Date:** 2026-03-05
+**Status:** Decisions resolved, implementation ready
+**Date:** 2026-03-05 (updated 2026-03-06)
 **Parent:** `docs/research/LORA-KNOWLEDGE-MEMORY-CAPACITY-VALIDATION-PROTOCOL.md`
 
 This document specifies the exact runs, datasets, configurations, and artifact
@@ -12,9 +12,10 @@ measurements). It does not contain scripts; it defines what scripts must produce
 
 ## 1. Model Selection
 
-### Decision Point: Model Family
+### Decision: Qwen3.5 Family Only (Resolved 2026-03-06)
 
-The paper uses Qwen3-8B and Llama-3.1-8B. Neither is currently on the volume.
+Only latest-generation models from each maker. Qwen3 (non-3.5) is previous
+generation — not downloaded, not used.
 
 Available on `/Volumes/CodeCypher/models/mlx-community/`:
 
@@ -24,30 +25,15 @@ Available on `/Volumes/CodeCypher/models/mlx-community/`:
 | Qwen3.5-2B-bf16 | Qwen3.5 | 2B | Hybrid |
 | Qwen3.5-4B-bf16 | Qwen3.5 | 4B | Hybrid |
 | Qwen3.5-9B-bf16 | Qwen3.5 | 9B | Hybrid |
-| LFM2-350M-MLX-bf16 | LFM2 | 350M | Hybrid attention-convolution |
-| LFM2-700M-bf16 | LFM2 | 700M | Hybrid attention-convolution |
 
-**Option A: Download Qwen3-8B-bf16.**
-Exact paper match. Commensurable comparison. Requires download.
-
-**Option B: Run on Qwen3.5 family.**
-Available now. Cross-family vs paper (Qwen3.5 != Qwen3). Conclusions are
-exploratory until same sign confirmed on paper-matched family. Has the
-advantage of testing our predictions on a hybrid-attention architecture the
-paper did not study.
-
-**Option C: Both.**
-Qwen3.5-0.8B for harness validation (fast). Qwen3-8B for commensurable
-reproduction after download. Cross-family comparison becomes a bonus axis.
-
-**Recommended:** Option C. Harness validation requires no download. Commensurable
-reproduction requires one model download decision.
+All Qwen3.5 results are `[EXPLORATORY]` vs the paper (different family,
+hybrid architecture). This tests our geometric predictions on an architecture
+the paper did not study.
 
 ### Model Size Policy Compliance
 
 - Smoke test / harness validation: Qwen3.5-0.8B-bf16 (smallest available)
 - Primary capacity sweep: Qwen3.5-0.8B-bf16 first, then scale to 2B/4B
-- Commensurable paper reproduction: Qwen3-8B-bf16 (requires download)
 - Smoke test runs do NOT count for claim promotion
 
 ---
@@ -112,9 +98,8 @@ Download from source or construct from existing assets.
 - Efficacy score (probability of target completion > probability of original)
 - Requires logit access, not just generation
 
-**Defer:** CF is secondary to PB for the capacity sweep. Implement PB first.
-CF adds the "fact revision vs. arbitrary association" axis, which is useful
-but not required for P-LKM-1 through P-LKM-4.
+**Deferred (2026-03-06).** CF is secondary to PB for the capacity sweep.
+PB first, CF only after capacity sweep is complete.
 
 ---
 
@@ -164,15 +149,19 @@ tokens in {1K, 2K, 4K, 8K, 12K, 16K, 20K}
 For smoke test on Qwen3.5-0.8B: subset to {4, 16, 64, 256} x {1K, 4K, 8K, 16K}
 = 16 runs (validates harness before full sweep).
 
-### 3.3 Implementation Path
+### 3.3 Implementation Path (Resolved 2026-03-06)
 
-B0 must use standard LoRA (HuggingFace PEFT or equivalent), NOT our NB-LoRA
-pipeline. The point of B0 is paper-matched reproduction. Our pipeline's
-geometric step sizes, Cayley parameterization, and stopping criteria would
-contaminate the baseline.
+B0 uses `mlx_lm.lora` (standard LoRA on Metal), NOT our NB-LoRA pipeline.
+The point of B0 is paper-matched *methodology* (standard parameterization,
+no geometric interventions), not paper-matched *library*. `mlx_lm.lora`
+provides standard LoRA (B=0, A=Gaussian, AdamW) natively on Metal.
 
-**Required:** a thin training harness that wraps PEFT + a standard AdamW
-optimizer + fixed step count. This is separate from `mc train run`.
+Our pipeline's geometric step sizes, Cayley parameterization, and stopping
+criteria would contaminate the baseline.
+
+**Required:** a thin training harness that wraps `mlx_lm.lora` with
+paper-matched config (alpha=r, all linear layers, fixed step count).
+This is separate from `mc train run`.
 
 ---
 
@@ -497,28 +486,18 @@ paper-style alpha=r settings. Record and proceed to G2.
 
 ## 9. Commensurability Notes
 
-- Qwen3.5-0.8B results are NOT commensurable with the paper's Qwen3-8B results.
+- Qwen3.5 results are NOT commensurable with the paper's Qwen3-8B results.
   Different family, different scale, different architecture (hybrid vs standard).
 - Qwen3.5 results test our geometric predictions on a NEW architecture family
   that the paper did not study. This is valuable but does not reproduce the paper.
-- For commensurable reproduction, Qwen3-8B-bf16 must be downloaded.
 - All claims from Qwen3.5 runs are classified `[EXPLORATORY]` with explicit
-  cross-family caveat until confirmed on a paper-matched model.
+  cross-family caveat.
 
 ---
 
-## 10. Open Questions for Jason
+## 10. Resolved Decisions (2026-03-06)
 
-1. **Model download:** Should we download Qwen3-8B-bf16 for commensurable
-   reproduction, or run the full protocol on Qwen3.5 first?
-
-2. **PEFT dependency:** B0 requires standard HuggingFace PEFT for paper-matched
-   LoRA. Is adding `peft` as a dev dependency acceptable, or should we implement
-   a minimal standard-LoRA training loop ourselves?
-
-3. **Compute budget:** Full B0 sweep is 70 runs at 1,500 steps each on 0.8B.
-   Estimated: ~2 hours on Metal. Full protocol (B0+G1+G2+G3) is ~280 runs.
-   Run all, or start with the smoke-test subset?
-
-4. **CounterFact:** Defer CF entirely until PB capacity sweep is complete, or
-   generate CF in parallel as a secondary benchmark?
+1. **Model family:** Qwen3.5 only (latest generation). No Qwen3-8B download.
+2. **Training backend:** `mlx_lm.lora` for B0 (standard LoRA on Metal). No PEFT dependency.
+3. **Compute scope:** Smoke-test first (16 runs), then full sweep if harness validates.
+4. **CounterFact:** Deferred until PB capacity sweep is complete.
