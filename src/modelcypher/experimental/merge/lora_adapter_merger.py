@@ -45,7 +45,8 @@ class AdapterPayload:
     scale: float
     weights: dict[str, "Array"]
     module_keys: list[str]
-    capability_transfer: bool = True  # Default True for pre-provenance adapters
+    capability_transfer: bool
+    training_objective: str
 
 
 @dataclass(frozen=True)
@@ -170,14 +171,22 @@ class LoRAAdapterMerger:
 
         # Read adapter provenance metadata
         adapter_metadata = config.get("metadata", {})
-        cap_transfer_str = adapter_metadata.get("capability_transfer", "true")
+        training_objective = adapter_metadata.get("training_objective", None)
+        cap_transfer_str = adapter_metadata.get("capability_transfer", None)
+
+        if training_objective is None or cap_transfer_str is None:
+            raise MergeError(
+                f"Adapter {directory} missing provenance metadata "
+                f"(training_objective={training_objective}, "
+                f"capability_transfer={cap_transfer_str}). "
+                f"Only adapters produced by the current pipeline are mergeable."
+            )
+
         capability_transfer = cap_transfer_str.lower() != "false"
         if not capability_transfer:
-            logger.warning(
-                "Adapter %s has capability_transfer=false (objective=%s). "
-                "Not eligible for capability merge.",
-                directory,
-                adapter_metadata.get("training_objective", "unknown"),
+            raise MergeError(
+                f"Adapter {directory} has capability_transfer=false "
+                f"(objective={training_objective}). Not eligible for merge."
             )
 
         return AdapterPayload(
@@ -188,6 +197,7 @@ class LoRAAdapterMerger:
             weights=weights,
             module_keys=module_keys,
             capability_transfer=capability_transfer,
+            training_objective=training_objective,
         )
 
     @staticmethod
