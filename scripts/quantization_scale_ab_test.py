@@ -165,13 +165,12 @@ def _run_training_arm(
     adapter_output = output_dir / f"adapter_{arm_name}"
 
     start = time.monotonic()
-    result = service.train_from_dataset_research(
+    result = service.train_from_dataset(
         model_path=quantized_model,
         dataset_path=train_dataset,
         eval_dataset_path=eval_dataset,
         output_path=str(adapter_output),
         seed=seed,
-        auto_regime=False,
         scale_bound_override=scale_bound_override,
         max_iters_cap=max_iters_cap,
     )

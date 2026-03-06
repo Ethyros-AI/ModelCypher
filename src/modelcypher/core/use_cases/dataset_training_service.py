@@ -393,52 +393,6 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             del fp_model, fp_tokenizer
             self._backend.clear_cache()
 
-    def train_from_dataset_strict(
-        self,
-        model_path: str | Path,
-        dataset_path: str | Path,
-        output_path: str | Path | None = None,
-        eval_dataset_path: str | Path | None = None,
-        benchmark_suite: str | None = None,
-        entropy_regularization: bool = False,
-    ) -> DatasetTrainResult:
-        """Strict training entrypoint: model+dataset only."""
-        resolved_model_path = Path(model_path).expanduser().resolve()
-        resolved_dataset_path = Path(dataset_path).expanduser().resolve()
-        derived_seed = self._derive_strict_seed(
-            model_path=resolved_model_path,
-            dataset_path=resolved_dataset_path,
-        )
-        logger.info(
-            "Strict training seed derived from model+dataset hashes: seed=%d",
-            derived_seed,
-        )
-        return self.train_from_dataset(
-            model_path=resolved_model_path,
-            dataset_path=resolved_dataset_path,
-            output_path=output_path,
-            eval_dataset_path=eval_dataset_path,
-            seed=derived_seed,
-            benchmark_suite=benchmark_suite,
-            entropy_regularization=entropy_regularization,
-            enforce_pipeline_gate=True,
-        )
-
-    def train_from_dataset_research(
-        self,
-        model_path: str | Path,
-        dataset_path: str | Path,
-        **kwargs: Any,
-    ) -> DatasetTrainResult:
-        """Research entrypoint exposing non-strict controls."""
-        kwargs.pop("enforce_pipeline_gate", None)
-        return self.train_from_dataset(
-            model_path=model_path,
-            dataset_path=dataset_path,
-            enforce_pipeline_gate=False,
-            **kwargs,
-        )
-
     def train_from_dataset(
         self,
         model_path: str | Path,
@@ -448,7 +402,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         eval_dataset_path: str | Path | None = None,
         seq_length: int | None = None,
         lr_override: float | None = None,
-        seed: int = 42,
+        seed: int | None = None,
         topo_monitor: bool = False,
         dim_monitor: bool = False,
         paired: bool | None = None,
@@ -479,8 +433,6 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         max_iters_cap: int | None = None,
         benchmark_suite: str | None = None,
         target_experts: list[str] | str | None = None,
-        # Internal control: strict path fails on gate violations; research reports only.
-        enforce_pipeline_gate: bool = False,
         # External gradient hook — composed with any internal format-projection hook
         gradient_hook: "Callable | None" = None,
     ) -> DatasetTrainResult:
@@ -495,6 +447,15 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         init_adapter = (
             Path(init_adapter_path).expanduser().resolve() if init_adapter_path else None
         )
+        if seed is None:
+            seed = self._derive_training_seed(model_path=model_path, dataset_path=dataset_path)
+            logger.info(
+                "Training seed derived from model+dataset hashes: seed=%d",
+                seed,
+            )
+        else:
+            logger.info("Training seed override: seed=%d", seed)
+
         if no_save:
             output_dir = None
         elif output_path is not None:
@@ -1709,10 +1670,10 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             adapter_saturation_median_ratio=adapter_saturation_median_ratio,
             max_effective_gain_ratio=max_gain_ratio,
             epoch_metrics=epoch_metrics_payload,
-            strict_fail_closed_core=bool(enforce_pipeline_gate),
+            strict_fail_closed_core=True,
         )
         pipeline_gate_verdict = evaluate_pipeline_gate(gate_input, eps=gate_eps)
-        if enforce_pipeline_gate and not pipeline_gate_verdict.passed:
+        if not pipeline_gate_verdict.passed:
             verdict_dict = pipeline_gate_verdict.to_dict()
             raise TrainingDerivationError(
                 failure_class="pipeline_gate_failed",

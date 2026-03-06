@@ -10,7 +10,7 @@ Notes:
 
 Training-related commands available now:
 - `mc train run`
-- `mc train run-research`
+- `mc train run`
 - `mc train validate-derived`
 - `mc train star`
 - `mc train status`
@@ -69,12 +69,12 @@ Options:
 - `--output`, `-o`
 - `--eval-data`
 
-## `mc train run-research`
+## `mc train run`
 
 Research command with instrumentation controls.
 
 ```bash
-poetry run mc train run-research \
+poetry run mc train run \
   -m /path/to/model \
   -d /path/to/data.jsonl \
   --seed 42 \

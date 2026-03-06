@@ -50,7 +50,8 @@ class TestTrainCommandHelp:
         result = runner.invoke(app, ["train", "--help"])
         assert result.exit_code == 0
         assert "--agent" not in result.stdout
-        assert "run-research" in result.stdout
+        assert "run-research" not in result.stdout
+        assert "run" in result.stdout
         assert "validate-derived" in result.stdout
 
     def test_train_status_help(self):
@@ -67,30 +68,30 @@ class TestTrainCommandHelp:
         assert "--model" in result.stdout
         assert "--data" in result.stdout
         assert "--eval-data" in result.stdout
+        assert "--entropy-reg" in result.stdout
         assert "--auto-regime" not in result.stdout
 
-    def test_train_run_research_help(self):
-        """Test 'mc train run-research --help' exposes research controls."""
-        result = runner.invoke(app, ["train", "run-research", "--help"])
-        assert result.exit_code == 0
-        assert "--auto-regime" in result.stdout
-        assert "--no-auto-regime" in result.stdout
-
-    def test_train_run_no_experimental_flags(self):
-        """Research controls must not appear in strict train run CLI."""
+    def test_train_run_help_exposes_instrumentation_controls(self):
+        """Test 'mc train run --help' exposes the unified instrumentation controls."""
         result = runner.invoke(app, ["train", "run", "--help"])
         assert result.exit_code == 0
-        assert "--seq-length" not in result.stdout
-        assert "--lr" not in result.stdout
-        assert "--seed" not in result.stdout
-        assert "--topo-monitor" not in result.stdout
-        assert "--dim-monitor" not in result.stdout
+        assert "--seq-length" in result.stdout
+        assert "--lr" in result.stdout
+        assert "--seed" in result.stdout
+        assert "--topo-monitor" in result.stdout
+        assert "--dim-monitor" in result.stdout
+        assert "--no-save" in result.stdout
+        assert "--target-experts" in result.stdout
         assert "--auto-regime" not in result.stdout
-        assert "--no-save" not in result.stdout
+
+    def test_train_run_no_removed_legacy_flags(self):
+        """Removed legacy flags must not appear in the unified train CLI."""
+        result = runner.invoke(app, ["train", "run", "--help"])
+        assert result.exit_code == 0
+        assert "--auto-regime" not in result.stdout
         assert "--paired" not in result.stdout
         assert "--answer-mask" not in result.stdout
         assert "--outcome" not in result.stdout
-        assert "--entropy-reg" not in result.stdout
         assert "--format-projection" not in result.stdout
         assert "--online-eval" not in result.stdout
         assert "--retention-data" not in result.stdout
@@ -213,7 +214,7 @@ class TestOutputFlagHoisting:
 
 
 class _DummyDatasetService:
-    def train_from_dataset_strict(self, **_kwargs):
+    def train_from_dataset(self, **_kwargs):
         raise TrainingDerivationError(
             failure_class="insufficient_entropy_baseline",
             detail="Baseline entropy unavailable",
@@ -222,7 +223,7 @@ class _DummyDatasetService:
 
 
 class _DummyPipelineGateDatasetService:
-    def train_from_dataset_strict(self, **_kwargs):
+    def train_from_dataset(self, **_kwargs):
         raise TrainingDerivationError(
             failure_class="pipeline_gate_failed",
             detail="Pipeline gate failed: spectral_bounds_violation",
@@ -246,16 +247,7 @@ class _CaptureDatasetService:
     def __init__(self):
         self.calls: list[dict] = []
 
-    def train_from_dataset_strict(self, **kwargs):
-        self.calls.append(dict(kwargs))
-
-        class _Result:
-            def to_dict(self):
-                return {"ok": True}
-
-        return _Result()
-
-    def train_from_dataset_research(self, **kwargs):
+    def train_from_dataset(self, **kwargs):
         self.calls.append(dict(kwargs))
 
         class _Result:
@@ -279,7 +271,7 @@ class _CounterexampleDatasetService:
         min_cka = None
         mean_cka = None
 
-    def train_from_dataset_research(self, **kwargs):
+    def train_from_dataset(self, **kwargs):
         _ = kwargs
         return self._Result()
 

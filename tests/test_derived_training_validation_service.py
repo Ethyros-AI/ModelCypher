@@ -84,7 +84,7 @@ class _FakeDatasetTrainingService:
         self._results = list(results)
         self.calls: list[dict] = []
 
-    def train_from_dataset_research(self, **kwargs):
+    def train_from_dataset(self, **kwargs):
         self.calls.append(dict(kwargs))
         if not self._results:
             raise RuntimeError("No fake result available")

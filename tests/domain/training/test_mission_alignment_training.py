@@ -20,6 +20,9 @@ _FILE_PATTERNS: dict[str, list[str]] = {
         "_ARMIJO_MAX_BACKTRACKS =",
         " + 1e-10",
         " + 1e-8",
+        # REINFORCE ⊥ CE derivation (2026-03-06): outcome training is dead
+        "outcome_training",
+        "make_outcome_loss",
     ],
     "src/modelcypher/backends/_mlx_training_adapter_core_mixin.py": [
         "safety_margin: float = 0.9",
@@ -37,6 +40,9 @@ _FILE_PATTERNS: dict[str, list[str]] = {
         "eval_batches: int",
         "adaptive_lr: bool",
         "lr_monotonic: bool",
+        # REINFORCE ⊥ CE derivation (2026-03-06): outcome training is dead
+        "outcome_training",
+        "auto_regime",
     ],
     "src/modelcypher/cli/commands/train.py": [
         "--safety-margin",
@@ -46,6 +52,8 @@ _FILE_PATTERNS: dict[str, list[str]] = {
         "--adaptive-lr",
         "--lr-monotonic",
         "--max-iters",
+        # REINFORCE ⊥ CE derivation (2026-03-06)
+        "--auto-regime",
     ],
 }
 

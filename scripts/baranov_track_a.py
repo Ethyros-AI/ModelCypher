@@ -296,7 +296,7 @@ def run_lora_intervention(
 
     logger.info("Starting LoRA training on %s (seed=%d)...", model_name, seed)
     t0 = time.monotonic()
-    train_result = service.train_from_dataset_research(
+    train_result = service.train_from_dataset(
         model_path=model_path,
         dataset_path=str(jsonl_path),
         output_path=str(adapter_dir),

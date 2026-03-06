@@ -15,17 +15,11 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Training CLI - ONE way to train.
+"""Training CLI.
 
 NB-LoRA: Cayley-parameterized, geometry-derived, bounds by construction.
-All hyperparameters derived from model geometry, not heuristics.
-
-Commands:
-    mc train run --model <path> --data <path.jsonl>   # Strict dataset-driven NB-LoRA training
-    mc train run-research --model <path> --data <path.jsonl>   # Research controls
-    mc train status --agent <id> --model <path>       # Check training status
-    mc train merge --agent <id> --model <path>        # Merge LoRA to base
-    mc train export --agent <id> --model <path>       # Export LoRA weights
+All hyperparameters derive from model geometry by default; optional flags add
+instrumentation or controlled overrides without changing the underlying path.
 """
 
 from __future__ import annotations
@@ -84,8 +78,7 @@ def _write_training_derivation_error(
 def train() -> None:
     """Training command group.
 
-    Strict production path: `mc train run`.
-    Research-only controls: `mc train run-research`.
+    One training path: `mc train run`.
     """
 
 
@@ -105,18 +98,52 @@ def train_run(
         "--benchmark",
         help="Run benchmark suite before/after training (quick, reasoning, factual, comprehensive)",
     ),
+    no_save: bool = typer.Option(
+        False,
+        "--no-save",
+        help="Run training without saving an adapter",
+    ),
+    seq_length: int = typer.Option(
+        None,
+        "--seq-length",
+        help="Sequence length (auto-derived from data when omitted)",
+    ),
+    lr: float = typer.Option(
+        None,
+        "--lr",
+        help="Override geometry-derived learning rate",
+    ),
+    seed: int = typer.Option(
+        None,
+        "--seed",
+        help="Optional seed override (default: derived from model+dataset hash)",
+    ),
+    topo_monitor: bool = typer.Option(
+        False,
+        "--topo-monitor/--no-topo-monitor",
+        help="Track topological phase metrics per epoch (slower)",
+    ),
+    dim_monitor: bool = typer.Option(
+        False,
+        "--dim-monitor/--no-dim-monitor",
+        help="Track dimensional expansion/contraction per epoch",
+    ),
+    target_experts: list[str] | None = typer.Option(
+        None,
+        "--target-experts",
+        help='MoE expert selectors (repeatable or comma-separated), e.g. "L5.E42".',
+    ),
     entropy_reg: bool = typer.Option(
         False,
         "--entropy-reg/--no-entropy-reg",
         help="Enable entropy floor regularization during CE training (prevents overconfident logits)",
     ),
 ) -> None:
-    """Strict model+dataset-only training path.
+    """Canonical NB-LoRA training path.
 
     Trains an NB-LoRA adapter using Cayley-Stiefel optimization with all
-    hyperparameters derived from model geometry. No tuning required — provide
-    a model and dataset, everything else is computed from SVD bounds and
-    IEEE 754 precision limits.
+    hyperparameters derived from model geometry by default. Optional flags
+    expose instrumentation and controlled overrides on the same path.
 
     Output fields (when --json):
         epochs: Number of training epochs completed
@@ -130,7 +157,7 @@ def train_run(
 
     Example:
         mc train run --model /path/to/model --data /path/to/data.jsonl
-        mc train run -m /path/to/model -d /path/to/data.jsonl --benchmark quick
+        mc train run -m /path/to/model -d /path/to/data.jsonl --benchmark quick --topo-monitor
     """
     context = _context(ctx)
     model_path = Path(model)
@@ -149,103 +176,7 @@ def train_run(
     service = get_dataset_training_service()
     service._progress_reporter = reporter
     try:
-        result = service.train_from_dataset_strict(
-            model_path=model_path,
-            dataset_path=data,
-            output_path=output,
-            eval_dataset_path=eval_data,
-            benchmark_suite=benchmark,
-            entropy_regularization=entropy_reg,
-        )
-    except TrainingDerivationError as exc:
-        _write_training_derivation_error(exc, context)
-
-    write_output(result.to_dict(), context.output_format, context.pretty)
-
-
-@train_app.command("run-research")
-def train_run_research(
-    ctx: typer.Context,
-    model: str = typer.Option(..., "--model", "-m", help="Path to model directory"),
-    data: str = typer.Option(..., "--data", "-d", help="Path to JSONL training dataset"),
-    output: str = typer.Option(
-        None, "--output", "-o", help="Output path for adapter",
-    ),
-    no_save: bool = typer.Option(
-        False, "--no-save",
-        help="Run training without saving an adapter (useful for experiments)",
-    ),
-    eval_data: str = typer.Option(
-        None,
-        "--eval-data",
-        help="Held-out eval JSONL (default: pilot-variance-derived split)",
-    ),
-    seq_length: int = typer.Option(None, "--seq-length", help="Sequence length (auto-derived from data when omitted)"),
-    lr: float = typer.Option(None, "--lr", help="Override geometry-derived learning rate"),
-    seed: int = typer.Option(42, "--seed", help="Random seed"),
-    topo_monitor: bool = typer.Option(
-        False,
-        "--topo-monitor/--no-topo-monitor",
-        help="Track topological phase metrics per epoch (Betti numbers, Ricci curvature). Slower.",
-    ),
-    dim_monitor: bool = typer.Option(
-        False,
-        "--dim-monitor/--no-dim-monitor",
-        help="Track dimensional expansion/contraction per epoch using TwoNN.",
-    ),
-    benchmark: str = typer.Option(
-        None,
-        "--benchmark",
-        help="Run benchmark suite before/after training (quick, reasoning, factual, comprehensive)",
-    ),
-    target_experts: list[str] | None = typer.Option(
-        None,
-        "--target-experts",
-        help='MoE expert selectors (repeatable or comma-separated), e.g. "L5.E42".',
-    ),
-) -> None:
-    """Research path with explicit training controls.
-
-    Same NB-LoRA pipeline as `mc train run` but exposes research-only
-    instrumentation: topology monitoring, dimension tracking, and manual
-    learning rate override. Use this for
-    experiments; use `mc train run` for production.
-
-    Output fields (when --json):
-        epochs: Number of training epochs completed
-        finalLoss: Final training loss
-        ckaRetention: CKA similarity between pre/post-training activations
-        adapterPath: Path to saved adapter weights (omitted with --no-save)
-        regime: Training objective used (ce, reinforce, or hybrid)
-        derivedHyperparameters: All geometry-derived settings
-        topoMetrics: Betti numbers and Ricci curvature per epoch (with --topo-monitor)
-        dimMetrics: Dimensional expansion/contraction per epoch (with --dim-monitor)
-        benchmarkBaseline: Pre-training benchmark scores (with --benchmark)
-        benchmarkPost: Post-training benchmark scores (with --benchmark)
-        benchmarkDelta: Score deltas (with --benchmark)
-
-    Example:
-        mc train run-research -m /path/to/model -d /path/to/data.jsonl --no-save
-        mc train run-research -m /path/to/model -d /path/to/data.jsonl --benchmark quick
-    """
-    context = _context(ctx)
-    model_path = Path(model)
-    _validate_model_path(model_path, context)
-
-    from modelcypher.cli.composition import get_dataset_training_service
-
-    import sys
-
-    from modelcypher.cli.progress import ProgressReporter
-
-    reporter = None
-    if context.ai_mode or not sys.stderr.isatty():
-        reporter = ProgressReporter()
-
-    service = get_dataset_training_service()
-    service._progress_reporter = reporter
-    try:
-        result = service.train_from_dataset_research(
+        result = service.train_from_dataset(
             model_path=model_path,
             dataset_path=data,
             output_path=output,
@@ -258,6 +189,7 @@ def train_run_research(
             no_save=no_save,
             benchmark_suite=benchmark,
             target_experts=target_experts,
+            entropy_regularization=entropy_reg,
         )
     except TrainingDerivationError as exc:
         _write_training_derivation_error(exc, context)

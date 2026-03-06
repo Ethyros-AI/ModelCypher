@@ -406,7 +406,6 @@ class DerivedTrainingValidationService:
                 "eval_dataset_path": resolved_eval_path,
                 "seed": seed,
                 "seq_length": seq_length,
-                "auto_regime": True,
                 "no_save": (not phase5_ctx.enabled),
             }
             if phase5_ctx.enabled:
@@ -417,7 +416,7 @@ class DerivedTrainingValidationService:
                 train_kwargs["output_path"] = trial_output_dir
                 train_kwargs["no_save"] = False
 
-            result = self._dataset_training_service.train_from_dataset_research(
+            result = self._dataset_training_service.train_from_dataset(
                 **train_kwargs,
             )
 

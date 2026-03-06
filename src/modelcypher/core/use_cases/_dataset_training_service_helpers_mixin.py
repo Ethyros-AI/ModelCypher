@@ -38,7 +38,7 @@ _MOE_EXPERT_WEIGHT_RE = re.compile(
 
 
 class _DatasetTrainingServiceHelperMixin:
-    def _derive_strict_seed(self, model_path: Path, dataset_path: Path) -> int:
+    def _derive_training_seed(self, model_path: Path, dataset_path: Path) -> int:
         """Derive deterministic seed from model artifacts and dataset bytes."""
         model_hash = self._hash_model_artifacts(model_path)
         dataset_hash = self._hash_file(dataset_path)

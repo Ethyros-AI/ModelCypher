@@ -157,15 +157,10 @@ class _CliResult:
 
 class _CliCaptureDatasetService:
     def __init__(self) -> None:
-        self.strict_calls: list[dict[str, object]] = []
-        self.research_calls: list[dict[str, object]] = []
+        self.calls: list[dict[str, object]] = []
 
-    def train_from_dataset_strict(self, **kwargs):
-        self.strict_calls.append(dict(kwargs))
-        return _CliResult()
-
-    def train_from_dataset_research(self, **kwargs):
-        self.research_calls.append(dict(kwargs))
+    def train_from_dataset(self, **kwargs):
+        self.calls.append(dict(kwargs))
         return _CliResult()
 
 
@@ -173,12 +168,22 @@ def _patch_lightweight_training(monkeypatch: pytest.MonkeyPatch, service: Datase
     monkeypatch.setattr(
         service,
         "_collect_probe_activations",
-        lambda *_args, **_kwargs: {},
+        lambda *_args, **_kwargs: {0: [object()]},
     )
     monkeypatch.setattr(
         service,
         "_collect_inference_probe_activations",
         lambda *_args, **_kwargs: {},
+    )
+    monkeypatch.setattr(
+        service,
+        "_verify_capability_preservation",
+        lambda *_args, **_kwargs: {
+            "min_cka": 0.99,
+            "mean_cka": 0.99,
+            "per_layer_cka": {"0": 0.99},
+            "per_layer_cka_bound": {"0": 0.99},
+        },
     )
     monkeypatch.setattr(
         dataset_training_service_module,
@@ -278,7 +283,7 @@ def test_pilot_variance_split_uses_ieee754_sqrt_eps():
 
 
 
-def test_train_run_strict_hides_research_flags(monkeypatch, tmp_path: Path):
+def test_train_run_unifies_instrumentation_flags(monkeypatch, tmp_path: Path):
     model_dir = tmp_path / "model"
     model_dir.mkdir()
     data_path = tmp_path / "train.jsonl"
@@ -292,6 +297,12 @@ def test_train_run_strict_hides_research_flags(monkeypatch, tmp_path: Path):
 
     help_result = runner.invoke(app, ["train", "run", "--help"])
     assert help_result.exit_code == 0
+    assert "--seq-length" in help_result.stdout
+    assert "--lr" in help_result.stdout
+    assert "--seed" in help_result.stdout
+    assert "--topo-monitor" in help_result.stdout
+    assert "--dim-monitor" in help_result.stdout
+    assert "--no-save" in help_result.stdout
     assert "--auto-regime" not in help_result.stdout
     assert "--no-auto-regime" not in help_result.stdout
 
@@ -300,15 +311,22 @@ def test_train_run_strict_hides_research_flags(monkeypatch, tmp_path: Path):
         ["train", "run", "--model", str(model_dir), "--data", str(data_path)],
     )
     assert result.exit_code == 0
-    assert capture.strict_calls
-    assert not capture.research_calls
-    strict_call = capture.strict_calls[0]
-    assert set(strict_call) == {
+    assert capture.calls
+    call = capture.calls[0]
+    assert set(call) == {
         "model_path",
         "dataset_path",
         "output_path",
         "eval_dataset_path",
+        "seq_length",
+        "lr_override",
+        "seed",
+        "topo_monitor",
+        "dim_monitor",
+        "no_save",
         "benchmark_suite",
+        "target_experts",
+        "entropy_regularization",
     }
 
 
@@ -596,7 +614,7 @@ def test_collect_auto_retention_default_uses_all_training_prompts():
 
 
 
-def test_train_from_dataset_strict_fails_pipeline_gate(monkeypatch, tmp_path: Path):
+def test_train_from_dataset_fails_pipeline_gate(monkeypatch, tmp_path: Path):
     model_dir = tmp_path / "model"
     model_dir.mkdir()
     train_path = tmp_path / "train.jsonl"
@@ -613,7 +631,7 @@ def test_train_from_dataset_strict_fails_pipeline_gate(monkeypatch, tmp_path: Pa
     monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
 
     with pytest.raises(TrainingDerivationError) as excinfo:
-        service.train_from_dataset_strict(
+        service.train_from_dataset(
             model_path=model_dir,
             dataset_path=train_path,
             output_path=tmp_path / "adapter",
@@ -627,7 +645,7 @@ def test_train_from_dataset_strict_fails_pipeline_gate(monkeypatch, tmp_path: Pa
     assert "spectral_bounds_violation" in diagnostics["failure_modes"]
 
 
-def test_train_from_dataset_strict_exposes_pipeline_gate_metadata(monkeypatch, tmp_path: Path):
+def test_train_from_dataset_exposes_pipeline_gate_metadata(monkeypatch, tmp_path: Path):
     model_dir = tmp_path / "model"
     model_dir.mkdir()
     train_path = tmp_path / "train.jsonl"
@@ -655,7 +673,7 @@ def test_train_from_dataset_strict_exposes_pipeline_gate_metadata(monkeypatch, t
     )
     monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
 
-    result = service.train_from_dataset_strict(
+    result = service.train_from_dataset(
         model_path=model_dir,
         dataset_path=train_path,
         output_path=tmp_path / "adapter",
@@ -672,7 +690,44 @@ def test_train_from_dataset_strict_exposes_pipeline_gate_metadata(monkeypatch, t
     assert "spectral_bounds" in payload["pipeline_gate_checks"]
 
 
-def test_train_from_dataset_research_reports_failed_pipeline_gate(monkeypatch, tmp_path: Path):
+def test_train_from_dataset_seed_override_is_respected(monkeypatch, tmp_path: Path):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(train_path, [{"text": "train 1"}])
+    _write_jsonl(eval_path, [{"text": "eval 1"}])
+
+    backend = _FlowBackend()
+    service = DatasetTrainingService(
+        adapter=_FlowAdapter(),
+        backend=backend,
+    )
+    _patch_lightweight_training(monkeypatch, service)
+
+    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
+    seen_seeds: list[int] = []
+    monkeypatch.setattr(
+        backend,
+        "random_seed",
+        lambda seed: seen_seeds.append(seed),
+    )
+
+    service.train_from_dataset(
+        model_path=model_dir,
+        dataset_path=train_path,
+        eval_dataset_path=eval_path,
+        no_save=True,
+        seed=1234,
+    )
+
+    assert seen_seeds == [1234]
+
+
+def test_train_from_dataset_auto_output_path_uses_derived_seed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     model_dir = tmp_path / "model"
     model_dir.mkdir()
     train_path = tmp_path / "train.jsonl"
@@ -681,26 +736,21 @@ def test_train_from_dataset_research_reports_failed_pipeline_gate(monkeypatch, t
     _write_jsonl(eval_path, [{"text": "eval 1"}])
 
     service = DatasetTrainingService(
-        adapter=_FlowAdapterFailingSpectral(),
+        adapter=_FlowAdapter(),
         backend=_FlowBackend(),
     )
     _patch_lightweight_training(monkeypatch, service)
-
     monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(service, "_derive_training_seed", lambda **_kwargs: 4242)
 
-    result = service.train_from_dataset_research(
+    result = service.train_from_dataset(
         model_path=model_dir,
         dataset_path=train_path,
         eval_dataset_path=eval_path,
-        no_save=True,
     )
 
-    assert result.pipeline_gate_operator == "pipeline_gate_v1"
-    assert result.pipeline_gate_passed is False
-    assert "spectral_bounds_violation" in (result.pipeline_gate_failure_modes or [])
-    payload = result.to_dict()
-    assert payload["pipeline_gate_passed"] is False
-    assert "spectral_bounds_violation" in payload["pipeline_gate_failure_modes"]
+    assert result.adapter_path is not None
+    assert Path(result.adapter_path).name == "model-nblora-4242"
 
 
 

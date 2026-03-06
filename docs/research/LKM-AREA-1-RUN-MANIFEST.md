@@ -198,7 +198,7 @@ train through our pipeline with Cayley disabled.
 
 - Same as G2 (tail-capacity rank, geometric scale)
 - Replace standard LoRA with NB-LoRA (Cayley parameterization)
-- This uses our `mc train run-research` pipeline
+- This uses our unified `mc train run` pipeline
 - Fixed steps matching B0 (override geometric stopping for commensurability)
 
 **Purpose:** Test whether parameterization changes capacity-per-parameter.

@@ -179,7 +179,7 @@ def train_one_shot(model_path: str, output_dir: Path) -> str:
     logger.info("Training with ONE example...")
     result = subprocess.run(
         [
-            "poetry", "run", "mc", "train", "run-research",
+            "poetry", "run", "mc", "train", "run",
             "--model", model_path,
             "--data", str(train_file),
             "--eval-data", str(val_file),
