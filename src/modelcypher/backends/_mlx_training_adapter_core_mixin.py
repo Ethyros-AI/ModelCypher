@@ -573,16 +573,11 @@ class _MLXTrainingAdapterCoreMixin:
         target_modules: list[str],
         safety_margin: float | None = None,
         rank_overrides: dict[str, int] | None = None,
-        scale_bound_override: float | None = None,
     ) -> int:
         """Replace target linear layers with NBLoRALinear.
 
         Scale bound per layer: (sigma_k / 2) * safety_margin
         Rank per layer: tail_dims from geometry (null-space capacity)
-
-        If scale_bound_override is set, uses that fixed value for all layers
-        instead of the geometry-derived bound. Research use only — bypasses
-        spectral safety guarantees.
 
         Returns number of layers injected.
         """
@@ -592,12 +587,6 @@ class _MLXTrainingAdapterCoreMixin:
         if not (0.0 < margin <= 1.0):
             raise ValueError(
                 f"safety_margin must satisfy 0 < safety_margin <= 1, got {margin}",
-            )
-
-        if scale_bound_override is not None:
-            logger.warning(
-                "scale_bound_override=%.6f — bypassing geometric spectral safety",
-                scale_bound_override,
             )
 
         if safety_margin is None:
@@ -625,11 +614,7 @@ class _MLXTrainingAdapterCoreMixin:
                 )
                 rank = geom.tail_dims
             # Geometry-derived scale bound: 2 * max(S) <= sigma_k
-            scale_bound = (
-                scale_bound_override
-                if scale_bound_override is not None
-                else (geom.sigma_k / 2.0) * margin
-            )
+            scale_bound = (geom.sigma_k / 2.0) * margin
 
             if scale_bound <= 0:
                 logger.warning("Skipping %s: sigma_k=%.6f produces zero bound", key, geom.sigma_k)
@@ -1236,7 +1221,6 @@ class _MLXTrainingAdapterCoreMixin:
         *,
         sigma_k_min: float,
         sigma_max_global: float,
-        lr_override: float | None,
     ) -> float:
         """Derive static learning rate ceiling from adapter geometry (Weyl 1912).
 
@@ -1250,13 +1234,9 @@ class _MLXTrainingAdapterCoreMixin:
         ceiling = derive_spectral_ceiling(
             sigma_k_min=sigma_k_min,
             sigma_max_global=sigma_max_global,
-            lr_override=lr_override,
         )
-        if lr_override is not None:
-            logger.info("LR from override: %.2e (bypasses spectral ceiling)", ceiling)
-        else:
-            logger.info(
-                "Spectral ceiling (Weyl): eta_ceiling = sigma_k_min/sigma_max = %.4e/%.4e = %.4e",
-                sigma_k_min, sigma_max_global, ceiling,
-            )
+        logger.info(
+            "Spectral ceiling (Weyl): eta_ceiling = sigma_k_min/sigma_max = %.4e/%.4e = %.4e",
+            sigma_k_min, sigma_max_global, ceiling,
+        )
         return ceiling

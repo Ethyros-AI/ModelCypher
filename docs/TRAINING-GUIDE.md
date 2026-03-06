@@ -78,7 +78,6 @@ poetry run mc train run \
   -m /path/to/model \
   -d /path/to/data.jsonl \
   --seed 42 \
-  --lr 1e-4 \
   --topo-monitor
 ```
 

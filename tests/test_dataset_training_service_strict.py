@@ -298,7 +298,6 @@ def test_train_run_unifies_instrumentation_flags(monkeypatch, tmp_path: Path):
     help_result = runner.invoke(app, ["train", "run", "--help"])
     assert help_result.exit_code == 0
     assert "--seq-length" in help_result.stdout
-    assert "--lr" in help_result.stdout
     assert "--seed" in help_result.stdout
     assert "--topo-monitor" in help_result.stdout
     assert "--dim-monitor" in help_result.stdout
@@ -319,7 +318,6 @@ def test_train_run_unifies_instrumentation_flags(monkeypatch, tmp_path: Path):
         "output_path",
         "eval_dataset_path",
         "seq_length",
-        "lr_override",
         "seed",
         "topo_monitor",
         "dim_monitor",
@@ -946,20 +944,16 @@ def test_quantization_frontier_invalid_allows_explicit_research_override(
         },
     )
 
-    result = service.train_from_dataset(
-        model_path=model_dir,
-        dataset_path=train_path,
-        eval_dataset_path=eval_path,
-        quantization_reference_model_path=ref_model_dir,
-        research_allow_quantization_frontier_invalid=True,
-        no_save=True,
-    )
+    with pytest.raises(TrainingDerivationError) as excinfo:
+        service.train_from_dataset(
+            model_path=model_dir,
+            dataset_path=train_path,
+            eval_dataset_path=eval_path,
+            quantization_reference_model_path=ref_model_dir,
+            no_save=True,
+        )
 
-    payload = result.to_dict()
-    assert payload["quantization_frontier_precheck"]["valid"] is False
-    assert payload["quantization_frontier_precheck"]["failure_modes"] == [
-        "degenerate_centered_gram"
-    ]
+    assert excinfo.value.failure_class == "quantization_frontier_unavailable"
 
 
 def test_quantization_frontier_precheck_not_run_without_reference_path(

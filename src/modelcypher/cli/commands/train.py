@@ -18,8 +18,8 @@
 """Training CLI.
 
 NB-LoRA: Cayley-parameterized, geometry-derived, bounds by construction.
-All hyperparameters derive from model geometry by default; optional flags add
-instrumentation or controlled overrides without changing the underlying path.
+All training controls on the canonical path are derived from model geometry or
+measured data; optional flags add instrumentation only.
 """
 
 from __future__ import annotations
@@ -108,11 +108,6 @@ def train_run(
         "--seq-length",
         help="Sequence length (auto-derived from data when omitted)",
     ),
-    lr: float = typer.Option(
-        None,
-        "--lr",
-        help="Override geometry-derived learning rate",
-    ),
     seed: int = typer.Option(
         None,
         "--seed",
@@ -143,7 +138,7 @@ def train_run(
 
     Trains an NB-LoRA adapter using Cayley-Stiefel optimization with all
     hyperparameters derived from model geometry by default. Optional flags
-    expose instrumentation and controlled overrides on the same path.
+    expose instrumentation on the same path.
 
     Output fields (when --json):
         epochs: Number of training epochs completed
@@ -182,7 +177,6 @@ def train_run(
             output_path=output,
             eval_dataset_path=eval_data,
             seq_length=seq_length,
-            lr_override=lr,
             seed=seed,
             topo_monitor=topo_monitor,
             dim_monitor=dim_monitor,

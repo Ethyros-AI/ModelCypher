@@ -82,17 +82,6 @@ class TestSpectralCeiling:
     def test_ceiling_equals_one_when_equal(self):
         assert derive_spectral_ceiling(sigma_k_min=3.0, sigma_max_global=3.0) == 1.0
 
-    def test_lr_override_bypasses_derivation(self):
-        assert derive_spectral_ceiling(sigma_k_min=0.1, sigma_max_global=10.0, lr_override=0.05) == 0.05
-
-    def test_lr_override_zero_is_valid(self):
-        assert derive_spectral_ceiling(sigma_k_min=0.1, sigma_max_global=10.0, lr_override=0.0) == 0.0
-
-    def test_lr_override_ignores_invalid_spectral_values(self):
-        # Override works even with invalid spectral values
-        assert derive_spectral_ceiling(sigma_k_min=0.0, sigma_max_global=0.0, lr_override=0.01) == 0.01
-        assert derive_spectral_ceiling(sigma_k_min=-1.0, sigma_max_global=-1.0, lr_override=0.01) == 0.01
-
     def test_sigma_k_min_zero_raises(self):
         with pytest.raises(TrainingDerivationError) as exc_info:
             derive_spectral_ceiling(sigma_k_min=0.0, sigma_max_global=10.0)
@@ -151,12 +140,6 @@ class TestSqrtNCorrection:
         results = [apply_sqrt_n_epoch_correction(0.01, n) for n in [1, 4, 16, 64, 256]]
         for i in range(len(results) - 1):
             assert results[i] > results[i + 1]
-
-    def test_lr_override_skips_correction(self):
-        # When lr_override is set, the ceiling was already set by override;
-        # sqrt(N) correction is skipped.
-        result = apply_sqrt_n_epoch_correction(0.01, 100, lr_override=0.05)
-        assert result == 0.01  # ceiling unchanged
 
     def test_large_n_doesnt_underflow(self):
         result = apply_sqrt_n_epoch_correction(0.01, 10000)
@@ -395,10 +378,6 @@ class TestValidationBackoff:
         for prev, curr in [(1.0, 1.1), (0.5, 5.0), (0.01, 100.0)]:
             result = apply_validation_backoff(0.01, [prev, curr])
             assert result < 0.01
-
-    def test_lr_override_skips_backoff(self):
-        result = apply_validation_backoff(0.01, [1.0, 10.0], lr_override=0.05)
-        assert result == 0.01  # unchanged
 
     def test_adaptive_lr_false_skips_backoff(self):
         result = apply_validation_backoff(0.01, [1.0, 10.0], adaptive_lr=False)

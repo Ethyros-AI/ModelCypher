@@ -219,11 +219,15 @@ class TestBenchmarkCommands:
 
     def test_benchmark_passes_adapter_to_model_loader(self, monkeypatch):
         """Benchmark command should load base model with optional adapter."""
+        from modelcypher.adapters import model_loader as model_loader_module
         from modelcypher.cli import composition
 
         captured: dict[str, object] = {}
 
         class _StubModelLoader:
+            def __init__(self, _backend):
+                pass
+
             def load_model(self, model_path: str, adapter_path: str | None = None):
                 captured["model_path"] = model_path
                 captured["adapter_path"] = adapter_path
@@ -261,7 +265,7 @@ class TestBenchmarkCommands:
                 captured["limit_per_benchmark"] = limit_per_benchmark
                 return _StubSuiteResult()
 
-        monkeypatch.setattr(composition, "get_model_loader", lambda: _StubModelLoader())
+        monkeypatch.setattr(model_loader_module, "ModelLoader", _StubModelLoader)
         monkeypatch.setattr(composition, "get_backend", lambda: _StubBackend())
         monkeypatch.setattr(
             composition, "get_benchmark_service", lambda: _StubBenchmarkService(),

@@ -76,7 +76,6 @@ class TestTrainCommandHelp:
         result = runner.invoke(app, ["train", "run", "--help"])
         assert result.exit_code == 0
         assert "--seq-length" in result.stdout
-        assert "--lr" in result.stdout
         assert "--seed" in result.stdout
         assert "--topo-monitor" in result.stdout
         assert "--dim-monitor" in result.stdout
@@ -99,6 +98,7 @@ class TestTrainCommandHelp:
         assert "--budget-cap" not in result.stdout
         assert "--eval-interval" not in result.stdout
         assert "--max-epochs" not in result.stdout
+        assert "--lr" not in result.stdout
 
     def test_train_star_help(self, monkeypatch):
         """Test 'mc train star --help' works."""

@@ -35,6 +35,10 @@ _FILE_PATTERNS: dict[str, list[str]] = {
         "max(batch_size, 8)",
         "target_count = min(len(train_samples), 200)",
         "[:128]",
+        "lr_override",
+        "scale_bound_override",
+        "research_allow_quantization_frontier_invalid",
+        "constraint_state_override",
         # Removed in deep audit: these are geometry-derived, not user knobs
         "deep: bool",
         "eval_batches: int",
@@ -46,6 +50,7 @@ _FILE_PATTERNS: dict[str, list[str]] = {
     ],
     "src/modelcypher/cli/commands/train.py": [
         "--safety-margin",
+        "--lr",
         # Removed in deep audit: geometry derives these
         "--deep",
         "--eval-batches",
@@ -65,6 +70,16 @@ _FILE_PATTERNS: dict[str, list[str]] = {
         'capability_transfer: bool = True',
         'get("capability_transfer", "true")',
         'get("training_objective", "unknown")',
+    ],
+    "src/modelcypher/experimental/merge/pipeline.py": [
+        "MC_INJECTION_LAYER",
+    ],
+    "src/modelcypher/experimental/merge/stages/probe_from_profile.py": [
+        "MC_INJECTION_LAYER",
+    ],
+    "src/modelcypher/experimental/merge/stages/transplant_embeddings.py": [
+        "MC_FORCE_EMBEDDING_TRANSPLANT",
+        "MC_SKIP_EMBEDDING_TRANSPLANT",
     ],
 }
 

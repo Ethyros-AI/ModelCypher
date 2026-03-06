@@ -77,7 +77,6 @@ def test_spectral_ceiling_nonpositive_fails_fast():
         adapter._derive_spectral_ceiling(
             sigma_k_min=0.0,
             sigma_max_global=1.0,
-            lr_override=None,
         )
 
     err = excinfo.value
@@ -94,7 +93,6 @@ def test_spectral_ceiling_nonfinite_fails_fast():
         adapter._derive_spectral_ceiling(
             sigma_k_min=float("inf"),
             sigma_max_global=1.0,
-            lr_override=None,
         )
 
     err = excinfo.value
@@ -107,22 +105,9 @@ def test_spectral_ceiling_computes_ratio():
     ceiling = adapter._derive_spectral_ceiling(
         sigma_k_min=0.05,
         sigma_max_global=10.0,
-        lr_override=None,
     )
 
     assert ceiling == pytest.approx(0.005, rel=1e-6)
-
-
-def test_spectral_ceiling_override_bypasses():
-    adapter = MLXTrainingAdapter(_DummyBackend())
-
-    ceiling = adapter._derive_spectral_ceiling(
-        sigma_k_min=0.05,
-        sigma_max_global=10.0,
-        lr_override=0.123,
-    )
-
-    assert ceiling == pytest.approx(0.123, rel=1e-6)
 
 
 def test_entropy_baseline_derives_floor():
@@ -136,7 +121,6 @@ def test_entropy_baseline_derives_floor():
 
     expected_floor = 2.0 * (1.0 - math.sqrt(math.ldexp(1.0, -23)))
     assert floor == pytest.approx(expected_floor, rel=1e-6)
-
 
 
 

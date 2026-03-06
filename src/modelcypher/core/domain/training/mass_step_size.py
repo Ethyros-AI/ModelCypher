@@ -43,7 +43,6 @@ def derive_spectral_ceiling(
     *,
     sigma_k_min: float,
     sigma_max_global: float,
-    lr_override: float | None = None,
 ) -> float:
     """Derive static learning rate ceiling from adapter geometry (Weyl 1912).
 
@@ -56,9 +55,6 @@ def derive_spectral_ceiling(
     After computing n_batches_per_epoch, the caller applies the sqrt(N) epoch
     budget correction via :func:`apply_sqrt_n_epoch_correction`.
     """
-    if lr_override is not None:
-        return float(lr_override)
-
     if sigma_k_min <= 0 or sigma_max_global <= 0:
         raise TrainingDerivationError(
             failure_class="insufficient_adapter_geometry",
@@ -88,8 +84,6 @@ def derive_spectral_ceiling(
 def apply_sqrt_n_epoch_correction(
     eta_ceiling: float,
     n_batches_per_epoch: int,
-    *,
-    lr_override: float | None = None,
 ) -> float:
     """Apply sqrt(N) Brownian scaling correction for epoch budget.
 
@@ -97,7 +91,7 @@ def apply_sqrt_n_epoch_correction(
     (random walk). Dividing the per-step ceiling by sqrt(N) keeps the epoch
     total within sigma_k_min.
     """
-    if lr_override is None and n_batches_per_epoch > 1:
+    if n_batches_per_epoch > 1:
         return eta_ceiling / math.sqrt(n_batches_per_epoch)
     return eta_ceiling
 
@@ -183,7 +177,6 @@ def apply_validation_backoff(
     val_losses: list[float],
     *,
     adaptive_lr: bool = True,
-    lr_override: float | None = None,
 ) -> float:
     """Apply validation-guided ceiling backoff with sqrt(eps_f32) floor.
 
@@ -191,7 +184,7 @@ def apply_validation_backoff(
     prev_loss / curr_loss, floored at sqrt(eps_f32) ~ 3.45e-4 to prevent
     underflow to zero.
     """
-    if not adaptive_lr or lr_override is not None:
+    if not adaptive_lr:
         return eta_ceiling
     if (len(val_losses) >= 2
             and val_losses[-1] > val_losses[-2]

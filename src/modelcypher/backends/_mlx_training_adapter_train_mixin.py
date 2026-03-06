@@ -51,7 +51,6 @@ class _MLXTrainingAdapterTrainMixin:
         max_iters: int,
         seed: int,
         sigma_max: float,
-        lr_override: float | None = None,
         eval_dataset: list | None = None,
         eval_batches: int | None = None,
         adaptive_lr: bool = True,
@@ -122,7 +121,6 @@ class _MLXTrainingAdapterTrainMixin:
         2. Per-step SPS: eta_sps = f(x_t) / ||d_t||^2 (Loizou et al. 2020)
         3. Per-step Weyl: eta_weyl = sigma_k_min / ||d_t|| (displacement bound)
         Combined: eta_step = min(eta_sps, eta_weyl, eta_ceiling)
-        Override: lr_override bypasses everything.
 
         No Armijo backtracking — every constant in Armijo (c, β, max_backtracks)
         was heuristic.  MASS derives the step bound per iteration from measurement:
@@ -330,7 +328,6 @@ class _MLXTrainingAdapterTrainMixin:
         eta_ceiling = self._derive_spectral_ceiling(
             sigma_k_min=sigma_k_min,
             sigma_max_global=sigma_max,
-            lr_override=lr_override,
         )
         current_eta = eta_ceiling
         # momentum=0.0 required: Cayley retraction assumes vanilla SGD.
@@ -428,7 +425,7 @@ class _MLXTrainingAdapterTrainMixin:
 
         eta_ceiling_before = eta_ceiling
         eta_ceiling = apply_sqrt_n_epoch_correction(
-            eta_ceiling, n_batches_per_epoch, lr_override=lr_override,
+            eta_ceiling, n_batches_per_epoch,
         )
         if eta_ceiling != eta_ceiling_before:
             current_eta = eta_ceiling
@@ -699,7 +696,7 @@ class _MLXTrainingAdapterTrainMixin:
                 prev_ceiling = eta_ceiling
                 eta_ceiling = apply_validation_backoff(
                     eta_ceiling, val_losses,
-                    adaptive_lr=adaptive_lr, lr_override=lr_override,
+                    adaptive_lr=adaptive_lr,
                 )
                 if eta_ceiling != prev_ceiling:
                     current_eta = eta_ceiling

@@ -403,12 +403,10 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         init_adapter_path: str | Path | None = None,
         eval_dataset_path: str | Path | None = None,
         seq_length: int | None = None,
-        lr_override: float | None = None,
         seed: int | None = None,
         topo_monitor: bool = False,
         dim_monitor: bool = False,
         paired: bool | None = None,
-        constraint_state_override: ConstraintState | None = None,
         format_projection: bool = False,
         narrow_dataset_path: str | Path | None = None,
         augmented_dataset_path: str | Path | None = None,
@@ -422,15 +420,12 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         eval_interval: int | None = None,
         # Global EOS exclusion from CE
         eos_exclude: bool = False,
-        # Research: override geometric scale bound (bypasses spectral safety)
-        scale_bound_override: float | None = None,
         # Outer similarity monitoring (Kucukahmetler et al. 2026)
         rss_monitor: bool = False,
         # Ablation experiment params (research only, not CLI-exposed)
         entropy_floor_fraction: float | None = None,  # Research only — NOT in strict CLI
         research_online_eval_problem_set_path: str | Path | None = None,
         quantization_reference_model_path: str | Path | None = None,
-        research_allow_quantization_frontier_invalid: bool = False,
         no_save: bool = False,
         max_iters_cap: int | None = None,
         benchmark_suite: str | None = None,
@@ -591,16 +586,12 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                     ).get("max_error_over_gap_half", 0.0)
                 ),
             )
-            if (
-                not bool(quantization_frontier_precheck_result.get("valid", False))
-                and not research_allow_quantization_frontier_invalid
-            ):
+            if not bool(quantization_frontier_precheck_result.get("valid", False)):
                 raise TrainingDerivationError(
                     failure_class="quantization_frontier_unavailable",
                     detail=(
                         "Quantization frontier precheck could not measure activation-aware "
-                        "centered-Gram diagnostics; training is blocked unless "
-                        "research_allow_quantization_frontier_invalid=True."
+                        "centered-Gram diagnostics; training is blocked."
                     ),
                     diagnostics={
                         "reference_model_path": str(fp_reference_path),
@@ -936,11 +927,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             constraint_config = derive_constraint_thresholds(
                 inv_distances, sep_distances, layer_entropies, layer_entropy_stds,
             )
-            constraint_state = (
-                constraint_state_override
-                if constraint_state_override is not None
-                else ConstraintState()
-            )
+            constraint_state = ConstraintState()
             logger.info(
                 "Constraint config: %s", constraint_config.to_dict(),
             )
@@ -1068,7 +1055,6 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             model, geometries, target_modules,
             safety_margin=None,
             rank_overrides=final_ranks,
-            scale_bound_override=scale_bound_override,
         )
         if n_lora_layers <= 0:
             raise ValueError("No NB-LoRA layers were injected")
@@ -1397,7 +1383,6 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             max_iters=resolved_max_iters_cap,
             seed=seed,
             sigma_max=sigma_max,
-            lr_override=lr_override,
             eval_dataset=eval_dataset,
             eval_batches=eval_batches,
             adaptive_lr=True,

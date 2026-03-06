@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -863,23 +862,7 @@ def run_merge(
     # This dramatically reduces density computation (1 layer vs 16+).
     # Use the injection layer computed during probe/alignment stage if available.
     # This ensures the probe aligned the correct layer for injection.
-    # Allow environment variable override for testing different injection points
-    # MC_INJECTION_LAYER=4 will force injection at layer 4
-    injection_layer_override = os.environ.get("MC_INJECTION_LAYER")
-    if injection_layer_override is not None:
-        try:
-            injection_layer = int(injection_layer_override)
-            logger.info(
-                "INJECTION LAYER: OVERRIDE from env MC_INJECTION_LAYER=%d",
-                injection_layer,
-            )
-        except ValueError:
-            logger.warning(
-                "INJECTION LAYER: Invalid MC_INJECTION_LAYER=%s, ignoring",
-                injection_layer_override,
-            )
-            injection_layer = None
-    elif profile_injection_layer is not None:
+    if profile_injection_layer is not None:
         injection_layer = profile_injection_layer
         logger.info(
             "INJECTION LAYER: Using layer %d from profile alignment",

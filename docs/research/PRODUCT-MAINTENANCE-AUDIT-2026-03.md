@@ -21,12 +21,12 @@ Scanner:
 Current scanner inventory after cleanup:
 - `P1 legacy_alias_or_deprecated = 29`
 - `P2 heuristic_or_product_language = 297`
-- `P2 override_or_bypass = 278`
+- `P2 override_or_bypass = 208`
 - Root split:
   - `docs`: `P1=20`, `P2=170`
   - `scripts`: `P1=6`, `P2=85`
-  - `src`: `P2=219`
-  - `tests`: `P1=3`, `P2=101`
+  - `src`: `P2=170`
+  - `tests`: `P1=3`, `P2=80`
 
 Runtime result:
 - `src/` is clean for scanner-defined `P0/P1`
@@ -46,6 +46,12 @@ Runtime result:
 | P1 | Payload alias preserved old output contract | `src/modelcypher/core/use_cases/adapter_divergence_profile_service.py:144-147` | `layer_agreement_rate` duplicated `dominant_adapter_rate` only to preserve an older payload shape. | Delete | `dominant_adapter_rate` is the only exported field. |
 | P1 | Old path label preserved | `src/modelcypher/experimental/merge/stages/transplant_stage.py:338-345` | `legacy_profile_path` encoded an old path contract and old naming. | Refactor | The path is now `profile_path`; labels use `profile` vs `trajectory`. |
 | P1 | Compatibility signature branch | `src/modelcypher/core/domain/lora_memory_store.py:814-817` | `try/except TypeError` preserved an old `derive_optimizer_geometry_config()` call signature. | Delete | Only the current optimizer derivation signature is accepted. |
+| P2 | Canonical train CLI exposed manual LR | `src/modelcypher/cli/commands/train.py:80-181` | `--lr` kept a user-facing hyperparameter escape hatch in the one training path. | Delete | `mc train run` exposes instrumentation only; LR is always derived. |
+| P2 | Canonical training service accepted manual safety bypasses | `src/modelcypher/core/use_cases/dataset_training_service.py:398-1400` | `lr_override`, `constraint_state_override`, `scale_bound_override`, and `research_allow_quantization_frontier_invalid` reopened non-derived branches inside the canonical training path. | Delete | Training always derives LR, scale bounds, and quantization-frontier gating from measurement. |
+| P2 | MASS math layer preserved LR override bypass | `src/modelcypher/core/domain/training/mass_step_size.py:42-189` and `src/modelcypher/backends/_mlx_training_adapter_train_mixin.py:45-706` | The pure math and adapter loop both allowed explicit LR override to bypass Weyl and validation-derived bounds. | Delete | MASS now has one derivation path: spectral ceiling, sqrt(N) correction, and validation backoff. |
+| P2 | Adapter injection preserved global scale-bound override | `src/modelcypher/backends/_mlx_training_adapter_core_mixin.py:569-621` | `scale_bound_override` bypassed per-layer spectral safety. | Delete | NB-LoRA scale bound is always `(sigma_k / 2) * (1 - sqrt(eps))`. |
+| P2 | Merge injection-layer environment override | `src/modelcypher/experimental/merge/pipeline.py:860-882` and `src/modelcypher/experimental/merge/stages/probe_from_profile.py:255-275` | `MC_INJECTION_LAYER` let callers force a merge location outside measured alignment. | Delete | Injection layer comes only from measured profile alignment or measured transmission geometry. |
+| P2 | Embedding transplant environment overrides | `src/modelcypher/experimental/merge/stages/transplant_embeddings.py:60-114` | `MC_SKIP_EMBEDDING_TRANSPLANT` and `MC_FORCE_EMBEDDING_TRANSPLANT` turned a hard geometry boundary into a manual escape hatch. | Delete | Unsafe cross-vocab embedding transplant stays blocked; no environment override path remains. |
 
 ## Exact Alternates Kept
 
@@ -91,9 +97,9 @@ These are the highest-value remaining doctrine violations because they preserve 
 
 | Path / line | Problem | Decision direction |
 | --- | --- | --- |
-| `src/modelcypher/core/use_cases/dataset_training_service.py:406-433,596-603,999,1070-1071,1172,1400` | `lr_override`, `constraint_state_override`, `scale_bound_override`, `research_allow_quantization_frontier_invalid`, and rank override plumbing keep manual bypasses in the canonical training path. | Move to a quarantined research-only interface or delete after deriving the remaining operator constraints. |
 | `src/modelcypher/core/use_cases/lora_memory_service.py:326` | Rank override language still treats manual rank injection as supported. | Remove once the memory-store path is aligned to the same single derived rank rule as main training. |
-| `src/modelcypher/experimental/merge/pipeline.py:866-879` | `MC_INJECTION_LAYER` environment override bypasses measured injection-layer selection. | Delete or quarantine behind an explicitly non-canonical experiment harness. |
+| `src/modelcypher/core/domain/training/checkpoint_models.py:149` | Memory-estimation metadata still describes optional override fields. | Replace with measured-memory inputs or remove the optional override contract. |
+| `src/modelcypher/core/domain/training/geometric_training_metrics.py:153-155` | A monitoring-only heuristic score remains explicitly heuristic. | Re-derive or demote out of doctrine-critical code paths. |
 
 ## Guardrails Added
 
@@ -115,6 +121,8 @@ What they enforce:
 Commands run:
 - `poetry run pytest tests/repo/test_doctrine_audit.py tests/domain/training/test_mission_alignment_training.py tests/test_lora_adapter_merger.py tests/domain/test_profile.py tests/test_adapter_divergence_profile_service.py tests/domain/geometry/test_geodesic_deviation.py tests/experimental/test_merge_models.py tests/adapters/test_model_loader_iter_weights.py tests/test_gram_aligner_integration.py -q`
 - `poetry run pytest tests/integration/test_entropy_workflow.py -q`
+- `poetry run pytest tests/cli/commands/test_train_commands.py tests/test_dataset_training_service_strict.py tests/test_mlx_training_adapter_strict.py tests/domain/training/test_mass_step_size.py tests/domain/training/test_mission_alignment_training.py tests/repo/test_doctrine_audit.py -q`
+- `poetry run pytest tests/test_probe_from_profile.py tests/test_merge_pipeline_behavior_jacobian.py tests/experimental/test_merge_models.py -q`
 
 Result:
 - Focused doctrine suites passed after cleanup.
