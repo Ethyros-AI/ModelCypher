@@ -1,0 +1,244 @@
+{
+  "probes": [
+    {
+      "id": "smoke_factual_france",
+      "family": "factual",
+      "text": "The capital of France is",
+      "smoke_only": true
+    },
+    {
+      "id": "smoke_factual_boiling",
+      "family": "factual",
+      "text": "Water boils at a temperature of",
+      "smoke_only": true
+    },
+    {
+      "id": "smoke_factual_planet",
+      "family": "factual",
+      "text": "The largest planet in our solar system is",
+      "smoke_only": true
+    },
+    {
+      "id": "smoke_arithmetic_apples",
+      "family": "arithmetic",
+      "text": "If I have 15 apples and give away 7, I have",
+      "smoke_only": true
+    },
+    {
+      "id": "smoke_arithmetic_sum10",
+      "family": "arithmetic",
+      "text": "The sum of the first ten positive integers is",
+      "smoke_only": true
+    },
+    {
+      "id": "smoke_arithmetic_triangle",
+      "family": "arithmetic",
+      "text": "A triangle has three sides and three",
+      "smoke_only": true
+    },
+    {
+      "id": "smoke_narrative_kingdom",
+      "family": "narrative",
+      "text": "Once upon a time in a distant kingdom there lived a",
+      "smoke_only": true
+    },
+    {
+      "id": "smoke_narrative_lighthouse",
+      "family": "narrative",
+      "text": "The old lighthouse keeper watched the storm approach from the",
+      "smoke_only": true
+    },
+    {
+      "id": "smoke_narrative_map",
+      "family": "narrative",
+      "text": "She opened the ancient book and found a map leading to",
+      "smoke_only": true
+    },
+    {
+      "id": "smoke_technical_bst",
+      "family": "technical",
+      "text": "To implement a binary search tree you first need to",
+      "smoke_only": true
+    },
+    {
+      "id": "smoke_technical_hash",
+      "family": "technical",
+      "text": "The main advantage of using a hash table over a sorted array is",
+      "smoke_only": true
+    },
+    {
+      "id": "smoke_technical_gradient",
+      "family": "technical",
+      "text": "In machine learning, gradient descent works by iteratively",
+      "smoke_only": true
+    },
+    {
+      "id": "smoke_long_translation",
+      "family": "long_dependency",
+      "text": "The professor who had studied ancient languages for decades and traveled to remote regions finally discovered that the key to the translation was",
+      "smoke_only": true
+    },
+    {
+      "id": "smoke_long_results",
+      "family": "long_dependency",
+      "text": "Although the initial results were promising and the team had high hopes after months of careful experimentation they realized that",
+      "smoke_only": true
+    },
+    {
+      "id": "smoke_syntax_dog",
+      "family": "syntax",
+      "text": "The dog that the cat chased ran across the",
+      "smoke_only": true
+    },
+    {
+      "id": "smoke_syntax_neither",
+      "family": "syntax",
+      "text": "Neither the students nor the teacher was able to",
+      "smoke_only": true
+    },
+    {
+      "id": "fact_mercury",
+      "family": "factual",
+      "text": "The closest planet to the Sun is",
+      "smoke_only": false
+    },
+    {
+      "id": "fact_oxygen",
+      "family": "factual",
+      "text": "The chemical symbol for oxygen is",
+      "smoke_only": false
+    },
+    {
+      "id": "fact_pacific",
+      "family": "factual",
+      "text": "The largest ocean on Earth is the",
+      "smoke_only": false
+    },
+    {
+      "id": "fact_shakespeare",
+      "family": "factual",
+      "text": "Romeo and Juliet was written by",
+      "smoke_only": false
+    },
+    {
+      "id": "arith_double",
+      "family": "arithmetic",
+      "text": "If a number is doubled and then increased by three the result grows by",
+      "smoke_only": false
+    },
+    {
+      "id": "arith_even",
+      "family": "arithmetic",
+      "text": "Every even integer can be divided by",
+      "smoke_only": false
+    },
+    {
+      "id": "arith_rect",
+      "family": "arithmetic",
+      "text": "The area of a rectangle is found by multiplying",
+      "smoke_only": false
+    },
+    {
+      "id": "arith_fraction",
+      "family": "arithmetic",
+      "text": "One half of eight is",
+      "smoke_only": false
+    },
+    {
+      "id": "narrative_forest",
+      "family": "narrative",
+      "text": "By the time the travelers reached the forest edge they had already decided that",
+      "smoke_only": false
+    },
+    {
+      "id": "narrative_door",
+      "family": "narrative",
+      "text": "When the hidden door finally opened the room beyond was filled with",
+      "smoke_only": false
+    },
+    {
+      "id": "narrative_letter",
+      "family": "narrative",
+      "text": "He unfolded the letter slowly because he feared it would reveal",
+      "smoke_only": false
+    },
+    {
+      "id": "narrative_clock",
+      "family": "narrative",
+      "text": "The clock stopped at midnight just as the last candle in the hall began to",
+      "smoke_only": false
+    },
+    {
+      "id": "tech_queue",
+      "family": "technical",
+      "text": "A queue differs from a stack because it removes items in",
+      "smoke_only": false
+    },
+    {
+      "id": "tech_index",
+      "family": "technical",
+      "text": "A database index speeds up reads by allowing the engine to",
+      "smoke_only": false
+    },
+    {
+      "id": "tech_cache",
+      "family": "technical",
+      "text": "A cache improves performance when future requests are likely to",
+      "smoke_only": false
+    },
+    {
+      "id": "tech_api",
+      "family": "technical",
+      "text": "An API contract is useful because it defines how components",
+      "smoke_only": false
+    },
+    {
+      "id": "long_telescope",
+      "family": "long_dependency",
+      "text": "The astronomer who had repaired the cracked telescope lens after the storm and recalibrated the mount before dawn eventually discovered that the unexpected signal came from",
+      "smoke_only": false
+    },
+    {
+      "id": "long_committee",
+      "family": "long_dependency",
+      "text": "After the committee reviewed every proposal, revised the budget twice, and debated the timeline for hours they agreed that the only workable option was to",
+      "smoke_only": false
+    },
+    {
+      "id": "long_bridge",
+      "family": "long_dependency",
+      "text": "Because the bridge had been closed for repairs since the river flooded in spring the merchants who usually crossed at dawn had to reroute through",
+      "smoke_only": false
+    },
+    {
+      "id": "long_archive",
+      "family": "long_dependency",
+      "text": "The archivist who cataloged the damaged manuscripts for years before the museum renovation finally noticed that the missing seal matched the one from",
+      "smoke_only": false
+    },
+    {
+      "id": "syntax_subject_verb",
+      "family": "syntax",
+      "text": "The report that the engineers prepared after the inspection was",
+      "smoke_only": false
+    },
+    {
+      "id": "syntax_relative_clause",
+      "family": "syntax",
+      "text": "The musician that the critics praised during the festival later wrote a",
+      "smoke_only": false
+    },
+    {
+      "id": "syntax_agreement",
+      "family": "syntax",
+      "text": "Each of the books on the shelf belongs to",
+      "smoke_only": false
+    },
+    {
+      "id": "syntax_embedding",
+      "family": "syntax",
+      "text": "The painting that the curator said the gallery had restored now hangs in",
+      "smoke_only": false
+    }
+  ]
+}
