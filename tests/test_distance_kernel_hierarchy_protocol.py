@@ -25,12 +25,12 @@ def _load_script_module(name: str, relative_path: str) -> ModuleType:
 
 
 SCRIPT = _load_script_module(
-    "wave_field_analysis_script",
-    "scripts/wave_field_analysis.py",
+    "distance_kernel_hierarchy_script",
+    "scripts/distance_kernel_hierarchy_analysis.py",
 )
 VALIDATOR = _load_script_module(
-    "wave_field_validator_script",
-    "scripts/validate_wave_kernel_falsifier_artifacts.py",
+    "dkh_validator_script",
+    "scripts/validate_distance_kernel_hierarchy_artifacts.py",
 )
 
 
@@ -41,56 +41,99 @@ def _profile_from_values(values: np.ndarray) -> object:
     return SCRIPT.DistanceProfile(distances=distances, means=means, counts=counts)
 
 
-def test_synthetic_exponential_profile_prefers_m1_on_holdout():
-    distances = np.arange(12, dtype=np.float64)
+def test_synthetic_exponential_profile_classified_m1_by_aicc():
+    """A clear exponential profile should be classified as M1 by AICc."""
+    distances = np.arange(20, dtype=np.float64)
     base = SCRIPT.monotonic_decay(distances, 0.9, 0.22)
-    calibration = _profile_from_values(base + np.array([
-        0.00, 0.01, -0.01, 0.02, -0.02, 0.015, -0.01, 0.005, 0.0, 0.0, 0.0, 0.0,
-    ]))
+    noise = np.array([
+        0.00, 0.01, -0.01, 0.02, -0.02, 0.015, -0.01, 0.005, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    ])
+    calibration = _profile_from_values(base + noise)
     holdout = _profile_from_values(base)
 
     fits = SCRIPT.fit_profile_models(calibration, holdout)
 
-    assert fits["m1"]["holdout"]["rmse"] is not None
-    assert fits["m2"]["holdout"]["rmse"] is not None
-    assert fits["m1"]["holdout"]["rmse"] <= fits["m2"]["holdout"]["rmse"]
-    assert fits["m2"]["boundary_equivalent"] is True
+    classification = SCRIPT.classify_head_aicc(
+        aicc_m0=fits["m0"]["calibration"]["aicc"],
+        aicc_m1=fits["m1"]["calibration"]["aicc"],
+        n_points=fits["m0"]["calibration"]["n_points"],
+    )
+
+    assert classification["head_classification"] == "m1_class"
+    assert classification["delta_aicc_m0_minus_m1"] > 0.0
+    assert fits["m1"]["holdout"]["rmse"] < fits["m0"]["holdout"]["rmse"]
 
 
-def test_synthetic_wave_profile_prefers_m2_on_holdout():
-    distances = np.arange(16, dtype=np.float64)
-    calibration_values = SCRIPT.damped_oscillation(distances, 0.8, 0.12, 1.0, 0.15)
-    holdout_values = SCRIPT.damped_oscillation(distances, 0.8, 0.12, 1.0, 0.15)
-    calibration = _profile_from_values(calibration_values)
-    holdout = _profile_from_values(holdout_values)
+def test_synthetic_constant_profile_classified_m0_by_aicc():
+    """A flat profile should be classified as M0 by AICc."""
+    values = np.full(20, 0.35, dtype=np.float64)
+    noise = np.random.default_rng(42).normal(0, 0.001, 20)
+    calibration = _profile_from_values(values + noise)
+    holdout = _profile_from_values(values)
 
     fits = SCRIPT.fit_profile_models(calibration, holdout)
 
-    assert fits["m2"]["holdout"]["rmse"] is not None
-    assert fits["m1"]["holdout"]["rmse"] is not None
-    assert fits["m2"]["holdout"]["rmse"] < fits["m1"]["holdout"]["rmse"]
-    assert fits["m2"]["boundary_equivalent"] is False
+    classification = SCRIPT.classify_head_aicc(
+        aicc_m0=fits["m0"]["calibration"]["aicc"],
+        aicc_m1=fits["m1"]["calibration"]["aicc"],
+        n_points=fits["m0"]["calibration"]["n_points"],
+    )
+
+    assert classification["head_classification"] == "m0_class"
+    assert classification["delta_aicc_m0_minus_m1"] <= 0.0
 
 
-def test_content_dominated_matrix_has_low_distance_r2_and_no_wave_support():
-    rng = np.random.default_rng(7)
-    seq_len = 14
-    matrix = np.zeros((seq_len, seq_len), dtype=np.float64)
-    for row in range(seq_len):
-        raw = rng.random(row + 1)
-        matrix[row, : row + 1] = raw / raw.sum()
-
-    profile, distance_r2 = SCRIPT.compute_prompt_measurements(matrix)
-    calibration = SCRIPT.aggregate_profiles([profile, profile])
-    holdout_noise = _profile_from_values(rng.random(len(profile.distances)))
-    fits = SCRIPT.fit_profile_models(calibration, holdout_noise)
-    holdout_delta = fits["m2"]["holdout"]["rmse"] - fits["m1"]["holdout"]["rmse"]
-
-    assert distance_r2 < 0.5
-    assert not (holdout_delta < 0.0 and fits["m2"]["boundary_equivalent"] is False)
+def test_aicc_penalty_matches_analytic_formula():
+    """delta_penalty(n) must match 2 + 12/(n-3) - 4/(n-2) exactly."""
+    for n in (10, 20, 28, 30, 50, 100):
+        expected = 2.0 + 12.0 / (n - 3) - 4.0 / (n - 2)
+        computed = SCRIPT.delta_penalty(n)
+        np.testing.assert_allclose(computed, expected, rtol=1e-12)
 
 
-def test_distance_r2_matches_distance_conditioned_variance_decomposition():
+def test_aicc_penalty_infinite_for_small_n():
+    """delta_penalty should be infinite when n <= 3."""
+    assert SCRIPT.delta_penalty(3) == float("inf")
+    assert SCRIPT.delta_penalty(2) == float("inf")
+    assert SCRIPT.delta_penalty(1) == float("inf")
+
+
+def test_classification_concordance_with_holdout_on_synthetic():
+    """For clear synthetic data, AICc classification should agree with holdout."""
+    # Strong exponential
+    distances = np.arange(25, dtype=np.float64)
+    exp_base = SCRIPT.monotonic_decay(distances, 0.8, 0.3)
+    cal = _profile_from_values(exp_base)
+    hold = _profile_from_values(exp_base)
+    fits = SCRIPT.fit_profile_models(cal, hold)
+    classification = SCRIPT.classify_head_aicc(
+        fits["m0"]["calibration"]["aicc"],
+        fits["m1"]["calibration"]["aicc"],
+        fits["m0"]["calibration"]["n_points"],
+    )
+    holdout_best = SCRIPT._best_model_by_holdout(fits)
+    assert classification["head_classification"] == "m1_class"
+    assert holdout_best == "m1"
+
+    # Strong constant
+    const_base = np.full(25, 0.5, dtype=np.float64)
+    cal2 = _profile_from_values(const_base)
+    hold2 = _profile_from_values(const_base)
+    fits2 = SCRIPT.fit_profile_models(cal2, hold2)
+    classification2 = SCRIPT.classify_head_aicc(
+        fits2["m0"]["calibration"]["aicc"],
+        fits2["m1"]["calibration"]["aicc"],
+        fits2["m0"]["calibration"]["n_points"],
+    )
+    holdout_best2 = SCRIPT._best_model_by_holdout(fits2)
+    # For a constant profile, M1 can fit it too (gamma=0), so both are equivalent.
+    # M0 should win or tie by AICc (fewer parameters, same fit).
+    assert classification2["head_classification"] == "m0_class"
+
+
+def test_distance_r2_matches_variance_decomposition():
+    """distance_r2 should match the explained/total variance ratio."""
     matrix = np.array([
         [1.0, 0.0, 0.0, 0.0],
         [0.2, 0.8, 0.0, 0.0],
@@ -101,24 +144,23 @@ def test_distance_r2_matches_distance_conditioned_variance_decomposition():
     _, distance_r2 = SCRIPT.compute_prompt_measurements(matrix)
 
     values: list[float] = []
-    distances: list[int] = []
+    dists: list[int] = []
     for i in range(matrix.shape[0]):
         for j in range(i + 1):
             values.append(float(matrix[i, j]))
-            distances.append(i - j)
+            dists.append(i - j)
 
     values_arr = np.asarray(values, dtype=np.float64)
-    distances_arr = np.asarray(distances, dtype=np.int64)
+    dists_arr = np.asarray(dists, dtype=np.int64)
     grand_mean = float(np.mean(values_arr))
     distance_means = {
-        int(distance): float(np.mean(values_arr[distances_arr == distance]))
-        for distance in sorted(set(distances))
+        int(d): float(np.mean(values_arr[dists_arr == d]))
+        for d in sorted(set(dists))
     }
     explained = np.asarray(
-        [distance_means[int(distance)] for distance in distances_arr],
+        [distance_means[int(d)] for d in dists_arr],
         dtype=np.float64,
     )
-
     explained_variance = float(np.mean((explained - grand_mean) ** 2))
     total_variance = float(np.mean((values_arr - grand_mean) ** 2))
 
@@ -131,65 +173,15 @@ def test_distance_r2_matches_distance_conditioned_variance_decomposition():
     )
 
 
-def test_boundary_equivalent_detects_flat_m2_case():
-    distances = np.arange(10, dtype=np.float64)
-    params = {
-        "a": 1.0,
-        "gamma": 0.0,
-        "omega": 0.0,
-        "phi": -math.pi / 2.0,
-    }
-
-    assert SCRIPT._m2_boundary_equivalent(distances, params) is True
-
-
-def test_profile_alignment_metrics_report_weighted_common_support_agreement():
-    calibration = SCRIPT.DistanceProfile(
-        distances=[0, 1, 2, 3],
-        means=[0.5, 0.3, 0.2, 0.1],
-        counts=[10, 9, 8, 7],
-    )
-    holdout = SCRIPT.DistanceProfile(
-        distances=[0, 1, 2, 3],
-        means=[0.49, 0.31, 0.19, 0.11],
-        counts=[5, 4, 3, 2],
-    )
-
-    metrics = SCRIPT._profile_alignment_metrics(calibration, holdout)
-
-    assert metrics["common_distance_count"] == 4
-    assert metrics["weighted_correlation"] is not None
-    assert metrics["weighted_correlation"] > 0.99
-    assert metrics["weighted_rmse"] is not None
-    assert metrics["weighted_rmse"] < 0.02
-
-
-def test_positive_slope_mass_is_zero_for_monotone_profile_and_positive_for_wave():
-    monotone = SCRIPT.DistanceProfile(
-        distances=[0, 1, 2, 3],
-        means=[0.4, 0.3, 0.2, 0.1],
-        counts=[8, 7, 6, 5],
-    )
-    wavy = SCRIPT.DistanceProfile(
-        distances=[0, 1, 2, 3, 4],
-        means=[0.4, 0.2, 0.3, 0.1, 0.15],
-        counts=[8, 7, 6, 5, 4],
-    )
-
-    assert SCRIPT._positive_slope_mass(monotone) == 0.0
-    assert SCRIPT._positive_slope_mass(wavy) is not None
-    assert SCRIPT._positive_slope_mass(wavy) > 0.0
-
-
 def test_validator_rejects_missing_and_malformed_artifacts(tmp_path: Path):
-    run_dir = tmp_path / "20260306_120000"
+    run_dir = tmp_path / "20260307_120000"
     run_dir.mkdir()
 
     manifest = {
         "run_id": run_dir.name,
-        "protocol": "F-WAVE-01",
+        "protocol": "F-DKH-01",
         "artifact_schema_version": "v1",
-        "generated_at": "2026-03-06T12:00:00+00:00",
+        "generated_at": "2026-03-07T12:00:00+00:00",
         "output_dir": str(run_dir),
         "probe_file": "docs/research/wave_kernel_probe_manifest.json",
         "models_requested": [],
@@ -198,13 +190,13 @@ def test_validator_rejects_missing_and_malformed_artifacts(tmp_path: Path):
         "claim_form": "y",
     }
     (run_dir / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    (run_dir / "per_head_fit_table.jsonl").write_text("{bad json\n", encoding="utf-8")
+    (run_dir / "per_head_classification.jsonl").write_text("{bad json\n", encoding="utf-8")
     (run_dir / "model_family_summary.json").write_text(
         json.dumps({
             "run_id": run_dir.name,
-            "protocol": "F-WAVE-01",
+            "protocol": "F-DKH-01",
             "artifact_schema_version": "v1",
-            "generated_at": "2026-03-06T12:00:00+00:00",
+            "generated_at": "2026-03-07T12:00:00+00:00",
             "models": [],
             "families": [],
         }),
@@ -213,16 +205,15 @@ def test_validator_rejects_missing_and_malformed_artifacts(tmp_path: Path):
     (run_dir / "falsifier_outcome.json").write_text(
         json.dumps({
             "run_id": run_dir.name,
-            "protocol": "F-WAVE-01",
+            "protocol": "F-DKH-01",
             "artifact_schema_version": "v1",
-            "generated_at": "2026-03-06T12:00:00+00:00",
+            "generated_at": "2026-03-07T12:00:00+00:00",
             "claim": "x",
             "claim_form": "y",
             "observable": "z",
             "overall": "insufficient_data",
             "promotion_blocked": True,
-            "family_outcomes": [],
-            "model_outcomes": [],
+            "predictions": [],
         }),
         encoding="utf-8",
     )
@@ -230,19 +221,19 @@ def test_validator_rejects_missing_and_malformed_artifacts(tmp_path: Path):
     result = VALIDATOR.validate_run_dir(run_dir, include_self=True)
 
     assert result["ok"] is False
-    assert any("per_head_fit_table.jsonl" in error for error in result["errors"])
+    assert any("per_head_classification.jsonl" in error for error in result["errors"])
     assert any("artifact_validation.json" in error for error in result["errors"])
 
 
 def test_validator_accepts_minimal_valid_run_dir(tmp_path: Path):
-    run_dir = tmp_path / "20260306_120001"
+    run_dir = tmp_path / "20260307_120001"
     run_dir.mkdir()
 
     manifest = {
         "run_id": run_dir.name,
-        "protocol": "F-WAVE-01",
+        "protocol": "F-DKH-01",
         "artifact_schema_version": "v1",
-        "generated_at": "2026-03-06T12:00:00+00:00",
+        "generated_at": "2026-03-07T12:00:00+00:00",
         "output_dir": str(run_dir),
         "probe_file": "docs/research/wave_kernel_probe_manifest.json",
         "models_requested": [],
@@ -252,28 +243,27 @@ def test_validator_accepts_minimal_valid_run_dir(tmp_path: Path):
     }
     summary = {
         "run_id": run_dir.name,
-        "protocol": "F-WAVE-01",
+        "protocol": "F-DKH-01",
         "artifact_schema_version": "v1",
-        "generated_at": "2026-03-06T12:00:00+00:00",
+        "generated_at": "2026-03-07T12:00:00+00:00",
         "models": [],
         "families": [],
     }
     outcome = {
         "run_id": run_dir.name,
-        "protocol": "F-WAVE-01",
+        "protocol": "F-DKH-01",
         "artifact_schema_version": "v1",
-        "generated_at": "2026-03-06T12:00:00+00:00",
+        "generated_at": "2026-03-07T12:00:00+00:00",
         "claim": "x",
         "claim_form": "y",
         "observable": "z",
         "overall": "insufficient_data",
         "promotion_blocked": True,
-        "family_outcomes": [],
-        "model_outcomes": [],
+        "predictions": [],
     }
     head_row = {
         "record_type": "model_skip",
-        "protocol": "F-WAVE-01",
+        "protocol": "F-DKH-01",
         "artifact_schema_version": "v1",
         "model_path": "/tmp/model",
         "model_name": "Qwen3.5-0.8B-bf16",
@@ -287,15 +277,15 @@ def test_validator_accepts_minimal_valid_run_dir(tmp_path: Path):
         "run_dir": str(run_dir),
         "files_checked": [
             "run_manifest.json",
-            "per_head_fit_table.jsonl",
+            "per_head_classification.jsonl",
             "model_family_summary.json",
             "falsifier_outcome.json",
         ],
-        "validated_at": "2026-03-06T12:00:00+00:00",
+        "validated_at": "2026-03-07T12:00:00+00:00",
     }
 
     (run_dir / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    (run_dir / "per_head_fit_table.jsonl").write_text(json.dumps(head_row) + "\n", encoding="utf-8")
+    (run_dir / "per_head_classification.jsonl").write_text(json.dumps(head_row) + "\n", encoding="utf-8")
     (run_dir / "model_family_summary.json").write_text(json.dumps(summary), encoding="utf-8")
     (run_dir / "falsifier_outcome.json").write_text(json.dumps(outcome), encoding="utf-8")
     (run_dir / "artifact_validation.json").write_text(

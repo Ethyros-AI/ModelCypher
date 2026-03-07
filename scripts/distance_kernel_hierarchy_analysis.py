@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
-"""Wave-kernel falsifier protocol runner.
+"""Distance-kernel hierarchy falsifier protocol runner.
 
 This script measures one narrow claim:
 
-    Does a damped oscillation kernel explain attention better than a
-    monotone decay kernel once we control for prompt split, fit
-    degeneracy, and architecture family?
+    For attention heads where distance explains substantial variance in
+    the attention profile (as determined by AICc model selection on
+    calibration data), monotone exponential decay (M1) is the sufficient
+    kernel, and the simpler constant model (M0) is inadequate.
+    This holds cross-family.
 
 The output is a run directory with machine-readable artifacts only.
 Interpretation and promotion live in the protocol document.
 
 Usage:
-    poetry run python scripts/wave_field_analysis.py --smoke
-    poetry run python scripts/wave_field_analysis.py --models /path/to/model
-    poetry run python scripts/wave_field_analysis.py \
+    poetry run python scripts/distance_kernel_hierarchy_analysis.py --smoke
+    poetry run python scripts/distance_kernel_hierarchy_analysis.py --models /path/to/model
+    poetry run python scripts/distance_kernel_hierarchy_analysis.py \
         --models /path/to/model_a \
         --models /path/to/model_b \
         --probe-file docs/research/wave_kernel_probe_manifest.json
@@ -35,9 +37,9 @@ import numpy as np
 from scipy.optimize import curve_fit
 
 try:
-    from scripts import validate_wave_kernel_falsifier_artifacts as artifact_validator
+    from scripts import validate_distance_kernel_hierarchy_artifacts as artifact_validator
 except ImportError:  # pragma: no cover - direct script execution path
-    import validate_wave_kernel_falsifier_artifacts as artifact_validator
+    import validate_distance_kernel_hierarchy_artifacts as artifact_validator
 
 from modelcypher.adapters.activation_provider import ActivationProviderAdapter
 from modelcypher.adapters.model_loader import ModelLoader
@@ -45,17 +47,18 @@ from modelcypher.backends import initialize_default_backend
 
 logger = logging.getLogger(__name__)
 
-PROTOCOL_ID = "F-WAVE-01"
+PROTOCOL_ID = "F-DKH-01"
 ARTIFACT_SCHEMA_VERSION = "v1"
 CLAIM_FORM = (
     "observable = f(geometry_state, architecture_state, scale_state, "
     "precision_state, measurement_operator)"
 )
 CLAIM_DESCRIPTION = (
-    "A damped oscillation kernel improves holdout fit over monotone decay on "
-    "attention distance profiles once boundary-equivalent M2 fits are excluded."
+    "For attention heads where distance explains substantial variance, "
+    "monotone exponential decay (M1) is the sufficient kernel and the "
+    "simpler constant model (M0) is inadequate. This holds cross-family."
 )
-RESULTS_ROOT = Path("results/wave_kernel_falsifier")
+RESULTS_ROOT = Path("results/distance_kernel_hierarchy")
 DEFAULT_PROBE_FILE = Path("docs/research/wave_kernel_probe_manifest.json")
 DEFAULT_MODEL_PATHS = (
     Path("/Volumes/CodeCypher/models/mlx-community/Qwen3.5-0.8B-bf16"),
@@ -70,6 +73,11 @@ MODEL_RECORD_REQUIRED_KEYS = {
     "family",
     "status",
 }
+
+
+# ---------------------------------------------------------------------------
+# Data structures
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -100,6 +108,11 @@ class DistanceProfile:
     @property
     def n_points(self) -> int:
         return len(self.distances)
+
+
+# ---------------------------------------------------------------------------
+# Utility functions
+# ---------------------------------------------------------------------------
 
 
 def _utc_now() -> str:
@@ -147,6 +160,58 @@ def _resolve_model_paths(raw_paths: list[str] | None) -> tuple[list[Path], bool]
     if raw_paths:
         return [Path(raw).expanduser().resolve() for raw in raw_paths], False
     return [path.resolve() for path in DEFAULT_MODEL_PATHS], True
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row))
+            handle.write("\n")
+
+
+def _load_existing_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        rows.append(json.loads(stripped))
+    return rows
+
+
+def _processed_model_paths(existing_rows: list[dict[str, Any]]) -> set[str]:
+    processed: set[str] = set()
+    for row in existing_rows:
+        if row.get("record_type") == "head_classification" and row.get("status") == "ok":
+            processed.add(str(Path(row["model_path"]).resolve()))
+    return processed
+
+
+def _head_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        row
+        for row in rows
+        if row.get("record_type") == "head_classification" and row.get("status") == "ok"
+    ]
+
+
+def _model_skip_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        row
+        for row in rows
+        if row.get("record_type") == "model_skip"
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Probe management
+# ---------------------------------------------------------------------------
 
 
 def load_probe_manifest(path: Path) -> list[ProbeSpec]:
@@ -201,24 +266,23 @@ def assign_probe_splits(probes: list[ProbeSpec]) -> dict[str, str]:
     return split_map
 
 
+# ---------------------------------------------------------------------------
+# Model functions (M0 constant, M1 monotone decay)
+# ---------------------------------------------------------------------------
+
+
 def monotonic_decay(d: np.ndarray, a: float, gamma: float) -> np.ndarray:
     """M1: Pure exponential decay."""
     return a * np.exp(-gamma * d)
 
 
-def damped_oscillation(
-    d: np.ndarray,
-    a: float,
-    gamma: float,
-    omega: float,
-    phi: float,
-) -> np.ndarray:
-    """M2: Damped oscillation."""
-    return a * np.exp(-gamma * d) * np.cos(omega * d + phi)
+# ---------------------------------------------------------------------------
+# Profile measurement
+# ---------------------------------------------------------------------------
 
 
 def compute_prompt_measurements(attn_matrix: np.ndarray) -> tuple[DistanceProfile, float]:
-    """Return the per-distance profile and nonparametric distance R²."""
+    """Return the per-distance profile and nonparametric distance R2."""
     seq_len = int(attn_matrix.shape[0])
     by_distance: dict[int, list[float]] = {}
     all_values: list[float] = []
@@ -276,114 +340,9 @@ def aggregate_profiles(profiles: list[DistanceProfile]) -> DistanceProfile | Non
     return DistanceProfile(distances=distances, means=means, counts=counts)
 
 
-def _weighted_profile_overlap(
-    left: DistanceProfile | None,
-    right: DistanceProfile | None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
-    """Return common-support means and count weights for two profiles."""
-    if left is None or right is None:
-        return None
-
-    left_means = {
-        distance: mean
-        for distance, mean in zip(left.distances, left.means, strict=True)
-    }
-    right_means = {
-        distance: mean
-        for distance, mean in zip(right.distances, right.means, strict=True)
-    }
-    left_counts = {
-        distance: count
-        for distance, count in zip(left.distances, left.counts, strict=True)
-    }
-    right_counts = {
-        distance: count
-        for distance, count in zip(right.distances, right.counts, strict=True)
-    }
-
-    common_distances = sorted(set(left.distances).intersection(right.distances))
-    if not common_distances:
-        return None
-
-    left_arr = np.asarray(
-        [left_means[distance] for distance in common_distances],
-        dtype=np.float64,
-    )
-    right_arr = np.asarray(
-        [right_means[distance] for distance in common_distances],
-        dtype=np.float64,
-    )
-    weights = np.asarray(
-        [
-            float(min(left_counts[distance], right_counts[distance]))
-            for distance in common_distances
-        ],
-        dtype=np.float64,
-    )
-    return left_arr, right_arr, weights
-
-
-def _profile_alignment_metrics(
-    calibration_profile: DistanceProfile | None,
-    holdout_profile: DistanceProfile | None,
-) -> dict[str, float | int | None]:
-    """Measure common-support agreement between calibration and holdout profiles."""
-    overlap = _weighted_profile_overlap(calibration_profile, holdout_profile)
-    if overlap is None:
-        return {
-            "common_distance_count": 0,
-            "weighted_correlation": None,
-            "weighted_rmse": None,
-        }
-
-    calibration_values, holdout_values, weights = overlap
-    total_weight = float(np.sum(weights))
-    if total_weight <= 0.0:
-        return {
-            "common_distance_count": int(calibration_values.shape[0]),
-            "weighted_correlation": None,
-            "weighted_rmse": None,
-        }
-
-    calibration_mean = float(np.sum(weights * calibration_values) / total_weight)
-    holdout_mean = float(np.sum(weights * holdout_values) / total_weight)
-    centered_cal = calibration_values - calibration_mean
-    centered_hold = holdout_values - holdout_mean
-
-    covariance = float(np.sum(weights * centered_cal * centered_hold) / total_weight)
-    calibration_var = float(np.sum(weights * centered_cal * centered_cal) / total_weight)
-    holdout_var = float(np.sum(weights * centered_hold * centered_hold) / total_weight)
-
-    if calibration_var <= 0.0 or holdout_var <= 0.0:
-        correlation = None
-    else:
-        correlation = covariance / math.sqrt(calibration_var * holdout_var)
-
-    rmse = math.sqrt(
-        float(np.sum(weights * (calibration_values - holdout_values) ** 2) / total_weight)
-    )
-    return {
-        "common_distance_count": int(calibration_values.shape[0]),
-        "weighted_correlation": _finite_or_none(correlation),
-        "weighted_rmse": _finite_or_none(rmse),
-    }
-
-
-def _positive_slope_mass(profile: DistanceProfile | None) -> float | None:
-    """Count-weighted average magnitude of upward steps in a distance profile."""
-    if profile is None or profile.n_points < 2:
-        return None
-
-    means = np.asarray(profile.means, dtype=np.float64)
-    counts = np.asarray(profile.counts, dtype=np.float64)
-    diffs = np.diff(means)
-    weights = np.minimum(counts[:-1], counts[1:])
-    total_weight = float(np.sum(weights))
-    if total_weight <= 0.0:
-        return None
-
-    positive_mass = float(np.sum(weights * np.maximum(diffs, 0.0)))
-    return _finite_or_none(positive_mass / total_weight)
+# ---------------------------------------------------------------------------
+# Fitting helpers
+# ---------------------------------------------------------------------------
 
 
 def _profile_arrays(profile: DistanceProfile) -> tuple[np.ndarray, np.ndarray]:
@@ -423,34 +382,6 @@ def _information_criteria(
     return _finite_or_none(aicc), _finite_or_none(bic)
 
 
-def _m2_boundary_equivalent(
-    distances: np.ndarray,
-    params: dict[str, float],
-) -> bool:
-    if distances.shape[0] < 3:
-        return True
-
-    predicted = damped_oscillation(
-        distances,
-        params["a"],
-        params["gamma"],
-        params["omega"],
-        params["phi"],
-    )
-
-    zero_crossing = any(
-        predicted[idx] == 0.0 or predicted[idx] * predicted[idx + 1] < 0.0
-        for idx in range(predicted.shape[0] - 1)
-    )
-    diffs = np.diff(predicted)
-    interior_extremum = any(
-        (diffs[idx - 1] > 0.0 and diffs[idx] < 0.0)
-        or (diffs[idx - 1] < 0.0 and diffs[idx] > 0.0)
-        for idx in range(1, diffs.shape[0])
-    )
-    return not (zero_crossing or interior_extremum)
-
-
 def _m0_predictions(
     profile: DistanceProfile | None,
     mean_value: float | None,
@@ -470,27 +401,66 @@ def _m1_predictions(
     return monotonic_decay(distances, params["a"], params["gamma"])
 
 
-def _m2_predictions(
-    profile: DistanceProfile | None,
-    params: dict[str, float] | None,
-) -> np.ndarray | None:
-    if profile is None or params is None:
-        return None
-    distances, _ = _profile_arrays(profile)
-    return damped_oscillation(
-        distances,
-        params["a"],
-        params["gamma"],
-        params["omega"],
-        params["phi"],
-    )
+# ---------------------------------------------------------------------------
+# AICc classification
+# ---------------------------------------------------------------------------
+
+
+def delta_penalty(n: int) -> float:
+    """Analytic AICc penalty difference between M1 (k=2) and M0 (k=1).
+
+    delta_penalty(n) = [2*2 + 2*2*3/(n-3)] - [2*1 + 2*1*2/(n-2)]
+                     = 2 + 12/(n-3) - 4/(n-2)
+
+    Derivation: Burnham & Anderson (2002), AICc correction formula.
+    """
+    if n <= 3:
+        return float("inf")
+    return 2.0 + 12.0 / (n - 3) - 4.0 / (n - 2)
+
+
+def classify_head_aicc(
+    aicc_m0: float | None,
+    aicc_m1: float | None,
+    n_points: int,
+) -> dict[str, Any]:
+    """Classify a head as M0-class or M1-class using AICc model selection.
+
+    delta_aicc = AICc(M0) - AICc(M1)
+    - delta_aicc > 0 -> M1-class (decay parameter justified)
+    - delta_aicc <= 0 -> M0-class (constant sufficient)
+    """
+    if aicc_m0 is None or aicc_m1 is None:
+        return {
+            "head_classification": None,
+            "delta_aicc_m0_minus_m1": None,
+            "classification_clear": None,
+            "analytic_penalty": None,
+        }
+
+    delta = aicc_m0 - aicc_m1
+    penalty = delta_penalty(n_points)
+    classification = "m1_class" if delta > 0.0 else "m0_class"
+    clear = abs(delta) > penalty
+
+    return {
+        "head_classification": classification,
+        "delta_aicc_m0_minus_m1": _finite_or_none(delta),
+        "classification_clear": clear,
+        "analytic_penalty": _finite_or_none(penalty),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Model fitting (M0 + M1 only)
+# ---------------------------------------------------------------------------
 
 
 def fit_profile_models(
     calibration_profile: DistanceProfile | None,
     holdout_profile: DistanceProfile | None,
 ) -> dict[str, dict[str, Any]]:
-    """Fit M0/M1/M2 on calibration and evaluate on holdout."""
+    """Fit M0/M1 on calibration and evaluate on holdout."""
     results: dict[str, dict[str, Any]] = {
         "m0": {
             "param_count": 1,
@@ -507,15 +477,6 @@ def fit_profile_models(
             "holdout": {"sse": None, "rmse": None, "n_points": 0},
             "error": None,
         },
-        "m2": {
-            "param_count": 4,
-            "fit_ok": False,
-            "params": {},
-            "boundary_equivalent": None,
-            "calibration": {"sse": None, "rmse": None, "n_points": 0, "aicc": None, "bic": None},
-            "holdout": {"sse": None, "rmse": None, "n_points": 0},
-            "error": None,
-        },
     }
 
     if calibration_profile is None or calibration_profile.n_points == 0:
@@ -523,7 +484,7 @@ def fit_profile_models(
 
     distances, values = _profile_arrays(calibration_profile)
 
-    # M0
+    # M0: constant baseline
     mean_value = float(np.mean(values))
     cal_pred = _m0_predictions(calibration_profile, mean_value)
     cal_sse, cal_rmse, cal_n = _profile_error(calibration_profile, cal_pred)
@@ -545,7 +506,7 @@ def fit_profile_models(
         "n_points": hold_n,
     }
 
-    # M1
+    # M1: monotone exponential decay
     try:
         initial_a = max(float(values[0]), np.finfo(np.float64).tiny)
         popt, _ = curve_fit(
@@ -579,60 +540,12 @@ def fit_profile_models(
     except (RuntimeError, ValueError) as exc:
         results["m1"]["error"] = str(exc)
 
-    # M2
-    try:
-        if results["m1"]["params"]:
-            m1_params = results["m1"]["params"]
-            initial_a = max(float(m1_params["a"]), np.finfo(np.float64).tiny)
-            initial_gamma = float(m1_params["gamma"])
-        else:
-            initial_a = max(float(values[0]), np.finfo(np.float64).tiny)
-            initial_gamma = 0.1
-
-        popt, _ = curve_fit(
-            damped_oscillation,
-            distances,
-            values,
-            p0=[initial_a, initial_gamma, 0.5, 0.0],
-            bounds=([0.0, 0.0, 0.0, -np.pi], [np.inf, 50.0, 50.0, np.pi]),
-            maxfev=10000,
-        )
-        params = {
-            "a": float(popt[0]),
-            "gamma": float(popt[1]),
-            "omega": float(popt[2]),
-            "phi": float(popt[3]),
-        }
-        boundary_equivalent = _m2_boundary_equivalent(distances, params)
-        cal_pred = _m2_predictions(calibration_profile, params)
-        cal_sse, cal_rmse, cal_n = _profile_error(calibration_profile, cal_pred)
-        hold_pred = _m2_predictions(holdout_profile, params)
-        hold_sse, hold_rmse, hold_n = _profile_error(holdout_profile, hold_pred)
-        aicc, bic = _information_criteria(cal_sse, cal_n, results["m2"]["param_count"])
-        results["m2"]["fit_ok"] = True
-        results["m2"]["params"] = params
-        results["m2"]["boundary_equivalent"] = boundary_equivalent
-        results["m2"]["calibration"] = {
-            "sse": _finite_or_none(cal_sse),
-            "rmse": _finite_or_none(cal_rmse),
-            "n_points": cal_n,
-            "aicc": aicc,
-            "bic": bic,
-        }
-        results["m2"]["holdout"] = {
-            "sse": _finite_or_none(hold_sse),
-            "rmse": _finite_or_none(hold_rmse),
-            "n_points": hold_n,
-        }
-    except (RuntimeError, ValueError) as exc:
-        results["m2"]["error"] = str(exc)
-
     return results
 
 
 def _best_model_by_holdout(fits: dict[str, dict[str, Any]]) -> str | None:
     candidates: list[tuple[str, float]] = []
-    for model_name in ("m0", "m1", "m2"):
+    for model_name in ("m0", "m1"):
         rmse = fits[model_name]["holdout"]["rmse"]
         if rmse is None:
             continue
@@ -641,6 +554,11 @@ def _best_model_by_holdout(fits: dict[str, dict[str, Any]]) -> str | None:
         return None
     candidates.sort(key=lambda item: (item[1], item[0]))
     return candidates[0][0]
+
+
+# ---------------------------------------------------------------------------
+# Per-head row construction
+# ---------------------------------------------------------------------------
 
 
 def _head_row_from_measurements(
@@ -671,7 +589,7 @@ def _head_row_from_measurements(
         status = "insufficient_data"
         reason = "missing_calibration_profile" if calibration_profile is None else "missing_holdout_profile"
         return {
-            "record_type": "head_fit",
+            "record_type": "head_classification",
             "protocol": PROTOCOL_ID,
             "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
             "model_path": str(model_path),
@@ -690,22 +608,23 @@ def _head_row_from_measurements(
     fits = fit_profile_models(calibration_profile, holdout_profile)
     mean_prompt_distance_r2 = float(np.mean([m["distance_r2"] for m in prompt_measurements]))
     median_prompt_distance_r2 = float(np.median([m["distance_r2"] for m in prompt_measurements]))
-    distance_explained_variance_fraction = mean_prompt_distance_r2
-    content_residual_variance_fraction = float(1.0 - mean_prompt_distance_r2)
-    holdout_delta = None
-    if fits["m1"]["holdout"]["rmse"] is not None and fits["m2"]["holdout"]["rmse"] is not None:
-        holdout_delta = float(fits["m2"]["holdout"]["rmse"] - fits["m1"]["holdout"]["rmse"])
 
-    m2_boundary_equivalent = fits["m2"].get("boundary_equivalent")
-    profile_alignment = _profile_alignment_metrics(calibration_profile, holdout_profile)
-    wave_support = (
-        holdout_delta is not None
-        and holdout_delta < 0.0
-        and m2_boundary_equivalent is False
+    # AICc classification
+    cal_n = fits["m0"]["calibration"]["n_points"]
+    classification = classify_head_aicc(
+        aicc_m0=fits["m0"]["calibration"]["aicc"],
+        aicc_m1=fits["m1"]["calibration"]["aicc"],
+        n_points=cal_n,
     )
 
+    holdout_best = _best_model_by_holdout(fits)
+    holdout_agrees = None
+    if classification["head_classification"] is not None and holdout_best is not None:
+        expected_best = "m1" if classification["head_classification"] == "m1_class" else "m0"
+        holdout_agrees = holdout_best == expected_best
+
     return {
-        "record_type": "head_fit",
+        "record_type": "head_classification",
         "protocol": PROTOCOL_ID,
         "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
         "model_path": str(model_path),
@@ -722,19 +641,19 @@ def _head_row_from_measurements(
         "head_summary": {
             "mean_prompt_distance_r2": mean_prompt_distance_r2,
             "median_prompt_distance_r2": median_prompt_distance_r2,
-            "distance_explained_variance_fraction": distance_explained_variance_fraction,
-            "content_residual_variance_fraction": content_residual_variance_fraction,
-            "calibration_holdout_common_distance_count": profile_alignment["common_distance_count"],
-            "calibration_holdout_weighted_correlation": profile_alignment["weighted_correlation"],
-            "calibration_holdout_weighted_rmse": profile_alignment["weighted_rmse"],
-            "calibration_positive_slope_mass": _positive_slope_mass(calibration_profile),
-            "holdout_positive_slope_mass": _positive_slope_mass(holdout_profile),
-            "holdout_rmse_delta_m2_minus_m1": _finite_or_none(holdout_delta),
-            "holdout_best_model": _best_model_by_holdout(fits),
-            "wave_support_on_holdout": wave_support,
-            "boundary_equivalent": m2_boundary_equivalent,
+            "head_classification": classification["head_classification"],
+            "delta_aicc_m0_minus_m1": classification["delta_aicc_m0_minus_m1"],
+            "classification_clear": classification["classification_clear"],
+            "analytic_penalty": classification["analytic_penalty"],
+            "holdout_best_model": holdout_best,
+            "holdout_agrees": holdout_agrees,
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Model analysis
+# ---------------------------------------------------------------------------
 
 
 def analyze_model(
@@ -852,63 +771,9 @@ def analyze_model(
     return rows
 
 
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-
-
-def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
-    with path.open("w", encoding="utf-8") as handle:
-        for row in rows:
-            handle.write(json.dumps(row))
-            handle.write("\n")
-
-
-def _load_existing_jsonl(path: Path) -> list[dict[str, Any]]:
-    if not path.exists():
-        return []
-    rows: list[dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        rows.append(json.loads(stripped))
-    return rows
-
-
-def _processed_model_paths(existing_rows: list[dict[str, Any]]) -> set[str]:
-    processed: set[str] = set()
-    for row in existing_rows:
-        if row.get("record_type") == "head_fit" and row.get("status") == "ok":
-            processed.add(str(Path(row["model_path"]).resolve()))
-    return processed
-
-
-def _head_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        row
-        for row in rows
-        if row.get("record_type") == "head_fit" and row.get("status") == "ok"
-    ]
-
-
-def _model_skip_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        row
-        for row in rows
-        if row.get("record_type") == "model_skip"
-    ]
-
-
-def _direction_from_deltas(deltas: list[float]) -> str:
-    if not deltas:
-        return "insufficient_data"
-    mean_delta = float(np.mean(deltas))
-    median_delta = float(np.median(deltas))
-    if mean_delta < 0.0 and median_delta < 0.0:
-        return "wave_favored"
-    if mean_delta > 0.0 and median_delta > 0.0:
-        return "decay_favored"
-    return "mixed"
+# ---------------------------------------------------------------------------
+# Summary builders
+# ---------------------------------------------------------------------------
 
 
 def build_model_family_summary(
@@ -923,7 +788,7 @@ def build_model_family_summary(
         model_rows.setdefault(row["model_path"], []).append(row)
 
     model_summaries: list[dict[str, Any]] = []
-    family_accumulator: dict[str, list[float]] = {}
+    family_accumulator: dict[str, dict[str, list[float]]] = {}
 
     for requested_model in requested_models:
         model_key = str(requested_model.resolve())
@@ -945,53 +810,61 @@ def build_model_family_summary(
             })
             continue
 
-        distance_r2 = [
+        distance_r2_values = [
             row["head_summary"]["mean_prompt_distance_r2"]
             for row in head_rows
         ]
-        content_residual = [
-            row["head_summary"]["content_residual_variance_fraction"]
+        classifications = [
+            row["head_summary"]["head_classification"]
             for row in head_rows
-            if row["head_summary"]["content_residual_variance_fraction"] is not None
+            if row["head_summary"]["head_classification"] is not None
         ]
-        profile_correlations = [
-            row["head_summary"]["calibration_holdout_weighted_correlation"]
-            for row in head_rows
-            if row["head_summary"]["calibration_holdout_weighted_correlation"] is not None
-        ]
-        calibration_positive_slope = [
-            row["head_summary"]["calibration_positive_slope_mass"]
-            for row in head_rows
-            if row["head_summary"]["calibration_positive_slope_mass"] is not None
-        ]
-        holdout_deltas = [
-            row["head_summary"]["holdout_rmse_delta_m2_minus_m1"]
-            for row in head_rows
-            if row["head_summary"]["holdout_rmse_delta_m2_minus_m1"] is not None
-        ]
-        nonboundary_deltas = [
-            row["head_summary"]["holdout_rmse_delta_m2_minus_m1"]
-            for row in head_rows
-            if row["head_summary"]["holdout_rmse_delta_m2_minus_m1"] is not None
-            and row["head_summary"]["boundary_equivalent"] is False
-        ]
-        boundary_flags = [
-            row["head_summary"]["boundary_equivalent"]
-            for row in head_rows
-            if row["head_summary"]["boundary_equivalent"] is not None
-        ]
-        wave_support_count = sum(
-            1 for row in head_rows if row["head_summary"]["wave_support_on_holdout"]
-        )
-        best_model_counts: dict[str, int] = {}
-        for row in head_rows:
-            best_model = row["head_summary"]["holdout_best_model"]
-            if best_model is None:
-                continue
-            best_model_counts[best_model] = best_model_counts.get(best_model, 0) + 1
+        m1_count = sum(1 for c in classifications if c == "m1_class")
+        m0_count = sum(1 for c in classifications if c == "m0_class")
+        total_classified = m1_count + m0_count
+        m1_fraction = m1_count / total_classified if total_classified > 0 else None
+        m0_fraction = m0_count / total_classified if total_classified > 0 else None
 
-        direction = _direction_from_deltas(nonboundary_deltas)
-        family_accumulator.setdefault(family, []).extend(nonboundary_deltas)
+        # P-DKH-2: holdout superiority for M1-classified heads
+        m1_heads = [
+            row for row in head_rows
+            if row["head_summary"]["head_classification"] == "m1_class"
+        ]
+        m1_holdout_m1_wins = sum(
+            1 for row in m1_heads
+            if row["head_summary"]["holdout_best_model"] == "m1"
+        )
+        m1_holdout_superiority = (
+            m1_holdout_m1_wins / len(m1_heads) if m1_heads else None
+        )
+
+        # P-DKH-5: AICc-holdout concordance for clear classifications
+        clear_heads = [
+            row for row in head_rows
+            if row["head_summary"]["classification_clear"] is True
+        ]
+        concordant = sum(
+            1 for row in clear_heads
+            if row["head_summary"]["holdout_agrees"] is True
+        )
+        aicc_holdout_concordance = (
+            concordant / len(clear_heads) if clear_heads else None
+        )
+
+        holdout_best_counts: dict[str, int] = {}
+        for row in head_rows:
+            best = row["head_summary"]["holdout_best_model"]
+            if best is not None:
+                holdout_best_counts[best] = holdout_best_counts.get(best, 0) + 1
+
+        # Accumulate family-level data
+        fam_data = family_accumulator.setdefault(family, {
+            "m1_fractions": [],
+            "distance_r2_values": [],
+        })
+        if m1_fraction is not None:
+            fam_data["m1_fractions"].append(m1_fraction)
+        fam_data["distance_r2_values"].extend(distance_r2_values)
 
         model_summaries.append({
             "model_path": model_key,
@@ -999,53 +872,44 @@ def build_model_family_summary(
             "family": family,
             "status": "ok",
             "n_head_rows": len(head_rows),
-            "mean_prompt_distance_r2": float(np.mean(distance_r2)),
-            "median_prompt_distance_r2": float(np.median(distance_r2)),
-            "mean_content_residual_variance_fraction": (
-                float(np.mean(content_residual)) if content_residual else None
-            ),
-            "median_content_residual_variance_fraction": (
-                float(np.median(content_residual)) if content_residual else None
-            ),
-            "mean_calibration_holdout_weighted_correlation": (
-                float(np.mean(profile_correlations)) if profile_correlations else None
-            ),
-            "median_calibration_holdout_weighted_correlation": (
-                float(np.median(profile_correlations)) if profile_correlations else None
-            ),
-            "mean_calibration_positive_slope_mass": (
-                float(np.mean(calibration_positive_slope)) if calibration_positive_slope else None
-            ),
-            "median_calibration_positive_slope_mass": (
-                float(np.median(calibration_positive_slope)) if calibration_positive_slope else None
-            ),
-            "mean_holdout_delta_m2_minus_m1": _finite_or_none(float(np.mean(holdout_deltas))) if holdout_deltas else None,
-            "median_holdout_delta_m2_minus_m1": _finite_or_none(float(np.median(holdout_deltas))) if holdout_deltas else None,
-            "nonboundary_head_count": len(nonboundary_deltas),
-            "boundary_equivalent_head_fraction": (
-                float(sum(bool(flag) for flag in boundary_flags) / len(boundary_flags))
-                if boundary_flags else None
-            ),
-            "wave_support_head_fraction": wave_support_count / len(head_rows),
-            "holdout_best_model_counts": best_model_counts,
-            "direction": direction,
+            "mean_prompt_distance_r2": float(np.mean(distance_r2_values)),
+            "median_prompt_distance_r2": float(np.median(distance_r2_values)),
+            "m1_fraction": _finite_or_none(m1_fraction),
+            "m0_fraction": _finite_or_none(m0_fraction),
+            "m1_count": m1_count,
+            "m0_count": m0_count,
+            "total_classified": total_classified,
+            "m1_holdout_superiority": _finite_or_none(m1_holdout_superiority),
+            "aicc_holdout_concordance": _finite_or_none(aicc_holdout_concordance),
+            "n_clear_heads": len(clear_heads),
+            "holdout_best_model_counts": holdout_best_counts,
         })
 
     family_summaries: list[dict[str, Any]] = []
-    for family in sorted({summary["family"] for summary in model_summaries}):
+    for family in sorted({s["family"] for s in model_summaries}):
         family_models = [
-            summary for summary in model_summaries
-            if summary["family"] == family and summary["status"] == "ok"
+            s for s in model_summaries
+            if s["family"] == family and s["status"] == "ok"
         ]
-        family_deltas = family_accumulator.get(family, [])
+        fam_data = family_accumulator.get(family, {
+            "m1_fractions": [],
+            "distance_r2_values": [],
+        })
+        mean_m1_fraction = (
+            float(np.mean(fam_data["m1_fractions"]))
+            if fam_data["m1_fractions"] else None
+        )
+        mean_distance_r2 = (
+            float(np.mean(fam_data["distance_r2_values"]))
+            if fam_data["distance_r2_values"] else None
+        )
+
         family_summaries.append({
             "family": family,
             "n_models": len(family_models),
-            "model_names": [summary["model_name"] for summary in family_models],
-            "nonboundary_head_count": len(family_deltas),
-            "mean_holdout_delta_m2_minus_m1": _finite_or_none(float(np.mean(family_deltas))) if family_deltas else None,
-            "median_holdout_delta_m2_minus_m1": _finite_or_none(float(np.median(family_deltas))) if family_deltas else None,
-            "direction": _direction_from_deltas(family_deltas),
+            "model_names": [s["model_name"] for s in family_models],
+            "mean_m1_fraction": _finite_or_none(mean_m1_fraction),
+            "mean_distance_r2": _finite_or_none(mean_distance_r2),
         })
 
     return {
@@ -1058,30 +922,238 @@ def build_model_family_summary(
     }
 
 
+# ---------------------------------------------------------------------------
+# Falsifier evaluation
+# ---------------------------------------------------------------------------
+
+
+def _evaluate_p_dkh_1(model_summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    """P-DKH-1: Hierarchy existence -- M1 fraction strictly between 0 and 1."""
+    family_results: dict[str, dict[str, Any]] = {}
+    for s in model_summaries:
+        if s["status"] != "ok":
+            continue
+        fam = s["family"]
+        frac = s.get("m1_fraction")
+        if frac is None:
+            family_results.setdefault(fam, {"verdict": "insufficient_data", "m1_fractions": []})
+            continue
+        family_results.setdefault(fam, {"verdict": None, "m1_fractions": []})
+        family_results[fam]["m1_fractions"].append(frac)
+
+    for fam, result in family_results.items():
+        fracs = result["m1_fractions"]
+        if not fracs:
+            result["verdict"] = "insufficient_data"
+            continue
+        mean_frac = float(np.mean(fracs))
+        if mean_frac == 0.0 or mean_frac == 1.0:
+            result["verdict"] = "FAIL"
+        else:
+            result["verdict"] = "PASS"
+        result["mean_m1_fraction"] = mean_frac
+
+    all_verdicts = [r["verdict"] for r in family_results.values()]
+    if any(v == "FAIL" for v in all_verdicts):
+        overall = "FAIL"
+    elif all(v == "PASS" for v in all_verdicts):
+        overall = "PASS"
+    else:
+        overall = "insufficient_data"
+
+    return {
+        "prediction": "P-DKH-1",
+        "description": "Hierarchy existence: M1 fraction strictly between 0 and 1 per family",
+        "verdict": overall,
+        "families": family_results,
+    }
+
+
+def _evaluate_p_dkh_2(model_summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    """P-DKH-2: M1 holdout superiority >50% for M1-classified heads."""
+    family_results: dict[str, dict[str, Any]] = {}
+    for s in model_summaries:
+        if s["status"] != "ok":
+            continue
+        fam = s["family"]
+        sup = s.get("m1_holdout_superiority")
+        family_results.setdefault(fam, {"verdict": None, "superiority_values": []})
+        if sup is not None:
+            family_results[fam]["superiority_values"].append(sup)
+
+    for fam, result in family_results.items():
+        vals = result["superiority_values"]
+        if not vals:
+            result["verdict"] = "insufficient_data"
+            continue
+        mean_sup = float(np.mean(vals))
+        result["mean_m1_holdout_superiority"] = mean_sup
+        result["verdict"] = "PASS" if mean_sup > 0.5 else "FAIL"
+
+    all_verdicts = [r["verdict"] for r in family_results.values()]
+    if any(v == "FAIL" for v in all_verdicts):
+        overall = "FAIL"
+    elif all(v == "PASS" for v in all_verdicts):
+        overall = "PASS"
+    else:
+        overall = "insufficient_data"
+
+    return {
+        "prediction": "P-DKH-2",
+        "description": "M1 holdout superiority: M1 wins >50% of holdout for M1-classified heads",
+        "verdict": overall,
+        "families": family_results,
+    }
+
+
+def _evaluate_p_dkh_3(
+    family_summaries: list[dict[str, Any]],
+    model_summaries: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """P-DKH-3: Cross-family consistency -- within < between variance."""
+    family_fractions: dict[str, list[float]] = {}
+    for s in model_summaries:
+        if s["status"] != "ok" or s.get("m1_fraction") is None:
+            continue
+        family_fractions.setdefault(s["family"], []).append(s["m1_fraction"])
+
+    families_with_multiple = {f: v for f, v in family_fractions.items() if len(v) > 1}
+    if not families_with_multiple:
+        return {
+            "prediction": "P-DKH-3",
+            "description": "Cross-family consistency: within-family var < between-family var",
+            "verdict": "non_adjudicating",
+            "reason": "Single-model families -- requires multiple models per family.",
+        }
+
+    within_variances = []
+    for fracs in families_with_multiple.values():
+        within_variances.append(float(np.var(fracs)))
+    mean_within = float(np.mean(within_variances))
+
+    all_means = []
+    for fracs in family_fractions.values():
+        all_means.append(float(np.mean(fracs)))
+    between_var = float(np.var(all_means)) if len(all_means) > 1 else 0.0
+
+    verdict = "PASS" if mean_within < between_var else "FAIL"
+
+    return {
+        "prediction": "P-DKH-3",
+        "description": "Cross-family consistency: within-family var < between-family var",
+        "verdict": verdict,
+        "mean_within_family_variance": mean_within,
+        "between_family_variance": between_var,
+    }
+
+
+def _evaluate_p_dkh_4(model_summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    """P-DKH-4: Content residual dominance -- mean distance_r2 < 0.5 per family."""
+    family_results: dict[str, dict[str, Any]] = {}
+    for s in model_summaries:
+        if s["status"] != "ok":
+            continue
+        fam = s["family"]
+        r2 = s.get("mean_prompt_distance_r2")
+        family_results.setdefault(fam, {"verdict": None, "r2_values": []})
+        if r2 is not None:
+            family_results[fam]["r2_values"].append(r2)
+
+    for fam, result in family_results.items():
+        vals = result["r2_values"]
+        if not vals:
+            result["verdict"] = "insufficient_data"
+            continue
+        mean_r2 = float(np.mean(vals))
+        result["mean_distance_r2"] = mean_r2
+        result["verdict"] = "PASS" if mean_r2 < 0.5 else "FAIL"
+
+    all_verdicts = [r["verdict"] for r in family_results.values()]
+    if any(v == "FAIL" for v in all_verdicts):
+        overall = "FAIL"
+    elif all(v == "PASS" for v in all_verdicts):
+        overall = "PASS"
+    else:
+        overall = "insufficient_data"
+
+    return {
+        "prediction": "P-DKH-4",
+        "description": "Content residual dominance: mean distance_r2 < 0.5 per family",
+        "verdict": overall,
+        "families": family_results,
+    }
+
+
+def _evaluate_p_dkh_5(model_summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    """P-DKH-5: AICc-holdout concordance >90% for clear classifications."""
+    family_results: dict[str, dict[str, Any]] = {}
+    for s in model_summaries:
+        if s["status"] != "ok":
+            continue
+        fam = s["family"]
+        conc = s.get("aicc_holdout_concordance")
+        n_clear = s.get("n_clear_heads", 0)
+        family_results.setdefault(fam, {"verdict": None, "concordance_values": [], "n_clear_total": 0})
+        if conc is not None:
+            family_results[fam]["concordance_values"].append(conc)
+        family_results[fam]["n_clear_total"] += n_clear
+
+    for fam, result in family_results.items():
+        vals = result["concordance_values"]
+        if not vals:
+            result["verdict"] = "insufficient_data"
+            continue
+        mean_conc = float(np.mean(vals))
+        result["mean_concordance"] = mean_conc
+        result["verdict"] = "PASS" if mean_conc > 0.9 else "FAIL"
+
+    all_verdicts = [r["verdict"] for r in family_results.values()]
+    if any(v == "FAIL" for v in all_verdicts):
+        overall = "FAIL"
+    elif all(v == "PASS" for v in all_verdicts):
+        overall = "PASS"
+    else:
+        overall = "insufficient_data"
+
+    return {
+        "prediction": "P-DKH-5",
+        "description": "AICc-holdout concordance >90% for clear classifications",
+        "verdict": overall,
+        "families": family_results,
+    }
+
+
 def build_falsifier_outcome(
     *,
     run_id: str,
     summary: dict[str, Any],
 ) -> dict[str, Any]:
-    """Derive protocol outcome from family-level directions."""
-    family_directions = [
-        family["direction"]
-        for family in summary["families"]
-        if family["direction"] != "insufficient_data"
-    ]
+    """Derive protocol outcome from prediction evaluations."""
+    p1 = _evaluate_p_dkh_1(summary["models"])
+    p2 = _evaluate_p_dkh_2(summary["models"])
+    p3 = _evaluate_p_dkh_3(summary["families"], summary["models"])
+    p4 = _evaluate_p_dkh_4(summary["models"])
+    p5 = _evaluate_p_dkh_5(summary["models"])
 
-    if not family_directions:
+    predictions = [p1, p2, p3, p4, p5]
+    verdicts = [p["verdict"] for p in predictions]
+
+    promotable_verdicts = [v for v in verdicts if v not in ("non_adjudicating", "insufficient_data")]
+    if not promotable_verdicts:
         overall = "insufficient_data"
-        reason = "No family produced non-boundary holdout deltas."
-    elif all(direction == "wave_favored" for direction in family_directions):
-        overall = "consistent_with_wave_claim"
-        reason = "All families favored M2 on non-boundary holdout heads."
-    elif all(direction == "decay_favored" for direction in family_directions):
-        overall = "falsified_by_decay"
-        reason = "All families favored M1 on non-boundary holdout heads."
+        reason = "No predictions could be adjudicated."
+    elif all(v == "PASS" for v in promotable_verdicts):
+        overall = "all_predictions_pass"
+        reason = "All adjudicating predictions passed."
+    elif any(v == "FAIL" for v in promotable_verdicts):
+        failed = [p["prediction"] for p in predictions if p["verdict"] == "FAIL"]
+        overall = "partial_falsification"
+        reason = f"Failed predictions: {', '.join(failed)}"
     else:
-        overall = "architecture_conditioned_mixed"
-        reason = "Families disagreed in direction; promotion is blocked."
+        overall = "mixed"
+        reason = "Mixed verdicts across predictions."
+
+    promotion_blocked = overall != "all_predictions_pass"
 
     return {
         "run_id": run_id,
@@ -1090,13 +1162,17 @@ def build_falsifier_outcome(
         "generated_at": _utc_now(),
         "claim": CLAIM_DESCRIPTION,
         "claim_form": CLAIM_FORM,
-        "observable": "holdout_rmse_delta_m2_minus_m1 on non-boundary heads",
+        "observable": "AICc model selection (M0 vs M1) with holdout validation",
         "overall": overall,
-        "promotion_blocked": overall != "consistent_with_wave_claim",
+        "promotion_blocked": promotion_blocked,
         "reason": reason,
-        "family_outcomes": summary["families"],
-        "model_outcomes": summary["models"],
+        "predictions": predictions,
     }
+
+
+# ---------------------------------------------------------------------------
+# Run manifest
+# ---------------------------------------------------------------------------
 
 
 def build_run_manifest(
@@ -1131,6 +1207,7 @@ def build_run_manifest(
         "default_model_matrix_used": default_model_matrix_used,
         "claim": CLAIM_DESCRIPTION,
         "claim_form": CLAIM_FORM,
+        "aicc_reference": "Burnham & Anderson (2002), Model Selection and Multimodel Inference",
         "split_rule": {
             "hash": "sha256(first_8_bytes)",
             "assignment": (
@@ -1156,6 +1233,11 @@ def build_run_manifest(
     }
 
 
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
 def _resolve_run_dir(output: Path | None, collect_missing: bool) -> Path:
     if output is not None:
         return output.expanduser().resolve()
@@ -1168,7 +1250,7 @@ def _resolve_run_dir(output: Path | None, collect_missing: bool) -> Path:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Wave-kernel falsifier protocol runner.",
+        description="Distance-kernel hierarchy falsifier protocol runner.",
     )
     parser.add_argument(
         "--models",
@@ -1191,7 +1273,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--output",
         type=Path,
         default=None,
-        help="Run directory to write artifacts. Defaults to results/wave_kernel_falsifier/<run_id>/",
+        help="Run directory to write artifacts. Defaults to results/distance_kernel_hierarchy/<run_id>/",
     )
     parser.add_argument(
         "--collect-missing",
@@ -1220,7 +1302,7 @@ def main(argv: list[str] | None = None) -> int:
 
     existing_rows: list[dict[str, Any]] = []
     if args.collect_missing:
-        existing_rows = _load_existing_jsonl(run_dir / "per_head_fit_table.jsonl")
+        existing_rows = _load_existing_jsonl(run_dir / "per_head_classification.jsonl")
         already_processed = _processed_model_paths(existing_rows)
         requested_models = [
             model for model in requested_models
@@ -1228,7 +1310,7 @@ def main(argv: list[str] | None = None) -> int:
         ]
         logger.info("Collect-missing mode: %d model(s) remain.", len(requested_models))
 
-    logger.info("Wave-kernel falsifier run_id=%s", run_id)
+    logger.info("Distance-kernel hierarchy falsifier run_id=%s", run_id)
     logger.info("Probe file: %s", probe_file)
     logger.info("Selected probes: %d", len(probes))
     logger.info("Models to analyze this pass: %d", len(requested_models))
@@ -1258,7 +1340,7 @@ def main(argv: list[str] | None = None) -> int:
     outcome = build_falsifier_outcome(run_id=run_id, summary=summary)
 
     _write_json(run_dir / "run_manifest.json", manifest)
-    _write_jsonl(run_dir / "per_head_fit_table.jsonl", all_rows)
+    _write_jsonl(run_dir / "per_head_classification.jsonl", all_rows)
     _write_json(run_dir / "model_family_summary.json", summary)
     _write_json(run_dir / "falsifier_outcome.json", outcome)
 

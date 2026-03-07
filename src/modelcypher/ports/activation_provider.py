@@ -266,6 +266,24 @@ class ActivationProvider(Protocol):
         """
         ...
 
+    def collect_attention_score_matrices(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> dict[int, list[Array]]:
+        """Collect per-layer, per-head pre-softmax attention score matrices.
+
+        Extracts the causal-masked score matrices
+        `QK^T / sqrt(d_k)` before softmax normalization.
+
+        Returns:
+            Dict mapping attention_layer_idx -> list of [seq_len, seq_len]
+            arrays, one per attention head.
+        """
+        ...
+
     def collect_attention_matrices_with_values(
         self,
         model: Any,

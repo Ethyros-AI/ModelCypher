@@ -305,32 +305,36 @@ class _MLXBackendActivationMixin:
         tokenizer: Any,
         text: str,
         token_ids: list[int] | None = None,
+        *,
+        include_weights: bool = True,
         include_values: bool = False,
-    ) -> list[tuple[int, list[Any], list[Any] | None]]:
+        include_scores: bool = False,
+    ) -> list[tuple[int, list[Any] | None, list[Any] | None, list[Any] | None]]:
         """Shared core for attention matrix extraction.
 
-        Runs a full forward pass, extracting per-head attention weights (and
-        optionally value vectors) from each attention layer.  Conv/non-attention
-        layers are skipped.
+        Runs a full forward pass, extracting per-head attention weights,
+        pre-softmax score matrices, and/or value vectors from each attention
+        layer. Conv/non-attention layers are skipped.
 
         Args:
             model: The loaded model.
             tokenizer: The tokenizer for encoding text.
             text: The text input to process.
             token_ids: Optional pre-tokenized input.
+            include_weights: If True, extract post-softmax attention weights.
             include_values: If True, also extract per-head V vectors.
+            include_scores: If True, also extract pre-softmax attention scores.
 
         Returns:
-            List of (layer_idx, head_weights_list, head_values_list_or_none)
-            where head_weights_list is list of [seq, seq] arrays,
-            and head_values_list is list of [seq, head_dim] arrays (or None
-            if include_values is False).
+            List of
+            (layer_idx, head_weights_list_or_none, head_values_list_or_none,
+            head_scores_list_or_none).
         """
         if token_ids is None:
             token_ids = tokenizer.encode(text)
         input_ids = self.mx.array([token_ids])
 
-        results: list[tuple[int, list[Any], list[Any] | None]] = []
+        results: list[tuple[int, list[Any] | None, list[Any] | None, list[Any] | None]] = []
         base = self._resolve_model_base(model)
         h = base.embed_tokens(input_ids)
         seq_len = input_ids.shape[1]
@@ -462,21 +466,30 @@ class _MLXBackendActivationMixin:
                     causal_mask[None, None, :, :], scores, neg_inf
                 )
 
-                # Softmax -> attention weights [batch, num_heads, seq, seq]
-                weights = self.mx.softmax(scores, axis=-1)
+                weights = self.mx.softmax(scores, axis=-1) if include_weights else None
+
+                eval_args: list[Any] = []
+                if weights is not None:
+                    eval_args.append(weights)
                 if v is not None:
-                    self.mx.eval(weights, v)
-                else:
-                    self.mx.eval(weights)
+                    eval_args.append(v)
+                if include_scores:
+                    eval_args.append(scores)
+                if eval_args:
+                    self.mx.eval(*eval_args)
 
                 # Split into per-head [seq, seq] matrices (and value vectors)
-                head_weights: list[Any] = []
+                head_weights: list[Any] | None = [] if include_weights else None
                 head_values: list[Any] | None = [] if include_values else None
+                head_scores: list[Any] | None = [] if include_scores else None
                 for head_i in range(num_heads):
-                    head_weights.append(weights[0, head_i, :, :])
+                    if head_weights is not None and weights is not None:
+                        head_weights.append(weights[0, head_i, :, :])
                     if head_values is not None:
                         head_values.append(v[0, head_i, :, :])
-                results.append((layer_idx, head_weights, head_values))
+                    if head_scores is not None:
+                        head_scores.append(scores[0, head_i, :, :])
+                results.append((layer_idx, head_weights, head_values, head_scores))
 
             # Forward through layer so subsequent layers get correct hidden
             # states.  Attention layers need mask="causal" so internal SDPA
@@ -513,9 +526,46 @@ class _MLXBackendActivationMixin:
             arrays, one per attention head.
         """
         layer_results = self._collect_attention_layer_results(
-            model, tokenizer, text, token_ids, include_values=False
+            model,
+            tokenizer,
+            text,
+            token_ids,
+            include_weights=True,
+            include_values=False,
+            include_scores=False,
         )
-        return {layer_idx: weights for layer_idx, weights, _ in layer_results}
+        return {
+            layer_idx: weights
+            for layer_idx, weights, _, _ in layer_results
+            if weights is not None
+        }
+
+    def collect_attention_score_matrices(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> dict[int, list[Any]]:
+        """Collect per-layer, per-head pre-softmax attention score matrices.
+
+        Returns the causal-masked `QK^T / sqrt(d_k)` score matrices before
+        row-wise softmax normalization.
+        """
+        layer_results = self._collect_attention_layer_results(
+            model,
+            tokenizer,
+            text,
+            token_ids,
+            include_weights=False,
+            include_values=False,
+            include_scores=True,
+        )
+        return {
+            layer_idx: scores
+            for layer_idx, _, _, scores in layer_results
+            if scores is not None
+        }
 
     def collect_attention_matrices_with_values(
         self,
@@ -532,13 +582,21 @@ class _MLXBackendActivationMixin:
             - value_vectors: dict[layer_idx, list of [seq, head_dim]]
         """
         layer_results = self._collect_attention_layer_results(
-            model, tokenizer, text, token_ids, include_values=True
+            model,
+            tokenizer,
+            text,
+            token_ids,
+            include_weights=True,
+            include_values=True,
+            include_scores=False,
         )
         attn_result: dict[int, list[Any]] = {}
         val_result: dict[int, list[Any]] = {}
-        for layer_idx, weights, values in layer_results:
-            attn_result[layer_idx] = weights
-            val_result[layer_idx] = values
+        for layer_idx, weights, values, _ in layer_results:
+            if weights is not None:
+                attn_result[layer_idx] = weights
+            if values is not None:
+                val_result[layer_idx] = values
         return attn_result, val_result
 
     def collect_hidden_with_attention_hook(

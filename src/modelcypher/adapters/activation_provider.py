@@ -192,6 +192,21 @@ class ActivationProviderAdapter:
             model, tokenizer, text, token_ids
         )
 
+    def collect_attention_score_matrices(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        token_ids: list[int] | None = None,
+    ) -> dict[int, list[Any]]:
+        """Collect per-layer, per-head pre-softmax attention score matrices.
+
+        Delegates to the Backend protocol implementation.
+        """
+        return self._backend.collect_attention_score_matrices(
+            model, tokenizer, text, token_ids
+        )
+
     def collect_attention_matrices_with_values(
         self,
         model: Any,
