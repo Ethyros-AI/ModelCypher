@@ -302,6 +302,23 @@ satisfied. Claims missing architecture/scale terms or commensurability proofs ar
                the sphere curvature quantity under test, and the cross-model summary
                can falsely confirm M1 when zero models are measured. See
                `docs/research/covariance_rank_id_phase2_review_2026_03_05.md`.
+
+               Tangent subspace rotation hypothesis (2026-03-07):
+               Tested whether layer Jacobian rotating the tangent subspace predicts
+               TwoNN ID changes. Three measurement channels on 3 models (60 probes).
+               Clean negative results:
+               - Novel direction count = 0 everywhere (residual preserves subspace)
+               - Tracked neighbor rank change uncorrelated with ID (P5: 0/3 models)
+               - Global PCA Grassmann distance: 1/3 models (Qwen only)
+               Candidate signal:
+               - Local tangent misalignment (P4): LFM2 r=+0.54 (p=0.037),
+                 Qwen r=+0.69 (p=0.0003), Llama r=+0.18 (p=0.38, fails).
+                 2/3 models. Llama failure could be measurement limitation
+                 (N=60 in d=3072) or genuine mechanism underspecification.
+               Status remains [MECHANISM_UNKNOWN]. P4 is a candidate pending
+               higher-N validation on standard transformers.
+               Data: results/tangent_subspace_id_mechanism/results.json.
+               Report: docs/research/tangent_subspace_id_mechanism_2026_03_07.md.
                     ↓
 [PROVEN]       ID → Phases
                Phases are defined by ID trajectory shape (minima = highway,
