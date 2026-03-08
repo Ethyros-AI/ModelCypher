@@ -190,6 +190,9 @@ Without this, phase-language remains descriptive instead of mechanistic.
 - `results/covariance_rank_id/` (archived): covariance-rank injection is not the mechanism
 - `results/tangent_subspace_id_mechanism/`: repaired atlas-backed reruns are the
   active path; historical 2026-03-07 evidence is exploratory only
+- `docs/research/tangent_subspace_id_mechanism_2026_03_08.md`: repaired rerun
+  checkpoint with LFM2/Qwen completed and Llama still blocked in local tangent
+  alignment at `N=324`
 
 **What is missing**
 
