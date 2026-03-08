@@ -29,7 +29,7 @@ live in:
   unresolved behavioral failures, and 8B closure is still open.
 - The repository still has a large research surface, but it is now inventoried.
   Current generated counts are `133` scripts, `90` top-level result families,
-  and about `1.91G` under `results/`.
+  and about `1.47G` under `results/`.
 
 The short version is: we have reduced guessing in the control plane more than
 we have proven superiority in the outcome plane.
@@ -121,7 +121,7 @@ standard acceptance of quantization damage.
 | --- | --- | --- |
 | Zero-guess training is not yet reliably behavior-preserving | `results/pipeline_validation/verdict.json` reports `all_pass=false`; on 350M, structural pass is 5/5 but inference pass is only 3/5 | We do not yet have the causal operator that explains when structural safety fails to preserve behavior |
 | 8B closure is still open | `results/g5_8b_validation_multiseed/multiseed_gates.json` reports `n_seeds=1`, `cka_ok=0`, `degenerate_ok=0`, `all_gates_all_seeds=false` | The user-facing claim "works on any model" remains unclosed |
-| We do not yet have mandatory head-to-head baselines against the standard PEFT ecosystem | The repo has strong internal doctrine and many experiments, but no mandatory same-model same-data comparison suite against standard LoRA, rsLoRA, PiSSA, EVA, DoRA, or recipe-level baselines | Without these controls, "better than standard practice" is still a thesis, not a measured result |
+| We do not yet have mandatory head-to-head baselines against the standard PEFT ecosystem | The repo has strong internal doctrine and many experiments, but no mandatory same-model same-data comparison suite against standard LoRA, rsLoRA, PiSSA, EVA, DoRA, or recipe-level baselines; the retained `results/nblora_vs_standard/` family is summary-only and its own rollups disagree on the best grid point | Without these controls, "better than standard practice" is still a thesis, not a measured result |
 | Merge claims are differentiated but not yet industry-positioned | Internal SOTA audit says keep pushing null-space merge, but also says import MergeBench-style evaluation | We have internal strength but not yet benchmark parity with how the field compares merge methods |
 | Identity-layer claims are ahead of infrastructure and evidence | `docs/VISION.md` still correctly marks stacking as partial and sovereignty as not built | The long-term vision remains valid as direction, not yet as delivered capability |
 
@@ -135,7 +135,7 @@ Current generated counts from `results/repo_research_inventory/`:
 - `13` scripts with exact name-matched test files under `tests/scripts/` or
   `tests/experiments/`
 - `90` top-level result families under `results/`
-- about `1.91G` stored under `results/`
+- about `1.47G` stored under `results/`
 
 `scripts/INVENTORY.md` is now generated from
 `scripts/report_research_inventory.py`, and the full machine-readable inventory
@@ -153,12 +153,12 @@ The largest current result families are:
 
 | Result family | Size | Share of `results/` |
 | --- | ---: | ---: |
-| `four_bit_extension` | `1.02G` | `53.1%` |
-| `pipeline_validation` | `0.19G` | `9.9%` |
-| `pipeline_validation_cert_350m_5t` | `0.19G` | `9.9%` |
-| `nblora_vs_standard` | `0.07G` | `3.5%` |
+| `four_bit_extension` | `1.02G` | `69.2%` |
+| `g5_8b_validation_memtest` | `0.06G` | `4.4%` |
+| `quantization_ab_survey` | `0.06G` | `3.8%` |
+| `lora_memory_capacity_validation` | `0.04G` | `2.8%` |
 
-Those four families account for about `76.4%` of the current `results/`
+Those four families account for about `80.2%` of the current `results/`
 directory. Most cleanup leverage is still concentrated there.
 
 ### "Checkpoint sprawl" is really "results-as-checkpoints"

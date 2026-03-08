@@ -35,11 +35,12 @@ Four analyses:
   A4. LoRA delta projection (are lost probes more exposed to adapter directions?)
 
 Usage:
-    poetry run python scripts/null_space_investigation.py
+    poetry run python scripts/null_space_investigation.py --adapter-path /path/to/adapter
 """
 
 from __future__ import annotations
 
+import argparse
 import gc
 import json
 import logging
@@ -52,12 +53,9 @@ from typing import Any
 # Configuration
 # ---------------------------------------------------------------------------
 
-MODEL_PATH = "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16"
-EVAL_DATA = "data/training/benchmark_val.jsonl"
-ADAPTER_PATH = Path(
-    "results/pipeline_validation/350M/phase5_artifacts/trial_000_seed_4231027559"
-)
-OUTPUT_DIR = Path("results/null_space_investigation")
+DEFAULT_MODEL_PATH = "/Volumes/CodeCypher/models/mlx-community/LFM2-350M-MLX-bf16"
+DEFAULT_EVAL_DATA = "data/training/benchmark_val.jsonl"
+DEFAULT_OUTPUT_DIR = Path("results/null_space_investigation")
 
 # Phase 5 probe parameters (from pipeline validation run)
 PHASE5_PROBE_COUNT = 10
@@ -73,6 +71,48 @@ logging.basicConfig(
 logger = logging.getLogger("null_space_investigation")
 
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--adapter-path",
+        type=Path,
+        required=True,
+        help="Path to the adapted trial directory containing adapters.safetensors and geometry_manifest.json.",
+    )
+    parser.add_argument(
+        "--model-path",
+        default=DEFAULT_MODEL_PATH,
+        help="Base model path used for the comparison.",
+    )
+    parser.add_argument(
+        "--eval-data",
+        default=DEFAULT_EVAL_DATA,
+        help="JSONL evaluation dataset used for the probe subspace.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_OUTPUT_DIR,
+        help="Directory where investigation_results.json will be written.",
+    )
+    return parser.parse_args()
+
+
+def _validate_adapter_path(adapter_path: Path) -> Path:
+    required_files = (
+        adapter_path / "adapters.safetensors",
+        adapter_path / "geometry_manifest.json",
+    )
+    missing = [str(path) for path in required_files if not path.exists()]
+    if missing:
+        msg = (
+            "adapter-path must point to a retained trial directory with "
+            f"adapters.safetensors and geometry_manifest.json; missing: {missing}"
+        )
+        raise FileNotFoundError(msg)
+    return adapter_path
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -84,11 +124,11 @@ def _load_backend():
     return MLXBackend()
 
 
-def _load_eval_samples() -> list[dict[str, Any]]:
+def _load_eval_samples(eval_data: str) -> list[dict[str, Any]]:
     """Load the 181 eval dataset samples."""
     from modelcypher.core.domain.dataset_loading import load_jsonl_dataset
-    samples = load_jsonl_dataset(EVAL_DATA)
-    logger.info("Loaded %d eval samples from %s", len(samples), EVAL_DATA)
+    samples = load_jsonl_dataset(eval_data)
+    logger.info("Loaded %d eval samples from %s", len(samples), eval_data)
     return samples
 
 
@@ -391,6 +431,7 @@ def analysis_4_lora_delta_projection(
     problems,
     baseline_correct_ids: frozenset[str],
     adapted_correct_ids: frozenset[str],
+    adapter_path: Path,
 ) -> dict:
     """Check whether lost probes are more exposed to LoRA delta directions."""
     import mlx.core as mx
@@ -398,12 +439,12 @@ def analysis_4_lora_delta_projection(
     logger.info("=== Analysis 4: LoRA delta projection ===")
 
     # Load adapter weights
-    weights_path = ADAPTER_PATH / "adapters.safetensors"
+    weights_path = adapter_path / "adapters.safetensors"
     adapter_weights = backend.load_safetensors(str(weights_path))
     logger.info("Loaded adapter weights: %d keys", len(adapter_weights))
 
     # Load geometry manifest for sigma_k values
-    manifest_path = ADAPTER_PATH / "geometry_manifest.json"
+    manifest_path = adapter_path / "geometry_manifest.json"
     with open(manifest_path) as f:
         manifest = json.load(f)
     sigma_k_by_module = manifest.get("sigma_k_by_module", {})
@@ -537,17 +578,27 @@ def analysis_4_lora_delta_projection(
 
 
 def main():
+    args = _parse_args()
+    adapter_path = _validate_adapter_path(args.adapter_path.resolve())
+    output_dir = args.output_dir
+    model_path = args.model_path
+    eval_data = args.eval_data
+
     logger.info("Null-Space Geometry Investigation")
     logger.info("=" * 70)
+    logger.info("Model path: %s", model_path)
+    logger.info("Adapter path: %s", adapter_path)
+    logger.info("Eval data: %s", eval_data)
+    logger.info("Output dir: %s", output_dir)
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
     backend = _load_backend()
 
     # -----------------------------------------------------------------------
     # Step 1: Generate probe sets
     # -----------------------------------------------------------------------
     logger.info("Step 1: Loading probe sets")
-    eval_samples = _load_eval_samples()
+    eval_samples = _load_eval_samples(eval_data)
     eval_texts = [s["text"] for s in eval_samples if isinstance(s.get("text"), str)]
 
     inference_problems = _create_inference_probes()
@@ -561,7 +612,7 @@ def main():
     # -----------------------------------------------------------------------
     logger.info("Step 2: Running correctness eval to identify lost/gained probes")
     baseline_result = _run_correctness_eval(
-        backend, MODEL_PATH, None, inference_problems,
+        backend, model_path, None, inference_problems,
     )
     logger.info(
         "  Baseline: %d/%d correct",
@@ -569,11 +620,11 @@ def main():
     )
 
     adapted_result = _run_correctness_eval(
-        backend, MODEL_PATH, str(ADAPTER_PATH), inference_problems,
+        backend, model_path, str(adapter_path), inference_problems,
     )
     # Re-evaluate with baseline knowledge
     adapted_with_baseline = _run_correctness_eval_with_baseline(
-        backend, MODEL_PATH, str(ADAPTER_PATH), inference_problems,
+        backend, model_path, str(adapter_path), inference_problems,
         baseline_result.correct_ids,
     )
     logger.info(
@@ -588,7 +639,7 @@ def main():
     # Step 3: Collect activations (both probe sets, both models)
     # -----------------------------------------------------------------------
     logger.info("Step 3: Collecting activations (base model)")
-    base_model, base_tokenizer = backend.load_model(MODEL_PATH)
+    base_model, base_tokenizer = backend.load_model(model_path)
 
     base_eval_acts = _collect_activations(backend, base_model, base_tokenizer, eval_texts)
     logger.info("  Base eval activations: %d layers", len(base_eval_acts))
@@ -602,7 +653,7 @@ def main():
     gc.collect()
 
     logger.info("Step 3b: Collecting activations (adapted model)")
-    adapted_model, adapted_tokenizer = backend.load_model(MODEL_PATH, str(ADAPTER_PATH))
+    adapted_model, adapted_tokenizer = backend.load_model(model_path, str(adapter_path))
 
     adapted_eval_acts = _collect_activations(
         backend, adapted_model, adapted_tokenizer, eval_texts,
@@ -634,6 +685,7 @@ def main():
         inference_problems,
         baseline_result.correct_ids,
         adapted_result.correct_ids,
+        adapter_path,
     )
 
     a3 = analysis_3_subspace_overlap(
@@ -654,21 +706,23 @@ def main():
     # Step 5: Write results
     # -----------------------------------------------------------------------
     results = {
-        "model_path": MODEL_PATH,
-        "adapter_path": str(ADAPTER_PATH),
+        "model_path": model_path,
+        "adapter_path": str(adapter_path),
+        "eval_data": eval_data,
         "phase5_probe_seed": PHASE5_PROBE_SEED,
         "phase5_probe_count": PHASE5_PROBE_COUNT,
         "baseline_correct": sorted(baseline_result.correct_ids),
         "adapted_correct": sorted(adapted_result.correct_ids),
         "n_lost": len(baseline_result.correct_ids - adapted_result.correct_ids),
         "n_gained": len(adapted_result.correct_ids - baseline_result.correct_ids),
+        "adapted_with_baseline_correct": sorted(adapted_with_baseline.correct_ids),
         "analysis_1_cka_comparison": a1,
         "analysis_2_per_probe_delta": a2,
         "analysis_3_subspace_overlap": a3,
         "analysis_4_lora_delta_projection": a4,
     }
 
-    output_path = OUTPUT_DIR / "investigation_results.json"
+    output_path = output_dir / "investigation_results.json"
     with open(output_path, "w") as f:
         json.dump(results, f, indent=2)
     logger.info("Results written to %s", output_path)
