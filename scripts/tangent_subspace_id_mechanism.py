@@ -341,6 +341,13 @@ def load_probe_manifest(path: Path) -> list[dict[str, Any]]:
     return list(probes)
 
 
+def load_existing_results(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return payload if isinstance(payload, dict) else None
+
+
 def _resolve_prompts(args) -> tuple[list[str], list[dict[str, Any]], dict[str, Any]]:
     if args.smoke or args.legacy_prompts:
         prompts = LEGACY_PROBE_PROMPTS[:12] if args.smoke else list(LEGACY_PROBE_PROMPTS)
@@ -459,9 +466,16 @@ def compute_twonn_per_layer(stage_activations: list[np.ndarray], backend) -> lis
 
 def compute_pca_tangent_basis(X: np.ndarray, k: int) -> np.ndarray:
     """Top-k PCA directions of centered X. Returns [k, d] orthonormal basis."""
-    X_centered = X - X.mean(axis=0)
+    X = np.asarray(X, dtype=np.float64)
+    if not np.isfinite(X).all():
+        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+    X_centered = X - X.mean(axis=0, keepdims=True)
     _u, _s, vt = np.linalg.svd(X_centered, full_matrices=False)
-    return vt[: min(k, vt.shape[0])]
+    basis = vt[: min(k, vt.shape[0])]
+    basis = np.nan_to_num(basis, nan=0.0, posinf=0.0, neginf=0.0)
+    norms = np.linalg.norm(basis, axis=1, keepdims=True)
+    norms = np.where(norms > 0.0, norms, 1.0)
+    return basis / norms
 
 
 def shared_rotation_metrics(V1: np.ndarray, V2: np.ndarray) -> dict[str, float]:
@@ -607,6 +621,8 @@ def measurement_b_local_tangent(
 
     aligner = TangentSpaceAlignment(backend)
     results: list[dict[str, Any]] = []
+    clear_cache = getattr(backend, "clear_cache", None)
+    synchronize = getattr(backend, "synchronize", None)
 
     for layer_index in range(len(stage_activations) - 1):
         X_l = stage_activations[layer_index]
@@ -643,6 +659,17 @@ def measurement_b_local_tangent(
             )
 
         del pts_l, pts_l1
+        if callable(synchronize):
+            try:
+                synchronize()
+            except Exception:
+                pass
+        if callable(clear_cache):
+            try:
+                clear_cache()
+            except Exception:
+                pass
+        gc.collect()
 
     return results
 
@@ -1047,9 +1074,21 @@ def run_experiment(args):
     from modelcypher.backends import initialize_default_backend
 
     backend = initialize_default_backend()
-    run_id = _run_id()
-    output_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else RESULTS_ROOT / run_id
+    provisional_run_id = _run_id()
+    output_dir = (
+        Path(args.output_dir).expanduser().resolve()
+        if args.output_dir
+        else RESULTS_ROOT / provisional_run_id
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
+    results_path = output_dir / "results.json"
+    falsifier_path = output_dir / "falsifier_outcome.json"
+    existing_payload = load_existing_results(results_path) if args.resume else None
+    run_id = (
+        existing_payload.get("metadata", {}).get("run_id")
+        if existing_payload is not None
+        else None
+    ) or provisional_run_id
 
     if args.smoke:
         model_names = ["LFM2-350M", "Qwen3.5-0.8B"]
@@ -1083,10 +1122,22 @@ def run_experiment(args):
     )
     logger.info("=" * 72)
 
-    all_results: list[dict[str, Any]] = []
-    results_path = output_dir / "results.json"
-    falsifier_path = output_dir / "falsifier_outcome.json"
+    all_results: list[dict[str, Any]] = list(existing_payload.get("per_model", [])) if existing_payload else []
+    completed_models = {
+        result["model_name"]
+        for result in all_results
+        if isinstance(result, dict) and result.get("model_name")
+    }
+    if completed_models:
+        logger.info(
+            "Resuming %s with completed models: %s",
+            output_dir,
+            ", ".join(sorted(completed_models)),
+        )
     for model_name in model_names:
+        if model_name in completed_models:
+            logger.info("Skipping already-completed model: %s", model_name)
+            continue
         if model_name not in MODEL_REGISTRY:
             logger.warning("Unknown model: %s, skipping", model_name)
             continue
@@ -1110,6 +1161,7 @@ def run_experiment(args):
         _write_json(results_path, checkpoint_payload)
         _write_json(falsifier_path, checkpoint_payload["falsifier_summary"])
         logger.info("Checkpointed partial results to %s", results_path)
+        completed_models.add(model_name)
         gc.collect()
 
     if not all_results:
@@ -1140,6 +1192,7 @@ def main():
     parser.add_argument("--probe-limit", type=int, help="Override atlas-backed probe count")
     parser.add_argument("--legacy-prompts", action="store_true", help="Use historical hand-written prompts instead of atlas probes")
     parser.add_argument("--output-dir", type=str, help="Optional artifact output directory")
+    parser.add_argument("--resume", action="store_true", help="Resume from an existing partial results.json in --output-dir")
     args = parser.parse_args()
     run_experiment(args)
 

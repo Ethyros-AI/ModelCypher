@@ -464,6 +464,8 @@ def train_nb_lora(
     result_dict["training_time_seconds"] = training_time
     result_dict["hyperparameter_count"] = 0
     result_dict["adapter_path"] = str(output_dir)
+    # Map NB-LoRA's post_loss to final_val_loss for comparison compatibility
+    result_dict["final_val_loss"] = result_dict.get("post_loss")
 
     mx.clear_cache()
     gc.collect()
@@ -863,12 +865,27 @@ def run_model_experiment(
                 prompts=prompts,
                 label="base",
             )
+
             std_adapter = str(std_out) if "error" not in seed_result.get("standard_lora", {}) else None
-            nb_adapter = str(nb_out) if "error" not in seed_result.get("nb_lora", {}) else None
+            std_responses = (
+                generate_inference_responses(model_path, std_adapter, prompts, "standard_lora")
+                if std_adapter else []
+            )
+
             tuned_adapter = (
                 str(seed_dir / "tuned_lora")
                 if best_tuned_config and "error" not in seed_result.get("tuned_lora", {})
                 else None
+            )
+            tuned_responses = (
+                generate_inference_responses(model_path, tuned_adapter, prompts, "tuned_lora")
+                if tuned_adapter else []
+            )
+
+            nb_adapter = str(nb_out) if "error" not in seed_result.get("nb_lora", {}) else None
+            nb_responses = (
+                generate_inference_responses(model_path, nb_adapter, prompts, "nb_lora")
+                if nb_adapter else []
             )
 
             inference_data = {"prompts": []}
@@ -882,23 +899,11 @@ def run_model_experiment(
                     "expected": prompt_data.get("expected", ""),
                     "responses": {
                         "base": next((r["response"] for r in base_responses if r["id"] == pid), ""),
+                        "standard_lora": next((r["response"] for r in std_responses if r["id"] == pid), ""),
+                        "tuned_lora": next((r["response"] for r in tuned_responses if r["id"] == pid), ""),
+                        "nb_lora": next((r["response"] for r in nb_responses if r["id"] == pid), ""),
                     },
                 }
-                if std_adapter:
-                    std_resps = generate_inference_responses(
-                        model_path, std_adapter, [prompt_data], "std",
-                    )
-                    entry["responses"]["standard_lora"] = std_resps[0]["response"] if std_resps else ""
-                if tuned_adapter:
-                    tuned_resps = generate_inference_responses(
-                        model_path, tuned_adapter, [prompt_data], "tuned",
-                    )
-                    entry["responses"]["tuned_lora"] = tuned_resps[0]["response"] if tuned_resps else ""
-                if nb_adapter:
-                    nb_resps = generate_inference_responses(
-                        model_path, nb_adapter, [prompt_data], "nb",
-                    )
-                    entry["responses"]["nb_lora"] = nb_resps[0]["response"] if nb_resps else ""
                 inference_data["prompts"].append(entry)
 
             seed_result["inference"] = inference_data

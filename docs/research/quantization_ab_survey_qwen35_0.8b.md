@@ -2,7 +2,8 @@
 
 **Status:** Empirical
 **Date:** 2026-03-05
-**Run ID:** `20260305T061324Z`
+**Run ID:** `20260305T144412Z` (retained canonical run; `20260305T061324Z`
+was the first fully green pass)
 **Models:** Qwen3.5-0.8B-bf16 vs Qwen3.5-0.8B-4bit-g64 (affine, group_size=64)
 **Scope:** `observable = f(Qwen3.5-0.8B, bf16/4bit-g64, measurement_operator)`
 
@@ -10,7 +11,13 @@
 
 ## Summary
 
-4-bit quantization of Qwen3.5-0.8B trades 23% overall benchmark accuracy for 411% throughput gain. Macro-geometric observables (entropy trajectory, curvature, expansion ratio) shift less than 3%, indicating the quantization preserves large-scale activation geometry while degrading fine-grained reasoning capacity. The accuracy loss is task-dependent: simple factual recall (arc_easy) is unaffected; reasoning (gsm8k) and boolean inference (boolq) degrade significantly.
+4-bit quantization of Qwen3.5-0.8B trades 23% overall benchmark accuracy for
+409% throughput gain. Macro-geometric observables (entropy trajectory,
+curvature, expansion ratio) shift less than 3%, indicating the quantization
+preserves large-scale activation geometry while degrading fine-grained
+reasoning capacity. The accuracy loss is task-dependent: simple factual recall
+(arc_easy) is unaffected; reasoning (gsm8k) and boolean inference (boolq)
+degrade significantly.
 
 ---
 
@@ -19,7 +26,7 @@
 | Metric | Tool | bf16 | 4-bit | Delta | Relative |
 |--------|------|------|-------|-------|----------|
 | overall_accuracy | benchmark | 0.650 | 0.500 | -0.150 | **-23.1%** |
-| tokensPerSecond | infer | 64.1 | 327.8 | +263.7 | **+411.2%** |
+| tokensPerSecond | infer | 66.2 | 336.6 | +270.5 | **+408.7%** |
 | meanIntrinsicDim | dimension-profile | 11.77 | 11.11 | -0.66 | -5.6% |
 | slope | entropy-trajectory | -7.54e-4 | -7.34e-4 | +2.06e-5 | +2.7% |
 | monotonicity | entropy-trajectory | -0.990 | -0.989 | +8.7e-4 | +0.1% |
@@ -49,7 +56,9 @@ Small sample size (n=20 per benchmark). Binomial 95% CI on overall_accuracy: bf1
 
 ### 2. Throughput gain is 5.1x
 
-bf16: 64.1 tok/s. q4: 327.8 tok/s. The 4-bit model is 5.1x faster. This is expected from reduced memory bandwidth requirements (4-bit weights = 4x less data transfer, plus group-64 affine quantization overhead).
+bf16: 66.2 tok/s. q4: 336.6 tok/s. The 4-bit model is 5.1x faster. This is
+expected from reduced memory bandwidth requirements (4-bit weights = 4x less
+data transfer, plus group-64 affine quantization overhead).
 
 ### 3. Macro-geometric observables shift less than 3%
 
@@ -104,12 +113,16 @@ This survey also served as a stress test of the ModelCypher CLI. Eight bugs were
 ## Raw Data Location
 
 ```
-results/quantization_ab_survey/20260305T061324Z/
-├── comparison_report.md    # Full per-tool comparison (350+ lines)
-├── tool_health.md          # CLI stress test results
-├── survey_results.json     # Machine-readable structured output
-├── probes.txt              # 17 probe texts used
-└── raw/
-    ├── bf16/               # Per-tool JSON output (13 files)
-    └── q4/                 # Per-tool JSON output (13 files)
+results/quantization_ab_survey/
+├── REPORT.md               # Family-level retained summary + cleanup log
+├── summary.json            # Machine-readable retained summary
+└── 20260305T144412Z/       # Retained canonical raw run
+    ├── comparison_report.md
+    ├── delta_summary.md
+    ├── tool_health.md
+    ├── survey_results.json
+    ├── probes.txt
+    └── raw/
+        ├── bf16/
+        └── q4/
 ```
