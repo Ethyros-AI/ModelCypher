@@ -39,6 +39,8 @@ class _MLXTrainingAdapterDiagnosticsMixin:
         repetition_rate: float | None,
         grad_norm_history: list[float] | None = None,
         seed: int = 0,
+        val_loss_baseline: float | None = None,
+        val_loss_current: float | None = None,
     ):
         """Compute all quantities for the geometric stopping certificate.
 
@@ -162,6 +164,8 @@ class _MLXTrainingAdapterDiagnosticsMixin:
             per_batch_ci_half_widths=per_batch_ci_half_widths if per_batch_ci_half_widths else None,
             mean_token_entropy=mean_token_entropy,
             repetition_rate=repetition_rate,
+            val_loss_baseline=val_loss_baseline,
+            val_loss_current=val_loss_current,
         )
 
     def _iter_nb_lora_modules(self, model):

@@ -38,6 +38,7 @@ from modelcypher.core.domain.training.diagonal_fisher_preconditioner import (
     DiagonalFisherState,
     _DEFAULT_BETA2,
     _SQRT_EPS_F32,
+    derive_beta1,
     init_fisher_state,
     precondition_gradient,
     update_fisher_state,
@@ -313,3 +314,130 @@ class TestMultiParameter:
         v_b = float(b.to_scalar(state.v["b"][0]))
         assert v_a == pytest.approx(0.4, rel=1e-5)
         assert v_b == pytest.approx(10.0, rel=1e-5)
+
+
+class TestDeriveBeta1:
+    def test_small_epoch_disables_momentum(self):
+        """≤2 batches/epoch → β₁ = 0 (no smoothing)."""
+        assert derive_beta1(1) == 0.0
+        assert derive_beta1(2) == 0.0
+
+    def test_half_epoch_averaging(self):
+        """β₁ = 1 - 2/T_epoch for typical epoch sizes."""
+        assert derive_beta1(10) == pytest.approx(0.8)
+        assert derive_beta1(50) == pytest.approx(0.96)
+        assert derive_beta1(100) == pytest.approx(0.98)
+
+    def test_clamped_to_099(self):
+        """Very large epochs clamp to 0.99."""
+        assert derive_beta1(10000) == 0.99
+
+    def test_3_batches(self):
+        """3 batches → β₁ = 1 - 2/3 ≈ 0.333."""
+        assert derive_beta1(3) == pytest.approx(1.0 / 3.0, rel=1e-5)
+
+
+class TestFirstMoment:
+    def test_init_with_n_batches_creates_m(self, backend):
+        """init_fisher_state with n_batches_per_epoch creates m dict."""
+        b = backend
+        params = {"w": b.ones((4,))}
+        state = init_fisher_state(params, b, n_batches_per_epoch=50)
+
+        assert "w" in state.m
+        assert state.beta1 == pytest.approx(0.96)
+        m_sum = float(b.to_scalar(b.sum(b.abs(state.m["w"]))))
+        assert m_sum == 0.0  # initialized to zeros
+
+    def test_backward_compat_no_n_batches(self, backend):
+        """Without n_batches_per_epoch, β₁ = 0 (no momentum)."""
+        b = backend
+        params = {"w": b.ones((4,))}
+        state = init_fisher_state(params, b)
+
+        assert state.beta1 == 0.0
+
+    def test_first_moment_update(self, backend):
+        """m[k] = β₁ m[k] + (1-β₁) g[k] after one step."""
+        b = backend
+        params = {"w": b.ones((2,))}
+        state = init_fisher_state(params, b, n_batches_per_epoch=10)
+        # β₁ = 0.8
+
+        g = b.ones((2,)) * 5.0
+        state = update_fisher_state(state, {"w": g}, b)
+
+        # m = 0.8 * 0 + 0.2 * 5.0 = 1.0
+        m_val = float(b.to_scalar(state.m["w"][0]))
+        assert m_val == pytest.approx(1.0, rel=1e-5)
+
+    def test_precondition_uses_m_hat(self, backend):
+        """With β₁ > 0, preconditioned direction uses m̂ not g."""
+        b = backend
+        params = {"w": b.ones((2,))}
+        state = init_fisher_state(params, b, n_batches_per_epoch=10)
+        # β₁ = 0.8
+
+        # Build up some state
+        g1 = b.ones((2,)) * 3.0
+        state = update_fisher_state(state, {"w": g1}, b)
+        g2 = b.ones((2,)) * 7.0
+        state = update_fisher_state(state, {"w": g2}, b)
+
+        # Precondition with a new gradient different from m
+        g3 = b.ones((2,)) * 1.0
+        # Don't update state — just precondition with existing m
+        precond_with_m = precondition_gradient({"w": g3}, state, b)
+
+        # Now create a state without momentum (β₁=0)
+        state_no_m = init_fisher_state(params, b)
+        state_no_m = update_fisher_state(state_no_m, {"w": g1}, b)
+        state_no_m = update_fisher_state(state_no_m, {"w": g2}, b)
+        precond_no_m = precondition_gradient({"w": g3}, state_no_m, b)
+
+        # They should produce different directions
+        d_with_m = float(b.to_scalar(precond_with_m["w"][0]))
+        d_no_m = float(b.to_scalar(precond_no_m["w"][0]))
+        assert d_with_m != pytest.approx(d_no_m, abs=0.01), (
+            f"First moment should produce different direction: "
+            f"with_m={d_with_m}, no_m={d_no_m}"
+        )
+
+    def test_first_moment_converges_to_mean(self, backend):
+        """After many steps with constant g, m → g (direction)."""
+        b = backend
+        g_val = 4.0
+        params = {"w": b.ones((4,)) * g_val}
+        state = init_fisher_state(params, b, n_batches_per_epoch=10)
+
+        grad = {"w": b.ones((4,)) * g_val}
+        for _ in range(200):
+            state = update_fisher_state(state, grad, b)
+
+        m_mean = float(b.to_scalar(b.mean(state.m["w"])))
+        assert m_mean == pytest.approx(g_val, rel=0.01)
+
+    def test_descent_preserved_with_momentum(self, backend):
+        """Preconditioned gradient with momentum preserves descent direction."""
+        b = backend
+        params = {"w": b.random_normal((10,))}
+        b.eval(params["w"])
+        state = init_fisher_state(params, b, n_batches_per_epoch=20)
+
+        # Random gradients for several steps
+        for _ in range(50):
+            g = b.random_normal((10,))
+            b.eval(g)
+            state = update_fisher_state(state, {"w": g}, b)
+
+        # Final gradient
+        g_final = b.random_normal((10,))
+        b.eval(g_final)
+        state = update_fisher_state(state, {"w": g_final}, b)
+
+        precond = precondition_gradient({"w": g_final}, state, b)
+
+        # Inner product of preconditioned direction with raw gradient should be positive
+        # (m̂ should align with recent gradient direction)
+        inner = float(b.to_scalar(b.sum(g_final * precond["w"])))
+        assert inner > 0.0, f"Descent direction lost: inner product = {inner}"

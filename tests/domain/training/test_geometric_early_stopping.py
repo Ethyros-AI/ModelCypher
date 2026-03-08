@@ -463,3 +463,108 @@ class TestCheckGradNormStable:
         is_stable, threshold = check_grad_norm_stable(norms)
 
         assert is_stable is False
+
+
+class TestTaskImprovementGate:
+    """Tests for condition 5: val-loss gate on stopping certificate."""
+
+    def test_no_val_data_vacuously_true(self):
+        """Without val loss data, task improvement is vacuously satisfied."""
+        cert = check_stopping_certificate(grad_norm=1e-5)
+        assert cert.task_improvement_met is True
+
+    def test_no_baseline_vacuously_true(self):
+        """Without baseline, task improvement is vacuously satisfied."""
+        cert = check_stopping_certificate(
+            grad_norm=1e-5,
+            val_ci_half_width=1e-3,
+            val_loss_current=1.0,
+        )
+        assert cert.task_improvement_met is True
+
+    def test_no_current_vacuously_true(self):
+        """Without current val loss, task improvement is vacuously satisfied."""
+        cert = check_stopping_certificate(
+            grad_norm=1e-5,
+            val_ci_half_width=1e-3,
+            val_loss_baseline=2.0,
+        )
+        assert cert.task_improvement_met is True
+
+    def test_significant_improvement_passes(self):
+        """Val loss decreased more than CI → task improvement met."""
+        cert = check_stopping_certificate(
+            grad_norm=1e-5,
+            val_ci_half_width=0.1,
+            val_loss_baseline=2.0,
+            val_loss_current=1.5,
+        )
+        # 2.0 - 1.5 = 0.5 > 0.1 (CI)
+        assert cert.task_improvement_met is True
+
+    def test_insignificant_improvement_blocks(self):
+        """Val loss decreased less than CI → task improvement NOT met."""
+        cert = check_stopping_certificate(
+            grad_norm=1e-5,
+            val_ci_half_width=0.5,
+            val_loss_baseline=2.0,
+            val_loss_current=1.8,
+        )
+        # 2.0 - 1.8 = 0.2 < 0.5 (CI) → not significant
+        assert cert.task_improvement_met is False
+
+    def test_val_loss_increased_blocks(self):
+        """Val loss increased → task improvement NOT met."""
+        cert = check_stopping_certificate(
+            grad_norm=1e-5,
+            val_ci_half_width=0.1,
+            val_loss_baseline=2.0,
+            val_loss_current=2.5,
+        )
+        # 2.0 - 2.5 = -0.5 < 0.1 → not met
+        assert cert.task_improvement_met is False
+
+    def test_blocks_all_conditions_met(self):
+        """Task improvement blocks certificate even when other 4 pass."""
+        cert = check_stopping_certificate(
+            grad_norm=1e-5,
+            alignment=1e-8,
+            curvature=1.0,
+            val_ci_half_width=0.5,
+            mean_token_entropy=3.5,
+            repetition_rate=0.1,
+            val_loss_baseline=2.0,
+            val_loss_current=1.9,
+        )
+        # 2.0 - 1.9 = 0.1 < 0.5 (CI) → task improvement not met
+        assert cert.stationarity_met is True
+        assert cert.improvement_bound_met is True
+        assert cert.no_drift is True
+        assert cert.task_improvement_met is False
+        assert cert.all_conditions_met is False
+
+    def test_zero_ci_vacuously_true(self):
+        """val_ci_half_width = 0 → task improvement vacuously true."""
+        cert = check_stopping_certificate(
+            grad_norm=1e-5,
+            val_ci_half_width=0.0,
+            val_loss_baseline=2.0,
+            val_loss_current=2.0,
+        )
+        assert cert.task_improvement_met is True
+
+    def test_all_five_conditions_met(self):
+        """All five conditions including task improvement → stop."""
+        cert = check_stopping_certificate(
+            grad_norm=1e-5,
+            alignment=1e-8,
+            curvature=1.0,
+            val_ci_half_width=0.1,
+            mean_token_entropy=3.5,
+            repetition_rate=0.1,
+            val_loss_baseline=3.0,
+            val_loss_current=2.0,
+        )
+        # 3.0 - 2.0 = 1.0 > 0.1 (CI) → met
+        assert cert.task_improvement_met is True
+        assert cert.all_conditions_met is True

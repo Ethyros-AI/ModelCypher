@@ -100,6 +100,7 @@ class EpochMetrics:
     cert_delta_max_val: float | None = None
     cert_val_ci_half_width: float | None = None
     cert_delta_max_worst: float | None = None
+    cert_task_improvement_met: bool | None = None
     cert_all_met: bool | None = None
     # Topological phase diagnostics (optional, computed when topo_monitor=True)
     topo_betti_0: int | None = None

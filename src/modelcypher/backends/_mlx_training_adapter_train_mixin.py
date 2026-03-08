@@ -356,12 +356,12 @@ class _MLXTrainingAdapterTrainMixin:
         )
         current_eta = eta_ceiling
 
-        # Curvature-aware Cayley-Stiefel: diagonal Fisher preconditioning.
-        # NOT momentum (which carries state across retraction boundaries).
-        # Preconditioning scales the gradient in unconstrained (A_tilde, B_tilde)
-        # space BEFORE Cayley retraction, which is valid because the retraction
-        # maps unconstrained parameters to orthonormal factors regardless.
-        # v_t → diag(F_empirical) (Hwang et al. 2024, FAdam).
+        # Curvature-aware Cayley-Stiefel: diagonal Fisher preconditioning
+        # with direction smoothing (first moment). Both moments operate in
+        # unconstrained (A_tilde, B_tilde) space BEFORE Cayley retraction,
+        # which is valid because the retraction maps unconstrained parameters
+        # to orthonormal factors regardless.
+        # m_t → direction smoothing, v_t → diag(F_empirical) (Hwang et al. 2024, FAdam).
         from modelcypher.core.domain.training.diagonal_fisher_preconditioner import (
             init_fisher_state,
             precondition_gradient as fisher_precondition,
@@ -459,21 +459,39 @@ class _MLXTrainingAdapterTrainMixin:
                     )
             return per_layer
 
-        def _summarize_fisher_state() -> tuple[float | None, float | None]:
+        def _summarize_fisher_state() -> tuple[float | None, float | None, float | None]:
+            """Return (second_moment_norm, preconditioner_scale, first_moment_norm)."""
             fisher_terms = [
                 arr.reshape(-1)
                 for arr in fisher_state.v.values()
                 if getattr(arr, "size", 0) > 0
             ]
             if not fisher_terms:
-                return None, None
+                return None, None, None
             fisher_norm_sq = sum(mx.sum(arr * arr) for arr in fisher_terms)
             preconditioner_terms = [mx.sqrt(arr) for arr in fisher_terms]
             preconditioner_scale = sum(mx.mean(arr) for arr in preconditioner_terms) / len(
                 preconditioner_terms,
             )
+            # First moment norm (if β₁ > 0)
+            first_moment_norm = None
+            if fisher_state.beta1 > 0.0 and fisher_state.m:
+                m_terms = [
+                    arr.reshape(-1)
+                    for arr in fisher_state.m.values()
+                    if getattr(arr, "size", 0) > 0
+                ]
+                if m_terms:
+                    m_norm_sq = sum(mx.sum(arr * arr) for arr in m_terms)
+                    mx.eval(fisher_norm_sq, preconditioner_scale, m_norm_sq)
+                    first_moment_norm = float(mx.sqrt(m_norm_sq).item())
+                    return (
+                        float(mx.sqrt(fisher_norm_sq).item()),
+                        float(preconditioner_scale.item()),
+                        first_moment_norm,
+                    )
             mx.eval(fisher_norm_sq, preconditioner_scale)
-            return float(mx.sqrt(fisher_norm_sq).item()), float(preconditioner_scale.item())
+            return float(mx.sqrt(fisher_norm_sq).item()), float(preconditioner_scale.item()), None
 
         def _summarize_adamw_state() -> tuple[float | None, float | None, float | None]:
             if optimizer is None:
@@ -620,6 +638,7 @@ class _MLXTrainingAdapterTrainMixin:
         stop_reason: str | None = None
         best_val_loss = float("inf")
         best_weights: dict[str, Any] | None = None
+        val_loss_baseline: float | None = None  # First epoch's val loss for certificate condition 5
 
         if geometric_reshape and paired_dataset is not None:
             batch_iter = iterate_structured_batches(
@@ -689,6 +708,18 @@ class _MLXTrainingAdapterTrainMixin:
             )
         if n_batches_per_epoch <= 0:
             raise ValueError("Training dataset produced zero batches")
+
+        # Derive β₁ for first moment now that n_batches_per_epoch is known.
+        # Half-epoch averaging: β₁ = 1 - 2/T_epoch, clamped to [0, 0.99].
+        from modelcypher.core.domain.training.diagonal_fisher_preconditioner import (
+            derive_beta1,
+        )
+        fisher_state.beta1 = derive_beta1(n_batches_per_epoch)
+        if fisher_state.beta1 > 0.0:
+            logger.info(
+                "First moment enabled: β₁=%.4f (n_batches_per_epoch=%d)",
+                fisher_state.beta1, n_batches_per_epoch,
+            )
 
         # MASS √N epoch budget correction (Brownian scaling).
         from modelcypher.core.domain.training.mass_step_size import (
@@ -846,6 +877,7 @@ class _MLXTrainingAdapterTrainMixin:
 
             fisher_second_moment_norm = None
             fisher_preconditioner_scale = None
+            fisher_first_moment_norm = None
             if optimizer_research_mode == OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS:
                 fisher_state = update_fisher_state(fisher_state, grad_flat, self._backend)
                 update_direction = fisher_precondition(
@@ -854,6 +886,7 @@ class _MLXTrainingAdapterTrainMixin:
                 (
                     fisher_second_moment_norm,
                     fisher_preconditioner_scale,
+                    fisher_first_moment_norm,
                 ) = _summarize_fisher_state()
             else:
                 update_direction = grad_flat
@@ -936,9 +969,9 @@ class _MLXTrainingAdapterTrainMixin:
                     for k in current_params
                     if k in update_direction
                 ]
-                model.load_weights(updated_params)
+                model.load_weights(updated_params, strict=False)
                 mx.eval(*[v for _, v in mlx_flatten(model.trainable_parameters())])
-                optimizer_first_moment_norm = None
+                optimizer_first_moment_norm = fisher_first_moment_norm
                 optimizer_second_moment_norm = fisher_second_moment_norm
                 optimizer_preconditioner_scale = fisher_preconditioner_scale
 
@@ -1027,6 +1060,9 @@ class _MLXTrainingAdapterTrainMixin:
                         n_batches=eval_batches,
                     )
                     val_losses.append(v_loss)
+                    # Record baseline val loss from first evaluation
+                    if val_loss_baseline is None:
+                        val_loss_baseline = v_loss
                     # Track best checkpoint for restoration.
                     # MLX arrays are immutable — load_weights creates new arrays,
                     # so storing references is safe (no in-place mutation).
@@ -1636,6 +1672,8 @@ class _MLXTrainingAdapterTrainMixin:
                         repetition_rate=rep_rate,
                         grad_norm_history=grad_norm_history,
                         seed=seed,
+                        val_loss_baseline=val_loss_baseline,
+                        val_loss_current=val_losses[-1] if val_losses else None,
                     )
                     # Append this epoch's gradient norm to history
                     grad_norm_history.append(certificate.grad_norm)
@@ -1649,13 +1687,14 @@ class _MLXTrainingAdapterTrainMixin:
                             "cert_delta_max_val": certificate.delta_max_val,
                             "cert_val_ci_half_width": certificate.val_ci_half_width,
                             "cert_delta_max_worst": certificate.delta_max_worst,
+                            "cert_task_improvement_met": certificate.task_improvement_met,
                             "cert_all_met": certificate.all_conditions_met,
                         }
                     )
                     logger.info(
                         "Certificate: ‖g‖=%.2e SE=%.2e stat=%s | "
                         "a=%.2e b=%.2e Δmax=%.2e CI=%.2e | "
-                        "worst=%.2e | drift=%s | met=%s",
+                        "worst=%.2e | drift=%s | task_imp=%s | met=%s",
                         certificate.grad_norm,
                         certificate.stationarity_floor,
                         certificate.stationarity_met,
@@ -1665,6 +1704,7 @@ class _MLXTrainingAdapterTrainMixin:
                         certificate.val_ci_half_width,
                         certificate.delta_max_worst,
                         "none" if certificate.no_drift else "DETECTED",
+                        certificate.task_improvement_met,
                         certificate.all_conditions_met,
                     )
                     if certificate.all_conditions_met:

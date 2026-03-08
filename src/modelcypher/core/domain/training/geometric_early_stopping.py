@@ -220,7 +220,7 @@ def check_grad_norm_stable(
 class StoppingCertificate:
     """Geometric stopping certificate for Riemannian training.
 
-    All four conditions must hold simultaneously to certify that no
+    All five conditions must hold simultaneously to certify that no
     measurable local improvement remains:
 
     1. **Stationarity:** ``||P^{1/2} ∇L_train||`` has converged to its
@@ -228,6 +228,8 @@ class StoppingCertificate:
     2. **Improvement bound:** ``Δ_max_val < CI_half_width(val)``
     3. **Worst-group:** ``max_i Δ_max_i < CI_half_width_i``
     4. **No drift:** entropy not collapsed, repetition not spiked.
+    5. **Task improvement:** training produced a statistically significant
+       improvement in validation loss over the baseline.
 
     All thresholds are dtype-derived or measured from data. No patience
     counters, no fixed hyperparameters.
@@ -255,6 +257,9 @@ class StoppingCertificate:
     entropy_expanding: bool        # entropy > baseline * (1 + sqrt(ε_f32)) — SFT entropy-seeking
     repetition_spiked: bool        # repetition > 1 - sqrt(ε_f32)
     no_drift: bool
+
+    # Condition 5: Task improvement
+    task_improvement_met: bool     # (L₀ - L_current) > CI_half_width
 
     # Aggregate
     all_conditions_met: bool
@@ -302,6 +307,9 @@ def check_stopping_certificate(
     mean_token_entropy: float | None = None,
     baseline_entropy: float | None = None,
     repetition_rate: float | None = None,
+    # Condition 5: Task improvement
+    val_loss_baseline: float | None = None,
+    val_loss_current: float | None = None,
 ) -> StoppingCertificate:
     """Evaluate the geometric stopping certificate.
 
@@ -327,9 +335,11 @@ def check_stopping_certificate(
         baseline_entropy: pre-training entropy (measured before adaptation).
             When provided, detects entropy expansion (SFT entropy-seeking).
         repetition_rate: fraction of repeated 4-grams.
+        val_loss_baseline: Pre-training validation loss.
+        val_loss_current: Current validation loss.
 
     Returns:
-        ``StoppingCertificate`` with all four conditions evaluated.
+        ``StoppingCertificate`` with all five conditions evaluated.
     """
     # ── Condition 1: Stationarity ──
     # Stochastic case: gradient norm history available → check if norm
@@ -402,12 +412,28 @@ def check_stopping_certificate(
     )
     no_drift = not entropy_collapsed and not entropy_expanding and not repetition_spiked
 
+    # ── Condition 5: Task improvement ──
+    # Training must have produced a statistically significant improvement
+    # over the baseline validation loss. Without this, the certificate can
+    # fire at a flat-but-bad local minimum.
+    # Reuses val_ci_half_width as the significance threshold.
+    if (
+        val_loss_baseline is not None
+        and val_loss_current is not None
+        and val_ci_half_width > 0.0
+    ):
+        task_improvement_met = (val_loss_baseline - val_loss_current) > val_ci_half_width
+    else:
+        # Vacuously true when no val data or no baseline
+        task_improvement_met = True
+
     # ── Aggregate ──
     all_met = (
         stationarity_met
         and improvement_bound_met
         and worst_group_met
         and no_drift
+        and task_improvement_met
     )
 
     return StoppingCertificate(
@@ -426,6 +452,7 @@ def check_stopping_certificate(
         entropy_expanding=entropy_expanding,
         repetition_spiked=repetition_spiked,
         no_drift=no_drift,
+        task_improvement_met=task_improvement_met,
         all_conditions_met=all_met,
     )
 
