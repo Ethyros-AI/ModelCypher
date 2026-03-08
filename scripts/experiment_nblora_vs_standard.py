@@ -1342,23 +1342,35 @@ def build_summary(all_results: dict) -> dict:
     if all_nb_vs_tuned_deltas:
         summary["overall"]["nb_vs_tuned_mean_delta"] = _safe_mean(all_nb_vs_tuned_deltas)
 
-    # Verdict uses the same SE-derived threshold.  With lm-eval per-task
-    # SE ≈ 1/(2√N), aggregate over 7 tasks reduces by √7, so
-    # aggregate_se ≈ 1/(2√(N×7)).  Use N=500 (full mode) as the
-    # conservative baseline.  Mean delta within ±aggregate_se = tie.
-    agg_se = 1.0 / (2.0 * math.sqrt(500 * len(BENCHMARK_TASKS)))
-    if all_nb_vs_std_deltas:
+    # Verdict: aggregate per-task measured SEs from all models.
+    # For each (model, task) pair, se_delta = sqrt(nb_se² + opp_se²).
+    # Overall mean delta SE = sqrt(Σ se_delta²) / N.
+    # Tie band = 2 × SE_overall (95% CI for the difference).
+    se_delta_sq_all: list[float] = []
+    for model_key, model_results in all_results.items():
+        h2h = model_results.get("comparison", {}).get("head_to_head", {})
+        nb_vs_std = h2h.get("nb_vs_standard_lora", {})
+        for task, band in nb_vs_std.get("per_task_tie_bands", {}).items():
+            se_d = math.sqrt(band["nb_se"] ** 2 + band["opp_se"] ** 2)
+            se_delta_sq_all.append(se_d ** 2)
+
+    if all_nb_vs_std_deltas and se_delta_sq_all:
+        n_pairs = len(se_delta_sq_all)
+        agg_se = math.sqrt(sum(se_delta_sq_all)) / n_pairs
+        agg_tie_band = 2.0 * agg_se
         mean_delta = _safe_mean(all_nb_vs_std_deltas)
-        if mean_delta > agg_se:
+        if mean_delta > agg_tie_band:
             summary["overall"]["verdict"] = "NB-LoRA > Standard"
-        elif mean_delta < -agg_se:
+        elif mean_delta < -agg_tie_band:
             summary["overall"]["verdict"] = "Standard LoRA > NB-LoRA"
         else:
             summary["overall"]["verdict"] = "Within measurement noise"
-        summary["overall"]["verdict_threshold"] = agg_se
+        summary["overall"]["verdict_threshold"] = agg_tie_band
         summary["overall"]["verdict_derivation"] = (
-            f"1/(2*sqrt({500}*{len(BENCHMARK_TASKS)})) = {agg_se:.4f}"
+            f"2*sqrt(Σse²)/{n_pairs} from {n_pairs} measured (model,task) pairs"
         )
+    elif all_nb_vs_std_deltas:
+        summary["overall"]["verdict"] = "no stderr data for threshold"
     else:
         summary["overall"]["verdict"] = "no data"
 

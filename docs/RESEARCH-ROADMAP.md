@@ -29,7 +29,7 @@ live in:
   unresolved behavioral failures, and 8B closure is still open.
 - The repository still has a large research surface, but it is now inventoried.
   Current generated counts are `133` scripts, `90` top-level result families,
-  and about `1.40G` under `results/`.
+  and about `0.46G` under `results/`.
 
 The short version is: we have reduced guessing in the control plane more than
 we have proven superiority in the outcome plane.
@@ -121,7 +121,7 @@ standard acceptance of quantization damage.
 | --- | --- | --- |
 | Zero-guess training is not yet reliably behavior-preserving | `results/pipeline_validation/verdict.json` reports `all_pass=false`; on 350M, structural pass is 5/5 but inference pass is only 3/5 | We do not yet have the causal operator that explains when structural safety fails to preserve behavior |
 | 8B closure is still open | `results/g5_8b_validation_multiseed/multiseed_gates.json` reports `n_seeds=1`, `cka_ok=0`, `degenerate_ok=0`, `all_gates_all_seeds=false` | The user-facing claim "works on any model" remains unclosed |
-| We do not yet have mandatory head-to-head baselines against the standard PEFT ecosystem | The repo has strong internal doctrine and many experiments, but no mandatory same-model same-data comparison suite against standard LoRA, rsLoRA, PiSSA, EVA, DoRA, or recipe-level baselines; the retained `results/nblora_vs_standard/` family is summary-only and no longer retains a usable head-to-head benchmark payload | Without these controls, "better than standard practice" is still a thesis, not a measured result |
+| We do not yet have mandatory head-to-head baselines against the standard PEFT ecosystem | The repo has strong internal doctrine and many experiments, but no stable same-model same-data comparison suite against standard LoRA, rsLoRA, PiSSA, EVA, DoRA, or recipe-level baselines; the existing `results/nblora_vs_standard/` family is still not a promotable benchmark bundle | Without these controls, "better than standard practice" is still a thesis, not a measured result |
 | Merge claims are differentiated but not yet industry-positioned | Internal SOTA audit says keep pushing null-space merge, but also says import MergeBench-style evaluation | We have internal strength but not yet benchmark parity with how the field compares merge methods |
 | Identity-layer claims are ahead of infrastructure and evidence | `docs/VISION.md` still correctly marks stacking as partial and sovereignty as not built | The long-term vision remains valid as direction, not yet as delivered capability |
 
@@ -135,7 +135,7 @@ Current generated counts from `results/repo_research_inventory/`:
 - `13` scripts with exact name-matched test files under `tests/scripts/` or
   `tests/experiments/`
 - `90` top-level result families under `results/`
-- about `1.40G` stored under `results/`
+- about `0.46G` stored under `results/`
 
 `scripts/INVENTORY.md` is now generated from
 `scripts/report_research_inventory.py`, and the full machine-readable inventory
@@ -145,7 +145,7 @@ Current generated status split after collapsing duplicate and superseded result
 runs into retained summary bundles:
 
 - scripts: `5` `canonical`, `34` `summary_only`, `94` `delete`
-- results: `32` `canonical`, `58` `summary_only`, `0` `delete`
+- results: `31` `canonical`, `59` `summary_only`, `0` `delete`
 
 ### A small number of experiment families dominate the artifact footprint
 
@@ -153,13 +153,16 @@ The largest current result families are:
 
 | Result family | Size | Share of `results/` |
 | --- | ---: | ---: |
-| `four_bit_extension` | `1.02G` | `72.7%` |
-| `g5_8b_validation_memtest` | `0.06G` | `4.6%` |
-| `quantization_ab_survey` | `0.06G` | `4.0%` |
-| `pipeline_validation_cert_350m` | `0.04G` | `2.7%` |
+| `nblora_vs_standard` | `0.22G` | `47.3%` |
+| `quantization_ab_survey` | `0.06G` | `12.0%` |
+| `pipeline_validation_cert_350m` | `0.04G` | `8.1%` |
+| `pipeline_validation_cert_350m_scoped` | `0.04G` | `8.1%` |
 
-Those four families account for about `84.0%` of the current `results/`
-directory. Most cleanup leverage is still concentrated there.
+Those four families account for about `75.5%` of the current `results/`
+directory. The cleanup story has changed: the biggest remaining risk is no
+longer static historical dumps, but a live benchmark family
+(`results/nblora_vs_standard/`) repopulating raw adapters inside its canonical
+results path.
 
 ### "Checkpoint sprawl" is really "results-as-checkpoints"
 
@@ -245,7 +248,8 @@ preservation math is stronger than the narrative.
     adapter or model
 - Delete per-run bulky adapters from the worktree once their summary metrics are
   extracted and any genuinely reusable canonical artifact is retained
-- Start with the four largest result families listed above
+- Start with `results/nblora_vs_standard/`, because it is now the main live
+  source of result-family regrowth
 
 #### Claims
 

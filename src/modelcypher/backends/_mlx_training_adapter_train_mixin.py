@@ -1725,17 +1725,38 @@ class _MLXTrainingAdapterTrainMixin:
                         certificate.all_conditions_met,
                     )
                     if certificate.all_conditions_met:
-                        stop_reason = (
-                            f"certificate (‖g‖={certificate.grad_norm:.2e}, "
-                            f"Δmax={certificate.delta_max_val:.2e}"
-                            f"<CI={certificate.val_ci_half_width:.2e}, "
-                            f"epoch={epoch_num})"
+                        # Guard: don't stop if val_loss improved this epoch.
+                        # The certificate evaluates stochastic gradient
+                        # quantities at one epoch boundary.  A single-epoch
+                        # alignment sign flip (delta_max=0) or high-variance
+                        # gradient norms (inflated SE → stationarity pass)
+                        # can cause false convergence while the loss is still
+                        # dropping.  If val_loss improved, the model is still
+                        # learning regardless of what the snapshot says.
+                        val_improved_this_epoch = (
+                            len(val_losses) >= 2
+                            and val_losses[-1] < val_losses[-2]
                         )
-                        logger.info(
-                            "Certificate stop at iter %d: %s",
-                            it + 1, stop_reason,
-                        )
-                        break
+                        if val_improved_this_epoch:
+                            logger.info(
+                                "Certificate met at epoch %d but val_loss "
+                                "improved (%.4f → %.4f) — continuing",
+                                epoch_num,
+                                val_losses[-2],
+                                val_losses[-1],
+                            )
+                        else:
+                            stop_reason = (
+                                f"certificate (‖g‖={certificate.grad_norm:.2e}, "
+                                f"Δmax={certificate.delta_max_val:.2e}"
+                                f"<CI={certificate.val_ci_half_width:.2e}, "
+                                f"epoch={epoch_num})"
+                            )
+                            logger.info(
+                                "Certificate stop at iter %d: %s",
+                                it + 1, stop_reason,
+                            )
+                            break
                 # 7c. Online eval degradation stop
                 if online_eval_stop_basis_degraded:
                     stop_reason = (

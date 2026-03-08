@@ -626,7 +626,8 @@ With the SPS f*=0 bug fixed (`η_sps = max(0, f(x) - f*) / ||g||²`, f*=0.545 fr
 
 **Data:** Uncorrected: [`results/corrective_lora_training/20260226T030045Z/`](../../results/corrective_lora_training/20260226T030045Z/), Corrected: [`results/corrective_lora_training/20260226T032814Z/`](../../results/corrective_lora_training/20260226T032814Z/)
 **Script:** [`scripts/corrective_lora_training.py`](../../scripts/corrective_lora_training.py) (use `--rmt-results` flag for f* correction)
-**4-bit model:** `results/four_bit_extension/20260226T023950Z/derived_models/Qwen3-1.7B-MLX-bf16-4bit-g64-affine`
+**4-bit model (historical path only):** `results/four_bit_extension/20260226T023950Z/derived_models/Qwen3-1.7B-MLX-bf16-4bit-g64-affine`
+The repo now retains the measurement bundle, not this live model directory.
 
 #### 3c: Oscillation Investigation — Tracing to Bedrock
 
@@ -884,7 +885,9 @@ Bootstrap 95% CI (4-bit): signal_rank [401.7, 448.8], sv_frac [51.2%, 56.2%]
 
 **Data:** [`results/four_bit_extension/20260226T023950Z/`](../../results/four_bit_extension/20260226T023950Z/)
 **Script:** [`scripts/four_bit_extension.py`](../../scripts/four_bit_extension.py)
-**4-bit model:** `results/four_bit_extension/20260226T023950Z/derived_models/Qwen3-1.7B-MLX-bf16-4bit-g64-affine`
+**4-bit model (historical path only):** `results/four_bit_extension/20260226T023950Z/derived_models/Qwen3-1.7B-MLX-bf16-4bit-g64-affine`
+Rerun [`scripts/four_bit_extension.py`](../../scripts/four_bit_extension.py) or
+pass an explicit `--quantized-model` path when reproducing downstream runs.
 
 ---
 

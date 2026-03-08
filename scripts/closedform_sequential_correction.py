@@ -22,9 +22,6 @@ Directions with small eigenvalues get w_i → 0, automatically preserving the
 quantization residual in those directions.
 
 Usage:
-    poetry run python scripts/closedform_sequential_correction.py
-
-    # Custom model
     poetry run python scripts/closedform_sequential_correction.py \
         --quantized-model /path/to/4bit \
         --fp-model /path/to/bf16
@@ -59,7 +56,7 @@ logging.basicConfig(
 logger = logging.getLogger("closedform_correction")
 
 # Default paths
-DEFAULT_QUANTIZED = (
+HISTORICAL_QUANTIZED_MODEL = (
     "results/four_bit_extension/20260226T023950Z/derived_models/"
     "Qwen3-1.7B-MLX-bf16-4bit-g64-affine"
 )
@@ -631,8 +628,12 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--quantized-model",
-        default=DEFAULT_QUANTIZED,
-        help="Path to quantized model",
+        required=True,
+        help=(
+            "Path to quantized model. Pass it explicitly; the historical "
+            f"in-repo artifact {HISTORICAL_QUANTIZED_MODEL} is retained only "
+            "as provenance in results, not as a live model directory."
+        ),
     )
     parser.add_argument(
         "--fp-model",

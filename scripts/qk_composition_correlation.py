@@ -18,9 +18,6 @@ Measures per-layer:
   - Attention entropy via Entropy-Lens
 
 Usage:
-    poetry run python scripts/qk_composition_correlation.py
-
-    # Custom models
     poetry run python scripts/qk_composition_correlation.py \
         --fp-model /path/to/bf16 \
         --quantized-model /path/to/4bit
@@ -46,7 +43,7 @@ logger = logging.getLogger("qk_composition_correlation")
 
 # Default paths (Qwen3-1.7B — confirmed CKA/degeneration independence 2026-02-27)
 DEFAULT_FP = "/Volumes/CodeCypher/models/mlx-community/Qwen3-1.7B-MLX-bf16"
-DEFAULT_QUANTIZED = (
+HISTORICAL_QUANTIZED_MODEL = (
     "results/four_bit_extension/20260226T023950Z/derived_models/"
     "Qwen3-1.7B-MLX-bf16-4bit-g64-affine"
 )
@@ -71,7 +68,15 @@ def _parse_args() -> argparse.Namespace:
         description="QK composition correlation experiment.",
     )
     parser.add_argument("--fp-model", default=DEFAULT_FP)
-    parser.add_argument("--quantized-model", default=DEFAULT_QUANTIZED)
+    parser.add_argument(
+        "--quantized-model",
+        required=True,
+        help=(
+            "Path to quantized model. Pass it explicitly; the historical "
+            f"in-repo artifact {HISTORICAL_QUANTIZED_MODEL} is retained only "
+            "as provenance in results, not as a live model directory."
+        ),
+    )
     parser.add_argument("--probes", default=DEFAULT_PROBES)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--max-tokens", type=int, default=200)
