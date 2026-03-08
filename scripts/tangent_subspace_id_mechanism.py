@@ -292,7 +292,13 @@ def compute_pca_tangent_basis(X: np.ndarray, k: int) -> np.ndarray:
 
 
 def grassmann_distance_numpy(V1: np.ndarray, V2: np.ndarray) -> dict:
-    """Grassmann distance between [k1, d] and [k2, d] orthonormal bases."""
+    """Grassmann distance between [k1, d] and [k2, d] orthonormal bases.
+
+    When k2 > k1, SVD of V1 @ V2.T gives k1 principal angles. The remaining
+    k2 - k1 directions in V2 are in the null space of the projection (cos = 0
+    by construction) — they are automatically novel.
+    """
+    k1, k2 = V1.shape[0], V2.shape[0]
     M = V1 @ V2.T
     cos_angles = np.linalg.svd(M, compute_uv=False)
     cos_angles = np.clip(cos_angles, 0.0, 1.0)
@@ -302,13 +308,18 @@ def grassmann_distance_numpy(V1: np.ndarray, V2: np.ndarray) -> dict:
     chordal = float(np.sqrt(np.sum(np.maximum(0.0, 1.0 - cos_angles**2))))
 
     # Novel direction count: cos(theta) < sqrt(eps) (same threshold as subspace.py)
+    # Plus implicit novel directions when k2 > k1 (null space of projection)
     sqrt_eps = float(np.sqrt(np.finfo(np.float32).eps))
-    novel_count = int(np.sum(cos_angles < sqrt_eps))
+    novel_from_angles = int(np.sum(cos_angles < sqrt_eps))
+    novel_implicit = max(0, k2 - k1)  # directions in V2 beyond V1's span
+    novel_count = novel_from_angles + novel_implicit
 
     return {
         "geodesic_distance": geodesic,
         "chordal_distance": chordal,
         "novel_count": novel_count,
+        "novel_from_angles": novel_from_angles,
+        "novel_implicit": novel_implicit,
         "n_angles": len(cos_angles),
     }
 
@@ -334,24 +345,30 @@ def measurement_a_global_tangent(
         V_l = compute_pca_tangent_basis(stage_activations[l], k_l)
         V_l1 = compute_pca_tangent_basis(stage_activations[l + 1], k_l1)
 
-        # Matched dimensions for fair Grassmann comparison
-        k_min = min(V_l.shape[0], V_l1.shape[0])
-        grassmann = grassmann_distance_numpy(V_l[:k_min], V_l1[:k_min])
+        # Full (unmatched) Grassmann comparison: SVD of k_l x k_l1 matrix
+        # gives min(k_l, k_l1) principal angles. Directions beyond min(k_l, k_l1)
+        # in the larger subspace are in the null space — automatically novel.
+        grassmann_full = grassmann_distance_numpy(V_l, V_l1)
 
-        # Fixed k = k_l for both: isolate rotation from dimension change
-        k_fixed = min(V_l.shape[0], V_l1.shape[0], k_l)
-        grassmann_fixed = grassmann_distance_numpy(V_l[:k_fixed], V_l1[:k_fixed])
+        # Matched dimensions for fair Grassmann distance (same subspace dim)
+        k_min = min(V_l.shape[0], V_l1.shape[0])
+        grassmann_matched = grassmann_distance_numpy(V_l[:k_min], V_l1[:k_min])
 
         results.append({
             "layer_pair": [l, l + 1],
             "k_l": k_l,
             "k_l1": k_l1,
             "k_matched": k_min,
-            "grassmann_geodesic": grassmann["geodesic_distance"],
-            "grassmann_chordal": grassmann["chordal_distance"],
-            "novel_count": grassmann["novel_count"],
-            "n_angles": grassmann["n_angles"],
-            "grassmann_fixed_geodesic": grassmann_fixed["geodesic_distance"],
+            "grassmann_geodesic": grassmann_matched["geodesic_distance"],
+            "grassmann_chordal": grassmann_matched["chordal_distance"],
+            "novel_count_matched": grassmann_matched["novel_count"],
+            "novel_count_full": grassmann_full["novel_count"],
+            "novel_from_angles": grassmann_full["novel_from_angles"],
+            "novel_implicit": grassmann_full["novel_implicit"],
+            "extra_dims": abs(k_l1 - k_l),
+            "n_angles_matched": grassmann_matched["n_angles"],
+            "n_angles_full": grassmann_full["n_angles"],
+            "grassmann_full_geodesic": grassmann_full["geodesic_distance"],
         })
 
     return results
@@ -374,9 +391,17 @@ def measurement_b_local_tangent(
         TangentSpaceAlignment,
     )
 
+    from modelcypher.core.domain.geometry.scalars import sqrt_scalar
+
     aligner = TangentSpaceAlignment(backend)
     results = []
     n_stages = len(stage_activations)
+
+    # Log operator parameters (derived from N, not user-set)
+    n_anchors = stage_activations[0].shape[0]
+    neighbor_count = min(max(2, int(sqrt_scalar(float(n_anchors), backend))), n_anchors - 1)
+    tangent_rank = min(max(1, neighbor_count // 2), neighbor_count)
+    logger.info(f"    Measurement B operator: N={n_anchors}, neighbor_count={neighbor_count}, tangent_rank={tangent_rank}")
 
     for l in range(n_stages - 1):
         X_l = stage_activations[l]
@@ -397,6 +422,8 @@ def measurement_b_local_tangent(
                     "median_angle_radians": result.median_angle_radians,
                     "mean_cosine": result.mean_cosine,
                     "coverage": result.coverage,
+                    "neighbor_count": neighbor_count,
+                    "tangent_rank": tangent_rank,
                 })
             else:
                 results.append({
@@ -448,6 +475,12 @@ def measurement_c_tracked_neighbors(
     stage_activations: list[np.ndarray],
 ) -> list[dict]:
     """Track the same neighbors across layers, measure rank change.
+
+    OPERATOR LIMITATION: Uses Euclidean KDTree neighborhoods, while TwoNN uses
+    geodesic distances via k-NN Floyd-Warshall graph. This means P5 results
+    are NOT commensurable with TwoNN IDs. A null P5 does not cleanly eliminate
+    local rank change as a mechanism — it only shows that Euclidean-neighborhood
+    rank change is uncorrelated with geodesic-neighborhood ID.
 
     k = max(ceil(ln(N)), N//4): enough neighbors to resolve local dimension.
     Berry & Sauer 2016 (ceil(ln(N))) is connectivity minimum; N//4 provides
@@ -542,19 +575,19 @@ def compute_predictions(
         "n": sum(1 for d in d_Gs if not np.isnan(d)),
     }
 
-    # P2: Spearman(novel_count, delta_ID) > 0.3 when delta_ID > 0
+    # P2: Spearman(novel_count_full, delta_ID) > 0.3 when delta_ID > 0
     increasing_mask = [
         i for i, d in enumerate(delta_ids)
-        if d > 0 and i < len(meas_a) and "novel_count" in meas_a[i]
+        if d > 0 and i < len(meas_a) and "novel_count_full" in meas_a[i]
     ]
     if len(increasing_mask) >= 4:
-        novels = [meas_a[i]["novel_count"] for i in increasing_mask]
+        novels = [meas_a[i]["novel_count_full"] for i in increasing_mask]
         deltas = [delta_ids[i] for i in increasing_mask]
         r_p2, p_p2 = _safe_spearman(novels, deltas)
     else:
         r_p2, p_p2 = float("nan"), 1.0
     predictions["P2"] = {
-        "description": "Spearman(novel_count, delta_ID) when delta_ID > 0",
+        "description": "Spearman(novel_count_full, delta_ID) when delta_ID > 0",
         "spearman_r": r_p2,
         "p_value": p_p2,
         "passes": not np.isnan(r_p2) and r_p2 > 0.3,
@@ -602,14 +635,17 @@ def compute_predictions(
     }
 
     # P5: Spearman(delta_local_rank, delta_ID) > 0.3
+    # CAVEAT: Euclidean KDTree neighborhoods vs TwoNN's geodesic neighborhoods.
+    # A null result does not cleanly eliminate local rank change as a mechanism.
     delta_ranks = [m["mean_delta_local_rank"] for m in meas_c]
     r_p5, p_p5 = _safe_spearman(delta_ranks, delta_ids)
     predictions["P5"] = {
-        "description": "Spearman(delta_local_rank, delta_ID)",
+        "description": "Spearman(delta_local_rank, delta_ID) [Euclidean KDTree, not commensurable with geodesic TwoNN]",
         "spearman_r": r_p5,
         "p_value": p_p5,
         "passes": not np.isnan(r_p5) and r_p5 > 0.3,
         "n": len(delta_ranks),
+        "operator_caveat": "Euclidean_KDTree_not_geodesic",
     }
 
     return predictions

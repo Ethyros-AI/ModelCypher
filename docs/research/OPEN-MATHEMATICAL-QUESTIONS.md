@@ -306,18 +306,25 @@ satisfied. Claims missing architecture/scale terms or commensurability proofs ar
                Tangent subspace rotation hypothesis (2026-03-07):
                Tested whether layer Jacobian rotating the tangent subspace predicts
                TwoNN ID changes. Three measurement channels on 3 models (60 probes).
-               Clean negative results:
-               - Novel direction count = 0 everywhere (residual preserves subspace)
-               - Tracked neighbor rank change uncorrelated with ID (P5: 0/3 models)
-               - Global PCA Grassmann distance: 1/3 models (Qwen only)
+               Results with operator caveats:
+               - Novel direction count: operator bug patched. After fix, novel_from_angles
+                 = 0 for ALL pairs (no principal angle near pi/2). P2 "passes" 3/3
+                 but is CIRCULAR: novel_implicit = round(delta_ID), so P2 measures
+                 Spearman(round(delta_ID), delta_ID). Residual preserves subspace
+                 orientation — real geometric finding, not testable via P2.
+               - Tracked neighbor rank change uncorrelated with ID (P5: 0/3). Operator
+                 caveat: uses Euclidean KDTree, not commensurable with geodesic TwoNN.
+                 Not a clean elimination of local rank change as mechanism.
+               - Global PCA Grassmann distance: 1/3 models (Qwen only; LFM2 is
+                 stage-0 artifact, r=+0.03 excl. embedding transition)
                Candidate signal:
                - Local tangent misalignment (P4): LFM2 r=+0.54 (p=0.037),
                  Qwen r=+0.69 (p=0.0003), Llama r=+0.18 (p=0.38, fails).
-                 2/3 models. Llama failure could be measurement limitation
-                 (N=60 in d=3072) or genuine mechanism underspecification.
+                 2/3 models. Operator: neighbor_count=7, tangent_rank=3 for all
+                 models at N=60. Llama failure cause undetermined.
                Status remains [MECHANISM_UNKNOWN]. P4 is a candidate pending
-               higher-N validation on standard transformers.
-               Data: results/tangent_subspace_id_mechanism/results.json.
+               rerun with patched operators and higher-N validation.
+               Data: results/tangent_subspace_id_mechanism/results.json (pre-patch).
                Report: docs/research/tangent_subspace_id_mechanism_2026_03_07.md.
                     ↓
 [PROVEN]       ID → Phases
