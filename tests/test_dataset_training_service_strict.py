@@ -231,7 +231,7 @@ def _patch_lightweight_training(monkeypatch: pytest.MonkeyPatch, service: Datase
     monkeypatch.setattr(
         dataset_training_service_module,
         "select_target_modules",
-        lambda geometries: list(geometries.keys()),
+        lambda geometries, **_kw: list(geometries.keys()),
     )
     monkeypatch.setattr(
         dataset_training_service_module,
@@ -1095,7 +1095,11 @@ def test_research_online_eval_problem_set_path_overrides_generated_eval_problems
 
 
 
-def test_train_from_dataset_auto_retention_mix_fraction(monkeypatch, tmp_path: Path):
+def test_train_from_dataset_auto_retention_disabled_by_default(monkeypatch, tmp_path: Path):
+    """Auto-retention is disabled by default (Cayley-Stiefel bound provides preservation).
+
+    Without explicit retention_dataset_path, no retention samples are mixed in.
+    """
     model_dir = tmp_path / "model"
     model_dir.mkdir()
     train_path = tmp_path / "train.jsonl"
@@ -1109,26 +1113,15 @@ def test_train_from_dataset_auto_retention_mix_fraction(monkeypatch, tmp_path: P
     service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
     _patch_lightweight_training(monkeypatch, service)
 
-    auto_retention = [{"text": "r0"}, {"text": "r1"}]
-    monkeypatch.setattr(
-        service,
-        "_collect_auto_retention",
-        lambda *_args, **_kwargs: list(auto_retention),
-    )
+    # _collect_auto_retention should NOT be called
+    auto_retention_called = False
 
-    merge_call: dict[str, object] = {}
+    def _should_not_be_called(*_args, **_kwargs):
+        nonlocal auto_retention_called
+        auto_retention_called = True
+        return []
 
-    def _fake_merge(primary, retention, fraction):
-        merge_call["primary_len"] = len(primary)
-        merge_call["retention_len"] = len(retention)
-        merge_call["fraction"] = fraction
-        return list(primary) + list(retention)
-
-    monkeypatch.setattr(
-        dataset_training_service_module,
-        "merge_datasets_with_fraction",
-        _fake_merge,
-    )
+    monkeypatch.setattr(service, "_collect_auto_retention", _should_not_be_called)
 
     result = service.train_from_dataset(
         model_path=model_dir,
@@ -1137,11 +1130,8 @@ def test_train_from_dataset_auto_retention_mix_fraction(monkeypatch, tmp_path: P
         no_save=True,
     )
 
-    assert merge_call["primary_len"] == 3
-    assert merge_call["retention_len"] == 2
-    assert merge_call["fraction"] == pytest.approx(2 / 5)
-    assert result.auto_retention_samples_collected == 2
-    assert result.to_dict()["auto_retention_samples_collected"] == 2
+    assert not auto_retention_called, "Auto-retention should be disabled by default"
+    assert result.auto_retention_samples_collected == 0
 
 
 def test_train_from_dataset_manual_retention_skips_auto(monkeypatch, tmp_path: Path):
@@ -1317,7 +1307,7 @@ def test_train_from_dataset_populates_moe_targets(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(
         dataset_training_service_module,
         "select_target_modules",
-        lambda _geometries: list(moe_keys),
+        lambda _geometries, **_kw: list(moe_keys),
     )
 
     result = service.train_from_dataset(

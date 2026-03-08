@@ -33,14 +33,21 @@ import pytest
 
 from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 from modelcypher.core.domain.training.mass_step_size import (
+    CONTROLLER_MODE_BEHAVIORAL_PROBE,
+    CONTROLLER_MODE_STRUCTURAL_OBSERVE,
+    OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
     _EPS_F32,
     _SQRT_EPS_F32,
     apply_sqrt_n_epoch_correction,
     apply_validation_backoff,
+    controller_precision_floor,
     compute_conformal_margin_rate,
     compute_per_step_rates,
     compute_reinforce_budget,
     derive_spectral_ceiling,
+    replay_controller_trace,
+    validate_controller_mode,
+    validate_optimizer_research_mode,
     verify_bounded_gain,
 )
 
@@ -331,6 +338,71 @@ class TestMassMinCombination:
         assert eta_sps == pytest.approx(ceiling)
         assert eta_weyl == pytest.approx(ceiling)
         assert eta_step == pytest.approx(ceiling)
+
+
+class TestControllerTraceReplay:
+    """Tests for research-only controller trace validation and replay."""
+
+    def test_validate_controller_mode_accepts_supported_modes(self):
+        assert validate_controller_mode(CONTROLLER_MODE_STRUCTURAL_OBSERVE) == (
+            CONTROLLER_MODE_STRUCTURAL_OBSERVE
+        )
+        assert validate_controller_mode(CONTROLLER_MODE_BEHAVIORAL_PROBE) == (
+            CONTROLLER_MODE_BEHAVIORAL_PROBE
+        )
+
+    def test_validate_optimizer_mode_rejects_unknown_name(self):
+        with pytest.raises(ValueError):
+            validate_optimizer_research_mode("guessed_optimizer")
+
+    def test_controller_precision_floor_uses_sqrt_eps(self):
+        assert controller_precision_floor(2.0) == pytest.approx(2.0 * _SQRT_EPS_F32)
+
+    def test_replay_controller_trace_reconstructs_learning_rates(self):
+        epoch_metrics = [
+            {
+                "epoch": 1,
+                "controller_trace": {
+                    "step_traces": [
+                        {
+                            "step": 8,
+                            "controller_mode": CONTROLLER_MODE_BEHAVIORAL_PROBE,
+                            "optimizer_research_mode": OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+                            "eta_step": 0.02,
+                            "eta_ceiling": 0.04,
+                            "per_layer_measurements": {
+                                "model.layers.0.self_attn.q_proj.weight": {
+                                    "step_learning_rate": 0.02,
+                                    "decay_scale": 1.5,
+                                    "scale_bound": 1.0,
+                                    "remaining_budget": 1e-6,
+                                },
+                                "model.layers.0.self_attn.k_proj.weight": {
+                                    "step_learning_rate": 0.02,
+                                    "decay_scale": 0.5,
+                                    "scale_bound": 1.0,
+                                    "remaining_budget": 0.25,
+                                },
+                            },
+                        }
+                    ],
+                },
+            },
+        ]
+
+        replay = replay_controller_trace(epoch_metrics, eps=_EPS_F32)
+
+        assert replay is not None
+        assert replay["controller_mode"] == CONTROLLER_MODE_BEHAVIORAL_PROBE
+        assert replay["optimizer_research_mode"] == OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS
+        assert replay["n_replayed_steps"] == 1
+        decision = replay["decisions"][0]
+        assert decision["epoch"] == 1
+        assert decision["step"] == 8
+        assert decision["step_budget_multiplier"] == pytest.approx(0.5)
+        assert decision["learning_rates"]["model.layers.0.self_attn.q_proj.weight"] == pytest.approx(0.02)
+        assert decision["weight_decay_scales"]["model.layers.0.self_attn.k_proj.weight"] == pytest.approx(0.5)
+        assert decision["freeze_layers"] == ["model.layers.0.self_attn.q_proj.weight"]
 
 
 # ===================================================================

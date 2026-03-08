@@ -29,7 +29,7 @@ live in:
   unresolved behavioral failures, and 8B closure is still open.
 - The repository still has a large research surface, but it is now inventoried.
   Current generated counts are `133` scripts, `90` top-level result families,
-  and about `6.15G` under `results/`.
+  and about `3.23G` under `results/`.
 
 The short version is: we have reduced guessing in the control plane more than
 we have proven superiority in the outcome plane.
@@ -135,7 +135,7 @@ Current generated counts from `results/repo_research_inventory/`:
 - `13` scripts with exact name-matched test files under `tests/scripts/` or
   `tests/experiments/`
 - `90` top-level result families under `results/`
-- about `6.15G` stored under `results/`
+- about `3.23G` stored under `results/`
 
 `scripts/INVENTORY.md` is now generated from
 `scripts/report_research_inventory.py`, and the full machine-readable inventory
@@ -153,12 +153,12 @@ The largest current result families are:
 
 | Result family | Size | Share of `results/` |
 | --- | ---: | ---: |
-| `continual_learning` | `1.08G` | `17.6%` |
-| `four_bit_extension` | `1.02G` | `16.5%` |
-| `g5_8b_validation_multiseed` | `0.97G` | `15.8%` |
-| `g5_8b_validation` | `0.89G` | `14.5%` |
+| `four_bit_extension` | `1.02G` | `31.5%` |
+| `pipeline_validation_blindness_350M_t20` | `0.75G` | `23.4%` |
+| `quantization_scale_ab_test` | `0.58G` | `18.1%` |
+| `pipeline_validation` | `0.19G` | `5.8%` |
 
-Those four families account for about `64.4%` of the current `results/`
+Those four families account for about `78.8%` of the current `results/`
 directory. Most cleanup leverage is still concentrated there.
 
 ### "Checkpoint sprawl" is really "results-as-checkpoints"

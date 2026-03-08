@@ -922,7 +922,7 @@ class _MLXTrainingAdapterTrainMixin:
             if optimizer_research_mode == OPTIMIZER_MODE_ADAMW_MATCHED_TRACE:
                 optimizer.learning_rate = mx.array(eta_step)
                 optimizer.update(model, grad)
-                mx.eval(model.parameters(), optimizer.state)
+                mx.eval(model.trainable_parameters(), optimizer.state)
                 (
                     optimizer_first_moment_norm,
                     optimizer_second_moment_norm,

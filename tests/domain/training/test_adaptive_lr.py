@@ -12,6 +12,13 @@ from __future__ import annotations
 import pytest
 
 from modelcypher.backends.mlx_training_adapter import EpochMetrics
+from modelcypher.core.domain.training.mass_step_size import (
+    BehavioralStateMeasurement,
+    CONTROLLER_MODE_BEHAVIORAL_PROBE,
+    ControllerLayerMeasurement,
+    ControllerStepTrace,
+    OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+)
 
 
 class TestEpochMetrics:
@@ -85,6 +92,60 @@ class TestEpochMetrics:
         )
         d = m.to_dict()
         assert d["val_loss"] is None
+
+    def test_to_dict_serializes_controller_trace(self):
+        controller_trace = ControllerStepTrace(
+            step=4,
+            controller_mode=CONTROLLER_MODE_BEHAVIORAL_PROBE,
+            optimizer_research_mode=OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+            objective_components=["ce"],
+            ce_grad_norm=0.7,
+            total_effective_step_norm=0.02,
+            eta_ceiling=0.03,
+            eta_step=0.02,
+            per_layer_measurements={
+                "model.layers.0.self_attn.q_proj.weight": ControllerLayerMeasurement(
+                    parameter_update_norm=0.01,
+                    remaining_budget=0.3,
+                    total_step_fraction=1.0,
+                    scale_bound=1.0,
+                    step_learning_rate=0.02,
+                ),
+            },
+        )
+        behavioral_state = BehavioralStateMeasurement(
+            per_layer_behavioral_transport_norm={
+                "model.layers.0.self_attn.q_proj.weight": 0.5,
+            },
+            margin_mean_delta=-0.1,
+            online_eval_accuracy_delta=-0.05,
+        )
+        m = EpochMetrics(
+            epoch=2,
+            train_loss=1.2,
+            val_loss=1.4,
+            eta=0.02,
+            update_norm=0.3,
+            max_spectral_ratio=0.48,
+            mean_token_entropy=3.9,
+            repetition_rate=0.05,
+            elapsed_seconds=15.0,
+            controller_mode=CONTROLLER_MODE_BEHAVIORAL_PROBE,
+            optimizer_research_mode=OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+            controller_trace={
+                "step_traces": [controller_trace],
+                "behavioral_state": behavioral_state,
+            },
+        )
+
+        payload = m.to_dict()
+
+        assert payload["controller_mode"] == CONTROLLER_MODE_BEHAVIORAL_PROBE
+        assert payload["controller_trace"]["step_traces"][0]["step"] == 4
+        assert payload["controller_trace"]["step_traces"][0]["per_layer_measurements"][
+            "model.layers.0.self_attn.q_proj.weight"
+        ]["step_learning_rate"] == pytest.approx(0.02)
+        assert payload["controller_trace"]["behavioral_state"]["margin_mean_delta"] == pytest.approx(-0.1)
 
 
 class TestAdaptiveLRLogic:
@@ -270,6 +331,10 @@ class TestDatasetTrainResultEpochMetrics:
             dim_final_used_fraction=0.12,
             dim_final_null_fraction=0.88,
             dim_null_recruitment_from_baseline=0.03,
+            controller_mode=CONTROLLER_MODE_BEHAVIORAL_PROBE,
+            optimizer_research_mode=OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+            controller_trace=[{"step_traces": [{"step": 1}]}],
+            offline_replay={"n_replayed_steps": 1},
         )
         d = result.to_dict()
         assert "epoch_metrics" in d
@@ -282,3 +347,7 @@ class TestDatasetTrainResultEpochMetrics:
         assert d["dim_final_used_fraction"] == pytest.approx(0.12)
         assert d["dim_final_null_fraction"] == pytest.approx(0.88)
         assert d["dim_null_recruitment_from_baseline"] == pytest.approx(0.03)
+        assert d["controller_mode"] == CONTROLLER_MODE_BEHAVIORAL_PROBE
+        assert d["optimizer_research_mode"] == OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS
+        assert d["controller_trace"][0]["step_traces"][0]["step"] == 1
+        assert d["offline_replay"]["n_replayed_steps"] == 1
