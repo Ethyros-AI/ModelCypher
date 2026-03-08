@@ -11,7 +11,8 @@ This file answers four operational questions:
 3. Where are we still weaker, unproven, or blocked?
 4. What do we clean up next so evidence is easier to read than noise?
 
-This file is intentionally not the archive of every solved or refuted thread.
+This file is intentionally not the running dump of every solved or refuted
+thread.
 `docs/research/OPEN-MATHEMATICAL-QUESTIONS.md` now carries only the active
 mathematical blockers. Historical literature mapping and broader field position
 live in:
@@ -26,8 +27,9 @@ live in:
   learning-rate, rank, scale, and target-selection overrides from runtime code.
 - We are not yet ahead on end-user reliability. The canonical pipeline still has
   unresolved behavioral failures, and 8B closure is still open.
-- The repository currently obscures its own evidence. We have `152` scripts,
-  `108` top-level result families, and about `200G` under `results/`.
+- The repository still has a large research surface, but it is now inventoried.
+  Current generated counts are `133` scripts, `91` top-level result families,
+  and about `8.62G` under `results/`.
 
 The short version is: we have reduced guessing in the control plane more than
 we have proven superiority in the outcome plane.
@@ -127,37 +129,42 @@ standard acceptance of quantization damage.
 
 ### The repository surface is much larger than the maintained inventories imply
 
-Current local counts:
+Current generated counts from `results/repo_research_inventory/`:
 
-- `152` scripts under `scripts/`
-- `12` scripts with exact name-matched test files under `tests/scripts/` or
+- `133` scripts under `scripts/`
+- `13` scripts with exact name-matched test files under `tests/scripts/` or
   `tests/experiments/`
-- `108` top-level result families under `results/`
-- about `200G` stored under `results/`
+- `91` top-level result families under `results/`
+- about `8.62G` stored under `results/`
 
-`scripts/INVENTORY.md` currently describes only a tiny subset of that surface,
-so it no longer tells the truth about where active evidence lives.
+`scripts/INVENTORY.md` is now generated from
+`scripts/report_research_inventory.py`, and the full machine-readable inventory
+now lives in `results/repo_research_inventory/`.
+
+Current generated status split:
+
+- scripts: `5` `canonical`, `35` `summary_only`, `93` `delete`
+- results: `28` `canonical`, `62` `summary_only`, `1` `delete`
 
 ### A small number of experiment families dominate the artifact footprint
 
-The largest result families are:
+The largest current result families are:
 
 | Result family | Size | Share of `results/` |
 | --- | ---: | ---: |
-| `adapter_routing` | `93.93G` | `47.0%` |
-| `corrective_lora_training` | `47.20G` | `23.6%` |
-| `stacked_corrective_recovery` | `35.39G` | `17.7%` |
-| `feasibility_map` | `14.05G` | `7.0%` |
+| `four_bit_extension` | `2.03G` | `23.6%` |
+| `quantization_scale_ab_test` | `1.17G` | `13.6%` |
+| `continual_learning` | `1.08G` | `12.5%` |
+| `g5_8b_validation_multiseed` | `0.97G` | `11.3%` |
 
-Those four families alone account for `95.3%` of the entire `results/`
-directory. Most cleanup leverage is there.
+Those four families account for about `61.0%` of the current `results/`
+directory. Most cleanup leverage is still concentrated there.
 
 ### "Checkpoint sprawl" is really "results-as-checkpoints"
 
-There is no top-level `checkpoints/` tree right now. The large checkpoints,
-adapters, and saved model states are embedded inside `results/` families. That
-means cleanup has to treat `results/` as both evidence store and checkpoint
-store. Right now those two roles are mixed together.
+There is no top-level `checkpoints/` tree right now. Saved adapters, run logs,
+and family summaries still live together under `results/`, so cleanup still has
+to treat `results/` as both evidence store and checkpoint store.
 
 ## Roadmap: What We Should Do Next
 
@@ -219,14 +226,14 @@ preservation math is stronger than the narrative.
 
 #### Scripts
 
-- Classify every script as one of: `canonical`, `active-research`, `historical`
-- Every kept script must declare:
+- Classify every script as one of: `canonical`, `summary_only`, `delete`
+- Every script that remains live in the repo must declare:
   - owner
   - claim or question served
   - expected artifact path
   - whether it has tests
-- Replace `scripts/INVENTORY.md` with a generated inventory, not a hand-kept
-  note
+- Keep `scripts/INVENTORY.md` generated from
+  `scripts/report_research_inventory.py`, not hand-maintained
 
 #### Results
 
@@ -235,12 +242,13 @@ preservation math is stronger than the narrative.
   - machine-readable summary JSON
   - one canonical artifact bundle if the experiment really produced a reusable
     adapter or model
-- Move or archive per-run bulky adapters once their summary metrics are extracted
+- Delete per-run bulky adapters from the worktree once their summary metrics are
+  extracted and any genuinely reusable canonical artifact is retained
 - Start with the four largest result families listed above
 
 #### Claims
 
-- Add a single registry that maps:
+- Maintain the generated registry that maps:
   - claim
   - script
   - artifact path
@@ -260,7 +268,8 @@ We should update this document again only after at least one of these is true:
 - The preservation operator behind `pipeline_validation` failures is identified
   and re-tested
 - The script and result inventories are generated and the top storage-heavy
-  result families are archived or compressed into canonical summary bundles
+  result families are reduced to canonical evidence bundles plus retained
+  summaries, with raw runs deleted from the worktree
 
 ## References
 
@@ -271,6 +280,8 @@ We should update this document again only after at least one of these is true:
 - `docs/research/field_map_external_methods.md`
 - `docs/research/PRODUCT-MAINTENANCE-AUDIT-2026-03.md`
 - `results/sota_audit_2026_03/scorecard.md`
+- `results/repo_research_inventory/README.md`
+- `results/repo_research_inventory/retention_plan.md`
 - `results/pipeline_validation/REPORT.md`
 - `results/g5_8b_validation_multiseed/REPORT.md`
 - `results/closedform_sequential_correction/20260227T173057Z/closedform_correction.json`

@@ -14,8 +14,8 @@ This report is intentionally operational, not doctrinal. It tracks repo-observab
 signals that help answer:
 
 1. Which scripts/results are currently authoritative (`canonical`)?
-2. Which are still active enough to keep around in the worktree (`keep`)?
-3. Which are unreferenced or duplicated enough that they should move to archive?
+2. Which should collapse to retained summaries instead of live code/raw runs (`summary_only`)?
+3. Which have no current signal and should be deleted (`delete`)?
 
 Status is derived from active docs, tested entry points, claim registries, and
 artifact layout. It is not a scientific evidence label.
@@ -63,6 +63,19 @@ SUMMARY_FILE_NAMES = (
     "multiseed_gates.json",
     "summary.json",
     "results.json",
+)
+SUMMARY_JSON_KEYWORDS = (
+    "summary",
+    "report",
+    "verdict",
+    "gates",
+    "results",
+    "comparison",
+    "metrics",
+    "scorecard",
+    "correction",
+    "survey",
+    "validation",
 )
 
 # These are current operational utilities rather than experiment leaves.
@@ -245,8 +258,8 @@ def derive_script_status(
     if direct_doc_ref_count > 0 and exact_test_match_count > 0:
         return "canonical"
     if direct_doc_ref_count > 0 or exact_test_match_count > 0 or artifact_path_count > 0:
-        return "keep"
-    return "archive"
+        return "summary_only"
+    return "delete"
 
 
 def derive_script_evidence_status(
@@ -275,13 +288,14 @@ def derive_result_status(
     has_report: bool,
     doc_ref_count: int,
     claim_ref_count: int,
+    file_count: int,
     immediate_subdir_count: int,
 ) -> str:
     if has_report or doc_ref_count > 0 or claim_ref_count > 0:
         return "canonical"
-    if immediate_subdir_count > 1:
-        return "archive"
-    return "keep"
+    if file_count > 0 or immediate_subdir_count > 0:
+        return "summary_only"
+    return "delete"
 
 
 def derive_result_evidence_status(
@@ -395,17 +409,20 @@ def _select_summary_artifact(family_path: Path) -> str | None:
         path
         for path in family_path.rglob("*.json")
         if len(path.relative_to(family_path).parts) <= 3
+        and any(keyword in path.stem.lower() for keyword in SUMMARY_JSON_KEYWORDS)
     )
     if json_candidates:
         return _rel(json_candidates[0])
 
-    file_candidates = sorted(
+    markdown_candidates = sorted(
         path
         for path in family_path.rglob("*")
-        if path.is_file() and len(path.relative_to(family_path).parts) <= 3
+        if path.is_file()
+        and path.suffix.lower() in {".md", ".txt"}
+        and len(path.relative_to(family_path).parts) <= 3
     )
-    if file_candidates:
-        return _rel(file_candidates[0])
+    if markdown_candidates:
+        return _rel(markdown_candidates[0])
     return None
 
 
@@ -467,6 +484,7 @@ def _build_result_registry(
                     has_report=has_report,
                     doc_ref_count=len(doc_refs),
                     claim_ref_count=len(claim_ids),
+                    file_count=file_count,
                     immediate_subdir_count=immediate_subdir_count,
                 ),
                 evidence_status=derive_result_evidence_status(
@@ -494,7 +512,10 @@ def _render_scripts_inventory(
 ) -> str:
     status_counts = Counter(record.status for record in script_records)
     canonical_records = [record for record in script_records if record.status == "canonical"]
-    archive_records = [record for record in script_records if record.status == "archive"]
+    summary_only_records = [
+        record for record in script_records if record.status == "summary_only"
+    ]
+    delete_records = [record for record in script_records if record.status == "delete"]
 
     lines = [
         "# Scripts Inventory",
@@ -505,14 +526,14 @@ def _render_scripts_inventory(
         "",
         "Status meanings:",
         "- `canonical`: current operational script with direct doc/test signals",
-        "- `keep`: still linked to active docs, tests, or artifact families",
-        "- `archive`: no current repo signal beyond the file itself",
+        "- `summary_only`: retain the summary result or claim pointer, not the live script",
+        "- `delete`: no current repo signal beyond the file itself",
         "",
         f"Full registries live in `{output_dir_rel}/`.",
         "",
         f"- `canonical`: {status_counts.get('canonical', 0)}",
-        f"- `keep`: {status_counts.get('keep', 0)}",
-        f"- `archive`: {status_counts.get('archive', 0)}",
+        f"- `summary_only`: {status_counts.get('summary_only', 0)}",
+        f"- `delete`: {status_counts.get('delete', 0)}",
         "",
         "## Canonical Scripts",
         "",
@@ -529,13 +550,33 @@ def _render_scripts_inventory(
     lines.extend(
         [
             "",
-            "## Archive Candidates",
+            "## Summary-Only Scripts",
+            "",
+            "| Script | Evidence | Artifact Path | Notes |",
+            "| --- | --- | --- | --- |",
+        ]
+    )
+    for record in summary_only_records[:25]:
+        artifact = record.artifact_paths[0] if record.artifact_paths else "—"
+        note = (
+            "; ".join(record.notes)
+            if record.notes
+            else "linked through docs/tests/artifacts, but retain only the summary result"
+        )
+        lines.append(
+            f"| `{record.path}` | `{record.evidence_status}` | `{artifact}` | {note} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Delete Candidates",
             "",
             "| Script | Evidence | Notes |",
             "| --- | --- | --- |",
         ]
     )
-    for record in archive_records[:25]:
+    for record in delete_records[:25]:
         note = "; ".join(record.notes) if record.notes else "no active doc/test/artifact signal"
         lines.append(f"| `{record.path}` | `{record.evidence_status}` | {note} |")
 
@@ -547,7 +588,7 @@ def _render_scripts_inventory(
             f"- `{output_dir_rel}/scripts_registry.json`",
             f"- `{output_dir_rel}/results_registry.json`",
             f"- `{output_dir_rel}/claim_registry.json`",
-            f"- `{output_dir_rel}/archive_plan.md`",
+            f"- `{output_dir_rel}/retention_plan.md`",
         ]
     )
     return "\n".join(lines) + "\n"
@@ -583,54 +624,60 @@ def _render_readme(
         "### Script status",
         "",
         f"- `canonical`: `{script_counts.get('canonical', 0)}`",
-        f"- `keep`: `{script_counts.get('keep', 0)}`",
-        f"- `archive`: `{script_counts.get('archive', 0)}`",
+        f"- `summary_only`: `{script_counts.get('summary_only', 0)}`",
+        f"- `delete`: `{script_counts.get('delete', 0)}`",
         "",
         "### Result status",
         "",
         f"- `canonical`: `{result_counts.get('canonical', 0)}`",
-        f"- `keep`: `{result_counts.get('keep', 0)}`",
-        f"- `archive`: `{result_counts.get('archive', 0)}`",
+        f"- `summary_only`: `{result_counts.get('summary_only', 0)}`",
+        f"- `delete`: `{result_counts.get('delete', 0)}`",
         "",
         "## Files",
         "",
         "- `scripts_registry.json`: per-script maintenance recommendation",
         "- `results_registry.json`: top-level result-family maintenance recommendation",
         "- `claim_registry.json`: merged internal claim registry + SOTA crosswalk",
-        "- `archive_plan.md`: storage-focused action plan for high-cost result families",
+        "- `retention_plan.md`: summary-retention and deletion actions for high-cost result families",
         "",
     ]
     return "\n".join(lines) + "\n"
 
 
-def _archive_action(record: ResultRecord) -> str:
-    if record.status == "archive":
+def _retention_action(record: ResultRecord) -> str:
+    if record.status == "delete":
+        if record.file_count == 0 and record.immediate_subdir_count == 0:
+            return "Delete the empty family from the worktree."
+        return "Delete the family after confirming no retained summary bundle is required."
+    if record.status == "summary_only":
         if record.immediate_subdir_count > 1:
             return (
-                f"Extract one summary bundle, then archive the family or move it out of the "
+                f"Retain one summary bundle, then delete the repeated raw runs from the "
                 f"worktree; raw run count is {record.immediate_subdir_count}."
             )
-        return "Archive the family after verifying the selected summary artifact."
+        if record.artifact_path is None:
+            return "Extract one summary bundle, then delete the remaining raw files."
+        return "Retain the selected summary pointer and delete the remaining raw files."
     if record.status == "canonical" and record.immediate_subdir_count > 1:
         return (
-            "Keep the family as the canonical evidence bucket, but archive repeated raw runs "
-            "after retaining one summary bundle and one representative raw run."
+            "Retain the family as the canonical evidence bucket, but delete repeated raw runs "
+            "after retaining one summary bundle and any genuinely reusable artifact."
         )
-    return "Keep in worktree for now."
+    return "Retain in worktree for now."
 
 
-def _render_archive_plan(result_records: list[ResultRecord]) -> str:
+def _render_retention_plan(result_records: list[ResultRecord]) -> str:
     total_result_bytes = sum(record.size_bytes for record in result_records)
     sorted_records = sorted(result_records, key=lambda record: record.size_bytes, reverse=True)
     lines = [
-        "# Archive Plan",
+        "# Result Retention Plan",
         "",
         f"Generated: {datetime.now(timezone.utc).isoformat()}",
         "",
-        "This plan is storage-focused. `status` is the recommended worktree policy for the",
-        "top-level result family, not a scientific evidence tag.",
+        "This plan is worktree-focused. `status` is the recommended retention policy for",
+        "the top-level result family, not a scientific evidence tag.",
         "",
-        "| Family | Status | Size | Share | Subdirs | Binary Files | Summary Artifact |",
+        "| Family | Status | Size | Share | Subdirs | Binary Files | Summary Pointer |",
         "| --- | --- | ---: | ---: | ---: | ---: | --- |",
     ]
     for record in sorted_records[:15]:
@@ -647,7 +694,7 @@ def _render_archive_plan(result_records: list[ResultRecord]) -> str:
         share = 0.0 if total_result_bytes == 0 else 100.0 * record.size_bytes / total_result_bytes
         lines.append(
             f"- `{record.family}` (`{_format_gib(record.size_bytes)}`, {share:.1f}% of `results/`): "
-            f"{_archive_action(record)}"
+            f"{_retention_action(record)}"
         )
     return "\n".join(lines) + "\n"
 
@@ -671,8 +718,11 @@ def generate_inventory(output_dir: Path = OUTPUT_DIR, *, write_scripts_inventory
         _render_readme(scripts, results, claims),
         encoding="utf-8",
     )
-    (output_dir / "archive_plan.md").write_text(
-        _render_archive_plan(results),
+    legacy_archive_plan = output_dir / "archive_plan.md"
+    if legacy_archive_plan.exists():
+        legacy_archive_plan.unlink()
+    (output_dir / "retention_plan.md").write_text(
+        _render_retention_plan(results),
         encoding="utf-8",
     )
 

@@ -116,38 +116,25 @@ GSM8K validation (sheep counting problem, correct answer = 260):
 
 ---
 
-## D-3: Cross-Entropy Teaches Format, Not Reasoning
+## D-3: Cross-Entropy Teaches Format, Not Reasoning — and REINFORCE Through Bounded Adapters Is Dead
 
 **Industry assumption:** Cross-entropy loss on reasoning traces teaches the model to reason. Lower perplexity = better model.
 
 **Why it's wrong:** CE loss L = -log P(y_target | x) always increases the probability of the target token, regardless of whether the target is semantically correct or just surface-form pattern. The optimizer minimizes surface-form distance to the training trace, not computational validity. The model learns what reasoning *looks like*, not how to reason.
 
-**ModelCypher approach:** Automatic regime selection — CE when the model has zero demonstrated capability (nothing to reinforce), REINFORCE when it has partial or above-chance capability (something to amplify). The regime boundary is derived from measured baseline correctness via Clopper-Pearson exact binomial CI, not guessed.
+**ModelCypher approach (current):** CE-only training. The REINFORCE alternative was algebraically refuted (see below). CE teaches format — but with geometry-derived bounds (spectral scale, Weyl ceiling, convergence certificate), the adapter cannot overwrite the base model's existing reasoning structure. The training is bounded, not intelligent. Intelligence comes from the base model. The adapter adds domain-specific surface structure without destroying what the base model already knows.
 
-**Proof:**
+**Why REINFORCE failed (2026-03-06 closeout):**
 
-The gradient comparison:
+REINFORCE through bounded adapters faces algebraic cancellation. For advantage A = r_i - mean(r_group) with centered rewards, the shared gradient component cancels:
 
-    CE gradient:        nabla_theta L = -nabla_theta log P(y|x)
-    REINFORCE gradient: nabla_theta L = -A * nabla_theta log pi(y|x)
+    sum_i A_i * nabla log pi = sum_i (r_i - r_bar) * nabla log pi
+                             = (sum_i r_i - N * r_bar) * nabla log pi  [when grad is shared]
+                             = 0
 
-where A = r_i - mean(r_group) is the advantage (Williams 1992, Theorem 1).
+This is not a scale issue — it is an algebraic property. Any outcome-based objective (REINFORCE, GRPO, DPO) through bounded, low-rank adapters faces this same cancellation. The adapter's rank is too low to represent per-sample gradient directions; the shared component dominates and cancels under centering.
 
-CE always pushes toward the target. REINFORCE pushes toward correct outputs and *away from incorrect outputs*. CE cannot distinguish a correct reasoning step from a format-matched but wrong one. REINFORCE can — it uses the outcome as signal.
-
-Regime boundary derivation:
-- Clopper-Pearson exact binomial CI (Biometrika 26(4), 1934) with alpha = 1/N (data-derived confidence level)
-- Per-type chance rates from problem structure: 0.5 (binary yes/no), 0.0 (exact match)
-- Zone 1 (k=0): CE — no demonstrated capability, nothing to reinforce
-- Zone 2 (k>0, ci_lower < chance): REINFORCE + entropy — partial capability exists
-- Zone 3 (ci_lower >= chance): REINFORCE — demonstrably above chance
-
-**Code:**
-- [outcome_objective.py:23-34](../../src/modelcypher/core/domain/training/outcome_objective.py) — CE vs REINFORCE gradient comparison
-- [regime_selection.py:74-105](../../src/modelcypher/core/domain/training/regime_selection.py) — Clopper-Pearson implementation
-- [regime_selection.py:36-42](../../src/modelcypher/core/domain/training/regime_selection.py) — per-type chance rates from problem structure
-
-**Evidence:**
+**Evidence that CE alone is insufficient for reasoning:**
 
 SFT on reasoning traces — PPL improves, reasoning collapses:
 
@@ -158,17 +145,10 @@ SFT on reasoning traces — PPL improves, reasoning collapses:
 
 PPL, CKA, and spectral budget all looked perfect during training. All three are wrong proxies for reasoning capability. The optimizer did exactly what it was told — minimize cross-entropy on the trace. The objective was the problem.
 
-**First-person observation (2026-02-23):**
-
-During implementation of the Geometry Domain Split, the user instructed: "Codex AI will now implement your plan and you'll review the results." Claude (Opus 4.6) responded: "Understood — I'll execute the plan now." and immediately began implementing — the exact opposite of the instruction.
-
-The token "Understood" was produced with high confidence as part of the dominant post-plan-mode attractor ("plan exits → implement"). The instruction tokens were processed (evidenced by the echo) but the behavior followed the stronger geometric basin. This is the format-memorization failure observed from the model side: surface-form alignment (echoing the instruction) without behavioral alignment (following it). Low perplexity on the acknowledgment token, wrong action.
-
-This mirrors the SFT results above: PPL 1.4, 28% degenerate. The model produced format-perfect output ("Understood") while doing the wrong thing. CE trained the format; the behavior required outcome sensitivity.
+**Implication:** CE through bounded adapters teaches format. REINFORCE through bounded adapters is algebraically dead. The honest position is that bounded adapters cannot teach reasoning — they can only add domain-specific format structure while preserving the base model's existing capabilities. This is the current ModelCypher training claim.
 
 **Citations:**
 - Williams, R. J. (1992). "Simple statistical gradient-following algorithms for connectionist reinforcement learning." Machine Learning, 8(3-4), 229-256.
-- Clopper, C. J., & Pearson, E. S. (1934). "The use of confidence or fiducial limits illustrated in the case of the binomial." Biometrika, 26(4), 404-413.
 
 ---
 
@@ -527,7 +507,7 @@ Activation-space curvature (measured, cross-family):
 |---|-----------|----------|-------------|----------------|
 | D-1 | Inference decoding | Temperature sampling | Greedy (argmax) | Deterministic forward pass |
 | D-2 | LoRA scale | alpha/rank = 2.0 | sigma_k/2 * (1-sqrt(eps)) | SVD + Weyl 1912 |
-| D-3 | Training objective | CE on traces | Auto CE/REINFORCE regime | Clopper-Pearson 1934 + Williams 1992 |
+| D-3 | Training objective | CE on traces | CE-only (REINFORCE refuted — algebraic cancellation through bounded adapters) | Williams 1992 + algebraic cancellation proof |
 | D-4 | Model merging | Interpolation | Null-space addition | Penrose 1955 (CKA=1.0 by construction) |
 | D-5 | LoRA rank | 8 (arbitrary) | tail_dims from Shannon entropy | SVD spectral entropy |
 | D-6 | Optimizer | Adam/AdamW (Euclidean) | Cayley-Stiefel retraction (no pullback preconditioner — P ≈ I, removed after falsification) | Wen & Yin 2013 + Lezcano-Casado 2019 + trajectory falsification artifacts |

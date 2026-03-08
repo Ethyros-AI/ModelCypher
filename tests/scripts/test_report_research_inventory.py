@@ -57,15 +57,15 @@ def test_generate_inventory_classifies_scripts_results_and_claims(tmp_path, monk
 
     _write(repo_root / "scripts/canonical_script.py", "print('canonical')\n")
     _write(repo_root / "scripts/artifact_only.py", "print('artifact')\n")
-    _write(repo_root / "scripts/unlinked.py", "print('archive')\n")
+    _write(repo_root / "scripts/unlinked.py", "print('delete')\n")
     _write(repo_root / "scripts/report_doctrine_audit.py", "print('doctrine')\n")
 
     _write(repo_root / "tests/scripts/test_canonical_script.py", "def test_placeholder():\n    pass\n")
 
     _write(repo_root / "results/canonical_family/REPORT.md", "# report\n")
     _write(repo_root / "results/artifact_only/summary.json", "{}\n")
-    _write(repo_root / "results/archive_family/run1/model.safetensors", "a")
-    _write(repo_root / "results/archive_family/run2/model.safetensors", "b")
+    _write(repo_root / "results/summary_family/run1/model.safetensors", "a")
+    _write(repo_root / "results/summary_family/run2/model.safetensors", "b")
     _write(repo_root / "results/claim_family/run.json", "{}\n")
 
     _write(
@@ -134,16 +134,16 @@ def test_generate_inventory_classifies_scripts_results_and_claims(tmp_path, monk
     scripts_by_path = {record["path"]: record for record in scripts_registry}
     assert scripts_by_path["scripts/canonical_script.py"]["status"] == "canonical"
     assert scripts_by_path["scripts/canonical_script.py"]["evidence_status"] == "tested+artifact"
-    assert scripts_by_path["scripts/artifact_only.py"]["status"] == "keep"
+    assert scripts_by_path["scripts/artifact_only.py"]["status"] == "summary_only"
     assert scripts_by_path["scripts/artifact_only.py"]["artifact_paths"] == ["results/artifact_only"]
-    assert scripts_by_path["scripts/unlinked.py"]["status"] == "archive"
+    assert scripts_by_path["scripts/unlinked.py"]["status"] == "delete"
     assert scripts_by_path["scripts/report_doctrine_audit.py"]["status"] == "canonical"
 
     results_by_family = {record["family"]: record for record in results_registry}
     assert results_by_family["canonical_family"]["status"] == "canonical"
     assert results_by_family["claim_family"]["status"] == "canonical"
-    assert results_by_family["archive_family"]["status"] == "archive"
-    assert results_by_family["archive_family"]["immediate_subdir_count"] == 2
+    assert results_by_family["summary_family"]["status"] == "summary_only"
+    assert results_by_family["summary_family"]["immediate_subdir_count"] == 2
 
     assert claim_registry[0]["claim_id"] == "CR-TEST-001"
     assert claim_registry[0]["classification"] == "PUSH_FURTHER"
@@ -153,5 +153,5 @@ def test_generate_inventory_classifies_scripts_results_and_claims(tmp_path, monk
     assert "This file is generated" in scripts_inventory
     assert "`scripts/canonical_script.py`" in scripts_inventory
 
-    archive_plan = (output_dir / "archive_plan.md").read_text(encoding="utf-8")
-    assert "`archive_family`" in archive_plan
+    retention_plan = (output_dir / "retention_plan.md").read_text(encoding="utf-8")
+    assert "`summary_family`" in retention_plan
