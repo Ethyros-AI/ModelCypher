@@ -439,7 +439,6 @@ def train_nb_lora(
     model_path: str,
     output_dir: Path,
     seed: int = 42,
-    max_iters: int | None = None,
 ) -> dict:
     """Train NB-LoRA using geometry-derived everything. Returns training metadata."""
     import mlx.core as mx
@@ -449,19 +448,15 @@ def train_nb_lora(
     initialize_default_backend()
     service = get_dataset_training_service()
 
-    logger.info(f"  NB-LoRA: training (geometry-derived, seed={seed}, "
-                f"max_iters={max_iters or 'certificate'})...")
+    logger.info(f"  NB-LoRA: training (geometry-derived, seed={seed})...")
     t0 = time.time()
-    kwargs = dict(
+    result = service.train_from_dataset(
         model_path=str(model_path),
         dataset_path=str(TRAIN_DATA),
         output_path=str(output_dir),
         eval_dataset_path=str(VAL_DATA),
         seed=seed,
     )
-    if max_iters is not None:
-        kwargs["max_iters_cap"] = max_iters
-    result = service.train_from_dataset(**kwargs)
     training_time = time.time() - t0
 
     result_dict = result.to_dict()
@@ -897,6 +892,11 @@ def run_model_experiment(
                 seed_result["tuned_lora"] = {"error": str(e)}
 
         # ---- NB-LoRA ----
+        # NB-LoRA always runs to convergence certificate (no iteration cap).
+        # Budget-matching by iteration count is not meaningful: NB-LoRA and
+        # standard LoRA use different batch sizes, gradient accumulation,
+        # and stopping criteria.  The valid comparison is convergence-to-
+        # convergence: both arms run until their natural stopping point.
         logger.info(f"\n--- [{model_name}] NB-LoRA (seed={seed}) ---")
         nb_out = seed_dir / "nb_lora"
         try:
@@ -904,7 +904,6 @@ def run_model_experiment(
                 model_path=model_path,
                 output_dir=nb_out,
                 seed=seed,
-                max_iters=iters,  # budget-matched with standard arm
             )
             # Commensurable val_loss: same operator as standard arm
             logger.info("  Commensurable val_loss eval (NB-LoRA)...")
