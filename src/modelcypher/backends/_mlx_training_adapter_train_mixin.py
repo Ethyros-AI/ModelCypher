@@ -123,6 +123,9 @@ class _MLXTrainingAdapterTrainMixin:
         # and micro_batch_size = ceil(batch_size / grad_accum_steps) is used
         # for forward/backward passes. Mathematically equivalent.
         grad_accum_steps: int = 1,
+        # AdamW-decoupled weight decay: θ -= lr * λ * θ per step.
+        # 0.0 = no decay (default). Research variable — isolated for testing.
+        weight_decay: float = 0.0,
     ) -> tuple[list[tuple[int, float, float]], str, list[EpochMetrics]]:
         """Train with Cayley-Stiefel retraction, Weyl adapter-saturation monitoring,
         and geometric stopping.
@@ -721,7 +724,7 @@ class _MLXTrainingAdapterTrainMixin:
                 learning_rate=current_eta,
                 betas=[fisher_state.beta1, fisher_state.beta2],
                 eps=_SQRT_EPS_F32,
-                weight_decay=0.0,
+                weight_decay=weight_decay,
                 bias_correction=True,
             )
             optimizer.init(model.trainable_parameters())
@@ -968,12 +971,21 @@ class _MLXTrainingAdapterTrainMixin:
                 ) = _summarize_adamw_state()
             else:
                 eta_arr = mx.array(eta_step)
+                wd_factor = mx.array(1.0 - eta_step * weight_decay) if weight_decay > 0 else None
                 current_params = dict(mlx_flatten(model.trainable_parameters()))
-                updated_params = [
-                    (k, current_params[k] - eta_arr * update_direction[k])
-                    for k in current_params
-                    if k in update_direction
-                ]
+                if wd_factor is not None:
+                    # AdamW-decoupled weight decay: θ = (1 - lr*λ)*θ - lr*d
+                    updated_params = [
+                        (k, wd_factor * current_params[k] - eta_arr * update_direction[k])
+                        for k in current_params
+                        if k in update_direction
+                    ]
+                else:
+                    updated_params = [
+                        (k, current_params[k] - eta_arr * update_direction[k])
+                        for k in current_params
+                        if k in update_direction
+                    ]
                 model.load_weights(updated_params, strict=False)
                 mx.eval(*[v for _, v in mlx_flatten(model.trainable_parameters())])
                 optimizer_first_moment_norm = fisher_first_moment_norm

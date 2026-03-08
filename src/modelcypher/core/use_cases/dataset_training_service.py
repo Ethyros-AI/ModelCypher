@@ -441,6 +441,8 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         enable_offline_replay: bool = True,
         # External gradient hook — composed with any internal format-projection hook
         gradient_hook: "Callable | None" = None,
+        # AdamW-decoupled weight decay (research variable, default 0.0)
+        weight_decay: float = 0.0,
     ) -> DatasetTrainResult:
         """Train an NB-LoRA adapter from a JSONL dataset.
 
@@ -1441,6 +1443,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             controller_mode=controller_mode,
             optimizer_research_mode=optimizer_research_mode,
             baseline_margins=baseline_margins,
+            weight_decay=weight_decay,
         )
         training_time_seconds = time.time() - train_start
 

@@ -101,7 +101,7 @@ class DiagonalFisherState:
         step_count: Number of update steps applied.
         beta2: EMA decay rate for squared gradients.
         beta1: EMA decay rate for gradients (first moment).
-            0 = no momentum (backward compatible). Derived from
+            0 = no momentum (no-momentum default). Derived from
             dataset size via ``derive_beta1()``.
     """
 
@@ -155,7 +155,7 @@ def init_fisher_state(
         backend: Compute backend.
         beta2: EMA decay rate for second moment. Default 0.999 (IEEE 754).
         n_batches_per_epoch: Batches per epoch for β₁ derivation.
-            0 = no first moment (backward compatible).
+            0 = no first moment (no-momentum default).
 
     Returns:
         DiagonalFisherState with v and m initialized to zeros.
@@ -225,7 +225,7 @@ def precondition_gradient(
     """Precondition gradient using bias-corrected first and second moments.
 
     When β₁ > 0: d[k] = m̂[k] / (√v̂[k] + ε)  (Adam-equivalent direction)
-    When β₁ = 0: d[k] = g[k] / (√v̂[k] + ε)  (backward compatible)
+    When β₁ = 0: d[k] = g[k] / (√v̂[k] + ε)  (no-momentum default)
 
     Where m̂ = m / (1 - β₁^t) and v̂ = v / (1 - β₂^t) are bias-corrected
     moment estimates (Kingma & Ba 2015).

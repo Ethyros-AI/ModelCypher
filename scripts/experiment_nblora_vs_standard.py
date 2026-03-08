@@ -344,7 +344,7 @@ def train_standard_lora(
         lr_value = optim.cosine_decay(init=cfg["lr"], decay_steps=iters)
 
     if cfg["optimizer"] == "adamw":
-        opt = optim.AdamW(learning_rate=lr_value)
+        opt = optim.AdamW(learning_rate=lr_value, weight_decay=0.0)
     else:
         opt = optim.Adam(learning_rate=lr_value)
 
@@ -360,6 +360,19 @@ def train_standard_lora(
         training_callback=loss_capture,
     )
     training_time = time.time() - t0
+
+    # Force sync: ensure adapter weights are flushed to disk before we
+    # delete the model.  mlx-lm train() uses mx.save_safetensors which
+    # is synchronous in current MLX, but the print messages may appear
+    # out of order.
+    adapter_file_check = output_dir / "adapters.safetensors"
+    if not adapter_file_check.exists():
+        # If train() hasn't saved yet (shouldn't happen with sync saves,
+        # but guard against it), save manually.
+        from mlx.utils import tree_flatten as tf
+        adapter_weights = dict(tf(model.trainable_parameters()))
+        mx.save_safetensors(str(adapter_file_check), adapter_weights)
+        logger.warning("  Manually saved adapter weights (sync guard)")
 
     spectral_info = measure_standard_lora_spectral_norms(model, cfg["scale"])
 
@@ -439,6 +452,7 @@ def train_nb_lora(
     model_path: str,
     output_dir: Path,
     seed: int = 42,
+    weight_decay: float = 0.0,
 ) -> dict:
     """Train NB-LoRA using geometry-derived everything. Returns training metadata."""
     import mlx.core as mx
@@ -448,7 +462,7 @@ def train_nb_lora(
     initialize_default_backend()
     service = get_dataset_training_service()
 
-    logger.info(f"  NB-LoRA: training (geometry-derived, seed={seed})...")
+    logger.info(f"  NB-LoRA: training (geometry-derived, seed={seed}, wd={weight_decay})...")
     t0 = time.time()
     result = service.train_from_dataset(
         model_path=str(model_path),
@@ -456,6 +470,7 @@ def train_nb_lora(
         output_path=str(output_dir),
         eval_dataset_path=str(VAL_DATA),
         seed=seed,
+        weight_decay=weight_decay,
     )
     training_time = time.time() - t0
 
@@ -494,7 +509,10 @@ def evaluate_val_loss(
     import mlx.nn as nn
     from mlx_lm import load as mlx_load
 
-    model, tokenizer = mlx_load(str(model_path), adapter_path=adapter_path)
+    if adapter_path is not None:
+        model, tokenizer = mlx_load(str(model_path), adapter_path=adapter_path)
+    else:
+        model, tokenizer = mlx_load(str(model_path))
     model.eval()
 
     val_samples = load_jsonl(val_data_path)
@@ -662,14 +680,31 @@ def run_grid_search(
 # ---------------------------------------------------------------------------
 # Multi-seed aggregation
 # ---------------------------------------------------------------------------
-def extract_primary_metric(task_scores: dict) -> tuple[str, float] | None:
-    """Find the primary metric for a task's eval scores."""
+def _stderr_key(metric_key: str) -> str:
+    """Derive the lm-eval stderr key from a metric key.
+
+    'acc_norm,none' -> 'acc_norm_stderr,none'
+    'exact_match,strict-match' -> 'exact_match_stderr,strict-match'
+    """
+    parts = metric_key.split(",", 1)
+    if len(parts) == 2:
+        return f"{parts[0]}_stderr,{parts[1]}"
+    return f"{metric_key}_stderr"
+
+
+def extract_primary_metric(task_scores: dict) -> tuple[str, float, float] | None:
+    """Find the primary metric for a task's eval scores.
+
+    Returns (metric_name, value, stderr).
+    """
     for m in ["acc_norm,none", "acc,none", "exact_match,strict-match"]:
         if m in task_scores:
-            return m, task_scores[m]
+            se = task_scores.get(_stderr_key(m), 0.0)
+            return m, task_scores[m], se
     for k, v in task_scores.items():
-        if "acc" in k or "exact" in k:
-            return k, v
+        if ("acc" in k or "exact" in k) and "stderr" not in k:
+            se = task_scores.get(_stderr_key(k), 0.0)
+            return k, v, se
     return None
 
 
@@ -683,24 +718,38 @@ def aggregate_arm_evals(
         base_result = extract_primary_metric(baseline_scores.get(task, {}))
         if base_result is None:
             continue
-        metric_name, base_val = base_result
+        metric_name, base_val, base_stderr = base_result
+        se_key = _stderr_key(metric_name)
 
         seed_vals = []
+        seed_stderrs = []
         for eval_scores in per_seed_evals:
             task_scores = eval_scores.get(task, {})
             if metric_name in task_scores:
                 seed_vals.append(task_scores[metric_name])
+                seed_stderrs.append(task_scores.get(se_key, 0.0))
 
         if seed_vals:
+            n = len(seed_vals)
             mean_val = statistics.mean(seed_vals)
-            std_val = statistics.stdev(seed_vals) if len(seed_vals) > 1 else 0.0
+            std_val = statistics.stdev(seed_vals) if n > 1 else 0.0
+            # SE of the arm's mean estimate:
+            # - n > 1: std/sqrt(n) captures both training and eval variance
+            # - n == 1: fall back to lm-eval stderr (eval sampling noise)
+            if n > 1:
+                se_mean = std_val / math.sqrt(n)
+            else:
+                se_mean = seed_stderrs[0] if seed_stderrs else 0.0
             agg[task] = {
                 "metric": metric_name,
                 "baseline": base_val,
+                "baseline_stderr": base_stderr,
                 "mean": mean_val,
                 "std": std_val,
-                "n_seeds": len(seed_vals),
+                "se_mean": se_mean,
+                "n_seeds": n,
                 "per_seed": seed_vals,
+                "per_seed_stderr": seed_stderrs,
                 "delta_vs_baseline": mean_val - base_val,
             }
 
@@ -719,6 +768,7 @@ def run_model_experiment(
     skip_eval: bool = False,
     skip_inference: bool = False,
     skip_grid: bool = False,
+    weight_decay: float = 0.0,
 ) -> dict:
     """Run full three-arm comparison for one model across multiple seeds."""
     model_path = str(model_spec["path"])
@@ -739,6 +789,7 @@ def run_model_experiment(
         "model_path": model_path,
         "seeds": seeds,
         "quick": quick,
+        "weight_decay": weight_decay,
         "timestamp": datetime.now().isoformat(),
     }
     eval_limit = 50 if quick else None
@@ -904,6 +955,7 @@ def run_model_experiment(
                 model_path=model_path,
                 output_dir=nb_out,
                 seed=seed,
+                weight_decay=weight_decay,
             )
             # Commensurable val_loss: same operator as standard arm
             logger.info("  Commensurable val_loss eval (NB-LoRA)...")
@@ -1128,15 +1180,10 @@ def build_comparison(
     }
 
     # Head-to-head: NB vs Standard, NB vs Tuned
-    # Tie band derived from evaluation sample size.  For lm-eval with N
-    # samples per task, the standard error of an accuracy estimate is
-    # SE = √(p(1-p)/N).  Worst case p=0.5: SE_max = 1/(2√N).  Two
-    # independent estimates differ by < 2×SE with ~95% confidence.
-    # Default limit=50 (quick) or full (~500), so tie_band = 1/√N.
-    # This replaces the former arbitrary 0.005.
-    eval_n = 50 if quick else 500  # approximate per-task sample count
-    tie_band = 1.0 / math.sqrt(eval_n)  # ~0.141 (quick) or ~0.045 (full)
-
+    # Per-task tie band from lm-eval stderr.  Each arm's mean has SE
+    # (se_mean) from aggregate_arm_evals.  The difference of two
+    # independent estimates has SE_diff = sqrt(se1² + se2²).  The 95%
+    # CI for the difference is 2 × SE_diff.
     for opponent_name, opponent_agg in [
         ("standard_lora", std_agg),
         ("tuned_lora", tuned_agg),
@@ -1145,13 +1192,22 @@ def build_comparison(
         opponent_wins = 0
         ties = 0
         deltas = []
+        per_task_bands = {}
 
         for task in BENCHMARK_TASKS:
             if task in nb_agg and task in opponent_agg:
                 nb_mean = nb_agg[task]["mean"]
                 opp_mean = opponent_agg[task]["mean"]
+                nb_se = nb_agg[task]["se_mean"]
+                opp_se = opponent_agg[task]["se_mean"]
+                tie_band = 2.0 * math.sqrt(nb_se**2 + opp_se**2)
                 delta = nb_mean - opp_mean
                 deltas.append(delta)
+                per_task_bands[task] = {
+                    "nb_se": nb_se,
+                    "opp_se": opp_se,
+                    "tie_band": tie_band,
+                }
                 if abs(delta) < tie_band:
                     ties += 1
                 elif delta > 0:
@@ -1166,8 +1222,8 @@ def build_comparison(
             "ties": ties,
             "mean_delta": _safe_mean(deltas),
             "total_tasks": len(deltas),
-            "tie_band": tie_band,
-            "tie_band_derivation": f"1/sqrt({eval_n}) = {tie_band:.4f}",
+            "tie_band_derivation": "per-task: 2*sqrt(se_nb² + se_opp²)",
+            "per_task_tie_bands": per_task_bands,
         }
 
     # Grid search info
@@ -1356,6 +1412,12 @@ def main():
         action="store_true",
         help="Skip grid search (omit tuned arm)",
     )
+    parser.add_argument(
+        "--weight-decay",
+        type=float,
+        default=0.0,
+        help="AdamW-decoupled weight decay for NB-LoRA arm (default: 0.0)",
+    )
     args = parser.parse_args()
 
     # Quick mode: 1 seed
@@ -1422,6 +1484,7 @@ def main():
                 skip_eval=args.skip_eval,
                 skip_inference=args.skip_inference,
                 skip_grid=args.skip_grid,
+                weight_decay=args.weight_decay,
             )
             all_results[spec["name"]] = result
         except Exception:
