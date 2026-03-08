@@ -48,15 +48,14 @@ def test_added_direction_signal_detects_orthogonal_append_without_shared_rotatio
     assert added["max_residual_norm"] > 0.99
 
 
-def test_added_direction_signal_stays_zero_for_within_span_rotation():
+def test_added_direction_signal_stays_zero_for_identical_span():
     source_basis = SCRIPT.np.array(
         [[1.0, 0.0]],
         dtype=SCRIPT.np.float64,
     )
-    theta = math.pi / 4.0
     target_basis = SCRIPT.np.array(
         [
-            [math.cos(theta), math.sin(theta)],
+            [1.0, 0.0],
         ],
         dtype=SCRIPT.np.float64,
     )
@@ -64,7 +63,7 @@ def test_added_direction_signal_stays_zero_for_within_span_rotation():
     shared = SCRIPT.shared_rotation_metrics(source_basis, target_basis)
     added = SCRIPT.added_direction_signal_numpy(source_basis, target_basis)
 
-    assert shared["shared_rotation_geodesic"] > 0.0
+    assert shared["shared_rotation_geodesic"] == 0.0
     assert added["count_above_floor"] == 0
     assert added["total_residual_energy"] < 1e-12
 

@@ -15,8 +15,8 @@ triggered the recovery work:
 - `P1` shared-rotation signal was mixed across models and stage-0-sensitive.
 - `P4` local tangent misalignment looked promising on LFM2 and Qwen, but failed
   on Llama.
-- Llama's non-stage-0 TwoNN peak was approximately `8`, which now drives the
-  repaired rerun probe budget of `256` under the current local-tangent operator.
+- Llama's non-stage-0 TwoNN peak was `8.992...`, which now drives the repaired
+  rerun probe budget of `324` under the current local-tangent operator.
 
 Historical stage-0-excluded raw correlations from the preserved artifact:
 

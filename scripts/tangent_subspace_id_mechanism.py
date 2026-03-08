@@ -466,6 +466,8 @@ def compute_pca_tangent_basis(X: np.ndarray, k: int) -> np.ndarray:
 
 def shared_rotation_metrics(V1: np.ndarray, V2: np.ndarray) -> dict[str, float]:
     """Grassmann metrics on the matched-rank shared subspace."""
+    V1 = np.asarray(V1, dtype=np.float64)
+    V2 = np.asarray(V2, dtype=np.float64)
     k_min = min(V1.shape[0], V2.shape[0])
     if k_min <= 0:
         return {
@@ -496,6 +498,8 @@ def added_direction_signal_numpy(
     Each candidate basis vector is projected onto the reference span. Residual
     norm > sqrt(eps) counts as an added off-span direction.
     """
+    reference_basis = np.asarray(reference_basis, dtype=np.float64)
+    candidate_basis = np.asarray(candidate_basis, dtype=np.float64)
     if residual_floor is None:
         residual_floor = float(np.sqrt(np.finfo(np.float32).eps))
 

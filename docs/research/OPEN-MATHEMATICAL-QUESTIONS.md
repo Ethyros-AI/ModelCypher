@@ -130,8 +130,8 @@ correction or are just benefiting from a lucky regularization effect.
 **Current evidence**
 
 - `results/closedform_sequential_correction/`
-- `results/stacked_corrective_recovery/`
-- `results/corrective_lora_training/`
+- `results/stacked_corrective_recovery/` (archived: `/Volumes/CodeCypher/archive/results-refuted/`)
+- `results/corrective_lora_training/` (archived: `/Volumes/CodeCypher/archive/results-refuted/`)
 
 **What is missing**
 
@@ -187,7 +187,7 @@ Without this, phase-language remains descriptive instead of mechanistic.
 
 **Current evidence**
 
-- `results/covariance_rank_id/`: covariance-rank injection is not the mechanism
+- `results/covariance_rank_id/` (archived): covariance-rank injection is not the mechanism
 - `results/tangent_subspace_id_mechanism/`: repaired atlas-backed reruns are the
   active path; historical 2026-03-07 evidence is exploratory only
 
@@ -217,8 +217,8 @@ explicit and enforced.
 **Current evidence**
 
 - `docs/research/linear_accessible_information_derivation.md`
-- `results/dpi_analysis/`
-- `results/information_bridge/`
+- `results/dpi_analysis/` (archived: `/Volumes/CodeCypher/archive/results-refuted/`)
+- `results/information_bridge/` (archived: `/Volumes/CodeCypher/archive/results-refuted/`)
 - `results/information_bridge_linear_cka/`
 
 **What is missing**

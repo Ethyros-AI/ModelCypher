@@ -99,11 +99,12 @@ Default rerun set:
 Derived probe budget:
 - `neighbor_count = floor(sqrt(N))`
 - `tangent_rank = floor(neighbor_count / 2)`
-- Historical Llama non-stage-0 TwoNN peak is `ceil(max ID) = 8`
+- Historical Llama non-stage-0 TwoNN peak is `max ID = 8.992...`, so
+  `ceil(max ID) = 9`
 - Therefore first acceptable shared probe count under the current local operator is
-  `N = (2 * 8)^2 = 256`
+  `N = (2 * 9)^2 = 324`
 
-The same frozen 256-probe manifest is used for all 3 models in the rerun.
+The same frozen 324-probe manifest is used for all 3 models in the rerun.
 
 4-bit `Mistral-7B` is not a primary adjudication model for mechanism discovery in
 this protocol. Promotion on standard transformers remains blocked until another
@@ -137,7 +138,7 @@ Each rerun must write:
 3. `results/tangent_subspace_id_mechanism/<run_id>/probe_manifest.json`
 
 The historical 2026-03-07 artifact at `results/tangent_subspace_id_mechanism/results.json`
-is retained only as a baseline reference for the derived 256-probe budget.
+is retained only as a baseline reference for the derived 324-probe budget.
 
 ## Promotion Rule
 
