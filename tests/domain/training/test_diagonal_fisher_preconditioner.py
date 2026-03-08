@@ -328,9 +328,26 @@ class TestDeriveBeta1:
         assert derive_beta1(50) == pytest.approx(0.96)
         assert derive_beta1(100) == pytest.approx(0.98)
 
-    def test_clamped_to_099(self):
-        """Very large epochs clamp to 0.99."""
-        assert derive_beta1(10000) == 0.99
+    def test_large_epoch_uses_half_epoch_not_literal_cap(self):
+        """Large epochs use half-epoch bound, not a literal 0.99 clamp."""
+        # 200 batches → β₁ = 1 - 2/200 = 0.99 (from half-epoch, not clamped)
+        assert derive_beta1(200) == pytest.approx(0.99)
+        # 10000 batches → β₁ = 1 - 2/10000 = 0.9998 (no longer clamped at 0.99)
+        assert derive_beta1(10000) == pytest.approx(0.9998)
+        # 1000 batches → β₁ = 0.998
+        assert derive_beta1(1000) == pytest.approx(0.998)
+
+    def test_precision_ceiling_is_backstop(self):
+        """Precision ceiling (1 - √(ε/T)) is always above half-epoch bound."""
+        import math
+        eps = math.ldexp(1.0, -23)
+        for t in [10, 50, 100, 1000, 10000]:
+            half_epoch = 1.0 - 2.0 / t
+            precision = 1.0 - math.sqrt(eps / t)
+            # Precision ceiling should never be the binding constraint
+            assert precision > half_epoch, (
+                f"T={t}: precision={precision} <= half_epoch={half_epoch}"
+            )
 
     def test_3_batches(self):
         """3 batches → β₁ = 1 - 2/3 ≈ 0.333."""

@@ -368,18 +368,12 @@ class _MLXTrainingAdapterTrainMixin:
             update_fisher_state,
         )
 
-        trainable_flat = dict(mlx_flatten(model.trainable_parameters()))
-        fisher_state = init_fisher_state(trainable_flat, self._backend)
+        # fisher_state and optimizer are initialized after n_batches_per_epoch
+        # is known (~line 710+), so both paths use the same derived β₁/β₂.
+        # The closures below (_summarize_fisher_state, _summarize_adamw_state)
+        # capture these by name and are only called inside the training loop.
+        fisher_state = None  # type: ignore[assignment]
         optimizer = None
-        if optimizer_research_mode == OPTIMIZER_MODE_ADAMW_MATCHED_TRACE:
-            optimizer = opt.AdamW(
-                learning_rate=current_eta,
-                eps=_SQRT_EPS_F32,
-                weight_decay=0.0,
-                bias_correction=False,
-            )
-            optimizer.init(model.trainable_parameters())
-        del trainable_flat  # free reference
 
         baseline_accuracy = None
         if online_eval_problems:
@@ -709,17 +703,28 @@ class _MLXTrainingAdapterTrainMixin:
         if n_batches_per_epoch <= 0:
             raise ValueError("Training dataset produced zero batches")
 
-        # Derive β₁ for first moment now that n_batches_per_epoch is known.
-        # Half-epoch averaging: β₁ = 1 - 2/T_epoch, clamped to [0, 0.99].
-        from modelcypher.core.domain.training.diagonal_fisher_preconditioner import (
-            derive_beta1,
+        # Initialize fisher_state and optimizer now that n_batches_per_epoch
+        # is known. Both paths use the same derived β₁ and β₂.
+        trainable_flat = dict(mlx_flatten(model.trainable_parameters()))
+        fisher_state = init_fisher_state(
+            trainable_flat, self._backend,
+            n_batches_per_epoch=n_batches_per_epoch,
         )
-        fisher_state.beta1 = derive_beta1(n_batches_per_epoch)
+        del trainable_flat  # free reference
         if fisher_state.beta1 > 0.0:
             logger.info(
                 "First moment enabled: β₁=%.4f (n_batches_per_epoch=%d)",
                 fisher_state.beta1, n_batches_per_epoch,
             )
+        if optimizer_research_mode == OPTIMIZER_MODE_ADAMW_MATCHED_TRACE:
+            optimizer = opt.AdamW(
+                learning_rate=current_eta,
+                betas=[fisher_state.beta1, fisher_state.beta2],
+                eps=_SQRT_EPS_F32,
+                weight_decay=0.0,
+                bias_correction=True,
+            )
+            optimizer.init(model.trainable_parameters())
 
         # MASS √N epoch budget correction (Brownian scaling).
         from modelcypher.core.domain.training.mass_step_size import (

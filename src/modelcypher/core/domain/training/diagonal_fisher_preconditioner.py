@@ -47,13 +47,21 @@ First moment safety in Cayley-Stiefel:
 β₁ derivation:
     Effective window W = 1/(1-β₁). Must not exceed the direction
     decorrelation time — gradient directions from >1 epoch ago are stale.
-    Half-epoch averaging: β₁ = 1 - 2/T_epoch, clamped to [0, 0.99].
+    Two derived bounds (half-epoch ∩ precision ceiling):
+      Bound 1 (direction decorrelation): β₁ = 1 - 2/T_epoch
+      Bound 2 (EMA precision): β₁ < 1 - √(ε_f32/T_epoch)
     Derived dynamically from dataset size and batch size.
 
 β₂ derivation:
     For EMA estimation error < √ε_f32 after N steps:
     (1-β₂)² × N > ε_f32 → β₂ < 1 - √(ε_f32/N).
     For N≥119 steps, β₂=0.999 satisfies this bound.
+
+β₁ precision ceiling (same form as β₂):
+    (1-β₁)² × T_epoch > ε_f32 → β₁ < 1 - √(ε_f32/T_epoch).
+    For T=100: ceiling ≈ 0.99997. For T=10: ceiling ≈ 0.99989.
+    Always far above the half-epoch bound, so serves only as a
+    backstop against pathological epoch sizes.
 
 ε derivation:
     √ε_f32 ≈ 3.45e-4 (IEEE 754 float32 machine epsilon).
@@ -105,26 +113,33 @@ class DiagonalFisherState:
 
 
 def derive_beta1(n_batches_per_epoch: int) -> float:
-    """Derive β₁ from dataset size: half-epoch averaging.
+    """β₁ from two derived bounds: half-epoch window ∩ precision ceiling.
 
-    β₁ = 1 - 2/T_epoch, clamped to [0, 0.99].
+    Bound 1 (direction decorrelation): β₁ = 1 - 2/T_epoch
+        Effective window W = 1/(1-β₁) = T/2. Gradient directions older
+        than half an epoch are stale.
 
-    The first moment EMA m_t = β₁ m_{t-1} + (1-β₁) g_t has effective
-    window W = 1/(1-β₁). The window must not exceed the direction
-    decorrelation time — gradient directions from >1 epoch ago are stale
-    because parameters have changed significantly.
+    Bound 2 (EMA precision): β₁ < 1 - √(ε_f32/T_epoch)
+        Same form as β₂ derivation. Ensures EMA estimation error
+        exceeds machine epsilon within one epoch.
 
-    Conservative choice (half-epoch averaging): W = T_epoch / 2.
+    The precision ceiling is always far above the half-epoch bound for
+    realistic training (e.g., T=100: ceiling≈0.99997 vs half-epoch=0.98),
+    so the half-epoch derivation is the binding constraint. The precision
+    ceiling serves as a backstop — no literal cap needed.
 
     Examples:
         50 batches/epoch → β₁ = 0.96
         100 batches/epoch → β₁ = 0.98
+        200 batches/epoch → β₁ = 0.99
         10 batches/epoch → β₁ = 0.80
         ≤2 batches/epoch → β₁ = 0.0 (no smoothing)
     """
     if n_batches_per_epoch <= 2:
         return 0.0
-    return min(0.99, max(0.0, 1.0 - 2.0 / n_batches_per_epoch))
+    half_epoch = 1.0 - 2.0 / n_batches_per_epoch
+    precision_ceiling = 1.0 - math.sqrt(_EPS_F32 / n_batches_per_epoch)
+    return max(0.0, min(half_epoch, precision_ceiling))
 
 
 def init_fisher_state(

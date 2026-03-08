@@ -34,6 +34,7 @@ import argparse
 import gc
 import json
 import logging
+import math
 import os
 import random
 import shutil
@@ -438,6 +439,7 @@ def train_nb_lora(
     model_path: str,
     output_dir: Path,
     seed: int = 42,
+    max_iters: int | None = None,
 ) -> dict:
     """Train NB-LoRA using geometry-derived everything. Returns training metadata."""
     import mlx.core as mx
@@ -447,15 +449,19 @@ def train_nb_lora(
     initialize_default_backend()
     service = get_dataset_training_service()
 
-    logger.info(f"  NB-LoRA: training (geometry-derived, seed={seed})...")
+    logger.info(f"  NB-LoRA: training (geometry-derived, seed={seed}, "
+                f"max_iters={max_iters or 'certificate'})...")
     t0 = time.time()
-    result = service.train_from_dataset(
+    kwargs = dict(
         model_path=str(model_path),
         dataset_path=str(TRAIN_DATA),
         output_path=str(output_dir),
         eval_dataset_path=str(VAL_DATA),
         seed=seed,
     )
+    if max_iters is not None:
+        kwargs["max_iters_cap"] = max_iters
+    result = service.train_from_dataset(**kwargs)
     training_time = time.time() - t0
 
     result_dict = result.to_dict()
@@ -464,13 +470,63 @@ def train_nb_lora(
     result_dict["training_time_seconds"] = training_time
     result_dict["hyperparameter_count"] = 0
     result_dict["adapter_path"] = str(output_dir)
-    # Map NB-LoRA's post_loss to final_val_loss for comparison compatibility
-    result_dict["final_val_loss"] = result_dict.get("post_loss")
+    # NOTE: final_val_loss populated by commensurable post-hoc eval, not
+    # training callback.  post_loss kept for reference only.
+    result_dict["post_loss_training"] = result_dict.get("post_loss")
 
     mx.clear_cache()
     gc.collect()
 
     return result_dict
+
+
+# ---------------------------------------------------------------------------
+# Commensurable validation loss — same operator for all arms
+# ---------------------------------------------------------------------------
+def evaluate_val_loss(
+    model_path: str,
+    adapter_path: str | None,
+    val_data_path: Path,
+    max_seq_length: int = 2048,
+) -> float:
+    """Evaluate cross-entropy loss over the FULL validation set with batch_size=1.
+
+    This is the single measurement operator used for all arms, ensuring
+    commensurable val_loss comparisons.  Every sample in val_data_path is
+    evaluated; there is no val_batches truncation.
+    """
+    import mlx.core as mx
+    import mlx.nn as nn
+    from mlx_lm import load as mlx_load
+
+    model, tokenizer = mlx_load(str(model_path), adapter_path=adapter_path)
+    model.eval()
+
+    val_samples = load_jsonl(val_data_path)
+    total_loss = 0.0
+    total_tokens = 0
+
+    for sample in val_samples:
+        text = sample.get("text", "")
+        tokens = tokenizer.encode(text)
+        if len(tokens) < 2:
+            continue
+        tokens = tokens[:max_seq_length]
+        x = mx.array(tokens[:-1])[None, :]  # (1, T-1)
+        y = mx.array(tokens[1:])             # (T-1,)
+        logits = model(x)                    # (1, T-1, vocab)
+        loss = nn.losses.cross_entropy(logits[0], y, reduction="sum")
+        mx.eval(loss)
+        total_loss += float(loss)
+        total_tokens += len(tokens) - 1
+
+    del model, tokenizer
+    mx.clear_cache()
+    gc.collect()
+
+    if total_tokens == 0:
+        return float("inf")
+    return total_loss / total_tokens
 
 
 # ---------------------------------------------------------------------------
@@ -768,6 +824,14 @@ def run_model_experiment(
                 seed=seed,
                 iters_override=iters,
             )
+            # Commensurable val_loss: full val set, batch_size=1, same operator
+            std_train["callback_val_loss"] = std_train.get("final_val_loss")
+            logger.info("  Commensurable val_loss eval (standard)...")
+            std_train["final_val_loss"] = evaluate_val_loss(
+                model_path, str(std_out), VAL_DATA,
+            )
+            logger.info(f"  val_loss={std_train['final_val_loss']:.4f} "
+                        f"(callback={std_train['callback_val_loss']})")
             with open(std_out / "training_log.json", "w") as f:
                 json.dump(std_train, f, indent=2, default=str)
             std_trainings.append(std_train)
@@ -803,6 +867,14 @@ def run_model_experiment(
                     seed=seed,
                     iters_override=iters,
                 )
+                # Commensurable val_loss
+                tuned_train["callback_val_loss"] = tuned_train.get("final_val_loss")
+                logger.info("  Commensurable val_loss eval (tuned)...")
+                tuned_train["final_val_loss"] = evaluate_val_loss(
+                    model_path, str(tuned_out), VAL_DATA,
+                )
+                logger.info(f"  val_loss={tuned_train['final_val_loss']:.4f} "
+                            f"(callback={tuned_train['callback_val_loss']})")
                 with open(tuned_out / "training_log.json", "w") as f:
                     json.dump(tuned_train, f, indent=2, default=str)
                 tuned_trainings.append(tuned_train)
@@ -832,7 +904,15 @@ def run_model_experiment(
                 model_path=model_path,
                 output_dir=nb_out,
                 seed=seed,
+                max_iters=iters,  # budget-matched with standard arm
             )
+            # Commensurable val_loss: same operator as standard arm
+            logger.info("  Commensurable val_loss eval (NB-LoRA)...")
+            nb_train["final_val_loss"] = evaluate_val_loss(
+                model_path, str(nb_out), VAL_DATA,
+            )
+            logger.info(f"  val_loss={nb_train['final_val_loss']:.4f} "
+                        f"(training post_loss={nb_train.get('post_loss_training')})")
             with open(nb_out / "training_log.json", "w") as f:
                 json.dump(nb_train, f, indent=2, default=str)
             nb_trainings.append(nb_train)
@@ -854,61 +934,65 @@ def run_model_experiment(
             logger.exception(f"  NB-LoRA seed={seed} failed")
             seed_result["nb_lora"] = {"error": str(e)}
 
-        # ---- Inference ----
+        # ---- Inference (non-fatal) ----
         if not skip_inference:
-            logger.info(f"\n--- [{model_name}] Inference Tests (seed={seed}) ---")
-            prompts = load_jsonl(INFERENCE_PROMPTS)
+            try:
+                logger.info(f"\n--- [{model_name}] Inference Tests (seed={seed}) ---")
+                prompts = load_jsonl(INFERENCE_PROMPTS)
 
-            base_responses = generate_inference_responses(
-                model_path=model_path,
-                adapter_path=None,
-                prompts=prompts,
-                label="base",
-            )
+                base_responses = generate_inference_responses(
+                    model_path=model_path,
+                    adapter_path=None,
+                    prompts=prompts,
+                    label="base",
+                )
 
-            std_adapter = str(std_out) if "error" not in seed_result.get("standard_lora", {}) else None
-            std_responses = (
-                generate_inference_responses(model_path, std_adapter, prompts, "standard_lora")
-                if std_adapter else []
-            )
+                std_adapter = str(std_out) if "error" not in seed_result.get("standard_lora", {}) else None
+                std_responses = (
+                    generate_inference_responses(model_path, std_adapter, prompts, "standard_lora")
+                    if std_adapter else []
+                )
 
-            tuned_adapter = (
-                str(seed_dir / "tuned_lora")
-                if best_tuned_config and "error" not in seed_result.get("tuned_lora", {})
-                else None
-            )
-            tuned_responses = (
-                generate_inference_responses(model_path, tuned_adapter, prompts, "tuned_lora")
-                if tuned_adapter else []
-            )
+                tuned_adapter = (
+                    str(seed_dir / "tuned_lora")
+                    if best_tuned_config and "error" not in seed_result.get("tuned_lora", {})
+                    else None
+                )
+                tuned_responses = (
+                    generate_inference_responses(model_path, tuned_adapter, prompts, "tuned_lora")
+                    if tuned_adapter else []
+                )
 
-            nb_adapter = str(nb_out) if "error" not in seed_result.get("nb_lora", {}) else None
-            nb_responses = (
-                generate_inference_responses(model_path, nb_adapter, prompts, "nb_lora")
-                if nb_adapter else []
-            )
+                nb_adapter = str(nb_out) if "error" not in seed_result.get("nb_lora", {}) else None
+                nb_responses = (
+                    generate_inference_responses(model_path, nb_adapter, prompts, "nb_lora")
+                    if nb_adapter else []
+                )
 
-            inference_data = {"prompts": []}
-            for prompt_data in prompts:
-                pid = prompt_data["id"]
-                entry = {
-                    "id": pid,
-                    "category": prompt_data.get("category", ""),
-                    "distribution": prompt_data.get("distribution", ""),
-                    "prompt": prompt_data["prompt"],
-                    "expected": prompt_data.get("expected", ""),
-                    "responses": {
-                        "base": next((r["response"] for r in base_responses if r["id"] == pid), ""),
-                        "standard_lora": next((r["response"] for r in std_responses if r["id"] == pid), ""),
-                        "tuned_lora": next((r["response"] for r in tuned_responses if r["id"] == pid), ""),
-                        "nb_lora": next((r["response"] for r in nb_responses if r["id"] == pid), ""),
-                    },
-                }
-                inference_data["prompts"].append(entry)
+                inference_data = {"prompts": []}
+                for prompt_data in prompts:
+                    pid = prompt_data["id"]
+                    entry = {
+                        "id": pid,
+                        "category": prompt_data.get("category", ""),
+                        "distribution": prompt_data.get("distribution", ""),
+                        "prompt": prompt_data["prompt"],
+                        "expected": prompt_data.get("expected", ""),
+                        "responses": {
+                            "base": next((r["response"] for r in base_responses if r["id"] == pid), ""),
+                            "standard_lora": next((r["response"] for r in std_responses if r["id"] == pid), ""),
+                            "tuned_lora": next((r["response"] for r in tuned_responses if r["id"] == pid), ""),
+                            "nb_lora": next((r["response"] for r in nb_responses if r["id"] == pid), ""),
+                        },
+                    }
+                    inference_data["prompts"].append(entry)
 
-            seed_result["inference"] = inference_data
-            with open(seed_dir / "inference_responses.json", "w") as f:
-                json.dump(inference_data, f, indent=2)
+                seed_result["inference"] = inference_data
+                with open(seed_dir / "inference_responses.json", "w") as f:
+                    json.dump(inference_data, f, indent=2)
+            except Exception as e:
+                logger.exception(f"  Inference seed={seed} failed (non-fatal)")
+                seed_result["inference"] = {"error": str(e)}
 
         per_seed_data[str(seed)] = seed_result
 
@@ -928,6 +1012,7 @@ def run_model_experiment(
         tuned_trainings=tuned_trainings,
         nb_trainings=nb_trainings,
         grid_summary=grid_summary,
+        quick=quick,
     )
     results["comparison"] = comparison
 
@@ -962,6 +1047,7 @@ def build_comparison(
     tuned_trainings: list[dict],
     nb_trainings: list[dict],
     grid_summary: dict | None,
+    quick: bool = False,
 ) -> dict:
     """Build multi-seed comparison across three arms."""
     comparison = {
@@ -1043,6 +1129,15 @@ def build_comparison(
     }
 
     # Head-to-head: NB vs Standard, NB vs Tuned
+    # Tie band derived from evaluation sample size.  For lm-eval with N
+    # samples per task, the standard error of an accuracy estimate is
+    # SE = √(p(1-p)/N).  Worst case p=0.5: SE_max = 1/(2√N).  Two
+    # independent estimates differ by < 2×SE with ~95% confidence.
+    # Default limit=50 (quick) or full (~500), so tie_band = 1/√N.
+    # This replaces the former arbitrary 0.005.
+    eval_n = 50 if quick else 500  # approximate per-task sample count
+    tie_band = 1.0 / math.sqrt(eval_n)  # ~0.141 (quick) or ~0.045 (full)
+
     for opponent_name, opponent_agg in [
         ("standard_lora", std_agg),
         ("tuned_lora", tuned_agg),
@@ -1058,7 +1153,7 @@ def build_comparison(
                 opp_mean = opponent_agg[task]["mean"]
                 delta = nb_mean - opp_mean
                 deltas.append(delta)
-                if abs(delta) < 0.005:  # within 0.5% = tie
+                if abs(delta) < tie_band:
                     ties += 1
                 elif delta > 0:
                     nb_wins += 1
@@ -1072,6 +1167,8 @@ def build_comparison(
             "ties": ties,
             "mean_delta": _safe_mean(deltas),
             "total_tasks": len(deltas),
+            "tie_band": tie_band,
+            "tie_band_derivation": f"1/sqrt({eval_n}) = {tie_band:.4f}",
         }
 
     # Grid search info
@@ -1190,11 +1287,25 @@ def build_summary(all_results: dict) -> dict:
     if all_nb_vs_tuned_deltas:
         summary["overall"]["nb_vs_tuned_mean_delta"] = _safe_mean(all_nb_vs_tuned_deltas)
 
-    summary["overall"]["verdict"] = (
-        "NB-LoRA >= Standard (zero-config advantage)"
-        if _safe_mean(all_nb_vs_std_deltas) >= -0.005
-        else "Standard LoRA wins on average"
-    ) if all_nb_vs_std_deltas else "no data"
+    # Verdict uses the same SE-derived threshold.  With lm-eval per-task
+    # SE ≈ 1/(2√N), aggregate over 7 tasks reduces by √7, so
+    # aggregate_se ≈ 1/(2√(N×7)).  Use N=500 (full mode) as the
+    # conservative baseline.  Mean delta within ±aggregate_se = tie.
+    agg_se = 1.0 / (2.0 * math.sqrt(500 * len(BENCHMARK_TASKS)))
+    if all_nb_vs_std_deltas:
+        mean_delta = _safe_mean(all_nb_vs_std_deltas)
+        if mean_delta > agg_se:
+            summary["overall"]["verdict"] = "NB-LoRA > Standard"
+        elif mean_delta < -agg_se:
+            summary["overall"]["verdict"] = "Standard LoRA > NB-LoRA"
+        else:
+            summary["overall"]["verdict"] = "Within measurement noise"
+        summary["overall"]["verdict_threshold"] = agg_se
+        summary["overall"]["verdict_derivation"] = (
+            f"1/(2*sqrt({500}*{len(BENCHMARK_TASKS)})) = {agg_se:.4f}"
+        )
+    else:
+        summary["overall"]["verdict"] = "no data"
 
     return summary
 
