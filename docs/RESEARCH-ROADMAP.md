@@ -1,551 +1,280 @@
 # Research Roadmap
 
-**Updated:** 2026-03-05
+**Updated:** 2026-03-08
 
-Consolidated research document: external foundations, internal progress, open questions, and future directions.
+## What This File Is For
 
----
+This file answers four operational questions:
 
-## Protocol
+1. How far are we from `docs/VISION.md`?
+2. Where do we measurably improve on standard practice today?
+3. Where are we still weaker, unproven, or blocked?
+4. What do we clean up next so evidence is easier to read than noise?
 
-All major claims in this roadmap are governed by:
-- `docs/research/GEOMETRIC-CONJECTURES-FALSIFICATION-PROTOCOL.md`
-- `docs/research/deep_research_integration_2026_02.md` (canonical integration log for external deep-research reports)
-- `docs/research/FIRST_PRINCIPLES_REVIEW_PROTOCOL.md` (claim-level bedrock audit contract)
-- `docs/research/FIRST_PRINCIPLES_REVIEW_LEDGER.md` (audit log of reviewed doctrine/research files)
+This file is intentionally not the archive of every solved or refuted thread.
+`docs/research/OPEN-MATHEMATICAL-QUESTIONS.md` now carries only the active
+mathematical blockers. Historical literature mapping and broader field position
+live in:
 
-Status labels and promotion rules (`[CONJECTURAL]`, `[VALIDATED]`, `[DISPROVEN]`, etc.) are
-defined in `docs/EVIDENCE-TAXONOMY.md` and apply to every thread below.
+- `docs/research/SOTA-AUDIT-2026-03.md`
+- `docs/research/field_map_external_methods.md`
+- `docs/research/FIRST_PRINCIPLES_REVIEW_PROTOCOL.md`
 
-**Enforcement rule (2026-03-03):**
-A claim cannot be promoted if it is confirmed on some models and refuted on others
-without an explicit architecture-conditioned and scale-conditioned derivation.
-Such outcomes are classified as mechanism underspecification or measurement invalidity,
-not partial confirmation.
+## Executive Read
 
-**Documentation enforcement (2026-03-03):**
-Every research-facing document must complete a first-principles claim audit using
-`docs/research/FIRST_PRINCIPLES_REVIEW_PROTOCOL.md`. Any promoted claim missing
-architecture terms, scale terms, or commensurability proof is downgraded until fixed.
+- We are ahead on controller design. The canonical training path removes manual
+  learning-rate, rank, scale, and target-selection overrides from runtime code.
+- We are not yet ahead on end-user reliability. The canonical pipeline still has
+  unresolved behavioral failures, and 8B closure is still open.
+- The repository currently obscures its own evidence. We have `152` scripts,
+  `108` top-level result families, and about `200G` under `results/`.
 
----
+The short version is: we have reduced guessing in the control plane more than
+we have proven superiority in the outcome plane.
 
-## Research Foundations
+## Vision Scorecard
 
-External research that ModelCypher builds on and enables testing of.
+| Vision promise from `docs/VISION.md` | Current state | Hard evidence | What still blocks promotion |
+| --- | --- | --- | --- |
+| Geometry-derived training should be one command with no manual guessing | Partial | `mc train run` exists; `pipeline_gate_v1` exists; doctrine audit removed runtime LR/scale/quantization bypasses; `results/pipeline_validation/verdict.json` still reports `all_pass=false` with 3/5 inference passes on 350M | Behavioral preservation still fails in part of the canonical path |
+| Quantized models are the real target, not an afterthought | Partial | Quantization frontier precheck is implemented; `results/closedform_sequential_correction/20260227T173057Z/closedform_correction.json` improved CKA, PPL, and degeneration simultaneously on Qwen3-1.7B | We still lack the architecture-conditioned frontier law and 8B closure |
+| Cross-architecture portability should make the geometry the invariant | Partial | Merge and alignment machinery exist; internal SOTA audit classifies null-space merge claims as strong enough to keep pushing | No mandatory MergeBench-style comparison against standard merge baselines |
+| Nightly consolidation should turn daily interaction into stable memory | Experimental | Continual-learning code and artifact families exist (`src/modelcypher/experimental/continual/`, `src/modelcypher/experimental/use_cases/consolidation_service.py`, `results/continual_learning/`) | No promotable closure that this is repeatable, beneficial, and non-forgetting |
+| Adapter stacking should preserve identity across substrates | Infrastructure partial | `src/modelcypher/experimental/self_improve/lora_stacker.py` exists | No promoted preservation certificate or supported workflow |
+| Adapter sovereignty should let the user own the identity layer | Not built | No serialization, access-control, or user-owned runtime flow exists yet | This is still infrastructure and product work, not closed research |
 
-### The Platonic Representation Hypothesis
+## Where We Actually Improve On Standard Practice Today
 
-**Paper**: Huh, M., Cheung, B., Wang, T., & Isola, P. (2024). *The Platonic Representation Hypothesis*. ICML 2024. ([PDF](references/arxiv/Huh_2024_Platonic_Representation.pdf), [arXiv:2405.07987](https://arxiv.org/abs/2405.07987))
+### 1. Canonical training removes manual knob turning in a way current public tools do not
 
-**Core Claim**: Neural networks trained with different objectives on different data and modalities converge to a shared statistical model of reality in their representation spaces.
+Current public fine-tuning stacks still expose user-chosen ranks, alphas,
+dropout, learning rates, warmup, schedulers, and target-module choices in their
+official docs:
 
-**ModelCypher Implementation**: CKA (`cka.py`) with Gram-based cross-dimensional comparison directly enables testing this hypothesis. `compute_cka_from_grams()` enables cross-dimensional comparison without projection or truncation.
+- Hugging Face PEFT LoRA config: `r`, `target_modules`, `lora_alpha`,
+  `lora_dropout`, and more
+- Axolotl config reference: `lora_r`, `lora_alpha`, `lora_dropout`,
+  `learning_rate`, `warmup_steps`, scheduler, optimizer
+- TorchTune LoRA recipes: config and CLI overrides for LoRA rank, alpha, epochs,
+  and recipe parameters
+- Unsloth LoRA guide: explicit learning-rate ranges, recommended ranks, alpha,
+  dropout, warmup, scheduler, and batch-size heuristics
 
-### Blue Brain Project: Algebraic Topology of Neural Circuits
+ModelCypher's differentiator is not "we also have a recipe". It is that the
+canonical runtime path tries to derive the control surface from model geometry,
+IEEE 754 limits, and measured data, then aggressively removes override paths
+that reintroduce guessing.
 
-**Paper**: Reimann, M.W., et al. (2017). *Cliques of Neurons Bound into Cavities Provide a Missing Link between Structure and Function*. Frontiers in Computational Neuroscience.
-**DOI**: [10.3389/fncom.2017.00048](https://doi.org/10.3389/fncom.2017.00048)
+Internal evidence:
 
-**Core Finding**: The brain contains multi-dimensional geometrical structures operating in as many as 11 dimensions. Neural circuits form high-dimensional simplicial complexes with topological cavities that appear during stimulus processing and then collapse.
+- `docs/MISSION.md`
+- `docs/research/PRODUCT-MAINTENANCE-AUDIT-2026-03.md`
+- `src/modelcypher/cli/commands/train.py`
+- `src/modelcypher/core/domain/training/mass_step_size.py`
+- `src/modelcypher/core/use_cases/dataset_training_service.py`
 
-**ModelCypher Implementation**: Persistent homology (`topological_fingerprint.py`) computes the same Betti numbers used to characterize these structures.
+### 2. We are stronger on measurement discipline than on raw leaderboard claims
 
-### Brain-like Space: Unified Geometric Framework
+The project now has a better answer than "it looked okay in eval":
 
-**Paper**: Chen, S., et al. (2025). *A Unified Geometric Space Bridging AI Models and the Human Brain*. ([PDF](references/arxiv/Chen_2025_Unified_Geometric_Space_Bridging_AI_Models.pdf), [arXiv:2510.24342](https://arxiv.org/abs/2510.24342))
+- promotion contracts for architecture, scale, precision, and operator validity
+- a maintained SOTA crosswalk in `results/sota_audit_2026_03/`
+- runtime guardrails such as `pipeline_gate_v1`
+- explicit rejection of mixed-model "partial validation" stories
 
-**Core Finding**: 151 Transformer-based models form a continuous arc-shaped geometry when mapped onto human functional brain networks.
+This matters because the main failure mode in the repo is not lack of
+experiments. It is over-promotion from fragmented evidence.
 
-**ModelCypher Implementation**: Multi-model alignment (`generalized_procrustes.py`) and curvature analysis (`manifold_curvature.py`) enable positioning models in unified geometric spaces.
+The current internal SOTA crosswalk classifies `21` tracked claims as:
 
-### Brain-AI Convergent Evolution
+- `8` `CUTTING_EDGE`
+- `5` `ADAPT_OTHERS`
+- `6` `PUSH_FURTHER`
+- `2` `DEPRIORITIZE`
 
-**Paper**: Shen, G., et al. (2025). *Alignment between Brains and AI: Evidence for Convergent Evolution across Modalities, Scales and Training Trajectories*. ([PDF](references/arxiv/Shen_2025_Alignment_Brains_AI_Evidence_Convergent_Evolution.pdf), [arXiv:2507.01966](https://arxiv.org/abs/2507.01966))
+That is real progress, but most of the "cutting edge" material is still about
+measurement, falsification, or merge geometry, not yet about a complete
+end-user training win.
 
-**Core Finding**: Analysis of 600+ AI models reveals that brain alignment *precedes* performance improvements during training. Language models show r=0.89 correlation between performance and brain alignment.
+### 3. Quantized correction work shows a real, user-relevant advantage
 
-**ModelCypher Implementation**: Intrinsic dimension tracking and training checkpoint analysis enable longitudinal geometry studies.
+The strongest current "smaller-and-smarter" evidence is the corrective
+quantization thread.
 
-### Intrinsic Dimension and Abstraction Phases
+In `results/closedform_sequential_correction/20260227T173057Z/closedform_correction.json`
+on Qwen3-1.7B:
 
-**Papers**:
-- Aghajanyan et al. (2021). *Intrinsic Dimensionality Explains the Effectiveness of Language Model Fine-Tuning*. ([arXiv:2012.13255](https://arxiv.org/abs/2012.13255))
-- Cheng et al. (2025). *Emergence of a High-Dimensional Abstraction Phase in Language Transformers*. ([OpenReview](https://openreview.net/forum?id=0fD3iIBhlV))
+- mean CKA improved by `+0.0139976`
+- min CKA improved by `+0.180729`
+- perplexity improved by `-0.0633116`
+- max 4-gram repetition improved by `-0.0471629`
 
-**Core Findings**:
-- Fine-tuning operates in very low intrinsic-dimension subspaces
-- Mid-layer ID peaks correlate with abstraction and cross-model similarity
-- Local ID decreases often precede capability gains
+That is materially stronger than "quality loss is the price of quantization."
+It is one of the clearest places where the repository has something better than
+standard acceptance of quantization damage.
 
-**ModelCypher Implementation**: `intrinsic_dimension.py` provides TwoNN estimation with geodesic distances, per-layer dimension mapping, and deficiency detection.
+## Where We Do Not Yet Beat Standard Practice
 
-### The Topology and Geometry of Neural Representations
+| Gap | Evidence | Why this is not promotable yet |
+| --- | --- | --- |
+| Zero-guess training is not yet reliably behavior-preserving | `results/pipeline_validation/verdict.json` reports `all_pass=false`; on 350M, structural pass is 5/5 but inference pass is only 3/5 | We do not yet have the causal operator that explains when structural safety fails to preserve behavior |
+| 8B closure is still open | `results/g5_8b_validation_multiseed/multiseed_gates.json` reports `n_seeds=1`, `cka_ok=0`, `degenerate_ok=0`, `all_gates_all_seeds=false` | The user-facing claim "works on any model" remains unclosed |
+| We do not yet have mandatory head-to-head baselines against the standard PEFT ecosystem | The repo has strong internal doctrine and many experiments, but no mandatory same-model same-data comparison suite against standard LoRA, rsLoRA, PiSSA, EVA, DoRA, or recipe-level baselines | Without these controls, "better than standard practice" is still a thesis, not a measured result |
+| Merge claims are differentiated but not yet industry-positioned | Internal SOTA audit says keep pushing null-space merge, but also says import MergeBench-style evaluation | We have internal strength but not yet benchmark parity with how the field compares merge methods |
+| Identity-layer claims are ahead of infrastructure and evidence | `docs/VISION.md` still correctly marks stacking as partial and sovereignty as not built | The long-term vision remains valid as direction, not yet as delivered capability |
 
-**Paper**: Lin, B. & Kriegeskorte, N. (2024). *The topology and geometry of neural representations*. PNAS.
-**DOI**: [10.1073/pnas.2317881121](https://doi.org/10.1073/pnas.2317881121)
+## Why Progress Feels Hard To See
 
-**Core Finding**: Topological Representational Similarity Analysis (tRSA) provides robust comparison by focusing on topology rather than just geometry.
+### The repository surface is much larger than the maintained inventories imply
 
-**ModelCypher Implementation**: Gromov-Wasserstein distance (`gromov_wasserstein.py`) measures geometric similarity independent of coordinate systems.
+Current local counts:
 
-### Cross-Species Neural Geometry
+- `152` scripts under `scripts/`
+- `12` scripts with exact name-matched test files under `tests/scripts/` or
+  `tests/experiments/`
+- `108` top-level result families under `results/`
+- about `200G` stored under `results/`
 
-Evolution preserves representational geometry across primates despite differences in brain size and structure — suggesting the geometry is more fundamental than the hardware.
+`scripts/INVENTORY.md` currently describes only a tiny subset of that surface,
+so it no longer tells the truth about where active evidence lives.
 
-**ModelCypher Implementation**: Cross-model comparison tools enable testing whether this cross-species invariance extends to artificial systems.
+### A small number of experiment families dominate the artifact footprint
 
-### Wiring Cost and 3D Embedding Constraints
+The largest result families are:
 
-**Papers**:
-- Rubinov, M. (2015). *Wiring cost and topological participation of the mouse brain connectome*. PNAS.
-- PNAS (2024). *Human brain dynamics are shaped by rare long-range connections*.
+| Result family | Size | Share of `results/` |
+| --- | ---: | ---: |
+| `adapter_routing` | `93.93G` | `47.0%` |
+| `corrective_lora_training` | `47.20G` | `23.6%` |
+| `stacked_corrective_recovery` | `35.39G` | `17.7%` |
+| `feasibility_map` | `14.05G` | `7.0%` |
 
-**Core Finding**: Brain connectivity follows an exponential distance rule. Evolution minimizes "wiring cost," which **forces 3D embedding** of higher-dimensional optimal topologies.
+Those four families alone account for `95.3%` of the entire `results/`
+directory. Most cleanup leverage is there.
 
-**ModelCypher Implementation**: Spatial 3D analysis (`spatial_3d.py`) measures how models project concepts onto human-perceptual axes.
+### "Checkpoint sprawl" is really "results-as-checkpoints"
 
-### Synthesis [CONJECTURAL]
+There is no top-level `checkpoints/` tree right now. The large checkpoints,
+adapters, and saved model states are embedded inside `results/` families. That
+means cleanup has to treat `results/` as both evidence store and checkpoint
+store. Right now those two roles are mixed together.
 
-These research threads converge on a unified hypothesis:
+## Roadmap: What We Should Do Next
 
-1. **Conceptual reality is intrinsically high-dimensional** (Blue Brain: 11+ dimensions) [EMPIRICAL]
-2. **Physical brains are 3D projections** of this higher-dimensional manifold [CONJECTURAL]
-3. **Neural networks converge to the same manifold** (Platonic Representation Hypothesis) [CONJECTURAL]
-4. **The geometry is substrate-independent** (cross-species invariance, brain-AI alignment) [CONJECTURAL]
-5. **Optimization naturally finds brain-like solutions** (convergent evolution) [EMPIRICAL]
+### R1. Prove the zero-guess training claim against standard baselines
 
-### Geometric Toolbox
+This is the highest-priority user-facing gap.
 
-| Capability | File | Purpose |
-|-----------|------|---------|
-| Intrinsic Dimension | `intrinsic_dimension.py` | Measure actual dimensionality |
-| CKA (Gram-based) | `cka.py` | Cross-dimensional comparison |
-| Geodesic Distances | `riemannian_utils.py` | True manifold geometry |
-| Persistent Homology | `topological_fingerprint.py` | Topological structure |
-| Multi-Model Alignment | `generalized_procrustes.py` | Consensus geometry |
-| Curvature Analysis | `manifold_curvature.py` | Manifold characterization |
-| Gromov-Wasserstein | `gromov_wasserstein.py` | Coordinate-free comparison |
+Required controls on the same model, data, and eval slices:
 
----
+- standard LoRA
+- rsLoRA
+- PiSSA
+- EVA
+- DoRA
+- recipe-level baselines where practical (TorchTune, Axolotl, or equivalent)
 
-## Preliminary Measurements [EMPIRICAL]
+Promotion rule:
 
-Numeric summaries from local runs (2025-12-31), included as working notes.
+- do not claim "better than standard practice" unless the comparison is
+  same-model, same-data, same-eval, and survives the preservation gates
 
-### Dimensionality Collapse in SmolLM-360M
+### R2. Close the preservation gap before widening the claim surface
 
-Using `mc analyze dimension-profile`:
+Current evidence says the structural certificates are not enough by themselves.
+The next measurement pass should focus on:
 
-| Layer | Mean Intrinsic Dimension |
-|-------|-------------------------|
-| 0     | 7.03                    |
-| 4     | 6.08                    |
-| 8     | 1.59                    |
+- the operator behind `pipeline_validation` failures
+- the link between null-space accessibility, CKA blindness, and behavioral
+  degradation
+- the exact condition under which a structurally safe adapter still flips task
+  behavior
 
-**Collapse ratio**: 0.37 (63% reduction from peak to bottleneck)
+This is the shortest path from "interesting geometry" to "training is easier for
+people".
 
-This directly supports the "build then raze" hypothesis.
+### R3. Close the quantized-first story with an actual law, not a good run
 
-### Cross-Architecture Comparison: 6 Model Families
+Quantized correction is promising, but the frontier claim still needs:
 
-| Model | Architecture | Params | Bottleneck Dim | Cluster |
-|-------|--------------|--------|----------------|---------|
-| Qwen3-0.6B | Qwen3 | 600M | **1.52** | A |
-| Qwen2.5-0.5B | Qwen2.5 | 500M | **1.56** | A |
-| SmolLM-360M | EleutherAI | 360M | **1.59** | A |
-| Llama-3.2-3B | Llama3 | 3B | **1.77** | A |
-| Mistral-7B | Mistral | 7B | **2.56** | B |
-| TinyLlama-1.1B | Llama | 1.1B | **2.72** | B |
+- an architecture-conditioned equation from crossing severity to CKA floor
+- paired FP-to-quantized sweeps at multiple bit depths
+- a repeatable closure at 8B
 
-**Key finding**: Two discrete bottleneck clusters rather than a continuum. Cluster membership is NOT determined by model size.
+Until then, quantized-first remains one of our strongest directions, not yet a
+closed platform advantage.
 
----
+### R4. Put the identity-layer vision back under a hard evidence leash
 
-## Testable Predictions
+Near-term order:
 
-### P1: Quantized Bottleneck Clusters (CONFIRMED) [EMPIRICAL]
-6 models tested, all fall into one of two clusters (1.6D or 2.6D).
+1. consolidation without forgetting
+2. stacking with preservation certificates
+3. only then portability and sovereignty claims at the user level
 
-### P2: Bottleneck Dimension is Scale-Invariant (CONFIRMED) [EMPIRICAL]
-Model size does NOT predict bottleneck dimension.
+The project should not talk like the identity layer is operational until the
+preservation math is stronger than the narrative.
 
-### P3: Bottleneck Representations Are Cross-Architecturally Aligned [CONJECTURAL]
-**Prediction**: CKA between bottleneck layers of different architectures > 0.7.
-**Test**: `mc analyze crm-build` + `mc analyze crm-compare` across model pairs
+### R5. Clean the research surface so signal can win
 
-### P4: Bottleneck Position is Proportionally Consistent [CONJECTURAL]
-**Prediction**: Bottleneck occurs at 40-60% of network depth across architectures.
+#### Scripts
 
-### P5: Topological Invariants Match at Bottleneck [CONJECTURAL]
-**Prediction**: Betti numbers (beta_0, beta_1, beta_2) at bottleneck are similar across architectures.
+- Classify every script as one of: `canonical`, `active-research`, `historical`
+- Every kept script must declare:
+  - owner
+  - claim or question served
+  - expected artifact path
+  - whether it has tests
+- Replace `scripts/INVENTORY.md` with a generated inventory, not a hand-kept
+  note
 
-### P6: Domain-Specific Structure Vanishes at Bottleneck [CONJECTURAL]
-**Prediction**: All semantic domains converge to similar dimensionality at bottleneck.
+#### Results
 
-### P7: Two Fundamental Representation Modes Exist [EMPIRICAL]
+- Keep one canonical summary bundle per experiment family:
+  - `REPORT.md` or equivalent narrative
+  - machine-readable summary JSON
+  - one canonical artifact bundle if the experiment really produced a reusable
+    adapter or model
+- Move or archive per-run bulky adapters once their summary metrics are extracted
+- Start with the four largest result families listed above
 
-| Mode | Architecture | Bottleneck Position | Geometry |
-|------|-------------|--------------------| ---------|
-| Concentrated | SmolLM | 89% (final) | Lower orthogonality |
-| Distributed | Qwen | 50% (middle) | High orthogonality |
+#### Claims
 
-Both modes converge to the same ~1.6D semantic bottleneck.
+- Add a single registry that maps:
+  - claim
+  - script
+  - artifact path
+  - evidence status
+  - next falsifier
 
----
+Without this, the project keeps rediscovering its own past work.
 
-## Open Questions
+## Exit Criteria For The Next Roadmap Update
 
-### Mission-Gate Closure Cycle (G4/G5) [EMPIRICAL]
+We should update this document again only after at least one of these is true:
 
-Pre-registered closure workflow (current priority order):
-
-1. **G5 8B efficacy separation** `[EMPIRICAL]`
-   - Build fixed non-ceiling eval set (`scripts/g5_build_non_ceiling_eval_set.py`).
-   - Run 3 seeds with FP-reference precheck required (`scripts/g5_8b_multiseed_closure.py`).
-   - Initial set artifact: `results/g5_8b_validation/non_ceiling_eval_set_8b.json` (`13/20 = 65%`, 2026-02-27).
-2. **G4 mechanism closure (Tikhonov eigenvalue-weighted correction)** `[EMPIRICAL]`
-   - Tikhonov correction on 1.7B 4-bit: CKA +0.014, PPL -0.06, degeneration -0.047 — all three improved simultaneously (2026-02-27).
-   - Pending: generalization to 8B (`scripts/closedform_sequential_correction.py`).
-3. **G4/G2 boundary closure (quantization frontier)** `[EMPIRICAL]`
-   - 2026-03-05 implementation: `quantization_frontier_precheck_v1` now gates on
-     activation-aware centered-Gram measurability for FP-vs-quantized probe
-     activations; raw Weyl is nested telemetry only. See
-     `docs/research/quantization_frontier_precheck_v1_implementation_2026_03_05.md`.
-   - Pending empirical closure: run paired FP↔quant artifacts across bit-depths
-     and attach CKA outputs
-     (`scripts/weyl_quantization_validation.py --cka-artifacts ...`).
-4. **Documentation promotion/falsification**
-   - Promote only claims with linked artifacts + evidence labels.
-
-### Q1: Layer-wise Invariants
-**Source:** `OPEN-MATHEMATICAL-QUESTIONS.md` §7
-
-What properties are preserved vs transformed across layers?
-
-- [ ] Norm (preserved? scaled?)
-- [ ] Angles between vectors
-- [ ] Rank of activation matrix
-- [ ] Intrinsic dimension variation bounds
-
-### Q2: Qwen3 vs Qwen2.5 Attention Sharpness
-**Source:** `OPEN-MATHEMATICAL-QUESTIONS.md` §6
-
-Why does Qwen3 have sharper attention than Qwen2.5 despite similar architecture?
-
-- [ ] Identify architectural differences
-- [ ] Analytical relationship between config and attention rank
-
-### Q3: Information-Theoretic Characterization `[MEASUREMENT_INVALID]`
-**Source:** `OPEN-MATHEMATICAL-QUESTIONS.md` §9
-
-**Status (2026-03-03):** Experiment ran across 3 models (LFM2-350M, LFM2-700M, Qwen3.5-0.8B). Two calibration regimes tested (Regime 4: L2+shared sigma; Regime 5: calibrated sigma). 3-4/9 predictions confirmed depending on model; cross-model results diverge. Root cause is dual:
-
-**Layer 1 (measurement):** Per-layer RBF sigma grows with depth due to residual stream scale accumulation (Spearman = 0.76–0.92 across models). Mixing kernels calibrated at different scales makes `I₂(X_0, X_l)` dominated by bandwidth artifacts, not causal geometry. Regime 5 (calibrated sigma, σ*=0.93–1.74) improved commensurability — P4 CONFIRMED for LFM2-700M with correct calibration.
-
-**Layer 2 (structural):** The Rényi α=2 MI estimator does NOT satisfy DPI. We were testing Shannon MI predictions (P2: MI decays; P4: highway = MI minimum) with an estimator that provably cannot satisfy them. Moreover, the residual stream identity `h_l = h_0 + Σ_{k<l} δ_k` means h_0 is a literal summand of every h_l: the map h_0 → h_l is injective for fixed weights, so Shannon MI(h_0; h_l) = H(h_0) (constant) by the data processing inequality in reverse. Monotone Shannon MI decay is structurally impossible in residual networks.
-
-**P5 cross-model split:** With Regime 5 sigma, P5 (ID tracks MI with input) CONFIRMED for LFM2-350M (r=0.847, p=3.47e-5) but REFUTED for LFM2-700M (r=0.309, p=0.244). ID variation in 700M is narrower (range 1.56 units vs 3.04 in 350M), making the correlation weaker. Per protocol: [MECHANISM_UNDERSPECIFIED] — no pre-registered scale term predicted this divergence.
-
-**What is solid:** P1 (CKA decays with |i-j|) — validated all 3 models, r=-0.42 to -0.64, p<1e-12. `C_ex` highway peak — confirmed LFM2 both models, refuted Qwen (phase classifier architecture term missing).
-
-**Pending work:**
-- [x] Per-layer sigma incommensurability identified (depth dominant, not architecture)
-- [x] Regime 4 (L2+shared sigma) tested
-- [x] Regime 5 (calibrated sigma) tested — improves P4 but P5 split persists
-- [x] Derive protocol-compliant replacement observable for deterministic residual chains (linear-accessible information via linear CKA): `docs/research/linear_accessible_information_derivation.md`
-- [x] Re-run depth-slope and phase-block tests with `compute_linear_cka_from_activations` (2026-03-03, 200 probes):
-  P1-R `[EXPLORATORY]`: 2/3 (350M r=-0.32 p=3.8e-4 ✓; 700M r=-0.17 p=0.066 ✗; Qwen r=-0.41 p=8.2e-13 ✓). Direction consistent.
-  P4-R `[EMPIRICAL]`: 3/3 ratio>1 (1.013/1.025/1.040). Permutation p pending (upgrade path to `[VALIDATED]`).
-  P2-R: unmeasured — cka_matrix.json row-0 extraction needed.
-  Interaction: geodesic CKA P1 `[VALIDATED]` result carries unregistered sigma-selection term — see `docs/research/linear_accessible_information_derivation.md` §8.1.
-- [ ] Derive Shannon-compatible estimator that satisfies DPI for cross-layer comparison
-- [ ] Formalize why P5 scale-dependence is real (350M ID range >> 700M ID range → same architecture, different width)
-- [ ] Architecture-conditioned MI claim contract (required before any new MI promotion)
-- [ ] Cross-model MI promotion remains blocked until commensurability proof exists
-
-### Q5: Repository-Wide First-Principles Doc Rework
-**Source:** `FIRST_PRINCIPLES_REVIEW_PROTOCOL.md`
-
-- [ ] Audit every research/doctrine doc for promotable claims
-- [ ] Attach claim-form fields (operator, equation, architecture term, scale term, operator validity, falsifier)
-- [ ] Downgrade unsupported claims to `[EXPLORATORY]`, `[MECHANISM_UNDERSPECIFIED]`, or `[MEASUREMENT_INVALID]`
-- [ ] Add explicit next falsification experiment for each downgraded claim
-- [ ] Keep a ledger of audited files and claim state transitions
-
-### Q4: Geometry from Architecture (Fundamental)
-**Source:** `OPEN-MATHEMATICAL-QUESTIONS.md` §10
-
-Can we derive geometry from architecture parameters?
-
-Current state: Qualitative family-level predictions work. Quantitative predictions fail.
-
-- [ ] More model families: Test Llama, Mistral, Phi
-- [ ] Theoretical derivation from attention/MLP mechanics
-
-**Note:** Training pipeline now works at 350M-8B. Controlled experiments feasible.
-
----
-
-## Validated Implementations [VALIDATED]
-
-> For current engineering state and guardrail status, see [MISSION.md](MISSION.md). The table below captures research-to-code transitions with evidence citations.
-
-| Implementation | Status | Evidence |
-|----------------|--------|----------|
-| **NB-LoRA Cayley-Stiefel** | Production-ready | val_loss 1.27 vs 1.38 (350M), scales to 8B |
-| **Outcome-based training (REINFORCE)** | Mechanism validated; Weyl remainder budget implemented | Original 14/20 claim unlogged. Reproduction: 18/25 → 9/25 (Lipschitz LR=0.996). Root cause = LR, not REINFORCE. **MASS:** CE-only healthy. CE+REINFORCE at old target: -2 from baseline (REINFORCE drew from CE's budget). **Fix (2026-02-22):** Weyl remainder budget — REINFORCE gets `(sigma_k_min - CE_displacement) / sqrt(N_re)`. Frontier runner implemented in `scripts/reinforce_revalidation.py` for 1.2B multi-seed closure. |
-| **MASS step size** | Implemented + validated | Three layers: `eta_ceiling = σ_k_min / (σ_max × √N)` (√N Brownian budget), `eta_sps = f(x_t) / \|\|d_t\|\|²` (Loizou 2020), `eta_weyl = σ_k_min / \|\|d_t\|\|` + val backoff + Armijo when ceiling binds. CE-only: healthy. REINFORCE: shared displacement budget (Weyl remainder). |
-| **Online evaluation** | Implemented + tested | Greedy-decoding correctness during training |
-| **Entropy regularization** | Implemented + tested | Logit entropy floor prevents collapse |
-| **Answer-span masking + retention replay** | Validated (1.2B) | 36/46 (78%), 0 degenerate |
-| **Data-rank ceiling** | Validated (8B) | `min(tail_dims, n_samples)` — 2.76B → 927M params |
-| **Cross-projection rank coupling** | Validated | q_proj capped at k_proj tail_dims |
-| **Geometric stopping certificate** | Validated | 4-arm × 3-seed ablation |
-| **STaR training service** | Implemented | Problem generation, prompting, verification |
-| **Adapter routing service** | Implemented + benchmarked | Divergence-based multi-adapter routing |
-| **Composite adapter builder** | Implemented | Multi-source adapter construction |
-| **Routed generation service** | Implemented | Multi-adapter inference with routing |
-| **Outer similarity (RSS) monitoring** | Implemented | Cosine, Spearman, top-1 agreement |
-
----
-
-## External Methods Landscape (2024-2026)
-
-**Source:** `docs/research/field_map_external_methods.md`
-
-How ModelCypher's geometry-derived approach compares to published methods. Key finding from both the literature and ModelCypher's own ablation: **spectral information works best for preconditioning, not for directly setting step sizes.**
-
-| Domain | External Methods | ModelCypher Equivalent | Status |
-|--------|-----------------|----------------------|--------|
-| **Learning rate** | D-Adaptation (ICML 2023), Prodigy (ICML 2024), CDAT (NeurIPS 2024), Sophia (ICLR 2024), Schedule-Free (NeurIPS 2024) | MASS: Weyl ceiling + SPS + Weyl displacement | Implemented. Sidesteps curvature estimation entirely. |
-| **Spectral optimizers** | Muon (polar factor), SOAP (Shampoo eigenbasis), Spectra (spectral shaping) | Cayley-Stiefel retraction (orthogonality constraint) | Implemented. Pullback metric P = MM^T removed 2026-02-23 after falsification (P ≈ I, Fisher degenerate). Stiefel constraint is the active mechanism. |
-| **LoRA rank** | SR-LoRA (stable rank), EVA (activation SVD, in HF PEFT), SARA (SV energy), GeLoRA (ID lower bound) | `tail_dims = full_rank - floor(shannon_eff_rank)` | Implemented. Unique null-space capacity approach. |
-| **Layer targeting** | Spectrum (Marchenko-Pastur SNR, in Axolotl) | `tail_dims > 0` (spectral decay analysis) | Implemented. Worth comparing against Spectrum. |
-| **Stopping criteria** | Heavy-tailed spectral stopping (α → 2.5), ε-rank staircase | 4-arm geometric stopping certificate + adapter saturation | Implemented. α monitoring could complement. |
-| **Unified system** | None exists (field map conclusion) | ModelCypher | The only system deriving LR, rank, layer targeting, weight decay, stopping from unified spectral analysis. |
-
-**Fallback candidates if MASS proves insufficient:** D-Adaptation (distance geometry, no curvature), Muon-inspired spectral-norm step control (per-layer). See `docs/research/lr_derivation_analysis.md`.
-
----
-
-## Implementation Status (External Methods)
-
-| Topic | External Reference | Status | ModelCypher Location |
-|------|---------------------|--------|----------------------|
-| WUDI interference | ICML 2025 | Implemented (metrics only) | `wudi_interference.py` |
-| TSV-Merge | CVPR 2025 | Not implemented | — |
-| Curvature signals | arXiv 2024 | Promoted hybrid estimator (canonical sphere/hyperboloid selector + covariance fallback) with ground-truth sign tests enabled | `manifold_curvature.py` |
-| Fisher/CAMEx | ICLR 2025 | Not implemented | — |
-| Null-space filtering | MINGLE-like | Implemented | `geodesic_null_space.py` |
-| Anchor-relative grafting | Moschella 2023 | Design note | See Research Threads below |
-
-Design principles:
-- Parameter-space averaging and interpolation are not used for merging
-- All thresholds are derived from data or machine epsilon
-- Feature-space alignment transforms apply to activations; direct weight transforms require full layer basis change
-
----
-
-## Research Threads
-
-### Anchor-Relative Concept Grafting [CONJECTURAL]
-
-**The Problem**: Activation-space transforms (F = pinv(X_s) @ X_t) achieve CKA = 1.0 on probes, but applying F directly to weights breaks the target model.
-
-**The Solution**: Anchor-relative coordinates (Moschella et al., 2023) provide a shared semantic address space. Alignment happens in anchor space, not feature space.
-
-```
-S_s = cos(A_s, C_s)       # Source anchor-relative representation
-S_t = cos(A_t, C_t)       # Target anchor-relative representation
-R = Procrustes(S_s, S_t)  # Align in anchor space
-Delta_A = (density_weight * Delta_S) @ B  # Decode into target space
-W_merged = W_target + P_null @ Delta_W    # Null-space constrained
-```
-
-**Implementation Touchpoints**: `relative_representation.py`, `gram_aligner.py`, `geodesic_null_space.py`
-
-- [ ] Test on same-architecture pairs
-- [ ] Test on cross-architecture pairs (LFM2-700M → LFM2-350M)
-
-### Cross-LoRA Transfer [CONJECTURAL]
-
-**The Dream**: Train a "coding adapter" for Llama-3 and reuse it on Qwen-2.5 without retraining.
-
-**The Hypothesis**: Some fine-tuned behaviors correspond to transferable low-rank structure:
-```
-ΔW_target ≈ P^T · ΔW_source · P
-```
-Where P is the orthogonal Procrustes rotation derived from semantic primes.
-
-**The Algorithm**:
-1. Extract semantic prime activations for source and target
-2. Find rotation R mapping source → target
-3. Apply R to LoRA matrices A and B
-4. Fine-tune on small calibration set
-
-- [ ] Train coding adapter on Llama-3
-- [ ] Project to Qwen-2.5 using Procrustes
-- [ ] Measure rotation field roughness
-
-### Multi-Channel Architecture
-
-ModelCypher's null-space projection and DeepSeek's Manifold-constrained Hyper-Connectivity (mHC) are mathematically related through invariant-preserving projections onto constrained manifolds.
-
-| Property | Null-Space Projection | Birkhoff Projection (mHC) |
-|----------|----------------------|---------------------------|
-| Manifold | Orthogonal complement | Doubly stochastic matrices |
-| Invariant | Boundary behavior | Total information flow |
-
-Combined: multi-modal knowledge compression while maintaining CKA = 1.0.
-
-- [ ] Design specification combining null-space projection with mHC
-
-### Geometry Probe Extensions
-
-| Extension | Status |
-|-----------|--------|
-| ConceptVolume by default | Code exists |
-| Relational pattern analyzer | Design ready |
-| LoRA isometry ratio | Design ready |
-| Geodesic merge quality | Design ready |
-
-**Concepts as Geometric Clusters**: Using multiple phrasings per concept ("The number 5", "The value 5", "Consider 5") creates a geometric cluster rather than a single point. `ConceptVolume` exists in `riemannian_density.py` but isn't the default. Enables Mahalanobis distance (shape-aware) and Bhattacharyya overlap.
-
-**Relational Patterns Beyond Aggregate CKA**: CKA says "overall structure matches" but doesn't reveal if specific relational patterns (hierarchies, composition triangles, oppositions) are preserved. Graph-level analysis would validate whether compositional reasoning transfers.
-
-**Transformations as Near-Isometries**: If `geodesic(a_i, a_j) ≈ geodesic(T(a_i), T(a_j))`, the transformation is a near-isometry. A LoRA isometry ratio distinguishes "extending" from "replacing."
-
-**The "Generator IS the Transform" Pattern**: If a model understands a conceptual transformation (like "double" or "negate"), that concept's embedding might BE the transformation direction. Potential for concept-as-steering-vector extraction.
-
-**Layer-wise ID for Probe Targeting**: Intrinsic dimension follows entry-ramp → highway → exit-ramp. Adaptive layer selection could focus geometry measurements on "highway" layers where structure is clearest.
-
-**Geodesic Distance Reveals Hidden Structure**: Semantically related pairs are CLOSER in geodesic space than Euclidean distance suggests. Merge quality metrics using geodesic distance would catch incoherent merges that pass aggregate CKA tests.
-
-### Script Mining Techniques
-
-Techniques from 284 research scripts (exp9-exp87).
-
-#### Distilled Logic Shapes
-**Source**: `train_distilled_logic.py`
-
-10 perfect examples > 10,000 mediocre ones. The model needs to learn the **shape** of logic, not surface patterns.
-
-The 6 Logical Shapes:
-1. **PERCENTAGE INCREASE**: new = original + (original × percent)
-2. **AVERAGE RATE**: total_output / total_input (NOT mean of rates)
-3. **THRESHOLD CROSSING**: breakeven + 1 = first profitable
-4. **INVERSE CHAIN**: work backwards, undo operations in reverse
-5. **SEQUENTIAL OPERATIONS**: subtract first, THEN multiply
-6. **REMAINING FIRST**: compute what's left BEFORE applying rate
-
-#### Counterfactual Sensitivity [EMPIRICAL]
-**Source**: `counterfactual_sensitivity.py`, `geometric_knowledge_discovery.py`
-
-Semantic invariance (paraphrase test) does NOT distinguish facts from opinions. **Counterfactual sensitivity** does.
-
-- Factual statements: mean sensitivity ~0.25
-- Opinion statements: mean sensitivity ~0.08
-- Effect size: +0.94 (STRONG separation)
-
-Use cases: detecting factual knowledge vs pattern matching, identifying missing capabilities, confidence calibration.
-
-#### Generation-Based Evaluation [EMPIRICAL]
-**Source**: `exp86_proper_evaluation.py`, `exp87_generation_based_self_improvement.py`
-
-Single-token evaluation creates a false ceiling at ~70%. Generation-based evaluation reveals true capability (+20pp gap). Models reason correctly over multiple tokens but fail single-token prediction.
-
-### MASS Validation + Open Questions
-**Source:** `docs/research/lr_derivation_analysis.md`
-
-MASS replaces the broken Lipschitz LR derivation. Validated on 350M (CE-only: healthy). CE+REINFORCE: still degraded (3× above sweet spot).
-
-- [x] **√N budget distribution**: Confirmed empirically. Without √N: catastrophic (η=0.106). With √N: healthy (η=0.016). Implemented.
-- [x] **REINFORCE gradient accounting**: Resolved (2026-02-22). Root cause: REINFORCE drew from the same Weyl budget as CE but wasn't accounted for. Fix: `target_step_norm = (sigma_k_min - update_norm) / sqrt(N_re)` — REINFORCE gets the remainder of the Weyl budget after CE, distributed via Brownian scaling. If CE exhausts the budget (`update_norm >= sigma_k_min`), REINFORCE is skipped. Telemetry: `outcome_budget_remaining`. Multi-seed closure runner is `scripts/reinforce_revalidation.py`.
-- [ ] **Per-layer vs global η**: MASS uses global σ_k_min / σ_max. Per-layer ceiling would respect per-layer geometry. When does this matter?
-- [ ] **SPS non-binding for fine-tuning**: SPS assumes f*=0, but fine-tuning loss is never near zero. SPS gives η ~0.3-1.4, never binding. Needs corrected f* or replacement.
-- [ ] **Scale validation (8B+)**: Does MASS produce correct step sizes on Qwen3-8B and larger? (Seeded gate runner: `scripts/g5_8b_validation.py`)
-- [ ] **Convergence analysis**: Under what conditions does min(ceiling, SPS, Weyl) converge?
-
-### DPO as Variance-Reduction Alternative
-**Blocked on:** MASS validation. Only relevant if REINFORCE variance remains a problem after LR is fixed.
-
-DPO (Rafailov et al. 2023) converts preference learning into a classification-style loss, eliminating on-policy sampling. ModelCypher already generates (correct, incorrect) pairs from online eval — these map directly to DPO preference pairs.
-
-**When to test:** After MASS fixes LR and REINFORCE is re-run. If variance (not LR) is the remaining bottleneck, DPO's implicit KL constraint and spectral bounds operate in different spaces (output distribution vs parameter perturbation) and may be complementary rather than conflicting.
-
-**Caution:** DPO's implicit KL tethers the model to the reference policy. Under tight spectral bounds (NB-LoRA), this double constraint could under-fit. REINFORCE with good baselines (RLOO, GRPO) may be preferable if capacity is the binding constraint. Test empirically.
-
----
-
-## Partially Unblocked
-
-### Training Dynamics → Geometry
-**Source:** `OPEN-MATHEMATICAL-QUESTIONS.md` §8
-
-How do training hyperparameters affect geometry?
-
-**Previously blocked on:** Training runs. Now partially unblocked — the NB-LoRA pipeline works at 350M, 1.2B, and 8B. Controlled experiments comparing geometry before/after training are now feasible.
-
-- [ ] Compare layer geometry (SVD spectra, effective rank) pre- vs post-training
-- [ ] Test whether Cayley-Stiefel preserves geometric structure better than plain SGD
-- [ ] Measure how data-rank ceiling affects post-training geometry
-
----
-
-## Known Constraints [EMPIRICAL]
-
-**Source:** `docs/research/FAILURE-MODES.md`
-
-| Constraint | Implication |
-|------------|-------------|
-| Layer combination interference | Single-layer compression is practical limit |
-| MLP-only teaching limits | ~92% ceiling for MLP-only approaches |
-| Gradient entanglement in math | Math domains need different approach |
-| Geometry protection prevents capability transfer | Can't transfer specialist capability while preserving generalist geometry |
-| **CE on reasoning traces = format memorization** [VALIDATED] | PPL, CKA, budget all look perfect while inference degrades. The optimizer is correct; the objective (CE) is the problem. Outcome-based training (REINFORCE) is the fix. |
-| **MLX SVD crash on ill-conditioned matrices** | C++ abort, uncatchable. Use power iteration for runtime monitoring, `stream=mx.cpu` for all linalg. |
-| **Lipschitz LR derivation via HVP** `[DISPROVEN]` | Central-difference HVP + power iteration values span 3 OOM across minibatches. 10-batch median doesn't help. Loss surface has (L₀,L₁)-relaxed smoothness (Zhang ICLR 2020). Replaced by MASS. |
-
----
-
-## CLI Tools
-
-```bash
-# Training
-poetry run mc train run --model /path/to/model --data /path/to/dataset --output /path/to/adapter
-poetry run mc train star --model /path/to/model --output /path/to/adapter
-
-# Analysis
-poetry run mc analyze expansion-ratio --model /path -t -q
-poetry run mc analyze spectral-trajectory --model /path -t -q
-poetry run mc analyze entropy-trajectory --model /path -t -q
-poetry run mc analyze dimension-profile --model /path -t -q
-```
-
----
+- A baseline suite proves or refutes that the canonical training path beats
+  standard practice on matched comparisons
+- The 8B closure has at least three complete seeds and either passes all gates
+  or fails with a traced mechanism
+- The preservation operator behind `pipeline_validation` failures is identified
+  and re-tested
+- The script and result inventories are generated and the top storage-heavy
+  result families are archived or compressed into canonical summary bundles
 
 ## References
 
-| Document | Content |
-|----------|---------|
-| `docs/research/OPEN-MATHEMATICAL-QUESTIONS.md` | Derivations, proofs, solved questions |
-| `docs/research/geometric_capacity_paper_experiment_matrix.md` | Paper-to-experiment mapping with pass/falsify criteria |
-| `docs/LFM2-350M-WORK-SUMMARY.md` | LFM2 project status |
-| `docs/research/quantization_frontier_precheck_v1_implementation_2026_03_05.md` | Quantization frontier gate implementation summary |
-| `data/experiments/archive/geometric_fingerprint_discovery.md` | expansion_ratio findings |
-| `docs/research/lr_derivation_analysis.md` | MASS step size analysis + fallback candidates |
-| `docs/research/field_map_external_methods.md` | External methods landscape (2024-2026) with ModelCypher mappings |
-| `docs/research/architecture_geometry_theory.md` | Signal propagation, RMT, attention rank saturation, regime decomposition |
-
-Papers:
-- Moschella et al. (2023). Relative representations enable zero-shot latent space communication.
-- DeepSeek-AI. (2025). mHC: Manifold-Constrained Hyper-Connections. arXiv:2512.24880.
-- Kornblith et al. (2019). Similarity of Neural Network Representations Revisited.
-- Huh et al. (2024). The Platonic Representation Hypothesis. ICML 2024.
-- Reimann et al. (2017). Cliques of Neurons Bound into Cavities. Frontiers in Computational Neuroscience.
-- Chen et al. (2025). A Unified Geometric Space Bridging AI Models and the Human Brain.
-- Shen et al. (2025). Alignment between Brains and AI: Evidence for Convergent Evolution.
-- Lin & Kriegeskorte (2024). The topology and geometry of neural representations. PNAS.
-- Aghajanyan et al. (2021). Intrinsic Dimensionality Explains the Effectiveness of Language Model Fine-Tuning.
-- Cheng et al. (2025). Emergence of a High-Dimensional Abstraction Phase in Language Transformers.
+- `docs/VISION.md`
+- `docs/MISSION.md`
+- `docs/research/OPEN-MATHEMATICAL-QUESTIONS.md`
+- `docs/research/SOTA-AUDIT-2026-03.md`
+- `docs/research/field_map_external_methods.md`
+- `docs/research/PRODUCT-MAINTENANCE-AUDIT-2026-03.md`
+- `results/sota_audit_2026_03/scorecard.md`
+- `results/pipeline_validation/REPORT.md`
+- `results/g5_8b_validation_multiseed/REPORT.md`
+- `results/closedform_sequential_correction/20260227T173057Z/closedform_correction.json`
+- [Hugging Face PEFT LoRA docs](https://huggingface.co/docs/peft/main/package_reference/lora)
+- [Axolotl config reference](https://docs.axolotl.ai/docs/config-reference.html)
+- [TorchTune LoRA single-device recipe](https://docs.pytorch.org/torchtune/0.6/recipes/lora_finetune_single_device.html)
+- [Unsloth LoRA hyperparameters guide](https://unsloth.ai/docs/get-started/fine-tuning-llms-guide/lora-hyperparameters-guide)

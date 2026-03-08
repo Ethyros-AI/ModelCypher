@@ -87,17 +87,22 @@ MODEL_SPECS = {
     "350M": {
         "path": MODELS_DIR / "LFM2-350M-MLX-bf16",
         "name": "LFM2-350M",
-        "num_layers": 24,
+        "num_layers": 16,
     },
     "700M": {
         "path": MODELS_DIR / "LFM2-700M-bf16",
         "name": "LFM2-700M",
-        "num_layers": 32,
+        "num_layers": 16,
     },
     "1.2B": {
-        "path": MODELS_DIR / "LFM2-1.2B-bf16",
-        "name": "LFM2-1.2B",
-        "num_layers": 32,
+        "path": MODELS_DIR / "LFM2.5-1.2B-Base-bf16",
+        "name": "LFM2.5-1.2B",
+        "num_layers": 16,
+    },
+    "0.8B": {
+        "path": MODELS_DIR / "Qwen3.5-0.8B-bf16",
+        "name": "Qwen3.5-0.8B",
+        "num_layers": 24,
     },
 }
 
@@ -367,10 +372,15 @@ def measure_standard_lora_spectral_norms(model) -> dict:
             a = pair["a"]
             b = pair["b"]
             delta = a @ b
-            # Spectral norm via SVD
-            s = mx.linalg.svd(delta.astype(mx.float32), stream=mx.cpu)[1]
-            mx.eval(s)
-            s_max = float(s[0])
+            # Spectral norm via SVD (with safety — mx.linalg.svd can C++ abort)
+            try:
+                s = mx.linalg.svd(delta.astype(mx.float32), stream=mx.cpu)[1]
+                mx.eval(s)
+                s_max = float(s[0])
+            except Exception:
+                # Fallback: Frobenius norm as upper bound on spectral norm
+                s_max = float(mx.linalg.norm(delta.astype(mx.float32)))
+                logger.warning(f"  SVD failed for {base_key}, using Frobenius norm")
             spectral_norms.append({
                 "layer": base_key,
                 "spectral_norm": s_max,
@@ -890,6 +900,16 @@ def main():
         if not path.exists():
             logger.error(f"Data file not found: {path}")
             sys.exit(1)
+
+    # Validate data format (training data must have "text" field)
+    for path in [TRAIN_DATA, VAL_DATA]:
+        with open(path) as f:
+            first_line = f.readline().strip()
+            if first_line:
+                record = json.loads(first_line)
+                if "text" not in record:
+                    logger.error(f"Data file {path} missing 'text' field. First record keys: {list(record.keys())}")
+                    sys.exit(1)
 
     # Output directory
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")

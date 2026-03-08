@@ -1,35 +1,11 @@
 #!/usr/bin/env python3
-"""Tangent Subspace ID Mechanism: What determines TwoNN intrinsic dimension?
+"""Tangent-subspace mechanism rerun harness.
 
-Resolves the [MECHANISM_UNKNOWN] gap in the causal chain (OPEN-MATHEMATICAL-QUESTIONS.md).
-All previous mechanisms refuted: M1 global/local k_eff, M2 curvature bias, M3 scale.
-
-New hypothesis H_T: TwoNN ID changes when the layer Jacobian J_l = I + dF_l/dh_l
-ROTATES the data manifold's tangent subspace — introducing novel directions or
-collapsing existing ones. This is different from M1 because it measures subspace
-ROTATION (which directions change), not eigenvalue magnitudes (how much variance).
-
-Three measurement channels:
-A. Global tangent subspace analysis (Grassmann distance between PCA subspaces)
-B. Local tangent alignment (k-NN tangent bases via TangentSpaceAlignment)
-C. Tracked neighbor rank change (same neighbors tracked across layers)
-
-Five pre-registered predictions:
-P1: Spearman(d_G, |delta_ID|) > 0.3 on all models
-P2: Spearman(novel_count, delta_ID) > 0.3 when delta_ID > 0
-P3: Highway d_G < median(d_G)
-P4: Spearman(mean_local_angle, |delta_ID|) > 0.3 on all models
-P5: Spearman(delta_local_rank, delta_ID) > 0.3 on all models
-
-Three falsification criteria:
-F1: P1 < 0.3 on ANY model -> global tangent rotation falsified
-F2: Sign of P1 differs between models -> mechanism underspecified
-F3: P5 < 0.3 on ALL models -> local mechanism different from global
-
-Usage:
-    poetry run python scripts/tangent_subspace_id_mechanism.py --smoke
-    poetry run python scripts/tangent_subspace_id_mechanism.py
-    poetry run python scripts/tangent_subspace_id_mechanism.py --models LFM2-350M Qwen3.5-0.8B
+Historical note:
+- The original 2026-03-07 hand-written 60-prompt run remains at
+  `results/tangent_subspace_id_mechanism/results.json`.
+- Promotable reruns use atlas-backed probe manifests, save a frozen manifest per
+  run, and separate raw measurement output from protocol adjudication.
 """
 
 from __future__ import annotations
@@ -38,10 +14,12 @@ import argparse
 import gc
 import json
 import logging
-import math
 import os
 import time
+from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from scipy import stats as scipy_stats
@@ -54,13 +32,45 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 MODELS_BASE = os.environ.get("MC_MODELS_BASE", "/Volumes/CodeCypher/models")
+RESULTS_ROOT = Path("results/tangent_subspace_id_mechanism")
+HISTORICAL_RESULTS_PATH = RESULTS_ROOT / "results.json"
+PROTOCOL_NAME = "TANGENT-SUBSPACE-ID-FALSIFIER-PROTOCOL"
+ARTIFACT_SCHEMA_VERSION = "v2"
+DEFAULT_REFERENCE_MODEL = "Llama-3.2-3B"
+OPERATOR_MISMATCH_NOTE = (
+    "Measurement C uses Euclidean KDTree neighborhoods, while TwoNN uses "
+    "geodesic distances via a k-NN graph. Treat local-rank summaries as "
+    "[MEASUREMENT_INVALID] for causal adjudication."
+)
 
 
-def _resolve_existing_path(*candidates: str) -> str:
-    for path in candidates:
-        if os.path.exists(path):
-            return path
-    return candidates[0]
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _run_id() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+
+
+def _json_default(obj: Any):
+    if isinstance(obj, Path):
+        return str(obj)
+    if isinstance(obj, (np.bool_,)):
+        return bool(obj)
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        value = float(obj)
+        return None if np.isnan(value) else value
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, float) and (np.isnan(obj) or np.isinf(obj)):
+        return None
+    raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.write_text(json.dumps(payload, indent=2, default=_json_default), encoding="utf-8")
 
 
 def _resolve_model_base(model) -> object:
@@ -102,32 +112,38 @@ def _resolve_model_base(model) -> object:
 MODEL_REGISTRY = {
     "LFM2-350M": {
         "path": f"{MODELS_BASE}/mlx-community/LFM2-350M-MLX-bf16",
-        "L": 16, "d": 1024,
+        "L": 16,
+        "d": 1024,
         "architecture": "lfm2",
     },
     "LFM2-700M": {
         "path": f"{MODELS_BASE}/mlx-community/LFM2-700M-bf16",
-        "L": 16, "d": 1536,
+        "L": 16,
+        "d": 1536,
         "architecture": "lfm2",
     },
     "Qwen3.5-0.8B": {
         "path": f"{MODELS_BASE}/mlx-community/Qwen3.5-0.8B-bf16",
-        "L": 24, "d": 1024,
+        "L": 24,
+        "d": 1024,
         "architecture": "qwen3.5",
     },
     "Llama-3.2-3B": {
         "path": f"{MODELS_BASE}/mlx-community/Llama-3.2-3B-Instruct-bf16",
-        "L": 28, "d": 3072,
+        "L": 28,
+        "d": 3072,
         "architecture": "llama",
     },
     "Qwen3.5-2B": {
         "path": f"{MODELS_BASE}/mlx-community/Qwen3.5-2B-bf16",
-        "L": 24, "d": 2048,
+        "L": 24,
+        "d": 2048,
         "architecture": "qwen3.5",
     },
 }
 
-PROBE_PROMPTS = [
+
+LEGACY_PROBE_PROMPTS = [
     "The capital of France is",
     "Who wrote Romeo and Juliet?",
     "The chemical symbol for water is",
@@ -191,19 +207,187 @@ PROBE_PROMPTS = [
 ]
 
 
+def _select_probe_text(probe: Any) -> str | None:
+    if hasattr(probe, "support_texts") and probe.support_texts:
+        for text in probe.support_texts:
+            if text and text.strip():
+                return text.strip()
+    description = getattr(probe, "description", "")
+    if isinstance(description, str) and description.strip():
+        return description.strip()
+    name = getattr(probe, "name", "")
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    return None
+
+
+def _legacy_probe_manifest(prompts: list[str]) -> list[dict[str, Any]]:
+    manifest = []
+    for index, prompt in enumerate(prompts):
+        manifest.append(
+            {
+                "probe_id": f"legacy_prompt:{index:03d}",
+                "source": "legacy",
+                "domain": "legacy",
+                "name": f"Legacy prompt {index + 1}",
+                "description": "Historical hand-written tangent prompt",
+                "text": prompt,
+            }
+        )
+    return manifest
+
+
+def derive_llama_probe_budget(
+    reference_path: Path = HISTORICAL_RESULTS_PATH,
+    reference_model: str = DEFAULT_REFERENCE_MODEL,
+) -> dict[str, Any]:
+    """Derive the promotable probe budget from the historical Llama run."""
+    result: dict[str, Any] = {
+        "reference_path": str(reference_path),
+        "reference_model": reference_model,
+        "required_tangent_rank": None,
+        "required_probe_count": None,
+        "used_fallback": False,
+    }
+    if not reference_path.exists():
+        result["used_fallback"] = True
+        result["fallback_reason"] = "reference_results_missing"
+        return result
+
+    payload = json.loads(reference_path.read_text(encoding="utf-8"))
+    for model_payload in payload.get("per_model", []):
+        if model_payload.get("model_name") != reference_model:
+            continue
+        ids = [
+            float(value)
+            for value in model_payload.get("twonn_ids", [])[1:]
+            if value is not None and np.isfinite(value)
+        ]
+        if not ids:
+            result["used_fallback"] = True
+            result["fallback_reason"] = "reference_model_has_no_valid_non_stage0_ids"
+            return result
+
+        required_tangent_rank = max(1, int(np.ceil(max(ids))))
+        required_probe_count = (2 * required_tangent_rank) ** 2
+        result["required_tangent_rank"] = required_tangent_rank
+        result["required_probe_count"] = required_probe_count
+        return result
+
+    result["used_fallback"] = True
+    result["fallback_reason"] = "reference_model_missing_from_results"
+    return result
+
+
+def _round_robin_select(entries_by_domain: dict[str, list[dict[str, Any]]], limit: int) -> list[dict[str, Any]]:
+    selected: list[dict[str, Any]] = []
+    domains = sorted(entries_by_domain)
+    while len(selected) < limit and any(entries_by_domain[domain] for domain in domains):
+        for domain in domains:
+            bucket = entries_by_domain[domain]
+            if not bucket:
+                continue
+            selected.append(bucket.pop(0))
+            if len(selected) >= limit:
+                break
+    return selected
+
+
+def _build_atlas_probe_manifest(limit: int | None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    from modelcypher.core.domain.atlas.probe_loader import load_all_probes
+
+    probes = load_all_probes()
+    by_domain: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for probe in probes:
+        text = _select_probe_text(probe)
+        if text is None:
+            continue
+        domain = str(getattr(probe.domain, "value", probe.domain))
+        source = str(getattr(probe.source, "value", probe.source))
+        by_domain[domain].append(
+            {
+                "probe_id": probe.probe_id,
+                "source": source,
+                "domain": domain,
+                "name": probe.name,
+                "description": probe.description,
+                "text": text,
+            }
+        )
+
+    for entries in by_domain.values():
+        entries.sort(key=lambda item: (item["source"], item["probe_id"], item["text"]))
+
+    valid_probe_count = sum(len(entries) for entries in by_domain.values())
+    requested = valid_probe_count if limit is None else min(limit, valid_probe_count)
+    selected = _round_robin_select(by_domain, requested)
+    if len(selected) < requested:
+        raise RuntimeError(
+            f"Atlas manifest requested {requested} probes but only {len(selected)} valid probes were selected."
+        )
+
+    return selected, {
+        "probe_source": "atlas",
+        "selection_strategy": "domain_round_robin",
+        "valid_probe_count": valid_probe_count,
+        "requested_probe_count": requested,
+        "selected_probe_count": len(selected),
+    }
+
+
+def load_probe_manifest(path: Path) -> list[dict[str, Any]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    probes = payload["probes"] if isinstance(payload, dict) else payload
+    return list(probes)
+
+
+def _resolve_prompts(args) -> tuple[list[str], list[dict[str, Any]], dict[str, Any]]:
+    if args.smoke or args.legacy_prompts:
+        prompts = LEGACY_PROBE_PROMPTS[:12] if args.smoke else list(LEGACY_PROBE_PROMPTS)
+        manifest = _legacy_probe_manifest(prompts)
+        return prompts, manifest, {
+            "probe_source": "legacy",
+            "selection_strategy": "historical_hand_written",
+            "selected_probe_count": len(prompts),
+            "promotable": False,
+        }
+
+    if args.probe_manifest:
+        manifest_path = Path(args.probe_manifest).expanduser().resolve()
+        manifest = load_probe_manifest(manifest_path)
+        prompts = [entry["text"] for entry in manifest]
+        return prompts, manifest, {
+            "probe_source": "manifest",
+            "selection_strategy": "frozen_manifest",
+            "selected_probe_count": len(prompts),
+            "manifest_path": str(manifest_path),
+            "promotable": True,
+        }
+
+    budget_info = derive_llama_probe_budget()
+    requested_limit = args.probe_limit
+    if requested_limit is None and not budget_info["used_fallback"]:
+        requested_limit = int(budget_info["required_probe_count"])
+
+    manifest, manifest_meta = _build_atlas_probe_manifest(requested_limit)
+    prompts = [entry["text"] for entry in manifest]
+    manifest_meta["budget_derivation"] = budget_info
+    manifest_meta["promotable"] = True
+    return prompts, manifest, manifest_meta
+
+
 # =============================================================================
-# Activation Collection (from covariance_rank_id_analysis.py pattern)
+# Activation Collection
 # =============================================================================
 
 
 def collect_layer_activations(
-    model, tokenizer, prompts: list[str], num_layers: int,
+    model,
+    tokenizer,
+    prompts: list[str],
+    num_layers: int,
 ) -> list[np.ndarray]:
-    """Collect last-token hidden states at each layer for all prompts.
-
-    Returns list of [N, d] arrays. Index 0 = embedding output,
-    index i+1 = output of layer i.
-    """
+    """Collect last-token hidden states at each layer for all prompts."""
     import mlx.core as mx
 
     base = _resolve_model_base(model)
@@ -247,197 +431,212 @@ def collect_layer_activations(
 
             h_out_last = h_out[:, -1, :].astype(mx.float32)
             mx.eval(h_out_last)
-            stage_activations[i + 1].append(
-                np.array(h_out_last[0].tolist(), dtype=np.float32)
-            )
-
+            stage_activations[i + 1].append(np.array(h_out_last[0].tolist(), dtype=np.float32))
             hidden = h_out
 
     return [np.stack(acts) for acts in stage_activations]
 
 
-# =============================================================================
-# TwoNN ID per layer
-# =============================================================================
-
-
 def compute_twonn_per_layer(stage_activations: list[np.ndarray], backend) -> list[float]:
-    """Compute TwoNN intrinsic dimension at each layer stage."""
+    """Compute TwoNN intrinsic dimension at each stage."""
     from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 
     ids: list[float] = []
-    for i, acts in enumerate(stage_activations):
+    for stage_index, acts in enumerate(stage_activations):
         try:
-            estimate = IntrinsicDimension.compute_two_nn(
-                acts.tolist(), backend=backend,
-            )
-            ids.append(estimate.intrinsic_dimension)
-        except Exception as e:
-            logger.warning(f"  TwoNN failed at stage {i}: {e}")
+            estimate = IntrinsicDimension.compute_two_nn(acts.tolist(), backend=backend)
+            ids.append(float(estimate.intrinsic_dimension))
+        except Exception as exc:
+            logger.warning("  TwoNN failed at stage %d: %s", stage_index, exc)
             ids.append(float("nan"))
     return ids
 
 
 # =============================================================================
-# Measurement A: Global Tangent Subspace Analysis
+# Measurement A: Shared rotation + added-direction signal
 # =============================================================================
 
 
 def compute_pca_tangent_basis(X: np.ndarray, k: int) -> np.ndarray:
     """Top-k PCA directions of centered X. Returns [k, d] orthonormal basis."""
     X_centered = X - X.mean(axis=0)
-    _U, _S, Vt = np.linalg.svd(X_centered, full_matrices=False)
-    k_actual = min(k, Vt.shape[0])
-    return Vt[:k_actual]
+    _u, _s, vt = np.linalg.svd(X_centered, full_matrices=False)
+    return vt[: min(k, vt.shape[0])]
 
 
-def grassmann_distance_numpy(V1: np.ndarray, V2: np.ndarray) -> dict:
-    """Grassmann distance between [k1, d] and [k2, d] orthonormal bases.
+def shared_rotation_metrics(V1: np.ndarray, V2: np.ndarray) -> dict[str, float]:
+    """Grassmann metrics on the matched-rank shared subspace."""
+    k_min = min(V1.shape[0], V2.shape[0])
+    if k_min <= 0:
+        return {
+            "shared_rank": 0,
+            "shared_rotation_geodesic": float("nan"),
+            "shared_rotation_chordal": float("nan"),
+        }
 
-    When k2 > k1, SVD of V1 @ V2.T gives k1 principal angles. The remaining
-    k2 - k1 directions in V2 are in the null space of the projection (cos = 0
-    by construction) — they are automatically novel.
-    """
-    k1, k2 = V1.shape[0], V2.shape[0]
-    M = V1 @ V2.T
+    M = V1[:k_min] @ V2[:k_min].T
     cos_angles = np.linalg.svd(M, compute_uv=False)
     cos_angles = np.clip(cos_angles, 0.0, 1.0)
     principal_angles = np.arccos(cos_angles)
-
-    geodesic = float(np.sqrt(np.sum(principal_angles**2)))
-    chordal = float(np.sqrt(np.sum(np.maximum(0.0, 1.0 - cos_angles**2))))
-
-    # Novel direction count: cos(theta) < sqrt(eps) (same threshold as subspace.py)
-    # Plus implicit novel directions when k2 > k1 (null space of projection)
-    sqrt_eps = float(np.sqrt(np.finfo(np.float32).eps))
-    novel_from_angles = int(np.sum(cos_angles < sqrt_eps))
-    novel_implicit = max(0, k2 - k1)  # directions in V2 beyond V1's span
-    novel_count = novel_from_angles + novel_implicit
-
     return {
-        "geodesic_distance": geodesic,
-        "chordal_distance": chordal,
-        "novel_count": novel_count,
-        "novel_from_angles": novel_from_angles,
-        "novel_implicit": novel_implicit,
-        "n_angles": len(cos_angles),
+        "shared_rank": int(k_min),
+        "shared_rotation_geodesic": float(np.sqrt(np.sum(principal_angles**2))),
+        "shared_rotation_chordal": float(np.sqrt(np.sum(np.maximum(0.0, 1.0 - cos_angles**2)))),
+    }
+
+
+def added_direction_signal_numpy(
+    reference_basis: np.ndarray,
+    candidate_basis: np.ndarray,
+    *,
+    residual_floor: float | None = None,
+) -> dict[str, Any]:
+    """Measure candidate directions outside the reference span.
+
+    Each candidate basis vector is projected onto the reference span. Residual
+    norm > sqrt(eps) counts as an added off-span direction.
+    """
+    if residual_floor is None:
+        residual_floor = float(np.sqrt(np.finfo(np.float32).eps))
+
+    if reference_basis.size == 0 or candidate_basis.size == 0:
+        return {
+            "residual_floor": residual_floor,
+            "count_above_floor": 0,
+            "max_residual_norm": 0.0,
+            "mean_residual_norm": 0.0,
+            "total_residual_energy": 0.0,
+            "residual_norms": [],
+        }
+
+    projection = reference_basis @ candidate_basis.T
+    projected_norm_sq = np.sum(projection**2, axis=0)
+    projected_norm_sq = np.clip(projected_norm_sq, 0.0, 1.0)
+    residual_norm_sq = np.maximum(0.0, 1.0 - projected_norm_sq)
+    residual_norms = np.sqrt(residual_norm_sq)
+    return {
+        "residual_floor": residual_floor,
+        "count_above_floor": int(np.sum(residual_norms > residual_floor)),
+        "max_residual_norm": float(np.max(residual_norms)) if residual_norms.size else 0.0,
+        "mean_residual_norm": float(np.mean(residual_norms)) if residual_norms.size else 0.0,
+        "total_residual_energy": float(np.sum(residual_norm_sq)),
+        "residual_norms": residual_norms.tolist(),
     }
 
 
 def measurement_a_global_tangent(
-    stage_activations: list[np.ndarray], twonn_ids: list[float],
-) -> list[dict]:
-    """Grassmann distance between consecutive-layer PCA tangent subspaces."""
-    results = []
-    n_stages = len(stage_activations)
-
-    for l in range(n_stages - 1):
-        id_l = twonn_ids[l]
-        id_l1 = twonn_ids[l + 1]
-
+    stage_activations: list[np.ndarray],
+    twonn_ids: list[float],
+) -> list[dict[str, Any]]:
+    """Shared-rotation and added-direction observables between consecutive stages."""
+    results: list[dict[str, Any]] = []
+    for layer_index in range(len(stage_activations) - 1):
+        id_l = twonn_ids[layer_index]
+        id_l1 = twonn_ids[layer_index + 1]
         if np.isnan(id_l) or np.isnan(id_l1):
-            results.append({"layer_pair": [l, l + 1], "skipped": True})
+            results.append({"layer_pair": [layer_index, layer_index + 1], "skipped": True})
             continue
 
         k_l = max(2, round(id_l))
         k_l1 = max(2, round(id_l1))
+        V_l = compute_pca_tangent_basis(stage_activations[layer_index], k_l)
+        V_l1 = compute_pca_tangent_basis(stage_activations[layer_index + 1], k_l1)
+        shared = shared_rotation_metrics(V_l, V_l1)
 
-        V_l = compute_pca_tangent_basis(stage_activations[l], k_l)
-        V_l1 = compute_pca_tangent_basis(stage_activations[l + 1], k_l1)
+        if V_l1.shape[0] >= V_l.shape[0]:
+            added_side = "target_vs_source"
+            reference_stage = layer_index
+            candidate_stage = layer_index + 1
+            added = added_direction_signal_numpy(V_l, V_l1)
+        else:
+            added_side = "source_vs_target"
+            reference_stage = layer_index + 1
+            candidate_stage = layer_index
+            added = added_direction_signal_numpy(V_l1, V_l)
 
-        # Full (unmatched) Grassmann comparison: SVD of k_l x k_l1 matrix
-        # gives min(k_l, k_l1) principal angles. Directions beyond min(k_l, k_l1)
-        # in the larger subspace are in the null space — automatically novel.
-        grassmann_full = grassmann_distance_numpy(V_l, V_l1)
-
-        # Matched dimensions for fair Grassmann distance (same subspace dim)
-        k_min = min(V_l.shape[0], V_l1.shape[0])
-        grassmann_matched = grassmann_distance_numpy(V_l[:k_min], V_l1[:k_min])
-
-        results.append({
-            "layer_pair": [l, l + 1],
-            "k_l": k_l,
-            "k_l1": k_l1,
-            "k_matched": k_min,
-            "grassmann_geodesic": grassmann_matched["geodesic_distance"],
-            "grassmann_chordal": grassmann_matched["chordal_distance"],
-            "novel_count_matched": grassmann_matched["novel_count"],
-            "novel_count_full": grassmann_full["novel_count"],
-            "novel_from_angles": grassmann_full["novel_from_angles"],
-            "novel_implicit": grassmann_full["novel_implicit"],
-            "extra_dims": abs(k_l1 - k_l),
-            "n_angles_matched": grassmann_matched["n_angles"],
-            "n_angles_full": grassmann_full["n_angles"],
-            "grassmann_full_geodesic": grassmann_full["geodesic_distance"],
-        })
-
+        results.append(
+            {
+                "layer_pair": [layer_index, layer_index + 1],
+                "k_l": int(k_l),
+                "k_l1": int(k_l1),
+                "shared_rank": int(shared["shared_rank"]),
+                "shared_rotation_geodesic": shared["shared_rotation_geodesic"],
+                "shared_rotation_chordal": shared["shared_rotation_chordal"],
+                "added_direction_side": added_side,
+                "reference_stage": int(reference_stage),
+                "candidate_stage": int(candidate_stage),
+                "added_direction_count_eps": int(added["count_above_floor"]),
+                "added_direction_total_residual": added["total_residual_energy"],
+                "added_direction_mean_residual": added["mean_residual_norm"],
+                "added_direction_max_residual": added["max_residual_norm"],
+                "added_direction_floor": added["residual_floor"],
+                "added_direction_residuals": added["residual_norms"],
+            }
+        )
     return results
 
 
 # =============================================================================
-# Measurement B: Local Tangent Alignment
+# Measurement B: Local tangent alignment
 # =============================================================================
 
 
+def _measurement_b_payload(result, source_layer: int, target_layer: int) -> dict[str, Any]:
+    return {
+        "layer_pair": [source_layer, target_layer],
+        "anchor_count": int(result.anchor_count),
+        "neighbor_count": int(result.neighbor_count),
+        "tangent_rank": int(result.tangent_rank),
+        "mean_angle_radians": float(result.mean_angle_radians),
+        "median_angle_radians": float(result.median_angle_radians),
+        "mean_cosine": float(result.mean_cosine),
+        "coverage": float(result.coverage),
+    }
+
+
 def measurement_b_local_tangent(
-    stage_activations: list[np.ndarray], backend,
-) -> list[dict]:
-    """Local tangent alignment between consecutive layers.
-
-    Uses TangentSpaceAlignment to compare local geometry at each anchor
-    point between layer l and layer l+1.
-    """
-    from modelcypher.core.domain.geometry.tangent_space_alignment import (
-        TangentSpaceAlignment,
-    )
-
-    from modelcypher.core.domain.geometry.scalars import sqrt_scalar
+    stage_activations: list[np.ndarray],
+    backend,
+) -> list[dict[str, Any]]:
+    """Local tangent alignment between consecutive layers."""
+    from modelcypher.core.domain.geometry.tangent_space_alignment import TangentSpaceAlignment
 
     aligner = TangentSpaceAlignment(backend)
-    results = []
-    n_stages = len(stage_activations)
+    results: list[dict[str, Any]] = []
 
-    # Log operator parameters (derived from N, not user-set)
-    n_anchors = stage_activations[0].shape[0]
-    neighbor_count = min(max(2, int(sqrt_scalar(float(n_anchors), backend))), n_anchors - 1)
-    tangent_rank = min(max(1, neighbor_count // 2), neighbor_count)
-    logger.info(f"    Measurement B operator: N={n_anchors}, neighbor_count={neighbor_count}, tangent_rank={tangent_rank}")
-
-    for l in range(n_stages - 1):
-        X_l = stage_activations[l]
-        X_l1 = stage_activations[l + 1]
-
+    for layer_index in range(len(stage_activations) - 1):
+        X_l = stage_activations[layer_index]
+        X_l1 = stage_activations[layer_index + 1]
         pts_l = backend.array(X_l.tolist())
         pts_l1 = backend.array(X_l1.tolist())
         backend.eval(pts_l, pts_l1)
 
         try:
             result = aligner.compute_layer_metrics(
-                pts_l, pts_l1, source_layer=l, target_layer=l + 1,
+                pts_l,
+                pts_l1,
+                source_layer=layer_index,
+                target_layer=layer_index + 1,
             )
-            if result is not None:
-                results.append({
-                    "layer_pair": [l, l + 1],
-                    "mean_angle_radians": result.mean_angle_radians,
-                    "median_angle_radians": result.median_angle_radians,
-                    "mean_cosine": result.mean_cosine,
-                    "coverage": result.coverage,
-                    "neighbor_count": neighbor_count,
-                    "tangent_rank": tangent_rank,
-                })
+            if result is None:
+                results.append(
+                    {
+                        "layer_pair": [layer_index, layer_index + 1],
+                        "skipped": True,
+                        "reason": "insufficient_data",
+                    }
+                )
             else:
-                results.append({
-                    "layer_pair": [l, l + 1],
+                results.append(_measurement_b_payload(result, layer_index, layer_index + 1))
+        except Exception as exc:
+            logger.warning("  Measurement B failed at pair (%d, %d): %s", layer_index, layer_index + 1, exc)
+            results.append(
+                {
+                    "layer_pair": [layer_index, layer_index + 1],
                     "skipped": True,
-                    "reason": "insufficient_data",
-                })
-        except Exception as e:
-            logger.warning(f"  Measurement B failed at pair ({l}, {l+1}): {e}")
-            results.append({
-                "layer_pair": [l, l + 1],
-                "skipped": True,
-                "reason": str(e)[:200],
-            })
+                    "reason": str(exc)[:200],
+                }
+            )
 
         del pts_l, pts_l1
 
@@ -445,12 +644,11 @@ def measurement_b_local_tangent(
 
 
 # =============================================================================
-# Measurement C: Tracked Neighbor Rank Change
+# Measurement C: Exploratory local-rank telemetry
 # =============================================================================
 
 
 def participation_ratio(eigenvalues: np.ndarray) -> float:
-    """PR = (sum lambda)^2 / sum(lambda^2). Effective rank."""
     eigenvalues = np.maximum(eigenvalues, 0.0)
     total = np.sum(eigenvalues)
     if total <= 0:
@@ -462,344 +660,314 @@ def participation_ratio(eigenvalues: np.ndarray) -> float:
 
 
 def local_effective_rank(diff_matrix: np.ndarray) -> float:
-    """Effective rank of [k, d] neighbor difference matrix via participation ratio."""
     if diff_matrix.shape[0] < 2:
         return 0.0
     centered = diff_matrix - diff_matrix.mean(axis=0)
-    gram = centered @ centered.T  # [k, k]
+    gram = centered @ centered.T
     eigenvalues = np.linalg.eigvalsh(gram)
     return participation_ratio(eigenvalues)
 
 
-def measurement_c_tracked_neighbors(
-    stage_activations: list[np.ndarray],
-) -> list[dict]:
-    """Track the same neighbors across layers, measure rank change.
-
-    OPERATOR LIMITATION: Uses Euclidean KDTree neighborhoods, while TwoNN uses
-    geodesic distances via k-NN Floyd-Warshall graph. This means P5 results
-    are NOT commensurable with TwoNN IDs. A null P5 does not cleanly eliminate
-    local rank change as a mechanism — it only shows that Euclidean-neighborhood
-    rank change is uncorrelated with geodesic-neighborhood ID.
-
-    k = max(ceil(ln(N)), N//4): enough neighbors to resolve local dimension.
-    Berry & Sauer 2016 (ceil(ln(N))) is connectivity minimum; N//4 provides
-    sufficient rank resolution without becoming global.
-    """
-    results = []
-    n_stages = len(stage_activations)
+def measurement_c_tracked_neighbors(stage_activations: list[np.ndarray]) -> list[dict[str, Any]]:
+    """Exploratory Euclidean-neighborhood rank telemetry."""
+    results: list[dict[str, Any]] = []
     N = stage_activations[0].shape[0]
+    k_neighbors = max(int(np.ceil(np.log(max(N, 2)))), N // 4)
+    k_neighbors = max(2, min(k_neighbors, N - 1))
+    logger.info("  Measurement C: k=%d neighbors (N=%d)", k_neighbors, N)
 
-    k = max(int(np.ceil(np.log(max(N, 2)))), N // 4)
-    k = max(2, min(k, N - 1))
-
-    logger.info(f"  Measurement C: k={k} neighbors (N={N})")
-
-    for l in range(n_stages - 1):
-        X_l = stage_activations[l]
-        X_l1 = stage_activations[l + 1]
-
+    for layer_index in range(len(stage_activations) - 1):
+        X_l = stage_activations[layer_index]
+        X_l1 = stage_activations[layer_index + 1]
         tree = KDTree(X_l)
-        _, neighbor_indices = tree.query(X_l, k=k + 1)
-        neighbor_indices = neighbor_indices[:, 1:]  # Remove self
+        _, neighbor_indices = tree.query(X_l, k=k_neighbors + 1)
+        neighbor_indices = neighbor_indices[:, 1:]
 
         ranks_l = np.zeros(N)
         ranks_l1 = np.zeros(N)
-
-        for p in range(N):
-            nn_idx = neighbor_indices[p]
-            diff_l = X_l[nn_idx] - X_l[p]
-            diff_l1 = X_l1[nn_idx] - X_l1[p]
-            ranks_l[p] = local_effective_rank(diff_l)
-            ranks_l1[p] = local_effective_rank(diff_l1)
+        for point_index in range(N):
+            nn_idx = neighbor_indices[point_index]
+            diff_l = X_l[nn_idx] - X_l[point_index]
+            diff_l1 = X_l1[nn_idx] - X_l1[point_index]
+            ranks_l[point_index] = local_effective_rank(diff_l)
+            ranks_l1[point_index] = local_effective_rank(diff_l1)
 
         delta_ranks = ranks_l1 - ranks_l
-
-        results.append({
-            "layer_pair": [l, l + 1],
-            "k_neighbors": k,
-            "mean_delta_local_rank": float(np.mean(delta_ranks)),
-            "std_delta_local_rank": float(np.std(delta_ranks)),
-            "mean_rank_l": float(np.mean(ranks_l)),
-            "mean_rank_l1": float(np.mean(ranks_l1)),
-        })
+        results.append(
+            {
+                "layer_pair": [layer_index, layer_index + 1],
+                "k_neighbors": int(k_neighbors),
+                "mean_delta_local_rank": float(np.mean(delta_ranks)),
+                "std_delta_local_rank": float(np.std(delta_ranks)),
+                "mean_rank_l": float(np.mean(ranks_l)),
+                "mean_rank_l1": float(np.mean(ranks_l1)),
+                "measurement_status": "[MEASUREMENT_INVALID]",
+                "measurement_caveat": OPERATOR_MISMATCH_NOTE,
+            }
+        )
 
     return results
 
 
 # =============================================================================
-# Prediction Evaluation
+# Correlation summaries
 # =============================================================================
 
 
-def _safe_spearman(x, y) -> tuple[float, float]:
-    """Spearman correlation with NaN handling. Returns (r, p)."""
-    x = np.array(x, dtype=float)
-    y = np.array(y, dtype=float)
-    valid = ~(np.isnan(x) | np.isnan(y))
-    x, y = x[valid], y[valid]
-    if len(x) < 4:
-        return float("nan"), 1.0
-    r, p = scipy_stats.spearmanr(x, y)
-    return float(r), float(p)
+def _safe_spearman_record(
+    x: list[float],
+    y: list[float],
+    *,
+    x_label: str,
+    y_label: str,
+    status: str = "[EXPLORATORY]",
+    note: str | None = None,
+) -> dict[str, Any]:
+    x_arr = np.asarray(x, dtype=float)
+    y_arr = np.asarray(y, dtype=float)
+    valid = ~(np.isnan(x_arr) | np.isnan(y_arr))
+    x_valid = x_arr[valid]
+    y_valid = y_arr[valid]
+    record: dict[str, Any] = {
+        "status": status,
+        "x_label": x_label,
+        "y_label": y_label,
+        "n": int(len(x_valid)),
+        "spearman_r": None,
+        "p_value": None,
+    }
+    if note is not None:
+        record["note"] = note
+    if len(x_valid) < 4:
+        record["note"] = f"{record.get('note', '')} insufficient_data".strip()
+        return record
+    r_value, p_value = scipy_stats.spearmanr(x_valid, y_valid)
+    record["spearman_r"] = float(r_value)
+    record["p_value"] = float(p_value)
+    return record
 
 
-def compute_predictions(
-    meas_a: list[dict],
-    meas_b: list[dict],
-    meas_c: list[dict],
+def compute_observable_correlations(
+    meas_a: list[dict[str, Any]],
+    meas_b: list[dict[str, Any]],
+    meas_c: list[dict[str, Any]],
     twonn_ids: list[float],
-) -> dict:
-    """Evaluate P1-P5 from measurements and TwoNN IDs."""
+) -> dict[str, Any]:
+    delta_ids = [twonn_ids[i + 1] - twonn_ids[i] for i in range(len(twonn_ids) - 1)]
+    abs_delta_ids = [abs(delta) for delta in delta_ids]
 
-    # Compute delta_ID between consecutive stages
-    delta_ids = [
-        twonn_ids[i + 1] - twonn_ids[i]
-        for i in range(len(twonn_ids) - 1)
-    ]
-    abs_delta_ids = [abs(d) for d in delta_ids]
+    def _view(start_index: int) -> dict[str, Any]:
+        delta_view = delta_ids[start_index:]
+        abs_delta_view = abs_delta_ids[start_index:]
+        meas_a_view = meas_a[start_index:]
+        meas_b_view = meas_b[start_index:]
+        meas_c_view = meas_c[start_index:]
 
-    predictions = {}
+        increasing_indices = [i for i, delta in enumerate(delta_view) if delta > 0]
 
-    # P1: Spearman(d_G, |delta_ID|) > 0.3
-    d_Gs = [
-        m.get("grassmann_geodesic", float("nan"))
-        for m in meas_a
-    ]
-    r_p1, p_p1 = _safe_spearman(d_Gs, abs_delta_ids)
-    predictions["P1"] = {
-        "description": "Spearman(grassmann_distance, |delta_ID|)",
-        "spearman_r": r_p1,
-        "p_value": p_p1,
-        "passes": not np.isnan(r_p1) and r_p1 > 0.3,
-        "n": sum(1 for d in d_Gs if not np.isnan(d)),
-    }
-
-    # P2: Spearman(novel_count_full, delta_ID) > 0.3 when delta_ID > 0
-    increasing_mask = [
-        i for i, d in enumerate(delta_ids)
-        if d > 0 and i < len(meas_a) and "novel_count_full" in meas_a[i]
-    ]
-    if len(increasing_mask) >= 4:
-        novels = [meas_a[i]["novel_count_full"] for i in increasing_mask]
-        deltas = [delta_ids[i] for i in increasing_mask]
-        r_p2, p_p2 = _safe_spearman(novels, deltas)
-    else:
-        r_p2, p_p2 = float("nan"), 1.0
-    predictions["P2"] = {
-        "description": "Spearman(novel_count_full, delta_ID) when delta_ID > 0",
-        "spearman_r": r_p2,
-        "p_value": p_p2,
-        "passes": not np.isnan(r_p2) and r_p2 > 0.3,
-        "n_increasing": len(increasing_mask),
-    }
-
-    # P3: Highway d_G < median(d_G)
-    valid_ids = [(i, tid) for i, tid in enumerate(twonn_ids) if not np.isnan(tid)]
-    if valid_ids:
-        highway_stage = min(valid_ids, key=lambda x: x[1])[0]
-        valid_dGs = [d for d in d_Gs if not np.isnan(d)]
-        median_dG = float(np.median(valid_dGs)) if valid_dGs else 0.0
-
-        # Highway d_G = d_G at the pair involving the highway stage
-        # Use the pair (highway-1, highway) or (highway, highway+1)
-        highway_dG = float("nan")
-        for idx in [highway_stage - 1, highway_stage]:
-            if 0 <= idx < len(d_Gs) and not np.isnan(d_Gs[idx]):
-                highway_dG = d_Gs[idx]
-                break
-
-        predictions["P3"] = {
-            "description": "Highway d_G < median(d_G)",
-            "highway_stage": highway_stage,
-            "highway_id": twonn_ids[highway_stage],
-            "highway_dG": highway_dG,
-            "median_dG": median_dG,
-            "passes": not np.isnan(highway_dG) and highway_dG < median_dG,
+        return {
+            "shared_rotation_vs_abs_delta_id": _safe_spearman_record(
+                [item.get("shared_rotation_geodesic", float("nan")) for item in meas_a_view],
+                abs_delta_view,
+                x_label="shared_rotation_geodesic",
+                y_label="abs_delta_id",
+            ),
+            "added_direction_count_vs_positive_delta_id": _safe_spearman_record(
+                [
+                    meas_a_view[index].get("added_direction_count_eps", float("nan"))
+                    for index in increasing_indices
+                ],
+                [delta_view[index] for index in increasing_indices],
+                x_label="added_direction_count_eps",
+                y_label="delta_id_when_positive",
+            ),
+            "added_direction_energy_vs_positive_delta_id": _safe_spearman_record(
+                [
+                    meas_a_view[index].get("added_direction_total_residual", float("nan"))
+                    for index in increasing_indices
+                ],
+                [delta_view[index] for index in increasing_indices],
+                x_label="added_direction_total_residual",
+                y_label="delta_id_when_positive",
+            ),
+            "local_angle_vs_abs_delta_id": _safe_spearman_record(
+                [item.get("mean_angle_radians", float("nan")) for item in meas_b_view],
+                abs_delta_view,
+                x_label="mean_angle_radians",
+                y_label="abs_delta_id",
+            ),
+            "local_rank_vs_delta_id": _safe_spearman_record(
+                [item.get("mean_delta_local_rank", float("nan")) for item in meas_c_view],
+                delta_view,
+                x_label="mean_delta_local_rank",
+                y_label="delta_id",
+                status="[MEASUREMENT_INVALID]",
+                note=OPERATOR_MISMATCH_NOTE,
+            ),
         }
-    else:
-        predictions["P3"] = {"passes": False, "reason": "no_valid_ids"}
 
-    # P4: Spearman(mean_local_angle, |delta_ID|) > 0.3
-    local_angles = [
-        m.get("mean_angle_radians", float("nan"))
-        for m in meas_b
-    ]
-    r_p4, p_p4 = _safe_spearman(local_angles, abs_delta_ids)
-    predictions["P4"] = {
-        "description": "Spearman(mean_local_angle, |delta_ID|)",
-        "spearman_r": r_p4,
-        "p_value": p_p4,
-        "passes": not np.isnan(r_p4) and r_p4 > 0.3,
-        "n": sum(1 for a in local_angles if not np.isnan(a)),
-    }
-
-    # P5: Spearman(delta_local_rank, delta_ID) > 0.3
-    # CAVEAT: Euclidean KDTree neighborhoods vs TwoNN's geodesic neighborhoods.
-    # A null result does not cleanly eliminate local rank change as a mechanism.
-    delta_ranks = [m["mean_delta_local_rank"] for m in meas_c]
-    r_p5, p_p5 = _safe_spearman(delta_ranks, delta_ids)
-    predictions["P5"] = {
-        "description": "Spearman(delta_local_rank, delta_ID) [Euclidean KDTree, not commensurable with geodesic TwoNN]",
-        "spearman_r": r_p5,
-        "p_value": p_p5,
-        "passes": not np.isnan(r_p5) and r_p5 > 0.3,
-        "n": len(delta_ranks),
-        "operator_caveat": "Euclidean_KDTree_not_geodesic",
-    }
-
-    return predictions
-
-
-# =============================================================================
-# Cross-Model Falsification
-# =============================================================================
-
-
-def compute_cross_model_falsification(all_results: list[dict]) -> dict:
-    """Evaluate F1-F3 across models."""
-
-    n_models = len(all_results)
-    if n_models == 0:
-        return {"error": "no_models", "overall_verdict": "NO_DATA"}
-
-    per_model_p1_r = {}
-    per_model_p1_sign = {}
-    per_model_p5_r = {}
-
-    for result in all_results:
-        name = result["model_name"]
-        preds = result["predictions"]
-
-        p1_r = preds["P1"]["spearman_r"]
-        per_model_p1_r[name] = p1_r
-        if not np.isnan(p1_r):
-            per_model_p1_sign[name] = 1 if p1_r > 0 else -1
-
-        p5_r = preds["P5"]["spearman_r"]
-        per_model_p5_r[name] = p5_r
-
-    # F1: P1 > 0.3 on ALL models
-    f1_all_pass = all(
-        not np.isnan(r) and r > 0.3
-        for r in per_model_p1_r.values()
-    )
-
-    # F2: Sign of P1 consistent across models
-    signs = list(per_model_p1_sign.values())
-    f2_signs_match = len(set(signs)) <= 1 if signs else False
-
-    # F3: P5 > 0.3 on at least one model
-    f3_any_pass = any(
-        not np.isnan(r) and r > 0.3
-        for r in per_model_p5_r.values()
-    )
-
-    # Overall verdict
-    if f1_all_pass and f2_signs_match and f3_any_pass:
-        verdict = "TANGENT_SUBSPACE_ROTATION_SUPPORTED"
-    elif not f1_all_pass:
-        verdict = "F1_FALSIFIED: global rotation does not predict ID change on all models"
-    elif not f2_signs_match:
-        verdict = "F2_FALSIFIED: sign inconsistency across models (mechanism underspecified)"
-    elif not f3_any_pass:
-        verdict = "F3_FALSIFIED: local mechanism does not match global on any model"
-    else:
-        verdict = "INCONCLUSIVE"
+    valid_ids = [(index, value) for index, value in enumerate(twonn_ids) if not np.isnan(value)]
+    highway_context: dict[str, Any] = {"highway_stage": None, "highway_id": None}
+    if valid_ids:
+        highway_stage, highway_id = min(valid_ids, key=lambda item: item[1])
+        shared_rotation_at_highway = None
+        for idx in (highway_stage - 1, highway_stage):
+            if 0 <= idx < len(meas_a):
+                shared_rotation_at_highway = meas_a[idx].get("shared_rotation_geodesic")
+                if shared_rotation_at_highway is not None:
+                    break
+        highway_context = {
+            "highway_stage": int(highway_stage),
+            "highway_id": float(highway_id),
+            "shared_rotation_at_highway_pair": shared_rotation_at_highway,
+        }
 
     return {
-        "n_models": n_models,
-        "F1_global_rotation": {
-            "all_pass": f1_all_pass,
-            "per_model_r": per_model_p1_r,
-        },
-        "F2_sign_consistency": {
-            "signs_match": f2_signs_match,
-            "per_model_sign": per_model_p1_sign,
-        },
-        "F3_local_mechanism": {
-            "any_pass": f3_any_pass,
-            "per_model_P5_r": per_model_p5_r,
-        },
-        "overall_verdict": verdict,
+        "delta_ids": delta_ids,
+        "abs_delta_ids": abs_delta_ids,
+        "highway_context": highway_context,
+        "full": _view(start_index=0),
+        "excluding_stage0": _view(start_index=1),
     }
 
 
 # =============================================================================
-# Single Model Run
+# Status summaries / artifacts
+# =============================================================================
+
+
+def build_falsifier_outcome(
+    *,
+    run_id: str,
+    probe_manifest_path: Path,
+    all_results: list[dict[str, Any]],
+    probe_selection: dict[str, Any],
+) -> dict[str, Any]:
+    def _per_model_corr(view_key: str, corr_key: str) -> dict[str, Any]:
+        return {
+            result["model_name"]: result["analysis"][view_key][corr_key]
+            for result in all_results
+        }
+
+    return {
+        "run_id": run_id,
+        "protocol": PROTOCOL_NAME,
+        "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
+        "generated_at": _utc_now_iso(),
+        "probe_manifest_path": str(probe_manifest_path),
+        "probe_selection": probe_selection,
+        "overall_status": "[MECHANISM_UNKNOWN]",
+        "claims": {
+            "shared_rotation": {
+                "status": "[EXPLORATORY]",
+                "detail": "Matched-rank shared rotation is measured, but no promotable gate is applied in-script.",
+                "per_model_excluding_stage0": _per_model_corr(
+                    "excluding_stage0",
+                    "shared_rotation_vs_abs_delta_id",
+                ),
+            },
+            "added_direction_signal": {
+                "status": "[EXPLORATORY]",
+                "detail": "Asymmetric residual metric is now measured directly. Promotion requires protocol-level adjudication and rerun evidence.",
+                "per_model_positive_delta": _per_model_corr(
+                    "full",
+                    "added_direction_energy_vs_positive_delta_id",
+                ),
+            },
+            "local_tangent_misalignment": {
+                "status": "[EXPLORATORY]",
+                "detail": "Candidate mechanism only. Cross-family promotion remains blocked without a second bf16 pure-attention family and repaired rerun telemetry.",
+                "per_model_excluding_stage0": _per_model_corr(
+                    "excluding_stage0",
+                    "local_angle_vs_abs_delta_id",
+                ),
+            },
+            "local_rank_change": {
+                "status": "[MEASUREMENT_INVALID]",
+                "detail": OPERATOR_MISMATCH_NOTE,
+                "per_model": _per_model_corr("full", "local_rank_vs_delta_id"),
+            },
+        },
+        "next_requirements": [
+            "Keep current top-line state at [MECHANISM_UNKNOWN].",
+            "Use this atlas-backed manifest for exact rerun reproducibility.",
+            "Do not promote local tangent misalignment beyond [EXPLORATORY] without a second bf16 pure-attention family.",
+        ],
+    }
+
+
+# =============================================================================
+# Single-model run
 # =============================================================================
 
 
 def run_single_model(
     model_name: str,
-    model_info: dict,
+    model_info: dict[str, Any],
     probes: list[str],
     backend,
     *,
     run_b: bool = True,
-) -> dict:
-    """Run all measurements for one model."""
-    logger.info(f"Loading model: {model_name} from {model_info['path']}")
+) -> dict[str, Any]:
+    logger.info("Loading model: %s from %s", model_name, model_info["path"])
     model, tokenizer = backend.load_model(model_info["path"])
 
     base = _resolve_model_base(model)
     layers = getattr(base, "layers", None)
     num_layers = len(layers) if layers else 0
-    logger.info(f"Model loaded: {num_layers} layers, d={model_info.get('d', 0)}")
+    logger.info("Model loaded: %d layers, d=%d", num_layers, model_info.get("d", 0))
 
-    # Collect activations
-    t0 = time.time()
-    stage_activations = collect_layer_activations(
-        model, tokenizer, probes, num_layers,
-    )
-    logger.info(f"  Activation collection: {time.time() - t0:.1f}s ({len(probes)} probes)")
+    start = time.time()
+    stage_activations = collect_layer_activations(model, tokenizer, probes, num_layers)
+    logger.info("  Activation collection: %.1fs (%d probes)", time.time() - start, len(probes))
 
-    # Free model memory
     del model, tokenizer, base, layers
     gc.collect()
 
-    # TwoNN ID per layer
-    t0 = time.time()
+    start = time.time()
     twonn_ids = compute_twonn_per_layer(stage_activations, backend)
-    logger.info(f"  TwoNN IDs: {time.time() - t0:.1f}s")
-    for i, tid in enumerate(twonn_ids):
-        logger.info(f"    Stage {i:2d}: ID = {tid:.2f}")
+    logger.info("  TwoNN IDs: %.1fs", time.time() - start)
+    for stage_index, intrinsic_dim in enumerate(twonn_ids):
+        logger.info("    Stage %2d: ID = %.2f", stage_index, intrinsic_dim)
 
-    # Measurement A: Global tangent subspace
-    t0 = time.time()
+    start = time.time()
     meas_a = measurement_a_global_tangent(stage_activations, twonn_ids)
-    logger.info(f"  Measurement A (global tangent): {time.time() - t0:.1f}s")
+    logger.info("  Measurement A (shared rotation + added direction): %.1fs", time.time() - start)
 
-    # Measurement B: Local tangent alignment
-    meas_b: list[dict] = []
     if run_b:
-        t0 = time.time()
+        start = time.time()
         meas_b = measurement_b_local_tangent(stage_activations, backend)
-        logger.info(f"  Measurement B (local tangent): {time.time() - t0:.1f}s")
+        logger.info("  Measurement B (local tangent): %.1fs", time.time() - start)
     else:
         logger.info("  Measurement B: SKIPPED (--smoke)")
         meas_b = [
-            {"layer_pair": [l, l + 1], "skipped": True, "reason": "smoke_mode"}
-            for l in range(len(stage_activations) - 1)
+            {"layer_pair": [layer_index, layer_index + 1], "skipped": True, "reason": "smoke_mode"}
+            for layer_index in range(len(stage_activations) - 1)
         ]
 
-    # Measurement C: Tracked neighbors
-    t0 = time.time()
+    start = time.time()
     meas_c = measurement_c_tracked_neighbors(stage_activations)
-    logger.info(f"  Measurement C (tracked neighbors): {time.time() - t0:.1f}s")
+    logger.info("  Measurement C (exploratory local rank): %.1fs", time.time() - start)
 
-    # Evaluate predictions
-    predictions = compute_predictions(meas_a, meas_b, meas_c, twonn_ids)
-
-    logger.info(f"  --- Predictions for {model_name} ---")
-    for pname, pval in predictions.items():
-        r = pval.get("spearman_r", "N/A")
-        p = pval.get("p_value", "N/A")
-        passes = pval.get("passes", "N/A")
-        if isinstance(r, float) and not np.isnan(r):
-            logger.info(f"    {pname}: r={r:+.3f}, p={p:.4f}, {'PASS' if passes else 'FAIL'}")
-        else:
-            logger.info(f"    {pname}: {pval.get('description', '')}, passes={passes}")
+    analysis = compute_observable_correlations(meas_a, meas_b, meas_c, twonn_ids)
+    logger.info("  --- Correlation summaries for %s ---", model_name)
+    for view_name in ("full", "excluding_stage0"):
+        view = analysis[view_name]
+        for label, record in view.items():
+            r_value = record.get("spearman_r")
+            p_value = record.get("p_value")
+            if r_value is None:
+                logger.info("    %s / %s: n=%s (%s)", view_name, label, record["n"], record["status"])
+            else:
+                logger.info(
+                    "    %s / %s: r=%+.3f, p=%.4f, n=%d, status=%s",
+                    view_name,
+                    label,
+                    r_value,
+                    p_value,
+                    record["n"],
+                    record["status"],
+                )
 
     return {
         "model_name": model_name,
@@ -810,118 +978,115 @@ def run_single_model(
         "measurement_a": meas_a,
         "measurement_b": meas_b,
         "measurement_c": meas_c,
-        "predictions": predictions,
+        "analysis": analysis,
     }
 
 
 # =============================================================================
-# Experiment Orchestrator
+# Experiment orchestration
 # =============================================================================
 
 
 def run_experiment(args):
-    """Run the full experiment."""
     from modelcypher.backends import initialize_default_backend
 
     backend = initialize_default_backend()
+    run_id = _run_id()
+    output_dir = Path(args.output_dir).expanduser().resolve() if args.output_dir else RESULTS_ROOT / run_id
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     if args.smoke:
         model_names = ["LFM2-350M", "Qwen3.5-0.8B"]
-        probes = PROBE_PROMPTS[:12]
-        run_b = False  # Skip expensive local tangent in smoke
+        run_b = False
     elif args.models:
         model_names = args.models
-        probes = PROBE_PROMPTS
         run_b = True
     else:
         model_names = ["LFM2-350M", "Qwen3.5-0.8B", "Llama-3.2-3B"]
-        probes = PROBE_PROMPTS
         run_b = True
 
-    logger.info("=" * 70)
-    logger.info(
-        f"TANGENT SUBSPACE ID MECHANISM "
-        f"({len(model_names)} models, {len(probes)} probes, B={'ON' if run_b else 'OFF'})"
-    )
-    logger.info("=" * 70)
+    probes, probe_manifest, probe_selection = _resolve_prompts(args)
+    probe_manifest_payload = {
+        "run_id": run_id,
+        "generated_at": _utc_now_iso(),
+        "protocol": PROTOCOL_NAME,
+        "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
+        "selection": probe_selection,
+        "probes": probe_manifest,
+    }
+    probe_manifest_path = output_dir / "probe_manifest.json"
+    _write_json(probe_manifest_path, probe_manifest_payload)
 
-    all_results = []
+    logger.info("=" * 72)
+    logger.info(
+        "TANGENT SUBSPACE ID MECHANISM (%d models, %d probes, source=%s, B=%s)",
+        len(model_names),
+        len(probes),
+        probe_selection["probe_source"],
+        "ON" if run_b else "OFF",
+    )
+    logger.info("=" * 72)
+
+    all_results: list[dict[str, Any]] = []
     for model_name in model_names:
         if model_name not in MODEL_REGISTRY:
-            logger.warning(f"Unknown model: {model_name}, skipping")
+            logger.warning("Unknown model: %s, skipping", model_name)
             continue
-        if not os.path.exists(MODEL_REGISTRY[model_name]["path"]):
-            logger.warning(
-                f"Model path not found: {MODEL_REGISTRY[model_name]['path']}, skipping"
-            )
+        model_path = MODEL_REGISTRY[model_name]["path"]
+        if not os.path.exists(model_path):
+            logger.warning("Model path not found: %s, skipping", model_path)
             continue
 
-        result = run_single_model(
-            model_name, MODEL_REGISTRY[model_name], probes, backend, run_b=run_b,
-        )
+        result = run_single_model(model_name, MODEL_REGISTRY[model_name], probes, backend, run_b=run_b)
         all_results.append(result)
         gc.collect()
 
     if not all_results:
-        logger.error("No models were evaluated. Check volume mount.")
+        logger.error("No models were evaluated. Check model paths.")
         return
 
-    # Cross-model falsification
-    falsification = compute_cross_model_falsification(all_results)
-
-    logger.info("\n" + "=" * 70)
-    logger.info("CROSS-MODEL FALSIFICATION")
-    logger.info("=" * 70)
-    logger.info(f"  F1 (all P1 > 0.3): {falsification['F1_global_rotation']}")
-    logger.info(f"  F2 (sign match):    {falsification['F2_sign_consistency']}")
-    logger.info(f"  F3 (any P5 > 0.3): {falsification['F3_local_mechanism']}")
-    logger.info(f"  VERDICT: {falsification['overall_verdict']}")
-
-    # Save results
-    output_dir = Path("results/tangent_subspace_id_mechanism")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = output_dir / "results.json"
-
-    output = {
+    falsifier_outcome = build_falsifier_outcome(
+        run_id=run_id,
+        probe_manifest_path=probe_manifest_path,
+        all_results=all_results,
+        probe_selection=probe_selection,
+    )
+    results_payload = {
         "metadata": {
+            "run_id": run_id,
+            "generated_at": _utc_now_iso(),
+            "protocol": PROTOCOL_NAME,
+            "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
             "script": "tangent_subspace_id_mechanism.py",
+            "historical_reference_results": str(HISTORICAL_RESULTS_PATH) if HISTORICAL_RESULTS_PATH.exists() else None,
             "n_models": len(all_results),
             "n_probes": len(probes),
             "smoke": args.smoke,
             "measurement_b_enabled": run_b,
+            "probe_selection": probe_selection,
+            "probe_manifest_path": str(probe_manifest_path),
+            "output_dir": str(output_dir),
         },
         "per_model": all_results,
-        "cross_model_falsification": falsification,
+        "falsifier_summary": falsifier_outcome,
     }
 
-    def convert(obj):
-        if isinstance(obj, (np.bool_,)):
-            return bool(obj)
-        if isinstance(obj, (np.integer,)):
-            return int(obj)
-        if isinstance(obj, (np.floating,)):
-            v = float(obj)
-            return None if np.isnan(v) else v
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        if isinstance(obj, float) and (np.isnan(obj) or np.isinf(obj)):
-            return None
-        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
-
-    with open(output_file, "w") as f:
-        json.dump(output, f, indent=2, default=convert)
-
-    logger.info(f"\nResults saved to {output_file}")
+    results_path = output_dir / "results.json"
+    falsifier_path = output_dir / "falsifier_outcome.json"
+    _write_json(results_path, results_payload)
+    _write_json(falsifier_path, falsifier_outcome)
+    logger.info("Results saved to %s", results_path)
+    logger.info("Falsifier outcome saved to %s", falsifier_path)
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Tangent Subspace ID Mechanism Analysis"
-    )
-    parser.add_argument(
-        "--smoke", action="store_true", help="Quick test (2 models, 12 probes)"
-    )
+    parser = argparse.ArgumentParser(description="Tangent subspace ID mechanism rerun harness")
+    parser.add_argument("--smoke", action="store_true", help="Quick test (2 models, 12 legacy prompts)")
     parser.add_argument("--models", nargs="+", help="Specific models to test")
+    parser.add_argument("--probe-manifest", type=str, help="Reuse a frozen probe manifest JSON")
+    parser.add_argument("--probe-limit", type=int, help="Override atlas-backed probe count")
+    parser.add_argument("--legacy-prompts", action="store_true", help="Use historical hand-written prompts instead of atlas probes")
+    parser.add_argument("--output-dir", type=str, help="Optional artifact output directory")
     args = parser.parse_args()
     run_experiment(args)
 

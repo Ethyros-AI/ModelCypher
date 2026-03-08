@@ -118,3 +118,36 @@ This means the identity layer — the personal adapter — is not tied to any sp
 ModelCypher's mission is to train models using only geometry. The vision is what that enables: a world where AI identity is personal, portable, and sovereign — and the geometry guarantees it works across any model on any device.
 
 The training engine is step one. Quantized-first geometric control is step two. The identity layer is what we are building toward.
+
+---
+
+## Progress Assessment (2026-03-08)
+
+### Capability Status
+
+| Capability | VISION Status | Actual Status | Evidence |
+|-----------|--------------|---------------|----------|
+| Geometry-derived training | "Validated, CLI-promoted" | **SHIPPED** — `mc train run` works, MASS validated on 350M-1.2B. 8B mechanically validated, efficacy open. | `results/pipeline_validation/`, `dataset_training_service.py` |
+| Cross-architecture adapter portability | "Demonstrated via merge pipeline" | **PARTIAL** — CKA-aligned merging works. Real LoRA transfer across architectures is conjectural. | `experimental/merge/`, Tikhonov A/B test (2026-02-28) |
+| Nightly consolidation | "Experimental, architecture sound" | **EXPERIMENTAL** — Code exists. Not CLI. Not validated on real use case. | `experimental/continual/`, `experimental/use_cases/consolidation_service.py` |
+| Adapter stacking at inference | "Theoretical, infrastructure partial" | **EXPERIMENTAL** — Code exists. Not CLI. No preservation certificate. | `experimental/self_improve/lora_stacker.py` |
+| Adapter sovereignty | "Not yet built" | **NOT BUILT** — No serialization, access control, or user-owned runtime flow. | — |
+
+**Summary:** 1/5 shipped. 1/5 partially shipped. 3/5 experimental or unbuilt. The vision is ~20% realized.
+
+### Critical Missing Piece: No Head-to-Head Benchmarks
+
+We have never run `mc train run` against HuggingFace PEFT with standard hyperparameters (AdamW + cosine LR) on the same model, data, and eval. The only comparison is val_loss 1.27 (Cayley-Stiefel) vs 1.38 (plain SGD) on 350M — but plain SGD is nobody's baseline.
+
+**What we CAN claim:**
+- Every parameter is derived, not guessed. No magic numbers.
+- Weight space is Euclidean (cross-family falsification on LFM2 + Qwen).
+- REINFORCE through bounded adapters is algebraically dead.
+- The pipeline runs end-to-end with zero configuration.
+
+**What we CANNOT claim (yet):**
+- That our training produces better adapters than standard LoRA + AdamW + reasonable LR.
+- That our merging produces better models than TIES/DARE/RegMean.
+- That geometry-derived hyperparameters outperform a good grid search.
+
+The honest assessment: we have reduced guessing in the control plane more than we have proven superiority in the outcome plane. See `docs/RESEARCH-ROADMAP.md` for the full roadmap to close these gaps.
