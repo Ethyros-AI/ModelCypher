@@ -386,6 +386,7 @@ Rules:
 3. no destructive git operations such as `reset`, `checkout --`, `add`, `commit`, `push`
 4. no bulk modification scripts for code edits
 5. do not run tests while training is using the GPU
+6. **MANDATORY: check for GPU-using processes before any model work.** Before running training, inference, evaluation, or any script that loads a model, run `pgrep -af 'python|mlx' | grep -v grep` and confirm no other GPU-using processes are active. Multiple sessions running GPU work simultaneously will OOM and crash both. If processes are found, ask the user before proceeding.
 
 If training is running, wait for it to finish before `pytest`.
 

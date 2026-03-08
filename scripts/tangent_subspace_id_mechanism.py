@@ -666,8 +666,13 @@ def participation_ratio(eigenvalues: np.ndarray) -> float:
 def local_effective_rank(diff_matrix: np.ndarray) -> float:
     if diff_matrix.shape[0] < 2:
         return 0.0
-    centered = diff_matrix - diff_matrix.mean(axis=0)
+    centered = np.asarray(diff_matrix, dtype=np.float64)
+    if not np.isfinite(centered).all():
+        return 0.0
+    centered = centered - centered.mean(axis=0)
     gram = centered @ centered.T
+    if not np.isfinite(gram).all():
+        return 0.0
     eigenvalues = np.linalg.eigvalsh(gram)
     return participation_ratio(eigenvalues)
 
@@ -846,6 +851,8 @@ def build_falsifier_outcome(
     probe_manifest_path: Path,
     all_results: list[dict[str, Any]],
     probe_selection: dict[str, Any],
+    requested_models: list[str],
+    run_complete: bool,
 ) -> dict[str, Any]:
     def _per_model_corr(view_key: str, corr_key: str) -> dict[str, Any]:
         return {
@@ -860,6 +867,9 @@ def build_falsifier_outcome(
         "generated_at": _utc_now_iso(),
         "probe_manifest_path": str(probe_manifest_path),
         "probe_selection": probe_selection,
+        "requested_models": requested_models,
+        "completed_models": [result["model_name"] for result in all_results],
+        "run_complete": run_complete,
         "overall_status": "[MECHANISM_UNKNOWN]",
         "claims": {
             "shared_rotation": {
@@ -897,6 +907,48 @@ def build_falsifier_outcome(
             "Use this atlas-backed manifest for exact rerun reproducibility.",
             "Do not promote local tangent misalignment beyond [EXPLORATORY] without a second bf16 pure-attention family.",
         ],
+    }
+
+
+def build_results_payload(
+    *,
+    run_id: str,
+    args,
+    output_dir: Path,
+    probe_manifest_path: Path,
+    probe_selection: dict[str, Any],
+    all_results: list[dict[str, Any]],
+    requested_models: list[str],
+    run_complete: bool,
+) -> dict[str, Any]:
+    falsifier_outcome = build_falsifier_outcome(
+        run_id=run_id,
+        probe_manifest_path=probe_manifest_path,
+        all_results=all_results,
+        probe_selection=probe_selection,
+        requested_models=requested_models,
+        run_complete=run_complete,
+    )
+    return {
+        "metadata": {
+            "run_id": run_id,
+            "generated_at": _utc_now_iso(),
+            "protocol": PROTOCOL_NAME,
+            "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
+            "script": "tangent_subspace_id_mechanism.py",
+            "historical_reference_results": str(HISTORICAL_RESULTS_PATH) if HISTORICAL_RESULTS_PATH.exists() else None,
+            "n_models": len(all_results),
+            "requested_models": requested_models,
+            "run_complete": run_complete,
+            "n_probes": int(probe_selection["selected_probe_count"]),
+            "smoke": args.smoke,
+            "measurement_b_enabled": not args.smoke,
+            "probe_selection": probe_selection,
+            "probe_manifest_path": str(probe_manifest_path),
+            "output_dir": str(output_dir),
+        },
+        "per_model": all_results,
+        "falsifier_summary": falsifier_outcome,
     }
 
 
@@ -1032,6 +1084,8 @@ def run_experiment(args):
     logger.info("=" * 72)
 
     all_results: list[dict[str, Any]] = []
+    results_path = output_dir / "results.json"
+    falsifier_path = output_dir / "falsifier_outcome.json"
     for model_name in model_names:
         if model_name not in MODEL_REGISTRY:
             logger.warning("Unknown model: %s, skipping", model_name)
@@ -1043,42 +1097,37 @@ def run_experiment(args):
 
         result = run_single_model(model_name, MODEL_REGISTRY[model_name], probes, backend, run_b=run_b)
         all_results.append(result)
+        checkpoint_payload = build_results_payload(
+            run_id=run_id,
+            args=args,
+            output_dir=output_dir,
+            probe_manifest_path=probe_manifest_path,
+            probe_selection=probe_selection,
+            all_results=all_results,
+            requested_models=model_names,
+            run_complete=False,
+        )
+        _write_json(results_path, checkpoint_payload)
+        _write_json(falsifier_path, checkpoint_payload["falsifier_summary"])
+        logger.info("Checkpointed partial results to %s", results_path)
         gc.collect()
 
     if not all_results:
         logger.error("No models were evaluated. Check model paths.")
         return
 
-    falsifier_outcome = build_falsifier_outcome(
+    results_payload = build_results_payload(
         run_id=run_id,
+        args=args,
+        output_dir=output_dir,
         probe_manifest_path=probe_manifest_path,
-        all_results=all_results,
         probe_selection=probe_selection,
+        all_results=all_results,
+        requested_models=model_names,
+        run_complete=True,
     )
-    results_payload = {
-        "metadata": {
-            "run_id": run_id,
-            "generated_at": _utc_now_iso(),
-            "protocol": PROTOCOL_NAME,
-            "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
-            "script": "tangent_subspace_id_mechanism.py",
-            "historical_reference_results": str(HISTORICAL_RESULTS_PATH) if HISTORICAL_RESULTS_PATH.exists() else None,
-            "n_models": len(all_results),
-            "n_probes": len(probes),
-            "smoke": args.smoke,
-            "measurement_b_enabled": run_b,
-            "probe_selection": probe_selection,
-            "probe_manifest_path": str(probe_manifest_path),
-            "output_dir": str(output_dir),
-        },
-        "per_model": all_results,
-        "falsifier_summary": falsifier_outcome,
-    }
-
-    results_path = output_dir / "results.json"
-    falsifier_path = output_dir / "falsifier_outcome.json"
     _write_json(results_path, results_payload)
-    _write_json(falsifier_path, falsifier_outcome)
+    _write_json(falsifier_path, results_payload["falsifier_summary"])
     logger.info("Results saved to %s", results_path)
     logger.info("Falsifier outcome saved to %s", falsifier_path)
 

@@ -1,25 +1,31 @@
 #!/usr/bin/env python3
-"""NB-LoRA vs Standard LoRA — Controlled Experiment.
+"""NB-LoRA vs Standard LoRA — Controlled Head-to-Head Comparison (R1).
 
-Compares geometry-derived NB-LoRA (zero hyperparameter decisions) against
-standard LoRA with mlx-lm defaults across 3 model scales.
+Three-arm comparison:
+  Arm 1: NB-LoRA (zero HP, geometry-derived)
+  Arm 2: Standard LoRA (community defaults: AdamW, cosine LR, rank=8, alpha=16)
+  Arm 3: Tuned Standard LoRA (best of rank x lr grid search)
 
-Measurements:
-  - lm-eval-harness benchmark scores (8 tasks)
-  - Training loss convergence
+Each arm x N seeds (default 5) for statistical validity.
+
+Measurements per arm per seed:
+  - lm-eval-harness benchmark scores (7 tasks)
+  - Training loss convergence (captured via callback)
   - Spectral safety (post-hoc for standard, by construction for NB-LoRA)
-  - Perplexity (pre/post training)
-  - Inference test responses for Claude evaluation
+  - Inference test responses
 
 Usage:
-  # Quick smoke test (350M only, limited evals)
+  # Quick smoke test (350M, 1 seed, limited evals)
   poetry run python scripts/experiment_nblora_vs_standard.py --models 350M --quick
 
-  # Full run (all 3 scales)
-  poetry run python scripts/experiment_nblora_vs_standard.py
+  # Full comparison (350M, 5 seeds)
+  poetry run python scripts/experiment_nblora_vs_standard.py --models 350M
 
-  # Specific models
-  poetry run python scripts/experiment_nblora_vs_standard.py --models 350M 700M
+  # Custom seeds
+  poetry run python scripts/experiment_nblora_vs_standard.py --models 350M --seeds 42 123 456
+
+  # Skip eval for pipeline debugging
+  poetry run python scripts/experiment_nblora_vs_standard.py --models 350M --skip-eval --skip-inference
 """
 
 from __future__ import annotations
@@ -29,24 +35,23 @@ import gc
 import json
 import logging
 import os
+import random
 import shutil
+import statistics
 import sys
 import time
-from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
 # ---------------------------------------------------------------------------
-# Path setup — allow running from repo root
+# Path setup
 # ---------------------------------------------------------------------------
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 # ---------------------------------------------------------------------------
 # Fix lm-eval / transformers 5.x incompatibility
-#   transformers 5.0 removed AutoModelForVision2Seq; lm-eval 0.4.9 references it.
-#   Patch the LazyModule __getattr__ before any lm_eval import.
 # ---------------------------------------------------------------------------
 import transformers
 from transformers.utils.import_utils import _LazyModule
@@ -72,7 +77,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Silence noisy sub-loggers
 for name in ("httpx", "urllib3", "filelock", "huggingface_hub"):
     logging.getLogger(name).setLevel(logging.WARNING)
 
@@ -81,7 +85,6 @@ for name in ("httpx", "urllib3", "filelock", "huggingface_hub"):
 # ---------------------------------------------------------------------------
 VOLUME = Path("/Volumes/CodeCypher")
 MODELS_DIR = VOLUME / "models" / "mlx-community"
-EXPERIMENTS_DIR = VOLUME / "experiments"
 
 MODEL_SPECS = {
     "350M": {
@@ -94,15 +97,15 @@ MODEL_SPECS = {
         "name": "LFM2-700M",
         "num_layers": 16,
     },
-    "1.2B": {
-        "path": MODELS_DIR / "LFM2.5-1.2B-Base-bf16",
-        "name": "LFM2.5-1.2B",
-        "num_layers": 16,
-    },
     "0.8B": {
         "path": MODELS_DIR / "Qwen3.5-0.8B-bf16",
         "name": "Qwen3.5-0.8B",
         "num_layers": 24,
+    },
+    "1.2B": {
+        "path": MODELS_DIR / "LFM2.5-1.2B-Base-bf16",
+        "name": "LFM2.5-1.2B",
+        "num_layers": 16,
     },
 }
 
@@ -120,17 +123,30 @@ BENCHMARK_TASKS = [
     "openbookqa",
 ]
 
-# Standard LoRA defaults from mlx-lm CONFIG_DEFAULTS
+# LoRA alpha — standard community value
+LORA_ALPHA = 16
+
+# Community-standard LoRA defaults (what a competent practitioner starts with)
 STANDARD_LORA_CONFIG = {
-    "lr": 1e-5,
+    "lr": 2e-4,
     "batch_size": 4,
     "iters": 1000,
     "rank": 8,
-    "scale": 20.0,
+    "scale": LORA_ALPHA / 8,  # alpha / rank = 2.0
     "dropout": 0.0,
-    "optimizer": "adam",
+    "optimizer": "adamw",
+    "lr_schedule": "cosine",
     "max_seq_length": 2048,
 }
+
+# Grid search for tuned arm: rank x lr, scale derived from alpha
+TUNED_GRID = [
+    {"rank": r, "lr": lr, "scale": LORA_ALPHA / r}
+    for r in [4, 8, 16]
+    for lr in [1e-5, 5e-5, 2e-4]
+]
+
+DEFAULT_SEEDS = [42, 123, 456, 789, 1024]
 
 
 # ---------------------------------------------------------------------------
@@ -139,17 +155,6 @@ STANDARD_LORA_CONFIG = {
 def load_jsonl(path: Path) -> list[dict]:
     with open(path) as f:
         return [json.loads(line) for line in f if line.strip()]
-
-
-def convert_to_text_format(samples: list[dict]) -> list[dict]:
-    """Ensure all samples have 'text' key (convert prompt/completion if needed)."""
-    converted = []
-    for s in samples:
-        if "text" in s:
-            converted.append(s)
-        elif "prompt" in s and "completion" in s:
-            converted.append({"text": s["prompt"] + "\n\n" + s["completion"]})
-    return converted
 
 
 def prepare_standard_lora_data_dir(train_path: Path, val_path: Path, tmp_dir: Path):
@@ -161,7 +166,39 @@ def prepare_standard_lora_data_dir(train_path: Path, val_path: Path, tmp_dir: Pa
 
 
 # ---------------------------------------------------------------------------
-# lm-eval wrapper (uses mlx_lm's MLXLM which registers with lm_eval)
+# Training callback for loss capture
+# ---------------------------------------------------------------------------
+class LossCapture:
+    """Captures train/val losses from mlx-lm training."""
+
+    def __init__(self):
+        self.train_losses = []
+        self.val_losses = []
+
+    def on_train_loss_report(self, info: dict):
+        self.train_losses.append({
+            "iteration": info["iteration"],
+            "train_loss": float(info["train_loss"]),
+            "learning_rate": float(info.get("learning_rate", 0)),
+        })
+
+    def on_val_loss_report(self, info: dict):
+        self.val_losses.append({
+            "iteration": info["iteration"],
+            "val_loss": float(info["val_loss"]),
+        })
+
+    @property
+    def final_val_loss(self) -> float | None:
+        return self.val_losses[-1]["val_loss"] if self.val_losses else None
+
+    @property
+    def final_train_loss(self) -> float | None:
+        return self.train_losses[-1]["train_loss"] if self.train_losses else None
+
+
+# ---------------------------------------------------------------------------
+# lm-eval wrapper
 # ---------------------------------------------------------------------------
 def run_lm_eval(
     model_path: str,
@@ -169,25 +206,18 @@ def run_lm_eval(
     adapter_path: str | None = None,
     limit: int | None = None,
 ) -> dict:
-    """Run lm-eval benchmarks via mlx_lm's MLXLM integration.
-
-    Returns dict mapping task_name -> {metric_name: value}.
-    """
+    """Run lm-eval benchmarks. Returns dict mapping task_name -> {metric: value}."""
     import mlx.core as mx
     from lm_eval import simple_evaluate
     from mlx_lm.evaluate import MLXLM
 
-    # Silence tokenizer parallelism warnings
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
     logger.info(f"  lm-eval: {', '.join(tasks)} (adapter={adapter_path or 'none'})")
 
     lm = MLXLM(path_or_hf_repo=model_path, batch_size=1)
 
-    # Load adapter if provided
     if adapter_path:
         from mlx_lm.lora import load_adapters
-
         load_adapters(lm._model, adapter_path)
 
     results = simple_evaluate(
@@ -198,14 +228,12 @@ def run_lm_eval(
         numpy_random_seed=42,
     )
 
-    # Extract scores
     scores = {}
     for task_name, task_results in results.get("results", {}).items():
         scores[task_name] = {
             k: v for k, v in task_results.items() if not k.startswith("alias")
         }
 
-    # Cleanup
     del lm
     mx.clear_cache()
     gc.collect()
@@ -214,61 +242,70 @@ def run_lm_eval(
 
 
 # ---------------------------------------------------------------------------
-# Standard LoRA training (mlx-lm)
+# Standard LoRA training
 # ---------------------------------------------------------------------------
 def train_standard_lora(
     model_path: str,
     num_layers: int,
     data_dir: Path,
     output_dir: Path,
-    quick: bool = False,
+    config: dict | None = None,
+    seed: int = 42,
+    iters_override: int | None = None,
 ) -> dict:
-    """Train standard LoRA using mlx-lm defaults. Returns training metadata."""
+    """Train standard LoRA with given config and seed. Returns training metadata."""
     import mlx.core as mx
+    import mlx.optimizers as optim
+    from mlx.utils import tree_flatten
     from mlx_lm import load as mlx_load
     from mlx_lm.lora import (
         TrainingArgs,
         load_dataset,
         linear_to_lora_layers,
-        print_trainable_parameters,
         save_config,
         train,
     )
     from mlx_lm.tuner.datasets import CacheDataset
 
-    logger.info("  Standard LoRA: loading model...")
+    cfg = config or STANDARD_LORA_CONFIG
+    iters = iters_override or cfg["iters"]
+
+    mx.random.seed(seed)
+    random.seed(seed)
+
+    logger.info(f"  Standard LoRA: rank={cfg['rank']}, lr={cfg['lr']}, "
+                f"scale={cfg['scale']:.2f}, opt={cfg['optimizer']}, seed={seed}")
+
     model, tokenizer = mlx_load(str(model_path))
 
-    # Build args namespace matching what mlx_lm.lora expects
-    iters = 100 if quick else STANDARD_LORA_CONFIG["iters"]
     args = SimpleNamespace(
         model=str(model_path),
         data=str(data_dir),
         train=True,
         test=False,
         fine_tune_type="lora",
-        optimizer=STANDARD_LORA_CONFIG["optimizer"],
+        optimizer=cfg["optimizer"],
         optimizer_config={"adam": {}, "adamw": {}, "sgd": {}},
-        seed=42,
+        seed=seed,
         num_layers=num_layers,
-        batch_size=STANDARD_LORA_CONFIG["batch_size"],
+        batch_size=cfg["batch_size"],
         iters=iters,
         val_batches=25,
-        learning_rate=STANDARD_LORA_CONFIG["lr"],
+        learning_rate=cfg["lr"],
         steps_per_report=10,
         steps_per_eval=200,
         resume_adapter_file=None,
         adapter_path=str(output_dir),
-        save_every=iters,  # Only save at end
-        max_seq_length=STANDARD_LORA_CONFIG["max_seq_length"],
+        save_every=iters,
+        max_seq_length=cfg["max_seq_length"],
         config=None,
         grad_checkpoint=False,
         grad_accumulation_steps=1,
         lr_schedule=None,
         lora_parameters={
-            "rank": STANDARD_LORA_CONFIG["rank"],
-            "dropout": STANDARD_LORA_CONFIG["dropout"],
-            "scale": STANDARD_LORA_CONFIG["scale"],
+            "rank": cfg["rank"],
+            "dropout": cfg.get("dropout", 0.0),
+            "scale": cfg["scale"],
         },
         mask_prompt=False,
         report_to=None,
@@ -276,28 +313,20 @@ def train_standard_lora(
         hf_dataset=False,
     )
 
-    # Load dataset
     train_set, valid_set, _ = load_dataset(args, tokenizer)
 
-    # Freeze model, add LoRA layers
     model.freeze()
     linear_to_lora_layers(model, num_layers, args.lora_parameters)
-    print_trainable_parameters(model)
-
-    # Count trainable params (trainable_parameters() returns nested dict)
-    from mlx.utils import tree_flatten
 
     n_trainable = sum(v.size for _, v in tree_flatten(model.trainable_parameters()))
 
-    # Prepare output
     output_dir.mkdir(parents=True, exist_ok=True)
     adapter_file = output_dir / "adapters.safetensors"
     save_config(vars(args), output_dir / "adapter_config.json")
 
-    # Build training args
     training_args = TrainingArgs(
         batch_size=args.batch_size,
-        iters=args.iters,
+        iters=iters,
         val_batches=args.val_batches,
         steps_per_report=args.steps_per_report,
         steps_per_eval=args.steps_per_eval,
@@ -308,12 +337,18 @@ def train_standard_lora(
         grad_accumulation_steps=args.grad_accumulation_steps,
     )
 
-    # Build optimizer
-    import mlx.optimizers as optim
+    # Build optimizer with optional cosine schedule
+    lr_value = cfg["lr"]
+    if cfg.get("lr_schedule") == "cosine":
+        lr_value = optim.cosine_decay(init=cfg["lr"], decay_steps=iters)
 
-    opt = optim.Adam(learning_rate=args.learning_rate)
+    if cfg["optimizer"] == "adamw":
+        opt = optim.AdamW(learning_rate=lr_value)
+    else:
+        opt = optim.Adam(learning_rate=lr_value)
 
-    # Train
+    # Train with loss capture
+    loss_capture = LossCapture()
     t0 = time.time()
     train(
         model=model,
@@ -321,24 +356,32 @@ def train_standard_lora(
         optimizer=opt,
         train_dataset=CacheDataset(train_set),
         val_dataset=CacheDataset(valid_set),
+        training_callback=loss_capture,
     )
     training_time = time.time() - t0
 
-    # Measure spectral norms post-hoc
-    spectral_info = measure_standard_lora_spectral_norms(model)
+    spectral_info = measure_standard_lora_spectral_norms(model, cfg["scale"])
 
     result = {
         "method": "standard_lora",
+        "seed": seed,
         "iters": iters,
         "training_time_seconds": training_time,
         "n_trainable_params": n_trainable,
         "adapter_path": str(output_dir),
-        "hyperparameters": STANDARD_LORA_CONFIG.copy(),
-        "hyperparameter_count": len(STANDARD_LORA_CONFIG),
+        "config": {k: v for k, v in cfg.items()},
+        "hyperparameter_count": len([
+            k for k in cfg if k not in ("max_seq_length", "batch_size", "iters")
+        ]),
+        "final_val_loss": loss_capture.final_val_loss,
+        "final_train_loss": loss_capture.final_train_loss,
+        "loss_history": {
+            "train": loss_capture.train_losses,
+            "val": loss_capture.val_losses,
+        },
         "spectral_info": spectral_info,
     }
 
-    # Cleanup
     del model, tokenizer
     mx.clear_cache()
     gc.collect()
@@ -346,15 +389,13 @@ def train_standard_lora(
     return result
 
 
-def measure_standard_lora_spectral_norms(model) -> dict:
+def measure_standard_lora_spectral_norms(model, scale: float) -> dict:
     """Measure spectral norms of standard LoRA adapter weights post-hoc."""
     import mlx.core as mx
     from mlx.utils import tree_flatten
 
-    # trainable_parameters() returns nested dict — flatten to (key, array) pairs
     flat_params = tree_flatten(model.trainable_parameters())
 
-    # Collect LoRA pairs and compute spectral norms
     lora_pairs = {}
     for name, param in flat_params:
         if "lora_a" in name:
@@ -367,24 +408,20 @@ def measure_standard_lora_spectral_norms(model) -> dict:
     spectral_norms = []
     for base_key, pair in lora_pairs.items():
         if "a" in pair and "b" in pair:
-            # mlx-lm LoRA: lora_a=[in, rank], lora_b=[rank, out]
-            # delta_W = lora_a @ lora_b → [in, out]
             a = pair["a"]
             b = pair["b"]
             delta = a @ b
-            # Spectral norm via SVD (with safety — mx.linalg.svd can C++ abort)
             try:
                 s = mx.linalg.svd(delta.astype(mx.float32), stream=mx.cpu)[1]
                 mx.eval(s)
                 s_max = float(s[0])
             except Exception:
-                # Fallback: Frobenius norm as upper bound on spectral norm
                 s_max = float(mx.linalg.norm(delta.astype(mx.float32)))
                 logger.warning(f"  SVD failed for {base_key}, using Frobenius norm")
             spectral_norms.append({
                 "layer": base_key,
                 "spectral_norm": s_max,
-                "scaled_spectral_norm": s_max * STANDARD_LORA_CONFIG["scale"],
+                "scaled_spectral_norm": s_max * scale,
             })
 
     max_norm = max(n["scaled_spectral_norm"] for n in spectral_norms) if spectral_norms else 0
@@ -395,12 +432,12 @@ def measure_standard_lora_spectral_norms(model) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# NB-LoRA training (ModelCypher)
+# NB-LoRA training
 # ---------------------------------------------------------------------------
 def train_nb_lora(
     model_path: str,
     output_dir: Path,
-    quick: bool = False,
+    seed: int = 42,
 ) -> dict:
     """Train NB-LoRA using geometry-derived everything. Returns training metadata."""
     import mlx.core as mx
@@ -410,19 +447,20 @@ def train_nb_lora(
     initialize_default_backend()
     service = get_dataset_training_service()
 
-    logger.info("  NB-LoRA: training (geometry derives all hyperparameters)...")
+    logger.info(f"  NB-LoRA: training (geometry-derived, seed={seed})...")
     t0 = time.time()
     result = service.train_from_dataset(
         model_path=str(model_path),
         dataset_path=str(TRAIN_DATA),
         output_path=str(output_dir),
         eval_dataset_path=str(VAL_DATA),
-        seed=42,
+        seed=seed,
     )
     training_time = time.time() - t0
 
     result_dict = result.to_dict()
     result_dict["method"] = "nb_lora"
+    result_dict["seed"] = seed
     result_dict["training_time_seconds"] = training_time
     result_dict["hyperparameter_count"] = 0
     result_dict["adapter_path"] = str(output_dir)
@@ -455,7 +493,6 @@ def generate_inference_responses(
         adapter_path=adapter_path,
     )
 
-    # Greedy decoding: temp=0
     greedy_sampler = make_sampler(temp=0.0)
 
     responses = []
@@ -481,15 +518,156 @@ def generate_inference_responses(
 
 
 # ---------------------------------------------------------------------------
-# Single model experiment
+# Grid search
+# ---------------------------------------------------------------------------
+def run_grid_search(
+    model_spec: dict,
+    data_dir: Path,
+    output_dir: Path,
+    grid: list[dict],
+    grid_iters: int,
+) -> dict:
+    """Run grid search over standard LoRA configs. Returns best config."""
+    model_path = str(model_spec["path"])
+    num_layers = model_spec["num_layers"]
+
+    grid_dir = output_dir / "grid_search"
+    grid_dir.mkdir(parents=True, exist_ok=True)
+
+    results = []
+    for i, grid_config in enumerate(grid):
+        config = STANDARD_LORA_CONFIG.copy()
+        config["rank"] = grid_config["rank"]
+        config["lr"] = grid_config["lr"]
+        config["scale"] = grid_config["scale"]
+
+        label = f"rank{config['rank']}_lr{config['lr']:.0e}"
+        run_dir = grid_dir / label
+
+        logger.info(f"  Grid [{i+1}/{len(grid)}]: {label}")
+
+        try:
+            result = train_standard_lora(
+                model_path=model_path,
+                num_layers=num_layers,
+                data_dir=data_dir,
+                output_dir=run_dir,
+                config=config,
+                seed=42,
+                iters_override=grid_iters,
+            )
+            results.append({
+                "label": label,
+                "config": grid_config,
+                "final_val_loss": result["final_val_loss"],
+                "final_train_loss": result["final_train_loss"],
+                "training_time": result["training_time_seconds"],
+            })
+        except Exception as e:
+            logger.warning(f"  Grid {label} failed: {e}")
+            results.append({
+                "label": label,
+                "config": grid_config,
+                "final_val_loss": None,
+                "error": str(e),
+            })
+
+        # Delete adapter to save space (grid search only needs val loss)
+        adapter_file = run_dir / "adapters.safetensors"
+        if adapter_file.exists():
+            adapter_file.unlink()
+
+    # Pick best by val loss
+    valid_results = [
+        r for r in results
+        if r.get("final_val_loss") is not None
+    ]
+    if not valid_results:
+        logger.error("  All grid search configs failed! Falling back to rank=8, lr=5e-5")
+        best = {"rank": 8, "lr": 5e-5, "scale": LORA_ALPHA / 8}
+    else:
+        best_result = min(valid_results, key=lambda r: r["final_val_loss"])
+        best = best_result["config"]
+
+    grid_summary = {
+        "grid_configs": results,
+        "best_config": best,
+        "best_val_loss": (
+            min(r["final_val_loss"] for r in valid_results) if valid_results else None
+        ),
+    }
+
+    with open(grid_dir / "grid_results.json", "w") as f:
+        json.dump(grid_summary, f, indent=2)
+
+    logger.info(f"  Grid search best: rank={best['rank']}, lr={best['lr']}, "
+                f"scale={best['scale']:.2f}")
+
+    return grid_summary
+
+
+# ---------------------------------------------------------------------------
+# Multi-seed aggregation
+# ---------------------------------------------------------------------------
+def extract_primary_metric(task_scores: dict) -> tuple[str, float] | None:
+    """Find the primary metric for a task's eval scores."""
+    for m in ["acc_norm,none", "acc,none", "exact_match,strict-match"]:
+        if m in task_scores:
+            return m, task_scores[m]
+    for k, v in task_scores.items():
+        if "acc" in k or "exact" in k:
+            return k, v
+    return None
+
+
+def aggregate_arm_evals(
+    per_seed_evals: list[dict],
+    baseline_scores: dict,
+) -> dict:
+    """Aggregate eval scores across seeds. Returns mean +/- std per task."""
+    agg = {}
+    for task in BENCHMARK_TASKS:
+        base_result = extract_primary_metric(baseline_scores.get(task, {}))
+        if base_result is None:
+            continue
+        metric_name, base_val = base_result
+
+        seed_vals = []
+        for eval_scores in per_seed_evals:
+            task_scores = eval_scores.get(task, {})
+            if metric_name in task_scores:
+                seed_vals.append(task_scores[metric_name])
+
+        if seed_vals:
+            mean_val = statistics.mean(seed_vals)
+            std_val = statistics.stdev(seed_vals) if len(seed_vals) > 1 else 0.0
+            agg[task] = {
+                "metric": metric_name,
+                "baseline": base_val,
+                "mean": mean_val,
+                "std": std_val,
+                "n_seeds": len(seed_vals),
+                "per_seed": seed_vals,
+                "delta_vs_baseline": mean_val - base_val,
+            }
+
+    return agg
+
+
+# ---------------------------------------------------------------------------
+# Single model experiment (multi-seed, three-arm)
 # ---------------------------------------------------------------------------
 def run_model_experiment(
     model_key: str,
     model_spec: dict,
     output_dir: Path,
+    seeds: list[int],
     quick: bool = False,
+    skip_eval: bool = False,
+    skip_inference: bool = False,
+    skip_grid: bool = False,
 ) -> dict:
-    """Run full experiment for one model scale."""
+    """Run full three-arm comparison for one model across multiple seeds."""
     model_path = str(model_spec["path"])
     model_name = model_spec["name"]
     num_layers = model_spec["num_layers"]
@@ -499,149 +677,255 @@ def run_model_experiment(
 
     logger.info(f"\n{'='*70}")
     logger.info(f"MODEL: {model_name} ({model_key})")
+    logger.info(f"Seeds: {seeds}")
+    logger.info(f"Quick: {quick}, Skip eval: {skip_eval}, Skip grid: {skip_grid}")
     logger.info(f"{'='*70}")
 
-    results = {"model": model_name, "model_path": model_path}
+    results = {
+        "model": model_name,
+        "model_path": model_path,
+        "seeds": seeds,
+        "quick": quick,
+        "timestamp": datetime.now().isoformat(),
+    }
     eval_limit = 50 if quick else None
+    iters = 100 if quick else STANDARD_LORA_CONFIG["iters"]
+    grid_iters = 50 if quick else 200
 
-    # ------------------------------------------------------------------
-    # a. BASELINE EVAL
-    # ------------------------------------------------------------------
-    logger.info(f"\n--- [{model_name}] Baseline Evaluation ---")
-    baseline_scores = run_lm_eval(
-        model_path=model_path,
-        tasks=BENCHMARK_TASKS,
-        limit=eval_limit,
-    )
-    results["baseline"] = baseline_scores
-    with open(model_dir / "baseline_eval.json", "w") as f:
-        json.dump(baseline_scores, f, indent=2)
-    logger.info(f"  Baseline scores saved.")
-
-    # ------------------------------------------------------------------
-    # b. STANDARD LORA (control)
-    # ------------------------------------------------------------------
-    logger.info(f"\n--- [{model_name}] Standard LoRA Training ---")
-    std_output = model_dir / "standard_lora"
-
-    # Prepare data directory for mlx_lm
+    # Prepare data dir for mlx-lm
     std_data_dir = model_dir / "_std_data"
     prepare_standard_lora_data_dir(TRAIN_DATA, VAL_DATA, std_data_dir)
 
-    std_train_result = train_standard_lora(
-        model_path=model_path,
-        num_layers=num_layers,
-        data_dir=std_data_dir,
-        output_dir=std_output,
-        quick=quick,
-    )
-    results["standard_lora_training"] = std_train_result
-
-    with open(std_output / "training_log.json", "w") as f:
-        json.dump(std_train_result, f, indent=2)
-
-    # Eval standard LoRA
-    logger.info(f"  Evaluating standard LoRA adapter...")
-    std_eval_scores = run_lm_eval(
-        model_path=model_path,
-        tasks=BENCHMARK_TASKS,
-        adapter_path=str(std_output),
-        limit=eval_limit,
-    )
-    results["standard_lora_eval"] = std_eval_scores
-    with open(std_output / "eval_results.json", "w") as f:
-        json.dump(std_eval_scores, f, indent=2)
+    # ------------------------------------------------------------------
+    # a. BASELINE EVAL (once)
+    # ------------------------------------------------------------------
+    if not skip_eval:
+        logger.info(f"\n--- [{model_name}] Baseline Evaluation ---")
+        baseline_scores = run_lm_eval(
+            model_path=model_path,
+            tasks=BENCHMARK_TASKS,
+            limit=eval_limit,
+        )
+    else:
+        baseline_scores = {}
+    results["baseline"] = baseline_scores
+    with open(model_dir / "baseline_eval.json", "w") as f:
+        json.dump(baseline_scores, f, indent=2)
 
     # ------------------------------------------------------------------
-    # c. NB-LORA (treatment)
+    # b. GRID SEARCH for tuned arm (once, seed=42)
     # ------------------------------------------------------------------
-    logger.info(f"\n--- [{model_name}] NB-LoRA Training ---")
-    nb_output = model_dir / "nb_lora"
-
-    nb_train_result = train_nb_lora(
-        model_path=model_path,
-        output_dir=nb_output,
-        quick=quick,
-    )
-    results["nb_lora_training"] = nb_train_result
-
-    with open(nb_output / "training_log.json", "w") as f:
-        json.dump(nb_train_result, f, indent=2)
-
-    # Eval NB-LoRA
-    logger.info(f"  Evaluating NB-LoRA adapter...")
-    nb_eval_scores = run_lm_eval(
-        model_path=model_path,
-        tasks=BENCHMARK_TASKS,
-        adapter_path=str(nb_output),
-        limit=eval_limit,
-    )
-    results["nb_lora_eval"] = nb_eval_scores
-    with open(nb_output / "eval_results.json", "w") as f:
-        json.dump(nb_eval_scores, f, indent=2)
+    if not skip_grid:
+        logger.info(f"\n--- [{model_name}] Grid Search for Tuned Arm ---")
+        grid_summary = run_grid_search(
+            model_spec=model_spec,
+            data_dir=std_data_dir,
+            output_dir=model_dir,
+            grid=TUNED_GRID,
+            grid_iters=grid_iters,
+        )
+        results["grid_search"] = grid_summary
+        best_tuned_config = STANDARD_LORA_CONFIG.copy()
+        best_tuned_config.update(grid_summary["best_config"])
+    else:
+        grid_summary = None
+        results["grid_search"] = "skipped"
+        best_tuned_config = None
 
     # ------------------------------------------------------------------
-    # d. INFERENCE TESTS
+    # c. PER-SEED TRAINING + EVAL
     # ------------------------------------------------------------------
-    logger.info(f"\n--- [{model_name}] Inference Tests ---")
-    prompts = load_jsonl(INFERENCE_PROMPTS)
+    # Collect per-arm, per-seed results for aggregation
+    std_evals = []
+    tuned_evals = []
+    nb_evals = []
+    std_trainings = []
+    tuned_trainings = []
+    nb_trainings = []
+    per_seed_data = {}
 
-    base_responses = generate_inference_responses(
-        model_path=model_path,
-        adapter_path=None,
-        prompts=prompts,
-        label="base",
-    )
-    std_responses = generate_inference_responses(
-        model_path=model_path,
-        adapter_path=str(std_output),
-        prompts=prompts,
-        label="standard_lora",
-    )
-    nb_responses = generate_inference_responses(
-        model_path=model_path,
-        adapter_path=str(nb_output),
-        prompts=prompts,
-        label="nb_lora",
-    )
+    for seed in seeds:
+        logger.info(f"\n{'='*50}")
+        logger.info(f"[{model_name}] Seed {seed}")
+        logger.info(f"{'='*50}")
 
-    # Merge responses into prompt records
-    inference_results = {"prompts": []}
-    for prompt_data in prompts:
-        pid = prompt_data["id"]
-        base_resp = next((r["response"] for r in base_responses if r["id"] == pid), "")
-        std_resp = next((r["response"] for r in std_responses if r["id"] == pid), "")
-        nb_resp = next((r["response"] for r in nb_responses if r["id"] == pid), "")
+        seed_dir = model_dir / "seeds" / f"seed_{seed}"
+        seed_dir.mkdir(parents=True, exist_ok=True)
+        seed_result = {"seed": seed}
 
-        inference_results["prompts"].append({
-            "id": pid,
-            "category": prompt_data["category"],
-            "distribution": prompt_data["distribution"],
-            "prompt": prompt_data["prompt"],
-            "expected": prompt_data["expected"],
-            "responses": {
-                "base": base_resp,
-                "standard_lora": std_resp,
-                "nb_lora": nb_resp,
-            },
-        })
+        # ---- Standard LoRA ----
+        logger.info(f"\n--- [{model_name}] Standard LoRA (seed={seed}) ---")
+        std_out = seed_dir / "standard_lora"
+        try:
+            std_train = train_standard_lora(
+                model_path=model_path,
+                num_layers=num_layers,
+                data_dir=std_data_dir,
+                output_dir=std_out,
+                config=STANDARD_LORA_CONFIG,
+                seed=seed,
+                iters_override=iters,
+            )
+            with open(std_out / "training_log.json", "w") as f:
+                json.dump(std_train, f, indent=2, default=str)
+            std_trainings.append(std_train)
 
-    results["inference_responses"] = inference_results
-    with open(model_dir / "inference_responses.json", "w") as f:
-        json.dump(inference_results, f, indent=2)
+            if not skip_eval:
+                std_eval = run_lm_eval(
+                    model_path=model_path,
+                    tasks=BENCHMARK_TASKS,
+                    adapter_path=str(std_out),
+                    limit=eval_limit,
+                )
+            else:
+                std_eval = {}
+            with open(std_out / "eval_results.json", "w") as f:
+                json.dump(std_eval, f, indent=2)
+            std_evals.append(std_eval)
+            seed_result["standard_lora"] = {"training": std_train, "eval": std_eval}
+        except Exception as e:
+            logger.exception(f"  Standard LoRA seed={seed} failed")
+            seed_result["standard_lora"] = {"error": str(e)}
+
+        # ---- Tuned LoRA ----
+        if best_tuned_config is not None:
+            logger.info(f"\n--- [{model_name}] Tuned LoRA (seed={seed}) ---")
+            tuned_out = seed_dir / "tuned_lora"
+            try:
+                tuned_train = train_standard_lora(
+                    model_path=model_path,
+                    num_layers=num_layers,
+                    data_dir=std_data_dir,
+                    output_dir=tuned_out,
+                    config=best_tuned_config,
+                    seed=seed,
+                    iters_override=iters,
+                )
+                with open(tuned_out / "training_log.json", "w") as f:
+                    json.dump(tuned_train, f, indent=2, default=str)
+                tuned_trainings.append(tuned_train)
+
+                if not skip_eval:
+                    tuned_eval = run_lm_eval(
+                        model_path=model_path,
+                        tasks=BENCHMARK_TASKS,
+                        adapter_path=str(tuned_out),
+                        limit=eval_limit,
+                    )
+                else:
+                    tuned_eval = {}
+                with open(tuned_out / "eval_results.json", "w") as f:
+                    json.dump(tuned_eval, f, indent=2)
+                tuned_evals.append(tuned_eval)
+                seed_result["tuned_lora"] = {"training": tuned_train, "eval": tuned_eval}
+            except Exception as e:
+                logger.exception(f"  Tuned LoRA seed={seed} failed")
+                seed_result["tuned_lora"] = {"error": str(e)}
+
+        # ---- NB-LoRA ----
+        logger.info(f"\n--- [{model_name}] NB-LoRA (seed={seed}) ---")
+        nb_out = seed_dir / "nb_lora"
+        try:
+            nb_train = train_nb_lora(
+                model_path=model_path,
+                output_dir=nb_out,
+                seed=seed,
+            )
+            with open(nb_out / "training_log.json", "w") as f:
+                json.dump(nb_train, f, indent=2, default=str)
+            nb_trainings.append(nb_train)
+
+            if not skip_eval:
+                nb_eval = run_lm_eval(
+                    model_path=model_path,
+                    tasks=BENCHMARK_TASKS,
+                    adapter_path=str(nb_out),
+                    limit=eval_limit,
+                )
+            else:
+                nb_eval = {}
+            with open(nb_out / "eval_results.json", "w") as f:
+                json.dump(nb_eval, f, indent=2)
+            nb_evals.append(nb_eval)
+            seed_result["nb_lora"] = {"training": nb_train, "eval": nb_eval}
+        except Exception as e:
+            logger.exception(f"  NB-LoRA seed={seed} failed")
+            seed_result["nb_lora"] = {"error": str(e)}
+
+        # ---- Inference ----
+        if not skip_inference:
+            logger.info(f"\n--- [{model_name}] Inference Tests (seed={seed}) ---")
+            prompts = load_jsonl(INFERENCE_PROMPTS)
+
+            base_responses = generate_inference_responses(
+                model_path=model_path,
+                adapter_path=None,
+                prompts=prompts,
+                label="base",
+            )
+            std_adapter = str(std_out) if "error" not in seed_result.get("standard_lora", {}) else None
+            nb_adapter = str(nb_out) if "error" not in seed_result.get("nb_lora", {}) else None
+            tuned_adapter = (
+                str(seed_dir / "tuned_lora")
+                if best_tuned_config and "error" not in seed_result.get("tuned_lora", {})
+                else None
+            )
+
+            inference_data = {"prompts": []}
+            for prompt_data in prompts:
+                pid = prompt_data["id"]
+                entry = {
+                    "id": pid,
+                    "category": prompt_data.get("category", ""),
+                    "distribution": prompt_data.get("distribution", ""),
+                    "prompt": prompt_data["prompt"],
+                    "expected": prompt_data.get("expected", ""),
+                    "responses": {
+                        "base": next((r["response"] for r in base_responses if r["id"] == pid), ""),
+                    },
+                }
+                if std_adapter:
+                    std_resps = generate_inference_responses(
+                        model_path, std_adapter, [prompt_data], "std",
+                    )
+                    entry["responses"]["standard_lora"] = std_resps[0]["response"] if std_resps else ""
+                if tuned_adapter:
+                    tuned_resps = generate_inference_responses(
+                        model_path, tuned_adapter, [prompt_data], "tuned",
+                    )
+                    entry["responses"]["tuned_lora"] = tuned_resps[0]["response"] if tuned_resps else ""
+                if nb_adapter:
+                    nb_resps = generate_inference_responses(
+                        model_path, nb_adapter, [prompt_data], "nb",
+                    )
+                    entry["responses"]["nb_lora"] = nb_resps[0]["response"] if nb_resps else ""
+                inference_data["prompts"].append(entry)
+
+            seed_result["inference"] = inference_data
+            with open(seed_dir / "inference_responses.json", "w") as f:
+                json.dump(inference_data, f, indent=2)
+
+        per_seed_data[str(seed)] = seed_result
+
+    results["per_seed"] = per_seed_data
 
     # ------------------------------------------------------------------
-    # e. COMPARISON
+    # d. AGGREGATE + COMPARE
     # ------------------------------------------------------------------
-    logger.info(f"\n--- [{model_name}] Comparison ---")
+    logger.info(f"\n--- [{model_name}] Aggregation ---")
+
     comparison = build_comparison(
-        baseline=baseline_scores,
-        standard=std_eval_scores,
-        nb_lora=nb_eval_scores,
-        std_training=std_train_result,
-        nb_training=nb_train_result,
+        baseline_scores=baseline_scores,
+        std_evals=std_evals,
+        tuned_evals=tuned_evals,
+        nb_evals=nb_evals,
+        std_trainings=std_trainings,
+        tuned_trainings=tuned_trainings,
+        nb_trainings=nb_trainings,
+        grid_summary=grid_summary,
     )
     results["comparison"] = comparison
+
     with open(model_dir / "comparison.json", "w") as f:
         json.dump(comparison, f, indent=2)
 
@@ -653,196 +937,261 @@ def run_model_experiment(
     return results
 
 
+# ---------------------------------------------------------------------------
+# Comparison builder
+# ---------------------------------------------------------------------------
+def _safe_mean(vals: list[float]) -> float:
+    return statistics.mean(vals) if vals else 0.0
+
+
+def _safe_stdev(vals: list[float]) -> float:
+    return statistics.stdev(vals) if len(vals) > 1 else 0.0
+
+
 def build_comparison(
-    baseline: dict,
-    standard: dict,
-    nb_lora: dict,
-    std_training: dict,
-    nb_training: dict,
+    baseline_scores: dict,
+    std_evals: list[dict],
+    tuned_evals: list[dict],
+    nb_evals: list[dict],
+    std_trainings: list[dict],
+    tuned_trainings: list[dict],
+    nb_trainings: list[dict],
+    grid_summary: dict | None,
 ) -> dict:
-    """Build comparison metrics between methods."""
-    comparison = {"benchmarks": {}, "training": {}, "spectral": {}}
-
-    # Benchmark deltas
-    for task in BENCHMARK_TASKS:
-        base_scores = baseline.get(task, {})
-        std_scores = standard.get(task, {})
-        nb_scores = nb_lora.get(task, {})
-
-        # Find the primary metric (acc_norm preferred, then acc, then exact_match)
-        metric = None
-        for m in ["acc_norm,none", "acc,none", "exact_match,strict-match"]:
-            if m in base_scores:
-                metric = m
-                break
-        if metric is None:
-            # Try any metric that looks like accuracy
-            for k in base_scores:
-                if "acc" in k or "exact" in k:
-                    metric = k
-                    break
-
-        if metric:
-            base_val = base_scores.get(metric, 0)
-            std_val = std_scores.get(metric, 0)
-            nb_val = nb_scores.get(metric, 0)
-
-            comparison["benchmarks"][task] = {
-                "metric": metric,
-                "baseline": base_val,
-                "standard_lora": std_val,
-                "nb_lora": nb_val,
-                "delta_std_vs_base": std_val - base_val,
-                "delta_nb_vs_base": nb_val - base_val,
-                "delta_nb_vs_std": nb_val - std_val,
-            }
-
-    # Training comparison
-    comparison["training"] = {
-        "standard_lora": {
-            "iters": std_training.get("iters", 0),
-            "training_time_seconds": std_training.get("training_time_seconds", 0),
-            "n_trainable_params": std_training.get("n_trainable_params", 0),
-            "hyperparameter_count": std_training.get("hyperparameter_count", 0),
-        },
-        "nb_lora": {
-            "iters": nb_training.get("train_iters", 0),
-            "training_time_seconds": nb_training.get("training_time_seconds", 0),
-            "n_trainable_params": nb_training.get("n_trainable_params", 0),
-            "hyperparameter_count": nb_training.get("hyperparameter_count", 0),
-            "stop_reason": nb_training.get("stop_reason", ""),
-            "initial_loss": nb_training.get("initial_loss", 0),
-            "final_loss": nb_training.get("final_loss", 0),
-            "baseline_perplexity": nb_training.get("baseline_perplexity", 0),
-            "post_perplexity": nb_training.get("post_perplexity", 0),
-        },
+    """Build multi-seed comparison across three arms."""
+    comparison = {
+        "benchmarks": {},
+        "training": {},
+        "spectral": {},
+        "head_to_head": {},
     }
 
+    # Aggregate benchmarks per arm
+    std_agg = aggregate_arm_evals(std_evals, baseline_scores)
+    tuned_agg = aggregate_arm_evals(tuned_evals, baseline_scores)
+    nb_agg = aggregate_arm_evals(nb_evals, baseline_scores)
+
+    for task in BENCHMARK_TASKS:
+        entry = {"task": task}
+        if task in std_agg:
+            entry["baseline"] = std_agg[task]["baseline"]
+            entry["metric"] = std_agg[task]["metric"]
+        elif task in nb_agg:
+            entry["baseline"] = nb_agg[task]["baseline"]
+            entry["metric"] = nb_agg[task]["metric"]
+        else:
+            continue
+
+        for arm_name, arm_agg in [
+            ("standard_lora", std_agg),
+            ("tuned_lora", tuned_agg),
+            ("nb_lora", nb_agg),
+        ]:
+            if task in arm_agg:
+                entry[arm_name] = {
+                    "mean": arm_agg[task]["mean"],
+                    "std": arm_agg[task]["std"],
+                    "n_seeds": arm_agg[task]["n_seeds"],
+                    "delta_vs_baseline": arm_agg[task]["delta_vs_baseline"],
+                }
+
+        comparison["benchmarks"][task] = entry
+
+    # Training stats
+    for arm_name, trainings in [
+        ("standard_lora", std_trainings),
+        ("tuned_lora", tuned_trainings),
+        ("nb_lora", nb_trainings),
+    ]:
+        times = [t.get("training_time_seconds", 0) for t in trainings]
+        val_losses = [t.get("final_val_loss", 0) for t in trainings if t.get("final_val_loss") is not None]
+        comparison["training"][arm_name] = {
+            "n_runs": len(trainings),
+            "training_time_mean": _safe_mean(times),
+            "training_time_std": _safe_stdev(times),
+            "final_val_loss_mean": _safe_mean(val_losses),
+            "final_val_loss_std": _safe_stdev(val_losses),
+            "hyperparameter_count": trainings[0].get("hyperparameter_count", 0) if trainings else 0,
+        }
+
     # Spectral safety
-    std_spectral = std_training.get("spectral_info", {})
+    std_max_norms = [t.get("spectral_info", {}).get("max_spectral_norm", 0) for t in std_trainings]
+    tuned_max_norms = [t.get("spectral_info", {}).get("max_spectral_norm", 0) for t in tuned_trainings]
     comparison["spectral"] = {
         "standard_lora": {
-            "max_spectral_norm": std_spectral.get("max_spectral_norm", 0),
+            "max_norm_mean": _safe_mean(std_max_norms),
+            "bounded_by_construction": False,
+        },
+        "tuned_lora": {
+            "max_norm_mean": _safe_mean(tuned_max_norms),
             "bounded_by_construction": False,
         },
         "nb_lora": {
-            "max_spectral_ratio": nb_training.get("max_spectral_ratio", 0),
-            "spectral_bounds_ok": nb_training.get("spectral_bounds_ok", False),
             "bounded_by_construction": True,
+            "max_spectral_ratio_mean": _safe_mean([
+                t.get("max_spectral_ratio", 0) for t in nb_trainings
+            ]),
+            "spectral_bounds_ok": all(
+                t.get("spectral_bounds_ok", False) for t in nb_trainings
+            ),
         },
     }
+
+    # Head-to-head: NB vs Standard, NB vs Tuned
+    for opponent_name, opponent_agg in [
+        ("standard_lora", std_agg),
+        ("tuned_lora", tuned_agg),
+    ]:
+        nb_wins = 0
+        opponent_wins = 0
+        ties = 0
+        deltas = []
+
+        for task in BENCHMARK_TASKS:
+            if task in nb_agg and task in opponent_agg:
+                nb_mean = nb_agg[task]["mean"]
+                opp_mean = opponent_agg[task]["mean"]
+                delta = nb_mean - opp_mean
+                deltas.append(delta)
+                if abs(delta) < 0.005:  # within 0.5% = tie
+                    ties += 1
+                elif delta > 0:
+                    nb_wins += 1
+                else:
+                    opponent_wins += 1
+
+        key = f"nb_vs_{opponent_name}"
+        comparison["head_to_head"][key] = {
+            "nb_wins": nb_wins,
+            "opponent_wins": opponent_wins,
+            "ties": ties,
+            "mean_delta": _safe_mean(deltas),
+            "total_tasks": len(deltas),
+        }
+
+    # Grid search info
+    if grid_summary:
+        comparison["grid_search"] = {
+            "best_config": grid_summary.get("best_config"),
+            "best_val_loss": grid_summary.get("best_val_loss"),
+            "n_configs_tested": len(grid_summary.get("grid_configs", [])),
+        }
 
     return comparison
 
 
+# ---------------------------------------------------------------------------
+# Print comparison
+# ---------------------------------------------------------------------------
 def print_comparison(model_name: str, comparison: dict):
-    """Print a human-readable comparison table."""
-    logger.info(f"\n  {'Task':<20} {'Baseline':>10} {'Std LoRA':>10} {'NB-LoRA':>10} {'Δ(NB-Std)':>10}")
-    logger.info(f"  {'-'*60}")
+    """Print human-readable multi-seed comparison."""
+    benchmarks = comparison.get("benchmarks", {})
+    training = comparison.get("training", {})
+    h2h = comparison.get("head_to_head", {})
 
-    for task, data in comparison.get("benchmarks", {}).items():
-        base = data["baseline"]
-        std = data["standard_lora"]
-        nb = data["nb_lora"]
-        delta = data["delta_nb_vs_std"]
-        sign = "+" if delta > 0 else ""
-        logger.info(
-            f"  {task:<20} {base:>10.4f} {std:>10.4f} {nb:>10.4f} {sign}{delta:>9.4f}"
-        )
+    print(f"\n{'='*80}")
+    print(f"  COMPARISON: {model_name}")
+    print(f"{'='*80}")
 
-    tc = comparison.get("training", {})
-    std_t = tc.get("standard_lora", {})
-    nb_t = tc.get("nb_lora", {})
-    logger.info(f"\n  Training:")
-    logger.info(f"    Standard LoRA: {std_t.get('iters', '?')} iters, "
-                f"{std_t.get('training_time_seconds', 0):.1f}s, "
-                f"{std_t.get('hyperparameter_count', '?')} hyperparameters")
-    logger.info(f"    NB-LoRA:       {nb_t.get('iters', '?')} iters, "
-                f"{nb_t.get('training_time_seconds', 0):.1f}s, "
-                f"{nb_t.get('hyperparameter_count', '?')} hyperparameters")
+    # Header
+    has_tuned = any("tuned_lora" in v for v in benchmarks.values())
+    if has_tuned:
+        print(f"  {'Task':<18} {'Base':>8} {'Std LoRA':>14} {'Tuned LoRA':>14} {'NB-LoRA':>14}")
+    else:
+        print(f"  {'Task':<18} {'Base':>8} {'Std LoRA':>14} {'NB-LoRA':>14}")
+    print(f"  {'-'*72}")
 
-    sc = comparison.get("spectral", {})
-    logger.info(f"\n  Spectral Safety:")
-    logger.info(f"    Standard LoRA max norm: {sc.get('standard_lora', {}).get('max_spectral_norm', '?')}")
-    logger.info(f"    NB-LoRA bounded by construction: {sc.get('nb_lora', {}).get('spectral_bounds_ok', '?')}")
-    logger.info(f"    NB-LoRA max ratio: {sc.get('nb_lora', {}).get('max_spectral_ratio', '?')}")
+    for task, data in benchmarks.items():
+        base = data.get("baseline", 0)
+        std = data.get("standard_lora", {})
+        tuned = data.get("tuned_lora", {})
+        nb = data.get("nb_lora", {})
+
+        std_str = f"{std.get('mean', 0):.4f}+/-{std.get('std', 0):.3f}" if std else "---"
+        nb_str = f"{nb.get('mean', 0):.4f}+/-{nb.get('std', 0):.3f}" if nb else "---"
+
+        if has_tuned:
+            tuned_str = f"{tuned.get('mean', 0):.4f}+/-{tuned.get('std', 0):.3f}" if tuned else "---"
+            print(f"  {task:<18} {base:>8.4f} {std_str:>14} {tuned_str:>14} {nb_str:>14}")
+        else:
+            print(f"  {task:<18} {base:>8.4f} {std_str:>14} {nb_str:>14}")
+
+    # Training stats
+    print(f"\n  Training:")
+    for arm_name in ["standard_lora", "tuned_lora", "nb_lora"]:
+        t = training.get(arm_name, {})
+        if t.get("n_runs", 0) == 0:
+            continue
+        hp = t.get("hyperparameter_count", "?")
+        time_str = f"{t['training_time_mean']:.1f}+/-{t['training_time_std']:.1f}s"
+        vloss_str = f"{t['final_val_loss_mean']:.4f}+/-{t['final_val_loss_std']:.4f}"
+        label = {"standard_lora": "Standard", "tuned_lora": "Tuned", "nb_lora": "NB-LoRA"}[arm_name]
+        print(f"    {label:<12} time={time_str:<18} val_loss={vloss_str:<20} HPs={hp}")
+
+    # Head-to-head
+    print(f"\n  Head-to-Head:")
+    for key, h in h2h.items():
+        label = key.replace("nb_vs_", "NB vs ")
+        print(f"    {label}: NB wins {h['nb_wins']}, "
+              f"opponent wins {h['opponent_wins']}, "
+              f"ties {h['ties']}, "
+              f"mean delta {h['mean_delta']:+.4f}")
+
+    # Grid search
+    gs = comparison.get("grid_search", {})
+    if gs:
+        bc = gs.get("best_config", {})
+        print(f"\n  Grid Search ({gs.get('n_configs_tested', '?')} configs):")
+        print(f"    Best: rank={bc.get('rank')}, lr={bc.get('lr')}, scale={bc.get('scale', 0):.2f}")
+        print(f"    Best val loss: {gs.get('best_val_loss', '?')}")
+
+    print(f"{'='*80}\n")
 
 
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 def build_summary(all_results: dict) -> dict:
-    """Build cross-model summary table."""
+    """Build cross-model summary."""
     summary = {
         "timestamp": datetime.now().isoformat(),
         "models": {},
         "overall": {},
     }
 
-    all_deltas = []
+    all_nb_vs_std_deltas = []
+    all_nb_vs_tuned_deltas = []
+
     for model_key, model_results in all_results.items():
         comparison = model_results.get("comparison", {})
-        benchmarks = comparison.get("benchmarks", {})
+        h2h = comparison.get("head_to_head", {})
 
-        model_summary = {}
-        for task, data in benchmarks.items():
-            model_summary[task] = {
-                "baseline": data["baseline"],
-                "standard_lora": data["standard_lora"],
-                "nb_lora": data["nb_lora"],
-                "nb_wins": data["delta_nb_vs_std"] > 0,
-                "delta": data["delta_nb_vs_std"],
-            }
-            all_deltas.append(data["delta_nb_vs_std"])
-
-        summary["models"][model_key] = model_summary
-
-    if all_deltas:
-        nb_wins = sum(1 for d in all_deltas if d > 0)
-        std_wins = sum(1 for d in all_deltas if d < 0)
-        ties = sum(1 for d in all_deltas if d == 0)
-        summary["overall"] = {
-            "nb_lora_wins": nb_wins,
-            "standard_lora_wins": std_wins,
-            "ties": ties,
-            "total_comparisons": len(all_deltas),
-            "mean_delta": sum(all_deltas) / len(all_deltas),
-            "verdict": (
-                "NB-LoRA better" if nb_wins > std_wins
-                else "Standard LoRA better" if std_wins > nb_wins
-                else "Tie"
-            ),
+        summary["models"][model_key] = {
+            "benchmarks": comparison.get("benchmarks", {}),
+            "head_to_head": h2h,
+            "training": comparison.get("training", {}),
         }
 
+        nb_vs_std = h2h.get("nb_vs_standard_lora", {})
+        nb_vs_tuned = h2h.get("nb_vs_tuned_lora", {})
+
+        if nb_vs_std.get("mean_delta") is not None:
+            all_nb_vs_std_deltas.append(nb_vs_std["mean_delta"])
+        if nb_vs_tuned.get("mean_delta") is not None:
+            all_nb_vs_tuned_deltas.append(nb_vs_tuned["mean_delta"])
+
+    if all_nb_vs_std_deltas:
+        summary["overall"]["nb_vs_standard_mean_delta"] = _safe_mean(all_nb_vs_std_deltas)
+    if all_nb_vs_tuned_deltas:
+        summary["overall"]["nb_vs_tuned_mean_delta"] = _safe_mean(all_nb_vs_tuned_deltas)
+
+    summary["overall"]["verdict"] = (
+        "NB-LoRA >= Standard (zero-config advantage)"
+        if _safe_mean(all_nb_vs_std_deltas) >= -0.005
+        else "Standard LoRA wins on average"
+    ) if all_nb_vs_std_deltas else "no data"
+
     return summary
-
-
-def print_summary(summary: dict):
-    """Print final summary to stdout."""
-    print("\n" + "=" * 70)
-    print("EXPERIMENT SUMMARY: NB-LoRA vs Standard LoRA")
-    print("=" * 70)
-
-    for model_name, tasks in summary.get("models", {}).items():
-        print(f"\n  {model_name}:")
-        print(f"    {'Task':<20} {'Baseline':>10} {'Std LoRA':>10} {'NB-LoRA':>10} {'Winner':>10}")
-        print(f"    {'-'*60}")
-        for task, data in tasks.items():
-            winner = "NB-LoRA" if data["nb_wins"] else "Std LoRA" if data["delta"] < 0 else "Tie"
-            print(
-                f"    {task:<20} {data['baseline']:>10.4f} "
-                f"{data['standard_lora']:>10.4f} {data['nb_lora']:>10.4f} "
-                f"{winner:>10}"
-            )
-
-    overall = summary.get("overall", {})
-    if overall:
-        print(f"\n  Overall:")
-        print(f"    NB-LoRA wins:        {overall['nb_lora_wins']}")
-        print(f"    Standard LoRA wins:  {overall['standard_lora_wins']}")
-        print(f"    Ties:                {overall['ties']}")
-        print(f"    Mean Δ(NB - Std):    {overall['mean_delta']:+.4f}")
-        print(f"    Verdict:             {overall['verdict']}")
 
 
 # ---------------------------------------------------------------------------
@@ -850,45 +1199,60 @@ def print_summary(summary: dict):
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description="NB-LoRA vs Standard LoRA controlled experiment",
+        description="NB-LoRA vs Standard LoRA — three-arm head-to-head comparison",
     )
     parser.add_argument(
         "--models",
         nargs="+",
         choices=list(MODEL_SPECS.keys()),
-        default=list(MODEL_SPECS.keys()),
-        help="Which model scales to test (default: all)",
+        default=["350M"],
+        help="Model scales to test (default: 350M)",
+    )
+    parser.add_argument(
+        "--seeds",
+        nargs="+",
+        type=int,
+        default=DEFAULT_SEEDS,
+        help=f"Seeds for multi-seed runs (default: {DEFAULT_SEEDS})",
     )
     parser.add_argument(
         "--quick",
         action="store_true",
-        help="Quick mode: fewer iters (100 std, 200 nb), limited eval (50 samples per task)",
+        help="Quick mode: 1 seed, fewer iters, limited eval samples",
     )
     parser.add_argument(
         "--output-dir",
         type=str,
         default=None,
-        help="Override output directory (default: /Volumes/CodeCypher/experiments/nblora-vs-standard-{timestamp})",
+        help="Override output directory (default: results/nblora_vs_standard/)",
     )
     parser.add_argument(
         "--skip-eval",
         action="store_true",
-        help="Skip lm-eval benchmarks (for faster debugging of training pipeline)",
+        help="Skip lm-eval benchmarks (for debugging training pipeline)",
     )
     parser.add_argument(
         "--skip-inference",
         action="store_true",
         help="Skip inference response generation",
     )
+    parser.add_argument(
+        "--skip-grid",
+        action="store_true",
+        help="Skip grid search (omit tuned arm)",
+    )
     args = parser.parse_args()
+
+    # Quick mode: 1 seed
+    if args.quick and args.seeds == DEFAULT_SEEDS:
+        args.seeds = [42]
 
     # Validate volume
     if not VOLUME.exists():
         logger.error(f"Volume not mounted: {VOLUME}")
-        logger.error("Mount the external drive first.")
         sys.exit(1)
 
-    # Validate models exist
+    # Validate models
     for model_key in args.models:
         spec = MODEL_SPECS[model_key]
         if not spec["path"].exists():
@@ -901,46 +1265,33 @@ def main():
             logger.error(f"Data file not found: {path}")
             sys.exit(1)
 
-    # Validate data format (training data must have "text" field)
-    for path in [TRAIN_DATA, VAL_DATA]:
-        with open(path) as f:
-            first_line = f.readline().strip()
-            if first_line:
-                record = json.loads(first_line)
-                if "text" not in record:
-                    logger.error(f"Data file {path} missing 'text' field. First record keys: {list(record.keys())}")
-                    sys.exit(1)
+    # Validate training data format
+    with open(TRAIN_DATA) as f:
+        first_line = f.readline().strip()
+        if first_line:
+            record = json.loads(first_line)
+            if "text" not in record:
+                logger.error(f"Training data missing 'text' field. Keys: {list(record.keys())}")
+                sys.exit(1)
 
     # Output directory
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     output_dir = Path(args.output_dir) if args.output_dir else (
-        EXPERIMENTS_DIR / f"nblora-vs-standard-{timestamp}"
+        REPO_ROOT / "results" / "nblora_vs_standard"
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("=" * 70)
-    logger.info("NB-LoRA vs Standard LoRA — Controlled Experiment")
+    logger.info("NB-LoRA vs Standard LoRA — Head-to-Head Comparison (R1)")
     logger.info("=" * 70)
     logger.info(f"Models: {args.models}")
-    logger.info(f"Quick mode: {args.quick}")
+    logger.info(f"Seeds: {args.seeds}")
+    logger.info(f"Quick: {args.quick}")
     logger.info(f"Output: {output_dir}")
-    logger.info(f"Train data: {TRAIN_DATA} ({sum(1 for _ in open(TRAIN_DATA))} samples)")
-    logger.info(f"Val data: {VAL_DATA} ({sum(1 for _ in open(VAL_DATA))} samples)")
+    logger.info(f"Standard LoRA config: {STANDARD_LORA_CONFIG}")
+    logger.info(f"Train: {TRAIN_DATA} ({sum(1 for _ in open(TRAIN_DATA))} samples)")
+    logger.info(f"Val: {VAL_DATA} ({sum(1 for _ in open(VAL_DATA))} samples)")
 
-    # Override eval/inference functions if skipped
-    global run_lm_eval, generate_inference_responses
-    original_run_lm_eval = run_lm_eval
-    original_generate_inference = generate_inference_responses
-
-    if args.skip_eval:
-        logger.info("SKIPPING lm-eval benchmarks (--skip-eval)")
-        run_lm_eval = lambda **kwargs: {}
-
-    if args.skip_inference:
-        logger.info("SKIPPING inference tests (--skip-inference)")
-        generate_inference_responses = lambda **kwargs: []
-
-    # Run experiment for each model
+    # Run experiments
     all_results = {}
     total_t0 = time.time()
 
@@ -951,7 +1302,11 @@ def main():
                 model_key=model_key,
                 model_spec=spec,
                 output_dir=output_dir,
+                seeds=args.seeds,
                 quick=args.quick,
+                skip_eval=args.skip_eval,
+                skip_inference=args.skip_inference,
+                skip_grid=args.skip_grid,
             )
             all_results[spec["name"]] = result
         except Exception:
@@ -960,24 +1315,27 @@ def main():
 
     total_time = time.time() - total_t0
 
-    # Restore originals
-    run_lm_eval = original_run_lm_eval
-    generate_inference_responses = original_generate_inference
-
     # Build and save summary
     summary = build_summary(all_results)
     summary["total_time_seconds"] = total_time
+    summary["config"] = {
+        "standard_lora": STANDARD_LORA_CONFIG,
+        "lora_alpha": LORA_ALPHA,
+        "tuned_grid": TUNED_GRID,
+        "seeds": args.seeds,
+    }
 
     with open(output_dir / "summary.json", "w") as f:
         json.dump(summary, f, indent=2)
 
-    # Save full results
     with open(output_dir / "full_results.json", "w") as f:
         json.dump(all_results, f, indent=2, default=str)
 
-    print_summary(summary)
     logger.info(f"\nTotal experiment time: {total_time:.1f}s")
     logger.info(f"Results saved to: {output_dir}")
+    logger.info(f"  summary.json — cross-model summary")
+    logger.info(f"  full_results.json — all raw data")
+    logger.info(f"  <model>/comparison.json — per-model comparison")
 
 
 if __name__ == "__main__":
