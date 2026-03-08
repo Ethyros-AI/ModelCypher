@@ -28,8 +28,8 @@ live in:
 - We are not yet ahead on end-user reliability. The canonical pipeline still has
   unresolved behavioral failures, and 8B closure is still open.
 - The repository still has a large research surface, but it is now inventoried.
-  Current generated counts are `133` scripts, `89` top-level result families,
-  and about `7.32G` under `results/`.
+  Current generated counts are `133` scripts, `90` top-level result families,
+  and about `6.15G` under `results/`.
 
 The short version is: we have reduced guessing in the control plane more than
 we have proven superiority in the outcome plane.
@@ -134,8 +134,8 @@ Current generated counts from `results/repo_research_inventory/`:
 - `133` scripts under `scripts/`
 - `13` scripts with exact name-matched test files under `tests/scripts/` or
   `tests/experiments/`
-- `89` top-level result families under `results/`
-- about `7.32G` stored under `results/`
+- `90` top-level result families under `results/`
+- about `6.15G` stored under `results/`
 
 `scripts/INVENTORY.md` is now generated from
 `scripts/report_research_inventory.py`, and the full machine-readable inventory
@@ -145,7 +145,7 @@ Current generated status split after collapsing duplicate and superseded result
 runs into retained summary bundles:
 
 - scripts: `5` `canonical`, `34` `summary_only`, `94` `delete`
-- results: `30` `canonical`, `59` `summary_only`, `0` `delete`
+- results: `32` `canonical`, `58` `summary_only`, `0` `delete`
 
 ### A small number of experiment families dominate the artifact footprint
 
@@ -153,12 +153,12 @@ The largest current result families are:
 
 | Result family | Size | Share of `results/` |
 | --- | ---: | ---: |
-| `quantization_scale_ab_test` | `1.17G` | `16.0%` |
-| `continual_learning` | `1.08G` | `14.8%` |
-| `four_bit_extension` | `1.02G` | `13.9%` |
-| `g5_8b_validation_multiseed` | `0.97G` | `13.3%` |
+| `continual_learning` | `1.08G` | `17.6%` |
+| `four_bit_extension` | `1.02G` | `16.5%` |
+| `g5_8b_validation_multiseed` | `0.97G` | `15.8%` |
+| `g5_8b_validation` | `0.89G` | `14.5%` |
 
-Those four families account for about `58.0%` of the current `results/`
+Those four families account for about `64.4%` of the current `results/`
 directory. Most cleanup leverage is still concentrated there.
 
 ### "Checkpoint sprawl" is really "results-as-checkpoints"

@@ -31,12 +31,295 @@ in the backend adapter.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
+from typing import Any, Sequence
 
 from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 
 # IEEE 754 float32 derived constants
 _EPS_F32 = math.ldexp(1.0, -23)  # 2^-23, float32 machine epsilon
 _SQRT_EPS_F32 = math.sqrt(_EPS_F32)  # ~3.45e-4, used as backoff floor
+
+CONTROLLER_MODE_STRUCTURAL_OBSERVE = "mass_structural_observe"
+CONTROLLER_MODE_BEHAVIORAL_PROBE = "mass_behavioral_probe"
+CONTROLLER_MODE_BEHAVIORAL_CLOSED_LOOP = "mass_behavioral_closed_loop"
+
+OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS = "cayley_stiefel_mass"
+OPTIMIZER_MODE_ADAMW_MATCHED_TRACE = "adamw_matched_trace"
+
+VALID_CONTROLLER_MODES = frozenset(
+    {
+        CONTROLLER_MODE_STRUCTURAL_OBSERVE,
+        CONTROLLER_MODE_BEHAVIORAL_PROBE,
+        CONTROLLER_MODE_BEHAVIORAL_CLOSED_LOOP,
+    },
+)
+VALID_OPTIMIZER_RESEARCH_MODES = frozenset(
+    {
+        OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+        OPTIMIZER_MODE_ADAMW_MATCHED_TRACE,
+    },
+)
+
+
+def _serialize_mapping(mapping: dict[str, Any] | None) -> dict[str, Any] | None:
+    if mapping is None:
+        return None
+    return {
+        str(key): (
+            value.to_dict() if hasattr(value, "to_dict") else value
+        )
+        for key, value in mapping.items()
+    }
+
+
+@dataclass(frozen=True)
+class ControllerLayerMeasurement:
+    """Raw per-layer measurements for controller derivation."""
+
+    parameter_update_norm: float | None = None
+    behavioral_transport_norm: float | None = None
+    spectral_budget_ratio: float | None = None
+    remaining_budget: float | None = None
+    total_step_fraction: float | None = None
+    decay_scale: float | None = None
+    scale_bound: float | None = None
+    step_learning_rate: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {k: v for k, v in self.__dict__.items()}
+
+
+@dataclass(frozen=True)
+class BehavioralStateMeasurement:
+    """Expensive retained-probe measurements collected at eval cadence."""
+
+    per_layer_behavioral_transport_norm: dict[str, float] | None = None
+    per_layer_spectral_budget_ratio: dict[str, float] | None = None
+    per_layer_remaining_budget: dict[str, float] | None = None
+    margin_mean_delta: float | None = None
+    margin_n_flipped_sign: int | None = None
+    margin_n_near_zero_baseline: int | None = None
+    margin_n_near_zero_current: int | None = None
+    online_eval_accuracy_delta: float | None = None
+    online_eval_n_lost: int | None = None
+    online_eval_n_gained: int | None = None
+    cka_blindness_ratio: float | None = None
+    cka_blindness_worst_layer: int | None = None
+    null_accessibility: dict[str, dict[str, float | int]] | None = None
+    null_observability: dict[str, dict[str, float | int]] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "per_layer_behavioral_transport_norm": self.per_layer_behavioral_transport_norm,
+            "per_layer_spectral_budget_ratio": self.per_layer_spectral_budget_ratio,
+            "per_layer_remaining_budget": self.per_layer_remaining_budget,
+            "margin_mean_delta": self.margin_mean_delta,
+            "margin_n_flipped_sign": self.margin_n_flipped_sign,
+            "margin_n_near_zero_baseline": self.margin_n_near_zero_baseline,
+            "margin_n_near_zero_current": self.margin_n_near_zero_current,
+            "online_eval_accuracy_delta": self.online_eval_accuracy_delta,
+            "online_eval_n_lost": self.online_eval_n_lost,
+            "online_eval_n_gained": self.online_eval_n_gained,
+            "cka_blindness_ratio": self.cka_blindness_ratio,
+            "cka_blindness_worst_layer": self.cka_blindness_worst_layer,
+            "null_accessibility": self.null_accessibility,
+            "null_observability": self.null_observability,
+        }
+
+
+@dataclass(frozen=True)
+class ControllerStepTrace:
+    """Per-step controller state emitted by the training adapter."""
+
+    step: int
+    controller_mode: str
+    optimizer_research_mode: str
+    objective_components: list[str]
+    ce_grad_norm: float | None = None
+    auxiliary_grad_norms: dict[str, float] | None = None
+    total_effective_step_norm: float | None = None
+    eta_ceiling: float | None = None
+    eta_sps: float | None = None
+    eta_weyl: float | None = None
+    eta_margin: float | None = None
+    eta_step: float | None = None
+    effective_gain_ratio: float | None = None
+    optimizer_first_moment_norm: float | None = None
+    optimizer_second_moment_norm: float | None = None
+    optimizer_preconditioner_scale: float | None = None
+    per_layer_measurements: dict[str, ControllerLayerMeasurement] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "step": self.step,
+            "controller_mode": self.controller_mode,
+            "optimizer_research_mode": self.optimizer_research_mode,
+            "objective_components": list(self.objective_components),
+            "ce_grad_norm": self.ce_grad_norm,
+            "auxiliary_grad_norms": self.auxiliary_grad_norms,
+            "total_effective_step_norm": self.total_effective_step_norm,
+            "eta_ceiling": self.eta_ceiling,
+            "eta_sps": self.eta_sps,
+            "eta_weyl": self.eta_weyl,
+            "eta_margin": self.eta_margin,
+            "eta_step": self.eta_step,
+            "effective_gain_ratio": self.effective_gain_ratio,
+            "optimizer_first_moment_norm": self.optimizer_first_moment_norm,
+            "optimizer_second_moment_norm": self.optimizer_second_moment_norm,
+            "optimizer_preconditioner_scale": self.optimizer_preconditioner_scale,
+            "per_layer_measurements": _serialize_mapping(self.per_layer_measurements),
+        }
+
+
+@dataclass(frozen=True)
+class ControllerReplayDecision:
+    """Deterministic replay of a controller decision from saved telemetry."""
+
+    epoch: int
+    step: int
+    controller_mode: str
+    optimizer_research_mode: str
+    learning_rates: dict[str, float]
+    step_budget_multiplier: float | None
+    weight_decay_scales: dict[str, float] | None
+    freeze_layers: list[str]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "epoch": self.epoch,
+            "step": self.step,
+            "controller_mode": self.controller_mode,
+            "optimizer_research_mode": self.optimizer_research_mode,
+            "learning_rates": self.learning_rates,
+            "step_budget_multiplier": self.step_budget_multiplier,
+            "weight_decay_scales": self.weight_decay_scales,
+            "freeze_layers": list(self.freeze_layers),
+        }
+
+
+def validate_controller_mode(controller_mode: str) -> str:
+    """Validate a research controller mode name."""
+    if controller_mode not in VALID_CONTROLLER_MODES:
+        raise ValueError(
+            f"Unsupported controller_mode={controller_mode!r}; "
+            f"expected one of {sorted(VALID_CONTROLLER_MODES)}"
+        )
+    return controller_mode
+
+
+def validate_optimizer_research_mode(optimizer_research_mode: str) -> str:
+    """Validate a research optimizer comparison mode name."""
+    if optimizer_research_mode not in VALID_OPTIMIZER_RESEARCH_MODES:
+        raise ValueError(
+            f"Unsupported optimizer_research_mode={optimizer_research_mode!r}; "
+            f"expected one of {sorted(VALID_OPTIMIZER_RESEARCH_MODES)}"
+        )
+    return optimizer_research_mode
+
+
+def controller_precision_floor(
+    scale_bound: float,
+    *,
+    eps: float = _EPS_F32,
+) -> float:
+    """Precision-derived remaining-budget floor for replayed freeze decisions."""
+    if scale_bound <= 0.0 or not math.isfinite(scale_bound):
+        return 0.0
+    return scale_bound * math.sqrt(max(eps, 0.0))
+
+
+def replay_controller_trace(
+    epoch_metrics: Sequence[dict[str, Any]] | None,
+    *,
+    eps: float = _EPS_F32,
+) -> dict[str, Any] | None:
+    """Replay controller decisions exactly from saved telemetry.
+
+    The current MASS controller is global, so every active layer shares the
+    measured step learning rate. Replay exists to prove that the saved raw
+    trace is sufficient to reconstruct the emitted control law without
+    re-running training.
+    """
+    if not epoch_metrics:
+        return None
+
+    decisions: list[dict[str, Any]] = []
+    controller_mode: str | None = None
+    optimizer_mode: str | None = None
+    replay_floor_multiplier = math.sqrt(max(eps, 0.0))
+
+    for epoch_metric in epoch_metrics:
+        if not isinstance(epoch_metric, dict):
+            continue
+        epoch_idx = int(epoch_metric.get("epoch", 0))
+        controller_trace = epoch_metric.get("controller_trace")
+        if not isinstance(controller_trace, dict):
+            continue
+        for step_trace in controller_trace.get("step_traces", []) or []:
+            if not isinstance(step_trace, dict):
+                continue
+            controller_mode = str(
+                step_trace.get("controller_mode", controller_mode or CONTROLLER_MODE_STRUCTURAL_OBSERVE)
+            )
+            optimizer_mode = str(
+                step_trace.get(
+                    "optimizer_research_mode",
+                    optimizer_mode or OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+                )
+            )
+            eta_step = step_trace.get("eta_step")
+            eta_ceiling = step_trace.get("eta_ceiling")
+            per_layer_raw = step_trace.get("per_layer_measurements") or {}
+            learning_rates: dict[str, float] = {}
+            weight_decay_scales: dict[str, float] = {}
+            freeze_layers: list[str] = []
+            for layer_key, layer_raw in dict(per_layer_raw).items():
+                if not isinstance(layer_raw, dict):
+                    continue
+                layer_lr = layer_raw.get("step_learning_rate")
+                if layer_lr is None:
+                    layer_lr = eta_step
+                if layer_lr is not None:
+                    learning_rates[str(layer_key)] = float(layer_lr)
+                decay_scale = layer_raw.get("decay_scale")
+                if decay_scale is not None:
+                    weight_decay_scales[str(layer_key)] = float(decay_scale)
+                remaining_budget = layer_raw.get("remaining_budget")
+                scale_bound = layer_raw.get("scale_bound")
+                if (
+                    remaining_budget is not None
+                    and scale_bound is not None
+                    and float(remaining_budget) <= controller_precision_floor(float(scale_bound), eps=eps)
+                ):
+                    freeze_layers.append(str(layer_key))
+
+            budget_multiplier: float | None = None
+            if eta_step is not None and eta_ceiling not in (None, 0.0):
+                budget_multiplier = float(eta_step) / float(eta_ceiling)
+
+            decision = ControllerReplayDecision(
+                epoch=epoch_idx,
+                step=int(step_trace.get("step", 0)),
+                controller_mode=controller_mode,
+                optimizer_research_mode=optimizer_mode,
+                learning_rates=learning_rates,
+                step_budget_multiplier=budget_multiplier,
+                weight_decay_scales=weight_decay_scales or None,
+                freeze_layers=sorted(freeze_layers),
+            )
+            decisions.append(decision.to_dict())
+
+    if not decisions:
+        return None
+
+    return {
+        "controller_mode": controller_mode,
+        "optimizer_research_mode": optimizer_mode,
+        "precision_floor_multiplier": replay_floor_multiplier,
+        "n_replayed_steps": len(decisions),
+        "decisions": decisions,
+    }
 
 
 def derive_spectral_ceiling(

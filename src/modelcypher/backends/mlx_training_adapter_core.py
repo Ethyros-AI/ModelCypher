@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from typing import TYPE_CHECKING, Any
 
 import mlx.core as mx
@@ -49,6 +49,16 @@ logger = logging.getLogger(__name__)
 # IEEE 754 float32 derived stability constants — the ONLY epsilons allowed.
 _EPS_F32 = float(mx.finfo(mx.float32).eps)       # ~1.19e-7
 _SQRT_EPS_F32 = math.sqrt(_EPS_F32)               # ~3.45e-4
+
+
+def _serialize_metric_value(value: Any) -> Any:
+    if is_dataclass(value):
+        return asdict(value)
+    if isinstance(value, dict):
+        return {k: _serialize_metric_value(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_serialize_metric_value(item) for item in value]
+    return value
 
 
 @dataclass
@@ -181,9 +191,16 @@ class EpochMetrics:
     rss_top1_agreement: float | None = None
     # Projected residual diagnostic (tighter than spectral norm ratio)
     projected_residual_max: float | None = None
+    # Research-only controller tracing (raw measurements, no interpretation)
+    controller_mode: str | None = None
+    optimizer_research_mode: str | None = None
+    controller_trace: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {k: v for k, v in self.__dict__.items()}
+        return {
+            key: _serialize_metric_value(value)
+            for key, value in self.__dict__.items()
+        }
 
 
 # =============================================================================

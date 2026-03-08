@@ -24,7 +24,7 @@ from Wang et al. (2025), arXiv:2501.19050:
 2. Spectral bound: ||2 * B^T @ S @ A||_2 <= 2 * max(S)
 3. Forward consistency: layer.forward(x) matches x @ get_effective_delta()^T
 4. Scale clamping: get_S() always in [0, scale_bound]
-5. Factory correctness: scale_bound = sigma_k / 2 * margin
+5. Factory correctness: scale_bound = sigma_max / 2 * margin
 """
 
 from __future__ import annotations
@@ -828,8 +828,8 @@ class TestCreateFromBaseWeight:
         assert tuple(backend.shape(layer.B_tilde)) == (4, m)
         assert tuple(backend.shape(layer.S_raw)) == (4,)
 
-    def test_scale_bound_derived_from_sigma_k(self, backend):
-        """Default margin is dtype-derived (1 - sqrt(eps))."""
+    def test_scale_bound_derived_from_sigma_max(self, backend):
+        """Scale bound derived from σ_max (not σ_k). Default margin is dtype-derived."""
         _m, _n = 32, 16
         # Create W with known spectrum via diagonal
         S_vals = backend.array([1.0, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01, 0.005])
@@ -842,12 +842,11 @@ class TestCreateFromBaseWeight:
         # Use D as a square weight (16x16)
         layer = create_nb_lora_from_base_weight(D, rank=4, backend=backend)
 
-        # sigma_k = smallest significant SV. With sqrt(eps) threshold on float32:
-        # sqrt(eps) ~ 1.17e-4, threshold = sqrt(eps) * 1.0 ~ 1.17e-4
-        # All 8 non-zero values are > threshold, so sigma_k = 0.005
+        # sigma_max = 1.0 (largest SV). Scale bound = σ_max/2 × margin.
+        # Per-step safety comes from MASS (eta_weyl), not from S clamp.
         expected_margin = 1.0 - math.sqrt(float(backend.finfo().eps))
         assert layer.scale_bound > 0.0
-        assert layer.scale_bound == pytest.approx(0.005 * 0.5 * expected_margin, rel=1e-5)
+        assert layer.scale_bound == pytest.approx(1.0 * 0.5 * expected_margin, rel=1e-5)
         # The spectral norm guarantee should hold
         spectral = layer.get_spectral_norm()
         assert spectral <= 2.0 * layer.scale_bound * 1.05

@@ -64,6 +64,11 @@ def test_generate_inventory_classifies_scripts_results_and_claims(tmp_path, monk
 
     _write(repo_root / "results/canonical_family/REPORT.md", "# report\n")
     _write(repo_root / "results/artifact_only/summary.json", "{}\n")
+    _write(repo_root / "results/report_summary_only/REPORT.md", "# report\n")
+    _write(
+        repo_root / "results/report_summary_only/summary.json",
+        json.dumps({"status": "summary_only"}),
+    )
     _write(repo_root / "results/summary_family/run1/model.safetensors", "a")
     _write(repo_root / "results/summary_family/run2/model.safetensors", "b")
     _write(repo_root / "results/claim_family/run.json", "{}\n")
@@ -142,6 +147,7 @@ def test_generate_inventory_classifies_scripts_results_and_claims(tmp_path, monk
     results_by_family = {record["family"]: record for record in results_registry}
     assert results_by_family["canonical_family"]["status"] == "canonical"
     assert results_by_family["claim_family"]["status"] == "canonical"
+    assert results_by_family["report_summary_only"]["status"] == "summary_only"
     assert results_by_family["summary_family"]["status"] == "summary_only"
     assert results_by_family["summary_family"]["immediate_subdir_count"] == 2
 

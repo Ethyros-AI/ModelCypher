@@ -42,12 +42,25 @@ from .gradient_smoothness_estimator import *  # noqa: F401,F403
 from .hessian_estimator import *  # noqa: F401,F403
 from .hyperparameter_validation import TrainingHyperparameterValidator
 from .mass_step_size import (
+    CONTROLLER_MODE_BEHAVIORAL_CLOSED_LOOP,
+    CONTROLLER_MODE_BEHAVIORAL_PROBE,
+    CONTROLLER_MODE_STRUCTURAL_OBSERVE,
+    OPTIMIZER_MODE_ADAMW_MATCHED_TRACE,
+    OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+    BehavioralStateMeasurement,
+    ControllerLayerMeasurement,
+    ControllerReplayDecision,
+    ControllerStepTrace,
     apply_sqrt_n_epoch_correction,
     apply_validation_backoff,
+    controller_precision_floor,
     compute_conformal_margin_rate,
     compute_per_step_rates,
     compute_reinforce_budget,
     derive_spectral_ceiling,
+    replay_controller_trace,
+    validate_controller_mode,
+    validate_optimizer_research_mode,
     verify_bounded_gain,
 )
 from .resources import ResourceIntensiveOperation, TrainingResourceGuard

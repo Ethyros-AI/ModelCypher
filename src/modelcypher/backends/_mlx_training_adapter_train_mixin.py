@@ -36,6 +36,18 @@ from modelcypher.core.domain.training.spectral_budget import (  # noqa: F401
     compute_projected_residuals,
     is_budget_exhausted,
 )
+from modelcypher.core.domain.training.mass_step_size import (
+    CONTROLLER_MODE_BEHAVIORAL_CLOSED_LOOP,
+    CONTROLLER_MODE_BEHAVIORAL_PROBE,
+    CONTROLLER_MODE_STRUCTURAL_OBSERVE,
+    OPTIMIZER_MODE_ADAMW_MATCHED_TRACE,
+    OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+    BehavioralStateMeasurement,
+    ControllerLayerMeasurement,
+    ControllerStepTrace,
+    validate_controller_mode,
+    validate_optimizer_research_mode,
+)
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.training.geometric_optimizer import OptimizerGeometryConfig
@@ -92,6 +104,9 @@ class _MLXTrainingAdapterTrainMixin:
         # Outer similarity monitoring (Kucukahmetler et al. 2026)
         rss_monitor: bool = False,
         base_activations: dict | None = None,
+        controller_mode: str = CONTROLLER_MODE_STRUCTURAL_OBSERVE,
+        optimizer_research_mode: str = OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+        baseline_margins: dict[str, float] | None = None,
         # Ablation experiment params (research only, not CLI-exposed)
         entropy_floor_fraction: float | None = None,
         # Per-epoch degeneration gate: few-shot prompts + baseline max n-gram.
@@ -143,6 +158,16 @@ class _MLXTrainingAdapterTrainMixin:
                 eval_batches = len(answer_masked_eval)
             else:
                 eval_batches = max(1, len(train_dataset))
+
+        controller_mode = validate_controller_mode(controller_mode)
+        optimizer_research_mode = validate_optimizer_research_mode(
+            optimizer_research_mode,
+        )
+        if controller_mode == CONTROLLER_MODE_BEHAVIORAL_CLOSED_LOOP:
+            raise ValueError(
+                "mass_behavioral_closed_loop is reserved until an offline-derived "
+                "control law has been validated."
+            )
 
         import mlx.optimizers as opt
         from mlx.utils import tree_flatten as mlx_flatten, tree_map as mlx_tree_map
@@ -330,9 +355,255 @@ class _MLXTrainingAdapterTrainMixin:
             sigma_max_global=sigma_max,
         )
         current_eta = eta_ceiling
-        # momentum=0.0 required: Cayley retraction assumes vanilla SGD.
-        # Momentum would violate the MASS step-size bound.
-        optimizer = opt.SGD(learning_rate=current_eta, momentum=0.0)
+
+        # Curvature-aware Cayley-Stiefel: diagonal Fisher preconditioning.
+        # NOT momentum (which carries state across retraction boundaries).
+        # Preconditioning scales the gradient in unconstrained (A_tilde, B_tilde)
+        # space BEFORE Cayley retraction, which is valid because the retraction
+        # maps unconstrained parameters to orthonormal factors regardless.
+        # v_t → diag(F_empirical) (Hwang et al. 2024, FAdam).
+        from modelcypher.core.domain.training.diagonal_fisher_preconditioner import (
+            init_fisher_state,
+            precondition_gradient as fisher_precondition,
+            update_fisher_state,
+        )
+
+        trainable_flat = dict(mlx_flatten(model.trainable_parameters()))
+        fisher_state = init_fisher_state(trainable_flat, self._backend)
+        optimizer = None
+        if optimizer_research_mode == OPTIMIZER_MODE_ADAMW_MATCHED_TRACE:
+            optimizer = opt.AdamW(
+                learning_rate=current_eta,
+                eps=_SQRT_EPS_F32,
+                weight_decay=0.0,
+                bias_correction=False,
+            )
+            optimizer.init(model.trainable_parameters())
+        del trainable_flat  # free reference
+
+        baseline_accuracy = None
+        if online_eval_problems:
+            baseline_accuracy = len(online_eval_baseline_ids or frozenset()) / max(
+                len(online_eval_problems), 1,
+            )
+
+        def _objective_components() -> list[str]:
+            components = ["ce"]
+            if use_answer_mask:
+                components[0] = "ce_answer_masked"
+            if use_constrained:
+                components.append("constraint")
+            if geometric_reshape:
+                components.append("geometric_reshape")
+            if entropy_regularization:
+                components.append("entropy_regularization")
+            if use_vl:
+                components.append("vision_language")
+            return components
+
+        def _layer_measurements_from_gradient(
+            *,
+            grad_map: dict[str, Any],
+            step_learning_rate: float,
+        ) -> dict[str, ControllerLayerMeasurement] | None:
+            if not grad_map:
+                return None
+            per_layer: dict[str, ControllerLayerMeasurement] = {}
+            total_norm_sq = 0.0
+            layer_norms: dict[str, float] = {}
+            for layer_key, nb_lora in self._iter_nb_lora_modules(model):
+                prefix = layer_key.removesuffix(".weight")
+                grad_norm_sq_terms = []
+                for suffix in (".A_tilde", ".B_tilde", ".S_raw"):
+                    grad_array = grad_map.get(prefix + suffix)
+                    if grad_array is None or grad_array.size == 0:
+                        continue
+                    grad_norm_sq_terms.append(mx.sum(grad_array * grad_array))
+                if not grad_norm_sq_terms:
+                    continue
+                grad_norm_sq = grad_norm_sq_terms[0]
+                for term in grad_norm_sq_terms[1:]:
+                    grad_norm_sq = grad_norm_sq + term
+                mx.eval(grad_norm_sq)
+                grad_norm = float(mx.sqrt(grad_norm_sq).item())
+                layer_norms[layer_key] = grad_norm
+                total_norm_sq += grad_norm * grad_norm
+                decay_scale = None
+                if opt_config is not None and layer_key in opt_config.layer_configs:
+                    decay_scale = float(opt_config.layer_configs[layer_key].decay_scale)
+                per_layer[layer_key] = ControllerLayerMeasurement(
+                    parameter_update_norm=step_learning_rate * grad_norm,
+                    total_step_fraction=None,
+                    decay_scale=decay_scale,
+                    scale_bound=float(nb_lora._scale_bound),
+                    step_learning_rate=step_learning_rate,
+                )
+
+            if not per_layer:
+                return None
+
+            total_norm = math.sqrt(total_norm_sq)
+            if total_norm > 0.0:
+                for layer_key, layer_norm in layer_norms.items():
+                    fraction = layer_norm / total_norm
+                    current = per_layer[layer_key]
+                    per_layer[layer_key] = ControllerLayerMeasurement(
+                        parameter_update_norm=current.parameter_update_norm,
+                        behavioral_transport_norm=current.behavioral_transport_norm,
+                        spectral_budget_ratio=current.spectral_budget_ratio,
+                        remaining_budget=current.remaining_budget,
+                        total_step_fraction=fraction,
+                        decay_scale=current.decay_scale,
+                        scale_bound=current.scale_bound,
+                        step_learning_rate=current.step_learning_rate,
+                    )
+            return per_layer
+
+        def _summarize_fisher_state() -> tuple[float | None, float | None]:
+            fisher_terms = [
+                arr.reshape(-1)
+                for arr in fisher_state.v.values()
+                if getattr(arr, "size", 0) > 0
+            ]
+            if not fisher_terms:
+                return None, None
+            fisher_norm_sq = sum(mx.sum(arr * arr) for arr in fisher_terms)
+            preconditioner_terms = [mx.sqrt(arr) for arr in fisher_terms]
+            preconditioner_scale = sum(mx.mean(arr) for arr in preconditioner_terms) / len(
+                preconditioner_terms,
+            )
+            mx.eval(fisher_norm_sq, preconditioner_scale)
+            return float(mx.sqrt(fisher_norm_sq).item()), float(preconditioner_scale.item())
+
+        def _summarize_adamw_state() -> tuple[float | None, float | None, float | None]:
+            if optimizer is None:
+                return None, None, None
+            state_flat = dict(mlx_flatten(optimizer.state))
+            m_terms = [
+                value.reshape(-1)
+                for key, value in state_flat.items()
+                if key.endswith(".m") and getattr(value, "size", 0) > 0
+            ]
+            v_terms = [
+                value.reshape(-1)
+                for key, value in state_flat.items()
+                if key.endswith(".v") and getattr(value, "size", 0) > 0
+            ]
+            if not m_terms and not v_terms:
+                return None, None, None
+            first_moment = None
+            second_moment = None
+            preconditioner_scale = None
+            if m_terms:
+                m_norm_sq = sum(mx.sum(arr * arr) for arr in m_terms)
+                mx.eval(m_norm_sq)
+                first_moment = float(mx.sqrt(m_norm_sq).item())
+            if v_terms:
+                v_norm_sq = sum(mx.sum(arr * arr) for arr in v_terms)
+                denom_scale = sum(mx.mean(mx.sqrt(arr)) for arr in v_terms) / len(v_terms)
+                mx.eval(v_norm_sq, denom_scale)
+                second_moment = float(mx.sqrt(v_norm_sq).item())
+                preconditioner_scale = float(denom_scale.item())
+            return first_moment, second_moment, preconditioner_scale
+
+        def _behavioral_probe_state(
+            *,
+            per_layer_budget_ratio: dict[str, float] | None,
+            per_layer_remaining_budget: dict[str, float] | None,
+            online_eval_accuracy: float | None,
+            online_eval_n_lost: int | None,
+            online_eval_n_gained: int | None,
+        ) -> BehavioralStateMeasurement | None:
+            if controller_mode != CONTROLLER_MODE_BEHAVIORAL_PROBE:
+                return None
+
+            per_layer_transport: dict[str, float] = {}
+            if base_activations:
+                for layer_key, nb_lora in self._iter_nb_lora_modules(model):
+                    try:
+                        layer_idx = int(layer_key.split(".")[2])
+                    except (IndexError, ValueError):
+                        continue
+                    layer_acts = base_activations.get(layer_idx)
+                    if not layer_acts:
+                        continue
+                    layer_stack = mx.stack(layer_acts)
+                    if int(layer_stack.shape[-1]) != int(nb_lora._in_features):
+                        continue
+                    A, B = nb_lora._cayley_transform()
+                    S = mx.clip(nb_lora.S_raw, 0.0, nb_lora._scale_bound)
+                    delta_w_t = 2.0 * mx.matmul((S[:, None] * A).T, B)
+                    transport = mx.matmul(layer_stack.astype(mx.float32), delta_w_t.astype(mx.float32))
+                    transport_norm = mx.norm(transport)
+                    mx.eval(transport_norm)
+                    per_layer_transport[layer_key] = float(transport_norm.item())
+
+            margin_mean_delta = None
+            margin_n_flipped_sign = None
+            margin_n_near_zero_baseline = None
+            margin_n_near_zero_current = None
+            if online_eval_problems and tokenizer is not None and baseline_margins is not None:
+                from modelcypher.core.domain.training.online_eval import compute_answer_margin
+
+                def _collect_logits(prompt: str):
+                    return self._backend.collect_logits(model, tokenizer, prompt)
+
+                current_margins = compute_answer_margin(
+                    online_eval_problems,
+                    _collect_logits,
+                    self._backend,
+                )
+                baseline_values = list(baseline_margins.values())
+                current_values = list(current_margins.values())
+                if baseline_values and current_values:
+                    margin_mean_delta = (
+                        sum(current_values) / len(current_values)
+                        - sum(baseline_values) / len(baseline_values)
+                    )
+                    margin_n_near_zero_baseline = sum(
+                        1 for value in baseline_values if abs(value) < _SQRT_EPS_F32
+                    )
+                    margin_n_near_zero_current = sum(
+                        1 for value in current_values if abs(value) < _SQRT_EPS_F32
+                    )
+                    shared_ids = set(baseline_margins.keys()) & set(current_margins.keys())
+                    margin_n_flipped_sign = sum(
+                        1
+                        for problem_id in shared_ids
+                        if (
+                            baseline_margins[problem_id] > 0.0
+                            and current_margins[problem_id] <= 0.0
+                        )
+                        or (
+                            baseline_margins[problem_id] <= 0.0
+                            and current_margins[problem_id] > 0.0
+                        )
+                    )
+
+            accuracy_delta = None
+            if online_eval_accuracy is not None and baseline_accuracy is not None:
+                accuracy_delta = float(online_eval_accuracy) - float(baseline_accuracy)
+
+            if (
+                not per_layer_transport
+                and per_layer_budget_ratio is None
+                and margin_mean_delta is None
+                and accuracy_delta is None
+            ):
+                return None
+
+            return BehavioralStateMeasurement(
+                per_layer_behavioral_transport_norm=per_layer_transport or None,
+                per_layer_spectral_budget_ratio=per_layer_budget_ratio,
+                per_layer_remaining_budget=per_layer_remaining_budget,
+                margin_mean_delta=margin_mean_delta,
+                margin_n_flipped_sign=margin_n_flipped_sign,
+                margin_n_near_zero_baseline=margin_n_near_zero_baseline,
+                margin_n_near_zero_current=margin_n_near_zero_current,
+                online_eval_accuracy_delta=accuracy_delta,
+                online_eval_n_lost=online_eval_n_lost,
+                online_eval_n_gained=online_eval_n_gained,
+            )
 
         # Cayley constraint preserved in NBLoRALinear. Pullback metric P
         # removed (falsification 2026-02-23: P ≈ I throughout training,
@@ -343,6 +614,7 @@ class _MLXTrainingAdapterTrainMixin:
         losses: list[tuple[int, float, float]] = []
         val_losses: list[float] = []
         epoch_metrics_list: list[EpochMetrics] = []
+        epoch_step_traces: list[dict[str, Any]] = []
         last_max_spectral_ratio: float | None = None
         dim_snapshots: list = []  # DimensionalSnapshot history for trend analysis
         stop_reason: str | None = None
@@ -429,7 +701,6 @@ class _MLXTrainingAdapterTrainMixin:
         )
         if eta_ceiling != eta_ceiling_before:
             current_eta = eta_ceiling
-            optimizer.learning_rate = mx.array(current_eta)
             logger.info(
                 "MASS √N budget: ceiling %.4e / √%d = %.4e",
                 eta_ceiling_before, n_batches_per_epoch, eta_ceiling,
@@ -463,7 +734,11 @@ class _MLXTrainingAdapterTrainMixin:
         lr_mode = "constant"
         if adaptive_lr:
             lr_mode = "adaptive-monotonic" if lr_monotonic else "adaptive"
-        optimizer_name = "Cayley-Stiefel"
+        optimizer_name = (
+            "AdamW-matched-trace"
+            if optimizer_research_mode == OPTIMIZER_MODE_ADAMW_MATCHED_TRACE
+            else "Cayley-Fisher"
+        )
         logger.info(
             "Training: optimizer=%s, stop=%s, cap=%d, epoch=%d batches, lr=%.2e, mode=%s",
             optimizer_name,
@@ -492,6 +767,7 @@ class _MLXTrainingAdapterTrainMixin:
                 epoch_start_time = time.time()
                 max_effective_gain_this_epoch = 0.0
                 max_disp_to_remaining_this_epoch = 0.0
+                epoch_step_traces = []
 
             t_step = time.time()
 
@@ -547,14 +823,43 @@ class _MLXTrainingAdapterTrainMixin:
             # at epoch boundary, holds the last step's gradient).
             grad_last = grad
 
-            # MASS Layer 2: Per-step measured rates on raw gradient.
-            # d_t = g_t (P removed — weight space is Euclidean).
+            # MASS Layer 2: Per-step measured rates on the active update
+            # direction. Cayley-Fisher uses the diagonal-Fisher preconditioned
+            # direction; AdamW-matched-trace uses the raw gradient because the
+            # optimizer applies its own stateful preconditioner internally.
             from modelcypher.core.domain.training.mass_step_size import (
                 compute_per_step_rates,
             )
 
+            grad_flat = dict(mlx_flatten(grad))
+            ce_grad_norm = None
+            objective_components = _objective_components()
+            if len(objective_components) == 1 and objective_components[0] in {
+                "ce",
+                "ce_answer_masked",
+            }:
+                raw_flat = [p.reshape(-1) for p in grad_flat.values() if p.size > 0]
+                if raw_flat:
+                    ce_norm_sq = sum(mx.sum(p * p) for p in raw_flat)
+                    mx.eval(ce_norm_sq)
+                    ce_grad_norm = float(mx.sqrt(ce_norm_sq).item())
+
+            fisher_second_moment_norm = None
+            fisher_preconditioner_scale = None
+            if optimizer_research_mode == OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS:
+                fisher_state = update_fisher_state(fisher_state, grad_flat, self._backend)
+                update_direction = fisher_precondition(
+                    grad_flat, fisher_state, self._backend,
+                )
+                (
+                    fisher_second_moment_norm,
+                    fisher_preconditioner_scale,
+                ) = _summarize_fisher_state()
+            else:
+                update_direction = grad_flat
+
             mass_metrics: dict[str, float] = {}
-            d_flat = [p.reshape(-1) for _, p in mlx_flatten(grad) if p.size > 0]
+            d_flat = [p.reshape(-1) for p in update_direction.values() if p.size > 0]
             d_norm_sq = sum(mx.sum(p * p) for p in d_flat)
             mx.eval(d_norm_sq, loss)
             d_norm_val = float(mx.sqrt(d_norm_sq).item())
@@ -594,18 +899,48 @@ class _MLXTrainingAdapterTrainMixin:
                     max_disp_to_remaining_this_epoch, disp_ratio,
                 )
 
-            optimizer.learning_rate = mx.array(eta_step)
-
-            # Optional gradient hook (e.g. format bias projection)
+            # Optional gradient hook (e.g. format bias projection).
+            # Applied to raw gradient, then the active optimizer path rebuilds
+            # its measured direction from the hooked gradient.
             if gradient_hook is not None:
                 grad = gradient_hook(grad)
+                grad_flat = dict(mlx_flatten(grad))
+                if optimizer_research_mode == OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS:
+                    update_direction = fisher_precondition(
+                        grad_flat, fisher_state, self._backend,
+                    )
+                else:
+                    update_direction = grad_flat
 
-            # MASS step size (SPS + Weyl + ceiling) already bounds the step.
-            # No Armijo backtracking — every constant in Armijo (c=1e-4,
-            # beta=0.5, max_backtracks=3) was a guess.  MASS derives the bound
-            # per step from measurement.
-            optimizer.update(model, grad)
-            mx.eval(model.parameters(), optimizer.state)
+            step_layer_measurements = _layer_measurements_from_gradient(
+                grad_map=grad_flat,
+                step_learning_rate=eta_step,
+            )
+
+            # Apply the optimizer-specific update with the same MASS-derived
+            # global step size.
+            if optimizer_research_mode == OPTIMIZER_MODE_ADAMW_MATCHED_TRACE:
+                optimizer.learning_rate = mx.array(eta_step)
+                optimizer.update(model, grad)
+                mx.eval(model.parameters(), optimizer.state)
+                (
+                    optimizer_first_moment_norm,
+                    optimizer_second_moment_norm,
+                    optimizer_preconditioner_scale,
+                ) = _summarize_adamw_state()
+            else:
+                eta_arr = mx.array(eta_step)
+                current_params = dict(mlx_flatten(model.trainable_parameters()))
+                updated_params = [
+                    (k, current_params[k] - eta_arr * update_direction[k])
+                    for k in current_params
+                    if k in update_direction
+                ]
+                model.load_weights(updated_params)
+                mx.eval(*[v for _, v in mlx_flatten(model.trainable_parameters())])
+                optimizer_first_moment_norm = None
+                optimizer_second_moment_norm = fisher_second_moment_norm
+                optimizer_preconditioner_scale = fisher_preconditioner_scale
 
             # Dual variable update for constrained training (outside gradient tape)
             if use_constrained and constraint_state is not None:
@@ -632,6 +967,28 @@ class _MLXTrainingAdapterTrainMixin:
 
             # THE constraint: clamp S_raw after every step
             self._clamp_all_scales(model)
+
+            epoch_step_traces.append(
+                ControllerStepTrace(
+                    step=it + 1,
+                    controller_mode=controller_mode,
+                    optimizer_research_mode=optimizer_research_mode,
+                    objective_components=objective_components,
+                    ce_grad_norm=ce_grad_norm,
+                    auxiliary_grad_norms=None,
+                    total_effective_step_norm=displacement_val,
+                    eta_ceiling=eta_ceiling,
+                    eta_sps=eta_sps_val,
+                    eta_weyl=eta_weyl_val,
+                    eta_margin=eta_margin_val,
+                    eta_step=eta_step,
+                    effective_gain_ratio=(eta_step / eta_ceiling) if eta_ceiling > 0 else None,
+                    optimizer_first_moment_norm=optimizer_first_moment_norm,
+                    optimizer_second_moment_norm=optimizer_second_moment_norm,
+                    optimizer_preconditioner_scale=optimizer_preconditioner_scale,
+                    per_layer_measurements=step_layer_measurements,
+                ).to_dict()
+            )
 
             loss_val = float(loss)
             ntoks_val = float(ntoks)
@@ -671,7 +1028,7 @@ class _MLXTrainingAdapterTrainMixin:
                     )
                     val_losses.append(v_loss)
                     # Track best checkpoint for restoration.
-                    # MLX arrays are immutable — optimizer creates new arrays,
+                    # MLX arrays are immutable — load_weights creates new arrays,
                     # so storing references is safe (no in-place mutation).
                     if v_loss < best_val_loss:
                         best_val_loss = v_loss
@@ -732,6 +1089,8 @@ class _MLXTrainingAdapterTrainMixin:
                 median_budget_ratio = None
                 projected_residual_max = None
                 expert_saturation_map: dict[str, float] | None = None
+                per_layer_budget_ratio: dict[str, float] | None = None
+                per_layer_remaining_budget: dict[str, float] | None = None
                 n_saturated_experts: int | None = None
                 n_total_target_experts: int | None = None
                 all_target_experts_saturated = False
@@ -762,6 +1121,26 @@ class _MLXTrainingAdapterTrainMixin:
                             threshold=DTYPE_THRESHOLD_F32,
                         )
                         max_ratio = max(ratios)
+                        if len(ratios) == len(lora_module_names):
+                            per_layer_budget_ratio = {
+                                module_name: float(ratio)
+                                for module_name, ratio in zip(lora_module_names, ratios)
+                            }
+                            per_layer_remaining_budget = {}
+                            for module_name, ratio in zip(lora_module_names, ratios):
+                                module_ref = next(
+                                    (
+                                        nb
+                                        for name, nb in self._iter_nb_lora_modules(model)
+                                        if name == module_name
+                                    ),
+                                    None,
+                                )
+                                if module_ref is not None:
+                                    per_layer_remaining_budget[module_name] = max(
+                                        0.0,
+                                        float(module_ref._scale_bound) * (1.0 - float(ratio)),
+                                    )
 
                         if len(ratios) == len(lora_module_names):
                             per_expert: dict[str, float] = {}
@@ -913,6 +1292,13 @@ class _MLXTrainingAdapterTrainMixin:
 
                 gate_confound_event = False
                 online_eval_stop_basis_stage = "pre_outcome"
+                behavioral_state = _behavioral_probe_state(
+                    per_layer_budget_ratio=per_layer_budget_ratio,
+                    per_layer_remaining_budget=per_layer_remaining_budget,
+                    online_eval_accuracy=online_eval_acc,
+                    online_eval_n_lost=online_eval_n_lost,
+                    online_eval_n_gained=online_eval_n_gained,
+                )
 
                 # 6. Collect epoch metrics
                 epoch_metrics_list.append(EpochMetrics(
@@ -996,6 +1382,16 @@ class _MLXTrainingAdapterTrainMixin:
                     online_eval_stop_basis_stage=online_eval_stop_basis_stage,
                     gate_confound_event=gate_confound_event,
                     projected_residual_max=projected_residual_max,
+                    controller_mode=controller_mode,
+                    optimizer_research_mode=optimizer_research_mode,
+                    controller_trace={
+                        "step_traces": list(epoch_step_traces),
+                        "behavioral_state": (
+                            behavioral_state.to_dict()
+                            if behavioral_state is not None
+                            else None
+                        ),
+                    },
                 ))
 
                 # 6b. Topological phase metrics (optional)

@@ -626,25 +626,40 @@ class _MLXTrainingAdapterCoreMixin:
 
         for key in target_modules:
             geom = geometries.get(key)
-            if geom is None or geom.tail_dims <= 0:
+            if geom is None:
                 continue
 
-            rank = rank_overrides[key] if rank_overrides and key in rank_overrides else geom.tail_dims
-            # Validate: rank must be in [1, tail_dims]
-            if rank <= 0:
-                logger.warning("Skipping %s: rank_override=%d is non-positive", key, rank)
-                continue
-            if rank > geom.tail_dims:
-                logger.warning(
-                    "Clamping %s: rank_override=%d exceeds tail_dims=%d",
-                    key, rank, geom.tail_dims,
+            # Determine rank and scale bound based on null-space availability
+            if geom.tail_dims > 0:
+                # Null-space available: rank from tail_dims, scale from σ_max
+                rank = rank_overrides[key] if rank_overrides and key in rank_overrides else geom.tail_dims
+                if rank <= 0:
+                    logger.warning("Skipping %s: rank_override=%d is non-positive", key, rank)
+                    continue
+                if rank > geom.tail_dims:
+                    logger.warning(
+                        "Clamping %s: rank_override=%d exceeds tail_dims=%d",
+                        key, rank, geom.tail_dims,
+                    )
+                    rank = geom.tail_dims
+                # Geometry-derived scale bound: 2 * max(S) <= sigma_max
+                # Per-step displacement bounded by MASS (eta_weyl = σ_k_min / ||g||).
+                scale_bound = (geom.sigma_max / 2.0) * margin
+            elif geom.spectral_gap > 0:
+                # Full-rank layer: rank-1 adaptation, scale from spectral gap.
+                # gap/2 is Weyl crossing threshold, /2 for NB-LoRA factor of 2.
+                rank = 1
+                scale_bound = (geom.spectral_gap / 4.0) * margin
+                logger.info(
+                    "Zero-tail module %s: rank=1, spectral_gap=%.6f, scale_bound=%.6f",
+                    key, geom.spectral_gap, scale_bound,
                 )
-                rank = geom.tail_dims
-            # Geometry-derived scale bound: 2 * max(S) <= sigma_k
-            scale_bound = (geom.sigma_k / 2.0) * margin
+            else:
+                logger.debug("Skipping %s: tail_dims=0 and spectral_gap=0", key)
+                continue
 
             if scale_bound <= 0:
-                logger.warning("Skipping %s: sigma_k=%.6f produces zero bound", key, geom.sigma_k)
+                logger.warning("Skipping %s: scale_bound=%.6f is non-positive", key, scale_bound)
                 continue
 
             try:

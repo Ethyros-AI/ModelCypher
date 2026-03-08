@@ -70,6 +70,15 @@ from modelcypher.core.domain.training.pipeline_gate import (
     PipelineGateInput,
     evaluate_pipeline_gate,
 )
+from modelcypher.core.domain.training.mass_step_size import (
+    CONTROLLER_MODE_BEHAVIORAL_PROBE,
+    CONTROLLER_MODE_STRUCTURAL_OBSERVE,
+    OPTIMIZER_MODE_ADAMW_MATCHED_TRACE,
+    OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+    replay_controller_trace,
+    validate_controller_mode,
+    validate_optimizer_research_mode,
+)
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.moe.expert_selection import ExpertTargetSelection
@@ -166,6 +175,10 @@ class DatasetTrainResult:
     pipeline_gate_checks: dict[str, Any] | None = None
     # Adapter provenance: which CE variant produced this adapter
     training_objective: str = "ce"
+    controller_mode: str | None = None
+    optimizer_research_mode: str | None = None
+    controller_trace: list[dict[str, Any]] | None = None
+    offline_replay: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert result to a JSON-serializable dictionary."""
@@ -277,6 +290,14 @@ class DatasetTrainResult:
             result["pipeline_gate_failure_modes"] = self.pipeline_gate_failure_modes
         if self.pipeline_gate_checks is not None:
             result["pipeline_gate_checks"] = self.pipeline_gate_checks
+        if self.controller_mode is not None:
+            result["controller_mode"] = self.controller_mode
+        if self.optimizer_research_mode is not None:
+            result["optimizer_research_mode"] = self.optimizer_research_mode
+        if self.controller_trace is not None:
+            result["controller_trace"] = self.controller_trace
+        if self.offline_replay is not None:
+            result["offline_replay"] = self.offline_replay
         if self.benchmark_baseline is not None and self.benchmark_post is not None:
             result["benchmark_delta"] = {
                 k: self.benchmark_post[k] - self.benchmark_baseline.get(k, 0.0)
@@ -415,6 +436,9 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         max_iters_cap: int | None = None,
         benchmark_suite: str | None = None,
         target_experts: list[str] | str | None = None,
+        controller_mode: str = CONTROLLER_MODE_STRUCTURAL_OBSERVE,
+        optimizer_research_mode: str = OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+        enable_offline_replay: bool = True,
         # External gradient hook — composed with any internal format-projection hook
         gradient_hook: "Callable | None" = None,
     ) -> DatasetTrainResult:
@@ -437,6 +461,11 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             )
         else:
             logger.info("Training seed override: seed=%d", seed)
+
+        controller_mode = validate_controller_mode(controller_mode)
+        optimizer_research_mode = validate_optimizer_research_mode(
+            optimizer_research_mode,
+        )
 
         if no_save:
             output_dir = None
@@ -670,33 +699,12 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 train_samples, retention_samples, retention_fraction,
             )
         else:
-            auto_retention_samples = self._collect_auto_retention(
-                model=model,
-                tokenizer=tokenizer,
-                train_samples=train_samples,
-                seq_length=seq_length,
-                seed=seed,
-                n_retention=None,
-            )
-            auto_retention_samples_collected = len(auto_retention_samples)
-            if auto_retention_samples_collected > 0:
-                n_train = len(train_samples)
-                auto_fraction = auto_retention_samples_collected / (
-                    auto_retention_samples_collected + n_train
-                )
-                train_samples = merge_datasets_with_fraction(
-                    train_samples,
-                    auto_retention_samples,
-                    auto_fraction,
-                )
-                logger.info(
-                    "Auto-retention replay enabled: n_train=%d n_retention=%d fraction=%.6f",
-                    n_train,
-                    auto_retention_samples_collected,
-                    auto_fraction,
-                )
-            else:
-                logger.info("Auto-retention replay skipped: no valid retention samples collected")
+            # Auto-retention disabled by default. The Cayley-Stiefel spectral
+            # bound already provides preservation by construction (||ΔW||₂ bounded).
+            # Auto-retention duplicates training samples at 50% mix, diluting
+            # gradient signal by 2× and doubling iterations per epoch with no
+            # new information. Use explicit retention_dataset_path when needed.
+            logger.info("Auto-retention disabled (Cayley-Stiefel bound provides preservation)")
 
         # 2.6. Answer-masked dataset preparation
         answer_masked_train = None
@@ -925,8 +933,9 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                     sorted(constraint_state.frozen),
                 )
 
-        # 5. Select targets (geometry decides: layers with tail_dims > 0)
-        target_modules = select_target_modules(geometries)
+        # 5. Select targets: layers with null-space (tail_dims > 0) PLUS
+        # full-rank layers with positive spectral gap (rank-1 adaptation).
+        target_modules = select_target_modules(geometries, include_zero_tail=True)
         moe_topology = self._load_moe_topology(model_path)
         manual_target_expert_keys = self._parse_target_expert_keys(target_experts)
         if manual_target_expert_keys:
@@ -1150,12 +1159,18 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         )
 
         # 8. MASS: sigma_max and sigma_k_min for spectral ceiling (Weyl 1912)
+        # sigma_k_min computed ONLY over modules with tail_dims > 0 (structural
+        # spectral gaps that the Weyl displacement bound protects). Full-rank
+        # modules (tail_dims = 0) have no gap → should not constrain the ceiling.
         sigma_max = max(g.sigma_max for g in geometries.values() if g.sigma_max > 0)
-        sigma_k_vals = [g.sigma_k for g in geometries.values() if g.sigma_k > 0]
+        sigma_k_vals = [
+            g.sigma_k for g in geometries.values()
+            if g.sigma_k > 0 and g.tail_dims > 0
+        ]
         if not sigma_k_vals:
             raise TrainingDerivationError(
                 failure_class="insufficient_adapter_geometry",
-                detail="No positive sigma_k found across adapted layers.",
+                detail="No positive sigma_k found across adapted layers with tail_dims > 0.",
                 diagnostics={"n_geometries": len(geometries)},
             )
         sigma_k_min = min(sigma_k_vals)
@@ -1187,8 +1202,10 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         eval_problems = None
         eval_baseline_correct_ids: frozenset[str] = frozenset()
         baseline_result = None
+        baseline_margins: dict[str, float] | None = None
         if online_eval:
             from modelcypher.core.domain.training.online_eval import (
+                compute_answer_margin,
                 create_eval_problem_set,
                 evaluate_correctness,
             )
@@ -1267,6 +1284,19 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 max_tokens=seq_length,
             )
             eval_baseline_correct_ids = baseline_result.correct_ids
+            if controller_mode == CONTROLLER_MODE_BEHAVIORAL_PROBE:
+                def _collect_baseline_logits(prompt: str):
+                    return self._backend.collect_logits(
+                        model,
+                        tokenizer,
+                        prompt,
+                    )
+
+                baseline_margins = compute_answer_margin(
+                    eval_problems,
+                    _collect_baseline_logits,
+                    self._backend,
+                )
             logger.info(
                 "Online eval baseline: %d/%d (%.1f%%)",
                 baseline_result.n_correct,
@@ -1397,13 +1427,20 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             eval_interval=eval_interval,
             eos_exclude=eos_exclude,
             rss_monitor=rss_monitor,
-            base_activations=base_activations if rss_monitor else None,
+            base_activations=(
+                base_activations
+                if rss_monitor or controller_mode == CONTROLLER_MODE_BEHAVIORAL_PROBE
+                else None
+            ),
             entropy_floor_fraction=entropy_floor_fraction,
             degen_prompts=degen_prompts_for_training,
             degen_baseline_max=degen_baseline_max,
             degen_ngram_order=degen_ngram_order,
             readout_erank=readout_erank,
             grad_accum_steps=grad_accum_steps,
+            controller_mode=controller_mode,
+            optimizer_research_mode=optimizer_research_mode,
+            baseline_margins=baseline_margins,
         )
         training_time_seconds = time.time() - train_start
 
@@ -1634,6 +1671,18 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 max_gain_ratio = max(gain_ratios)
 
         epoch_metrics_payload = [m.to_dict() for m in epoch_metrics] if epoch_metrics else None
+        controller_trace_payload = None
+        if epoch_metrics_payload is not None:
+            controller_trace_payload = [
+                metric["controller_trace"]
+                for metric in epoch_metrics_payload
+                if isinstance(metric, dict) and metric.get("controller_trace") is not None
+            ] or None
+        offline_replay = (
+            replay_controller_trace(epoch_metrics_payload)
+            if enable_offline_replay and epoch_metrics_payload is not None
+            else None
+        )
 
         # 11.10. Pipeline promotability gate (shared with derived validation).
         gate_eps = float(self._backend.finfo().eps)
@@ -1780,7 +1829,11 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             dim_final_used_fraction=dim_final_used_fraction,
             dim_final_null_fraction=dim_final_null_fraction,
             dim_null_recruitment_from_baseline=dim_null_recruitment_from_baseline,
-            optimizer_type="cayley_stiefel",
+            optimizer_type=(
+                "adamw"
+                if optimizer_research_mode == OPTIMIZER_MODE_ADAMW_MATCHED_TRACE
+                else "cayley_stiefel"
+            ),
             rss_final_cosine=rss_final_cosine,
             rss_final_spearman=rss_final_spearman,
             rss_final_top1=rss_final_top1,
@@ -1821,6 +1874,10 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 for name, check in pipeline_gate_verdict.checks.items()
             },
             training_objective=training_objective,
+            controller_mode=controller_mode,
+            optimizer_research_mode=optimizer_research_mode,
+            controller_trace=controller_trace_payload,
+            offline_replay=offline_replay,
         )
 
 __all__ = ["DatasetTrainResult", "DatasetTrainingService"]

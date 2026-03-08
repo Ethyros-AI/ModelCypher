@@ -532,19 +532,31 @@ def analyze_weight_geometries(
 
 def select_target_modules(
     geometries: dict[str, LayerGeometry],
+    include_zero_tail: bool = False,
 ) -> list[str]:
     """Select modules to target based on geometry.
 
-    Returns layers with non-zero null-space capacity (tail_dims > 0).
-    No arbitrary thresholds.
+    By default, returns layers with non-zero null-space capacity (tail_dims > 0).
+
+    When ``include_zero_tail=True``, also includes layers with ``tail_dims == 0``
+    but positive ``spectral_gap`` — these are full-rank layers that can support
+    minimal (rank-1) adaptation bounded by half the spectral gap (Weyl 1912
+    crossing threshold).
 
     Args:
         geometries: Pre-computed layer geometries.
+        include_zero_tail: If True, also target full-rank layers with
+            positive spectral gap.
 
     Returns:
         List of layer keys that are safe to target.
     """
-    return [key for key, geom in geometries.items() if geom.is_targetable]
+    targets = [key for key, geom in geometries.items() if geom.is_targetable]
+    if include_zero_tail:
+        for key, geom in geometries.items():
+            if key not in targets and geom.tail_dims == 0 and geom.spectral_gap > 0:
+                targets.append(key)
+    return targets
 
 
 def compute_geometric_rank(
@@ -577,6 +589,10 @@ def compute_per_layer_ranks(
     Rank is derived directly from structural null-space capacity:
     rank_i = tail_dims_i = full_rank - floor(shannon_effective_rank_i).
 
+    For layers with ``tail_dims == 0`` (full-rank, included via
+    ``include_zero_tail=True``): rank = 1 (minimum adaptation that can
+    learn without being underdetermined).
+
     Args:
         geometries: Pre-computed layer geometries.
         target_modules: Which modules to compute ranks for.
@@ -592,7 +608,12 @@ def compute_per_layer_ranks(
         geom = geometries.get(key)
         if geom is None:
             continue
-        per_layer_ranks[key] = max(0, int(geom.tail_dims))
+        if geom.tail_dims > 0:
+            per_layer_ranks[key] = int(geom.tail_dims)
+        elif geom.spectral_gap > 0:
+            # Full-rank layer with positive spectral gap: rank-1 adaptation
+            per_layer_ranks[key] = 1
+        # else: skip (neither null-space nor adaptable gap)
 
     if not per_layer_ranks:
         raise ValueError("No geometries found for target modules")

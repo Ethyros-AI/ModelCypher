@@ -676,14 +676,17 @@ def create_nb_lora_from_base_weight(
 
     This is the recommended way to create NB-LoRA layers. The scale bound is
     derived from the base weight's spectral structure to guarantee that the
-    LoRA perturbation respects the geometric constraint.
+    LoRA perturbation does not overwhelm the base weight's output.
 
     Mathematical derivation:
-        - Geometric bound: ||LoRA_delta||_2 ≤ σ_k(W)
+        - Perturbation analysis: ||ΔW||₂ × ||x||₂ ≤ c × ||W||₂ × ||x||₂
+        - With c=1: ||ΔW||₂ ≤ σ_max(W)
         - NB-LoRA formula: ||2 × B^T @ S @ A||_2 ≤ 2 × max(S)
-        - Unification: 2 × max(S) ≤ σ_k ⟹ max(S) ≤ σ_k/2
+        - Unification: 2 × max(S) ≤ σ_max ⟹ max(S) ≤ σ_max/2
+        - Per-step displacement is bounded by MASS (eta_weyl = σ_k_min / ||g||),
+          which provides the per-iteration safety mechanism.
 
-    The scale_bound is set to (σ_k / 2) × margin, where by default:
+    The scale_bound is set to (σ_max / 2) × margin, where by default:
         margin = 1 - sqrt(ε_dtype)
     This keeps the bound within finite-precision distinguishability.
 
@@ -727,7 +730,12 @@ def create_nb_lora_from_base_weight(
         sigma_k = float(b.to_scalar(S[-1]))
 
     # Geometry-derived scale bound:
-    # max(S) = σ_k/2 ensures ||2 × B^T @ S @ A|| ≤ σ_k (the geometric bound)
+    # max(S) = σ_max/2 allows the adapter to perturb at the scale of the
+    # weight itself: ||2 × B^T @ S @ A|| ≤ σ_max.  Per-step displacement is
+    # bounded by MASS (eta_weyl = σ_k_min / ||g||), so the S clamp controls
+    # total capacity, not per-step safety.  Using σ_max instead of σ_k
+    # removes the redundant preservation constraint that was the binding
+    # limit on learning capacity.
     # Margin defaults to dtype-derived numerical significance headroom.
     default_margin = max(0.0, 1.0 - math.sqrt(eps))
     margin = default_margin if safety_margin is None else float(safety_margin)
@@ -735,7 +743,7 @@ def create_nb_lora_from_base_weight(
         raise ValueError(
             f"safety_margin must satisfy 0 < safety_margin <= 1, got {margin}",
         )
-    scale_bound = (sigma_k / 2.0) * margin
+    scale_bound = (sigma_max / 2.0) * margin
 
     out_features, in_features = W.shape
 
@@ -747,10 +755,11 @@ def create_nb_lora_from_base_weight(
     )
 
     logger.info(
-        "Created NB-LoRA: W=[%d,%d], rank=%d, σ_k=%.6f, max(S)=%.6f, ||Δ||_max=%.6f",
+        "Created NB-LoRA: W=[%d,%d], rank=%d, σ_max=%.6f, σ_k=%.6f, max(S)=%.6f, ||Δ||_max=%.6f",
         out_features,
         in_features,
         rank,
+        sigma_max,
         sigma_k,
         scale_bound,
         2.0 * scale_bound,  # The actual max spectral norm of delta

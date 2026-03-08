@@ -77,6 +77,7 @@ SUMMARY_JSON_KEYWORDS = (
     "survey",
     "validation",
 )
+RESULT_STATUS_VALUES = {"canonical", "summary_only", "delete"}
 
 # These are current operational utilities rather than experiment leaves.
 SCRIPT_STATUS_OVERRIDES = {
@@ -320,6 +321,20 @@ def derive_result_evidence_status(
     return "empty"
 
 
+def _load_summary_status_override(family_path: Path) -> str | None:
+    summary_path = family_path / "summary.json"
+    if not summary_path.exists():
+        return None
+    try:
+        payload = json.loads(_read_text(summary_path))
+    except json.JSONDecodeError:
+        return None
+    status = payload.get("status")
+    if isinstance(status, str) and status in RESULT_STATUS_VALUES:
+        return status
+    return None
+
+
 def _resolve_script_artifact_paths(
     script_path: Path,
     claim_artifacts_by_script: dict[str, tuple[str, ...]],
@@ -469,24 +484,28 @@ def _build_result_registry(
         claim_ids = _dedupe_ordered(claim_ids_by_family.get(family_name, []))
         doc_refs = active_result_refs.get(family_name, ())
         has_report = (family_path / "REPORT.md").exists()
+        summary_status_override = _load_summary_status_override(family_path)
         notes: list[str] = []
         if has_report:
             notes.append("contains family-level REPORT.md")
+        if summary_status_override is not None:
+            notes.append(f"summary.json status override: {summary_status_override}")
         if immediate_subdir_count > 1:
             notes.append(f"{immediate_subdir_count} immediate subdirectories")
         if binary_file_count > 0:
             notes.append(f"{binary_file_count} binary artifact files")
 
+        status = summary_status_override or derive_result_status(
+            has_report=has_report,
+            doc_ref_count=len(doc_refs),
+            claim_ref_count=len(claim_ids),
+            file_count=file_count,
+            immediate_subdir_count=immediate_subdir_count,
+        )
         records.append(
             ResultRecord(
                 family=family_name,
-                status=derive_result_status(
-                    has_report=has_report,
-                    doc_ref_count=len(doc_refs),
-                    claim_ref_count=len(claim_ids),
-                    file_count=file_count,
-                    immediate_subdir_count=immediate_subdir_count,
-                ),
+                status=status,
                 evidence_status=derive_result_evidence_status(
                     has_report=has_report,
                     doc_ref_count=len(doc_refs),
