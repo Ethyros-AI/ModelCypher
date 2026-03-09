@@ -2,165 +2,150 @@
 
 ## The Trajectory
 
-ModelCypher's training engine derives every decision from geometry. That engine is not the end product. It is the foundation for something larger:
+ModelCypher's training engine is the first destination, not the final one.
 
-**Personal, portable, sovereign AI identity — carried as geometry, not data.**
+The long-term vision remains:
 
-## Hardware Reality: Quantized First
+**personal, portable, sovereign AI identity carried as geometry, not data.**
 
-Most builders cannot train or serve large models in full precision. Quantization is not optional for that world; it is the only feasible substrate.
+The important correction is scope. That identity layer is not something the
+repository can currently claim as operational. It is the downstream consequence
+of promotably true geometry, not a narrative shortcut around unfinished
+mechanism work.
 
-ModelCypher therefore treats full precision as a derivation tool and quantized models as the primary execution target:
+## Scope Cascade
 
-- We use bf16/fp16 to derive mechanisms cleanly.
-- We require those mechanisms to transfer to quantized models.
-- If transfer fails, we do not ship narratives. We isolate the broken operator and derive the missing precision term.
+- **Mission**: close the canonical geometric engine, centered on
+  `mc train run`.
+- **Vision**: describe what mission success may eventually enable.
+- **Roadmap**: define the closure order from current evidence to promotable
+  claims.
+- **Open Questions**: carry only the mathematical blockers on that closure
+  order.
 
-The vision is not "compress and accept quality loss." The vision is smaller-and-smarter models: geometry-informed training and merging that maintain or improve behavior under quantization while running faster on constrained hardware.
+This file must stay downstream of:
 
-A user's LoRA adapter is not a conversation log. It is a compressed geometric representation of how that person thinks, communicates, reasons, and relates. It captures invariant relational structure — the shapes, not the words. Because it is geometric rather than lexical, it is architecture-agnostic. It sits on top of any model at inference.
+- [MISSION.md](/Users/jasonkempf/ModelCypher/docs/MISSION.md)
+- [RESEARCH-ROADMAP.md](/Users/jasonkempf/ModelCypher/docs/RESEARCH-ROADMAP.md)
+- [OPEN-MATHEMATICAL-QUESTIONS.md](/Users/jasonkempf/ModelCypher/docs/research/OPEN-MATHEMATICAL-QUESTIONS.md)
+- [FIRST_PRINCIPLES_REVIEW_PROTOCOL.md](/Users/jasonkempf/ModelCypher/docs/research/FIRST_PRINCIPLES_REVIEW_PROTOCOL.md)
 
-## The Architecture
+## Quantized First
 
-```
-User's day of interactions
-        |
-        v
-  Nightly LoRA consolidation (continual learning)
-        |
-        v
-  Personal adapter (geometric cognitive fingerprint)
-        |
-        +---> stored on user's device (sovereignty)
-        +---> mirrored in data center (availability)
-        |
-        v
-  Stacked at inference on ANY model
-        |
-        +---> Today's Claude
-        +---> Tomorrow's successor
-        +---> A different provider's model
-        +---> An on-device model
-        +---> A humanoid's onboard model
-```
+The vision is quantized-first by design.
 
-The adapter IS the identity. The base model is the substrate. The substrate is the variable. The geometry is the constant.
+- `bf16/fp16` is the derivation regime.
+- Quantized models are the deployment regime.
+- If quantized behavior diverges from full precision, the response is operator
+  tracing, not tolerance of unexplained damage.
 
-## Non-Negotiable Scientific Discipline
+The deployment story is still not "compress and accept loss." The target is
+smaller-and-smarter behavior under measured geometric control.
 
-This vision is only valid if its mechanisms are derived and verified from first principles.
+## Hard Gates Before Identity-Layer Promotion
 
-We do not promote architecture-agnostic narratives from mixed empirical outcomes.
-If a claim changes sign across models, we treat that as a missing mechanism term
-(architecture, scale, or measurement commensurability), not as "some models pass."
+The identity-layer story is downstream of four gates. Until these are closed,
+the vision stays directional rather than operational.
 
-Vision statements must remain downstream of:
-- causal operator identification,
-- formal derivation with architecture and scale terms,
-- measurement commensurability proof,
-- pre-registered falsification.
+### Gate 1: Portable Cross-Architecture Certificate
 
-Canonical enforcement contract:
-- `docs/research/FIRST_PRINCIPLES_REVIEW_PROTOCOL.md`
+We need a commensurable certificate that a personal adapter or transferred delta
+preserves behavior across model families, not just probe alignment on one merge
+pipeline.
 
-## What Already Exists
+Blocked by:
 
-Each piece of this architecture has a foundation in ModelCypher today:
+- [OPEN-MATHEMATICAL-QUESTIONS.md](/Users/jasonkempf/ModelCypher/docs/research/OPEN-MATHEMATICAL-QUESTIONS.md) `Q8`
+- [RESEARCH-ROADMAP.md](/Users/jasonkempf/ModelCypher/docs/RESEARCH-ROADMAP.md) `R5`
 
-| Capability | Current State | Module |
-|-----------|--------------|--------|
-| Geometry-derived training | Validated, CLI-promoted with hard promotability gate (`pipeline_gate_v1`) | `dataset_training_service.py`, `mc train run` |
-| Cross-architecture adapter portability | Demonstrated via merge pipeline | `experimental/merge/`, CKA alignment |
-| Nightly consolidation | Experimental, architecture sound | `experimental/continual/`, `experimental/use_cases/consolidation_service.py` |
-| Adapter stacking at inference | Theoretical, infrastructure partial | `experimental/self_improve/lora_stacker.py` |
-| Adapter sovereignty | Not yet built | Requires adapter serialization + access control |
+### Gate 2: Stacking Preservation Certificate
 
-## Why Geometry Makes This Possible
+Stacking must prove that multiple adapters can compose without silent drift in
+the target model's preserved behavior.
 
-Standard LoRA adapters are tied to a specific model's weight dimensions. Moving an adapter between architectures requires understanding the geometric mapping between their activation spaces — which is exactly what CKA alignment and null-space projection do.
+This is not yet a shipped workflow. Today it is experimental infrastructure
+without a promotable preservation certificate.
 
-The merge pipeline already proves adapters can cross architecture boundaries when the geometric correspondence is established. Extending this to personal adapter portability is infrastructure work, not research.
+### Gate 3: Consolidation-Without-Forgetting Operator
 
-The same discipline applies across precision regimes. Quantized transfer is not a separate project; it is the same geometric mapping problem with an added precision-state term that must be measured and derived.
+Nightly consolidation is only promotable if there is a derived update operator
+that adds new user structure while preserving old structure better than
+meaningful continual-learning baselines.
 
-## Nightly Consolidation Mirrors Biology
+Blocked by:
 
-Human memory consolidation happens during sleep. The hippocampus replays the day's experiences and integrates them into cortical structures overnight. The architecture does the same thing:
+- [OPEN-MATHEMATICAL-QUESTIONS.md](/Users/jasonkempf/ModelCypher/docs/research/OPEN-MATHEMATICAL-QUESTIONS.md) `Q9`
+- [RESEARCH-ROADMAP.md](/Users/jasonkempf/ModelCypher/docs/RESEARCH-ROADMAP.md) `R6`
 
-- Day's interactions = raw signal
-- Nightly LoRA update = consolidation
-- By morning, the adapter has integrated new geometric information into the existing relational structure
+### Gate 4: Sovereignty Infrastructure
 
-This is what the continual learning modules (`curiosity_policy.py`, `consolidation_service.py`, `memory_benchmark.py`) are building toward. The daemon explores sparse manifold regions. The consolidation service fills gaps via null-space completion. The benchmark measures geometric before/after to prove consolidation worked.
+Even after the geometry closes, sovereignty still requires serialization,
+access-control, revocation, and user-owned runtime wiring. That is
+infrastructure work, not yet a completed research claim.
 
-## Adapter Sovereignty Inverts the Power Dynamic
+## Why The Vision Still Holds
 
-Today, AI companies hold conversation history on their servers. The user is locked into the ecosystem.
+The repo already supports the direction of travel:
 
-When the identity layer is a personal adapter:
-- The user owns their cognitive fingerprint
-- They grant access to any model at runtime and revoke it
-- The AI company never owns the relationship
-- Switching providers means pointing the adapter at a different base model
+- the canonical training path removes runtime guesswork from the control plane,
+- the merge work shows that activation-space geometry matters more than naive
+  weight blending,
+- the quantization work shows that full-precision derivation can improve
+  low-precision outcomes instead of merely explaining failure after the fact.
 
-The base model is commodity infrastructure. The adapter is the relationship. The user holds the adapter.
+What the repo does **not** yet support is talking as if portable identity is a
+deployed capability. The correct statement is:
 
-## The Separation That Matters
+**the geometry-first engine is the prerequisite; the identity layer is the
+destination after the certificates close.**
 
-**[VALIDATED]** Weight space is Euclidean (P ≈ I, Fisher degenerate — cross-family falsification on LFM2 + Qwen, 2026-02-23). The geometry transfers across architectures because the activation-space alignment is done via CKA and null-space projection, not weight-space interpolation. Hardware is the variable. Geometry is the constant.
+## Capability Scorecard
 
-**[EXPLORATORY]** Whether intelligence in general converges on architecture-invariant structures (the Platonic Representation Hypothesis) is a deeper claim that our cross-family validation does not confirm. Our validation shows weight-space Euclidean structure is shared across LFM2 and Qwen. Generalization to all architectures requires the full Platonic Hypothesis machinery and is not demonstrated here.
+| Capability | Current status | Evidence | Promotion block |
+| --- | --- | --- | --- |
+| Geometry-derived training | `SHIPPED` on the canonical path | `mc train run`, `pipeline_gate_v1`, doctrine cleanup in runtime code | Behavioral preservation still fails in retained `pipeline_validation` trials |
+| Quantized-first control | `PARTIAL` | `results/quantization_ab_survey/`, `results/closedform_sequential_correction/` | Frontier law is still open |
+| Cross-architecture portability | `PARTIAL / EXPERIMENTAL` | `src/modelcypher/experimental/merge/`, `results/geometry_sota/analysis_summary.json` | No portable behavior certificate or MergeBench-style baseline closure |
+| Nightly consolidation | `EXPERIMENTAL` | `src/modelcypher/experimental/continual/`, `src/modelcypher/experimental/use_cases/consolidation_service.py`, `results/continual_learning/` | Consolidation operator still open |
+| Adapter stacking | `EXPERIMENTAL` | `src/modelcypher/experimental/self_improve/lora_stacker.py` | No preservation certificate |
+| Adapter sovereignty | `NOT BUILT` | no user-owned runtime flow | infrastructure not built |
 
-This means the identity layer — the personal adapter — is not tied to any specific model, company, or device. It is a geometric object that persists across substrates.
+## What This File Does Not License
 
-## From Training Engine to Identity Infrastructure
+This vision file does not authorize:
 
-ModelCypher's mission is to train models using only geometry. The vision is what that enables: a world where AI identity is personal, portable, and sovereign — and the geometry guarantees it works across any model on any device.
+- mixed-model "partial validation" language,
+- user-facing portability claims from probe-only alignment,
+- sovereignty claims from unbuilt infrastructure,
+- stacking or consolidation claims without preservation certificates,
+- treating experimental code as canonical just because it has a CLI entry
+  point.
 
-The training engine is step one. Quantized-first geometric control is step two. The identity layer is what we are building toward.
+If a claim cannot survive the first-principles review protocol, it does not
+belong in mission, vision, roadmap, or agent doctrine.
 
----
+## Closure Order
 
-## Progress Assessment (2026-03-09)
+The order stays strict:
 
-### Capability Status
+1. baseline suite against standard practice
+2. operator for behavioral failure when structural safety passes
+3. 8B non-ceiling efficacy closure
+4. quantization frontier law
+5. portable adapter certificate
+6. consolidation operator
+7. stacking preservation certificate
+8. sovereignty infrastructure
 
-| Capability | VISION Status | Actual Status | Evidence |
-|-----------|--------------|---------------|----------|
-| Geometry-derived training | "Validated, CLI-promoted" | **SHIPPED** — `mc train run` works. Head-to-head on 350M: NB-LoRA val_loss=0.989 vs standard LoRA 1.180 (0 vs 7+ HPs, commensurable eval). Multi-seed + cross-architecture pending. | `results/nblora_vs_standard/`, `dataset_training_service.py` |
-| Cross-architecture adapter portability | "Demonstrated via merge pipeline" | **PARTIAL** — CKA-aligned merging works. Real LoRA transfer across architectures is conjectural. | `experimental/merge/`, Tikhonov A/B test (2026-02-28) |
-| Nightly consolidation | "Experimental, architecture sound" | **EXPERIMENTAL** — Code exists. Not CLI. Not validated on real use case. | `experimental/continual/`, `experimental/use_cases/consolidation_service.py` |
-| Adapter stacking at inference | "Theoretical, infrastructure partial" | **EXPERIMENTAL** — Code exists. Not CLI. No preservation certificate. | `experimental/self_improve/lora_stacker.py` |
-| Adapter sovereignty | "Not yet built" | **NOT BUILT** — No serialization, access control, or user-owned runtime flow. | — |
+The identity-layer language becomes stronger only as those gates close in that
+order.
 
-**Summary:** 1/5 shipped. 1/5 partially shipped. 3/5 experimental or unbuilt. The vision is ~20% realized.
+## Bottom Line
 
-### Head-to-Head Status (2026-03-09)
+ModelCypher is still building toward a world where the user owns the geometric
+identity layer and can carry it across substrates. That remains the right
+destination.
 
-**[PRELIMINARY]** First head-to-head comparison on LFM2-350M (single seed=42, commensurable eval — full val set, batch_size=1, cross-entropy):
-
-| Arm | Val Loss | Hyperparameters | Spectral Safety |
-|-----|----------|-----------------|-----------------|
-| NB-LoRA | **0.989** | **0** (geometry derives everything including when to stop) | Bounded by construction (max_ratio=0.265) |
-| Standard LoRA | 1.180 | 7+ (lr, batch_size, rank, scale, dropout, optimizer, schedule, iteration count) | Unbounded (max_norm=1.909) |
-| Tuned LoRA (best of 9 grid) | 1.171 | 7+ (grid search selects config, still requires practitioner to design the grid) | Unbounded (max_norm=1.477) |
-
-Standard LoRA's iteration count is itself a hyperparameter — most practitioners have no idea how many epochs to run and eyeball loss curves or pick a round number from a tutorial. NB-LoRA's geometric certificate tells you when training is done. The comparison axis is adapter quality, not speed or iteration count.
-
-**Pending for promotion to [VALIDATED]:**
-- 5-seed run for statistical significance
-- Qwen3.5-0.8B cross-architecture validation
-- lm-eval benchmarks (7 tasks: arc_easy, arc_challenge, hellaswag, boolq, piqa, winogrande, openbookqa)
-
-**What we CAN claim:**
-- Every parameter is derived, not guessed. No magic numbers.
-- Weight space is Euclidean (cross-family falsification on LFM2 + Qwen).
-- REINFORCE through bounded adapters is algebraically dead.
-- The pipeline runs end-to-end with zero configuration.
-- **[PRELIMINARY]** Geometry-derived training produces a better adapter than standard LoRA with community-default hyperparameters on LFM2-350M — and a better adapter than the best of a 9-point grid search.
-
-**What we CANNOT claim (yet):**
-- That this result reproduces across seeds and architectures (pending multi-seed + Qwen3.5-0.8B).
-- That our merging produces better models than TIES/DARE/RegMean.
-
-Preliminary evidence shows superiority in the outcome plane, not just the control plane. Multi-seed cross-architecture validation will determine whether this is promotable. See `scripts/experiment_nblora_vs_standard.py` for the comparison harness.
+What changed is discipline: the repository should now talk about that future as
+**downstream of closed certificates**, not as if the current experimental merge,
+continual-learning, and stacking surfaces already deliver it.

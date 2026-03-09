@@ -32,6 +32,19 @@ Every design decision must be derived from:
 - IEEE 754 machine precision
 - direct measurements from the model and data
 
+### Scope Cascade
+
+Keep these roles separate:
+
+- **Mission** = what must become promotably true in the canonical engine
+- **Vision** = what mission success may later enable
+- **Roadmap** = the closure order
+- **Open Questions** = only the mathematical blockers on that order
+
+For repository accounting, treat `mc train run` as the only clearly shipped
+canonical surface today. Merge, continual learning, stacking, and sovereignty
+remain experimental, partial, or downstream until their certificates close.
+
 ### Quantization Is The Endgame
 
 `bf16/fp16` is the derivation phase. Quantized models are the deployment target.
@@ -353,6 +366,30 @@ CLI promotion requires:
 Stable workflows should use `mc`. Exploratory falsifiers and one-off measurement
 passes may live in `scripts/` until validated.
 
+### Link Every Experiment To An Active Blocker
+
+No linked blocker, no experiment.
+
+Before creating or extending any script, result family, or repeated run loop,
+link the work to exactly one of:
+
+- an active roadmap item in
+  `docs/RESEARCH-ROADMAP.md`
+- an active blocker in
+  `docs/research/OPEN-MATHEMATICAL-QUESTIONS.md`
+
+If you cannot make that linkage:
+
+1. classify the work as parked exploration
+2. do not create a new canonical script or result family
+3. do not promote claims from it into mission, vision, or roadmap docs
+
+Use `results/repo_research_inventory/` as the triage source of truth:
+
+- `canonical` = live surface tied to an active blocker
+- `summary_only` = dormant unless explicitly reactivated
+- `delete` = off-limits unless a human explicitly reopens the thread
+
 ## 8. Operating Rules
 
 ### Commands
@@ -403,6 +440,16 @@ Minimum rules:
 3. change one mutable surface per loop unless the operator requires a bundle
 4. keep an append-only ledger for every run, including crashes and invalid measurements
 5. advance only when the predicted observable survives its falsifier and no hard guardrail is violated
+
+For any new canonical research family, require all of:
+
+1. `REPORT.md`
+2. a machine-readable summary JSON
+3. a run manifest or charter
+4. an append-only ledger
+
+Historical families do not need blanket backfill. This requirement applies when
+a family is newly promoted or explicitly reactivated.
 
 ### Documentation
 

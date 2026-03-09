@@ -23,6 +23,17 @@ overnight." The transfer is:
 This protocol exists so autonomous iteration does not collapse into heuristic
 thrashing, mixed-model narrative, or undocumented branch drift.
 
+The governing rule is:
+
+**no linked blocker, no canonical experiment.**
+
+Every repeated run family must be linked to exactly one active roadmap item in
+`docs/RESEARCH-ROADMAP.md` or one active question in
+`docs/research/OPEN-MATHEMATICAL-QUESTIONS.md`.
+
+If it cannot declare that linkage, it is parked exploration only. It may not
+create a new canonical script, result family, or promotable claim.
+
 ---
 
 ## 2. Run Charter (Required Before First Edit)
@@ -30,21 +41,22 @@ thrashing, mixed-model narrative, or undocumented branch drift.
 Before any repeated experiment loop begins, write a run charter in the run doc
 or manifest. It must include:
 
-1. `run_id` or branch tag
-2. claim contract:
+1. linked blocker ID (`R#` or `Q#`)
+2. `run_id` or branch tag
+3. claim contract:
 
 ```text
 observable = f(geometry_state, architecture_state, scale_state, precision_state, measurement_operator)
 ```
 
-3. primary observable to optimize or falsify
-4. explicit falsifier
-5. mutable surface
-6. frozen surfaces
-7. baseline command
-8. comparison budget
-9. artifact directory
-10. ledger path
+4. primary observable to optimize or falsify
+5. explicit falsifier
+6. mutable surface
+7. frozen surfaces
+8. baseline command
+9. comparison budget
+10. artifact directory
+11. ledger path
 
 If any field is missing, the loop is exploratory only and may not promote a
 claim.
@@ -222,6 +234,17 @@ Each run must emit or link:
 
 Where a validator exists, run it on the emitted artifacts before promotion.
 
+If the run family is being promoted or reactivated as `canonical`, the family
+must also retain:
+
+1. `REPORT.md`
+2. a machine-readable summary JSON
+3. the manifest or charter
+4. the append-only ledger
+
+Historical families do not require blanket backfill. This rule applies at the
+point of canonical promotion or reactivation.
+
 ---
 
 ## 10. Human and Agent Roles
@@ -240,6 +263,13 @@ Agent autonomy is allowed inside the loop, but not across these boundaries:
 2. no mixed-model promotion without commensurability proof
 3. no hidden threshold invention
 4. no silent deletion of failed runs
+5. no creation of canonical work that is not linked to an active blocker
+
+Use `results/repo_research_inventory/` as the triage source of truth:
+
+- `canonical` stays live only while tied to an active blocker
+- `summary_only` stays dormant unless explicitly reactivated
+- `delete` stays off-limits unless a human explicitly reopens the thread
 
 ---
 

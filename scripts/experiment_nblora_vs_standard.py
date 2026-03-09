@@ -490,6 +490,59 @@ def train_nb_lora(
     return result_dict
 
 
+def derive_wd_from_training_result(
+    training_result: dict, adapter_path: str,
+) -> tuple[float, dict]:
+    """Derive the adversarial WD test value from a WD=0 training run.
+
+    λ = median(d_norm) / ||θ||
+
+    This is the WD that makes shrinkage comparable to the gradient step,
+    i.e., the strongest adversary for the "WD is redundant" prediction.
+
+    Returns (wd_derived, derivation_details).
+    """
+    import mlx.core as mx
+
+    # d_norm per epoch (last step's gradient direction norm in each epoch)
+    epoch_metrics = training_result.get("epoch_metrics", [])
+    d_norms = [
+        em["d_norm"] for em in (epoch_metrics or [])
+        if em.get("d_norm") is not None and em["d_norm"] > 0
+    ]
+    if not d_norms:
+        raise ValueError("No d_norm values found in training result epoch_metrics")
+    median_d_norm = statistics.median(d_norms)
+
+    # ||θ|| from saved adapter weights
+    adapter_file = Path(adapter_path) / "adapters.safetensors"
+    if not adapter_file.exists():
+        raise FileNotFoundError(f"Adapter file not found: {adapter_file}")
+    weights = mx.load(str(adapter_file))
+    param_norm_sq = 0.0
+    for w in weights.values():
+        w_f32 = w.astype(mx.float32)
+        val = mx.sum(w_f32 * w_f32)
+        mx.eval(val)
+        param_norm_sq += float(val.item())
+    param_norm = math.sqrt(param_norm_sq)
+
+    if param_norm < 1e-12:
+        raise ValueError(f"Parameter norm too small: {param_norm}")
+
+    wd_derived = median_d_norm / param_norm
+
+    derivation = {
+        "median_d_norm": median_d_norm,
+        "param_norm": param_norm,
+        "n_epochs": len(d_norms),
+        "d_norms_per_epoch": d_norms,
+        "formula": "median(d_norm) / ||θ||",
+    }
+
+    return wd_derived, derivation
+
+
 # ---------------------------------------------------------------------------
 # Commensurable validation loss — same operator for all arms
 # ---------------------------------------------------------------------------
@@ -769,6 +822,7 @@ def run_model_experiment(
     skip_inference: bool = False,
     skip_grid: bool = False,
     weight_decay: float = 0.0,
+    derive_wd_test: bool = False,
 ) -> dict:
     """Run full three-arm comparison for one model across multiple seeds."""
     model_path = str(model_spec["path"])
@@ -840,12 +894,19 @@ def run_model_experiment(
     # c. PER-SEED TRAINING + EVAL
     # ------------------------------------------------------------------
     # Collect per-arm, per-seed results for aggregation
+    # When --derive-wd-test, control arm is always WD=0
+    nb_weight_decay = 0.0 if derive_wd_test else weight_decay
+
     std_evals = []
     tuned_evals = []
     nb_evals = []
     std_trainings = []
     tuned_trainings = []
     nb_trainings = []
+    nb_wd_evals = []       # WD=derived arm (only when derive_wd_test)
+    nb_wd_trainings = []   # WD=derived arm (only when derive_wd_test)
+    wd_derived_value = None
+    wd_derivation_info = None
     per_seed_data = {}
 
     for seed in seeds:
@@ -955,7 +1016,7 @@ def run_model_experiment(
                 model_path=model_path,
                 output_dir=nb_out,
                 seed=seed,
-                weight_decay=weight_decay,
+                weight_decay=nb_weight_decay,
             )
             # Commensurable val_loss: same operator as standard arm
             logger.info("  Commensurable val_loss eval (NB-LoRA)...")
@@ -984,6 +1045,65 @@ def run_model_experiment(
         except Exception as e:
             logger.exception(f"  NB-LoRA seed={seed} failed")
             seed_result["nb_lora"] = {"error": str(e)}
+
+        # ---- NB-LoRA WD=derived (if --derive-wd-test) ----
+        if derive_wd_test and "error" not in seed_result.get("nb_lora", {}):
+            nb_train_wd0 = seed_result["nb_lora"]["training"]
+            try:
+                wd_derived, wd_deriv = derive_wd_from_training_result(
+                    nb_train_wd0, str(nb_out),
+                )
+                # Store derived value (same across seeds by construction,
+                # but may vary slightly — keep per-seed for transparency)
+                wd_derived_value = wd_derived
+                wd_derivation_info = wd_deriv
+                logger.info(
+                    f"  WD derived: λ={wd_derived:.6f} "
+                    f"(median_d_norm={wd_deriv['median_d_norm']:.6f}, "
+                    f"||θ||={wd_deriv['param_norm']:.4f})"
+                )
+
+                nb_out_wd = seed_dir / "nb_lora_wd_derived"
+                logger.info(f"\n--- [{model_name}] NB-LoRA WD={wd_derived:.6f} (seed={seed}) ---")
+                nb_train_wd = train_nb_lora(
+                    model_path=model_path,
+                    output_dir=nb_out_wd,
+                    seed=seed,
+                    weight_decay=wd_derived,
+                )
+                # Commensurable val_loss: same operator as all other arms
+                logger.info("  Commensurable val_loss eval (NB-LoRA WD=derived)...")
+                nb_train_wd["final_val_loss"] = evaluate_val_loss(
+                    model_path, str(nb_out_wd), VAL_DATA,
+                )
+                nb_train_wd["wd_derived"] = wd_derived
+                nb_train_wd["wd_derivation"] = wd_deriv
+                logger.info(
+                    f"  val_loss={nb_train_wd['final_val_loss']:.4f} "
+                    f"(WD={wd_derived:.6f})"
+                )
+                with open(nb_out_wd / "training_log.json", "w") as f:
+                    json.dump(nb_train_wd, f, indent=2, default=str)
+                nb_wd_trainings.append(nb_train_wd)
+
+                if not skip_eval:
+                    nb_wd_eval = run_lm_eval(
+                        model_path=model_path,
+                        tasks=BENCHMARK_TASKS,
+                        adapter_path=str(nb_out_wd),
+                        limit=eval_limit,
+                    )
+                else:
+                    nb_wd_eval = {}
+                with open(nb_out_wd / "eval_results.json", "w") as f:
+                    json.dump(nb_wd_eval, f, indent=2)
+                nb_wd_evals.append(nb_wd_eval)
+                seed_result["nb_lora_wd_derived"] = {
+                    "training": nb_train_wd, "eval": nb_wd_eval,
+                }
+            except Exception as e:
+                logger.exception(f"  NB-LoRA WD=derived seed={seed} failed")
+                seed_result["nb_lora_wd_derived"] = {"error": str(e)}
 
         # ---- Inference (non-fatal) ----
         if not skip_inference:
@@ -1067,6 +1187,24 @@ def run_model_experiment(
     )
     results["comparison"] = comparison
 
+    # WD falsification (opt-in)
+    if derive_wd_test and nb_wd_trainings and wd_derived_value is not None:
+        wd_falsification = build_wd_falsification(
+            baseline_scores=baseline_scores,
+            nb_wd0_evals=nb_evals,
+            nb_wdD_evals=nb_wd_evals,
+            nb_wd0_trainings=nb_trainings,
+            nb_wdD_trainings=nb_wd_trainings,
+            wd_derived=wd_derived_value,
+            wd_derivation=wd_derivation_info,
+        )
+        comparison["weight_decay_falsification"] = wd_falsification
+        results["comparison"] = comparison
+
+        logger.info(f"\n  WD Falsification: {wd_falsification['verdict']}")
+        logger.info(f"    λ_derived={wd_derived_value:.6f}, "
+                     f"tasks_where_wd_wins={wd_falsification['tasks_where_wd_wins']}")
+
     with open(model_dir / "comparison.json", "w") as f:
         json.dump(comparison, f, indent=2)
 
@@ -1087,6 +1225,88 @@ def _safe_mean(vals: list[float]) -> float:
 
 def _safe_stdev(vals: list[float]) -> float:
     return statistics.stdev(vals) if len(vals) > 1 else 0.0
+
+
+def build_wd_falsification(
+    baseline_scores: dict,
+    nb_wd0_evals: list[dict],
+    nb_wdD_evals: list[dict],
+    nb_wd0_trainings: list[dict],
+    nb_wdD_trainings: list[dict],
+    wd_derived: float,
+    wd_derivation: dict,
+) -> dict:
+    """Build WD falsification verdict: WD=0 vs WD=derived.
+
+    Prediction: WD=0 is within tie band of WD=derived on all tasks.
+    Falsifier: WD=derived beats WD=0 by more than tie band on >=2/7 tasks.
+    """
+    wd0_agg = aggregate_arm_evals(nb_wd0_evals, baseline_scores)
+    wdD_agg = aggregate_arm_evals(nb_wdD_evals, baseline_scores)
+
+    per_task = {}
+    tasks_where_wd_wins = 0
+
+    for task in BENCHMARK_TASKS:
+        if task not in wd0_agg or task not in wdD_agg:
+            continue
+        wd0_mean = wd0_agg[task]["mean"]
+        wdD_mean = wdD_agg[task]["mean"]
+        wd0_se = wd0_agg[task]["se_mean"]
+        wdD_se = wdD_agg[task]["se_mean"]
+        tie_band = 2.0 * math.sqrt(wd0_se**2 + wdD_se**2)
+        delta = wdD_mean - wd0_mean  # positive = WD=derived wins
+
+        if delta > tie_band:
+            verdict = "wd_derived_wins"
+            tasks_where_wd_wins += 1
+        elif delta < -tie_band:
+            verdict = "wd0_wins"
+        else:
+            verdict = "tie"
+
+        per_task[task] = {
+            "wd0_mean": wd0_mean,
+            "wdD_mean": wdD_mean,
+            "wd0_se": wd0_se,
+            "wdD_se": wdD_se,
+            "tie_band": tie_band,
+            "delta": delta,
+            "verdict": verdict,
+        }
+
+    falsified = tasks_where_wd_wins >= 2
+    if falsified:
+        overall_verdict = (
+            f"FALSIFIED — WD=derived wins on {tasks_where_wd_wins}/7 tasks "
+            f"(>= 2 required)"
+        )
+    else:
+        overall_verdict = "WD=0 optimal — prediction confirmed"
+
+    # Training stats comparison
+    wd0_val_losses = [
+        t["final_val_loss"] for t in nb_wd0_trainings
+        if t.get("final_val_loss") is not None
+    ]
+    wdD_val_losses = [
+        t["final_val_loss"] for t in nb_wdD_trainings
+        if t.get("final_val_loss") is not None
+    ]
+
+    return {
+        "prediction": "WD=0 optimal (MASS+stopping bounds displacement)",
+        "wd_derived": wd_derived,
+        "wd_derivation": wd_derivation,
+        "per_task": per_task,
+        "tasks_where_wd_wins": tasks_where_wd_wins,
+        "falsified": falsified,
+        "verdict": overall_verdict,
+        "training_val_loss": {
+            "wd0_mean": _safe_mean(wd0_val_losses),
+            "wdD_mean": _safe_mean(wdD_val_losses),
+        },
+    }
 
 
 def build_comparison(
@@ -1302,6 +1522,20 @@ def print_comparison(model_name: str, comparison: dict):
         print(f"    Best: rank={bc.get('rank')}, lr={bc.get('lr')}, scale={bc.get('scale', 0):.2f}")
         print(f"    Best val loss: {gs.get('best_val_loss', '?')}")
 
+    # WD falsification
+    wdf = comparison.get("weight_decay_falsification")
+    if wdf:
+        print(f"\n  WD Falsification:")
+        print(f"    Prediction: {wdf['prediction']}")
+        print(f"    WD derived: {wdf['wd_derived']:.6f} ({wdf['wd_derivation']['formula']})")
+        print(f"    Val loss: WD=0 {wdf['training_val_loss']['wd0_mean']:.4f}, "
+              f"WD=derived {wdf['training_val_loss']['wdD_mean']:.4f}")
+        for task, td in wdf.get("per_task", {}).items():
+            print(f"    {task:<18} WD=0={td['wd0_mean']:.4f}  WD=D={td['wdD_mean']:.4f}  "
+                  f"band={td['tie_band']:.4f}  {td['verdict']}")
+        print(f"    Tasks where WD wins: {wdf['tasks_where_wd_wins']}")
+        print(f"    Verdict: {wdf['verdict']}")
+
     print(f"{'='*80}\n")
 
 
@@ -1374,6 +1608,20 @@ def build_summary(all_results: dict) -> dict:
     else:
         summary["overall"]["verdict"] = "no data"
 
+    # WD falsification summary (include if any model has it)
+    wd_falsifications = {}
+    for model_key, model_results in all_results.items():
+        wdf = model_results.get("comparison", {}).get("weight_decay_falsification")
+        if wdf:
+            wd_falsifications[model_key] = {
+                "wd_derived": wdf["wd_derived"],
+                "tasks_where_wd_wins": wdf["tasks_where_wd_wins"],
+                "falsified": wdf["falsified"],
+                "verdict": wdf["verdict"],
+            }
+    if wd_falsifications:
+        summary["weight_decay_falsification"] = wd_falsifications
+
     return summary
 
 
@@ -1429,6 +1677,11 @@ def main():
         type=float,
         default=0.0,
         help="AdamW-decoupled weight decay for NB-LoRA arm (default: 0.0)",
+    )
+    parser.add_argument(
+        "--derive-wd-test",
+        action="store_true",
+        help="Run WD redundancy falsification: WD=0 vs WD=derived",
     )
     args = parser.parse_args()
 
@@ -1497,6 +1750,7 @@ def main():
                 skip_inference=args.skip_inference,
                 skip_grid=args.skip_grid,
                 weight_decay=args.weight_decay,
+                derive_wd_test=args.derive_wd_test,
             )
             all_results[spec["name"]] = result
         except Exception:

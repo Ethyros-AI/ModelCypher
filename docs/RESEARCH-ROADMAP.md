@@ -1,296 +1,225 @@
 # Research Roadmap
 
-**Updated:** 2026-03-08
+**Updated:** 2026-03-09
 
 ## What This File Is For
 
-This file answers four operational questions:
+This file is the closure order for the repository.
 
-1. How far are we from `docs/VISION.md`?
-2. Where do we measurably improve on standard practice today?
-3. Where are we still weaker, unproven, or blocked?
-4. What do we clean up next so evidence is easier to read than noise?
+It answers four questions:
 
-This file is intentionally not the running dump of every solved or refuted
-thread.
-`docs/research/OPEN-MATHEMATICAL-QUESTIONS.md` now carries only the active
-mathematical blockers. Historical literature mapping and broader field position
-live in:
+1. what is actively blocking
+   [MISSION.md](/Users/jasonkempf/ModelCypher/docs/MISSION.md),
+2. what work is merely valuable but not currently blocking,
+3. what is closed or archived,
+4. what new agent work is allowed to create live repo surface.
 
-- `docs/research/SOTA-AUDIT-2026-03.md`
-- `docs/research/field_map_external_methods.md`
-- `docs/research/FIRST_PRINCIPLES_REVIEW_PROTOCOL.md`
+This file is not a dumping ground for every interesting result. If a thread is
+not on the active ladder, it is either parked or archived.
 
-## Executive Read
+## Scope Cascade
 
-- We are ahead on controller design. The canonical training path removes manual
-  learning-rate, rank, scale, and target-selection overrides from runtime code.
-- We are not yet ahead on end-user reliability. The canonical pipeline still has
-  unresolved behavioral failures, and 8B closure is still open.
-- The repository still has a large research surface, but it is now inventoried.
-  Current generated counts are `133` scripts, `90` top-level result families,
-  and about `0.46G` under `results/`.
+- **Mission**: close the canonical geometric engine, centered on `mc train run`.
+- **Vision**: downstream identity-layer consequences of that closure.
+- **Roadmap**: the required order of work.
+- **Open Questions**: only the mathematical blockers on that order.
 
-The short version is: we have reduced guessing in the control plane more than
-we have proven superiority in the outcome plane.
+Use this file together with:
 
-## Vision Scorecard
+- [MISSION.md](/Users/jasonkempf/ModelCypher/docs/MISSION.md)
+- [VISION.md](/Users/jasonkempf/ModelCypher/docs/VISION.md)
+- [OPEN-MATHEMATICAL-QUESTIONS.md](/Users/jasonkempf/ModelCypher/docs/research/OPEN-MATHEMATICAL-QUESTIONS.md)
+- [AUTONOMOUS-RESEARCH-PROTOCOL.md](/Users/jasonkempf/ModelCypher/docs/research/AUTONOMOUS-RESEARCH-PROTOCOL.md)
 
-| Vision promise from `docs/VISION.md` | Current state | Hard evidence | What still blocks promotion |
-| --- | --- | --- | --- |
-| Geometry-derived training should be one command with no manual guessing | Partial | `mc train run` exists; `pipeline_gate_v1` exists; doctrine audit removed runtime LR/scale/quantization bypasses; `results/pipeline_validation/verdict.json` still reports `all_pass=false` with 3/5 inference passes on 350M | Behavioral preservation still fails in part of the canonical path |
-| Quantized models are the real target, not an afterthought | Partial | Quantization frontier precheck is implemented; `results/closedform_sequential_correction/20260227T173057Z/closedform_correction.json` improved CKA, PPL, and degeneration simultaneously on Qwen3-1.7B | We still lack the architecture-conditioned frontier law and 8B closure |
-| Cross-architecture portability should make the geometry the invariant | Partial | Merge and alignment machinery exist; internal SOTA audit classifies null-space merge claims as strong enough to keep pushing | No mandatory MergeBench-style comparison against standard merge baselines |
-| Nightly consolidation should turn daily interaction into stable memory | Experimental | Continual-learning code and artifact families exist (`src/modelcypher/experimental/continual/`, `src/modelcypher/experimental/use_cases/consolidation_service.py`, `results/continual_learning/`) | No promotable closure that this is repeatable, beneficial, and non-forgetting |
-| Adapter stacking should preserve identity across substrates | Infrastructure partial | `src/modelcypher/experimental/self_improve/lora_stacker.py` exists | No promoted preservation certificate or supported workflow |
-| Adapter sovereignty should let the user own the identity layer | Not built | No serialization, access-control, or user-owned runtime flow exists yet | This is still infrastructure and product work, not closed research |
+## Repository Reality Check
 
-## Where We Actually Improve On Standard Practice Today
-
-### 1. Canonical training removes manual knob turning in a way current public tools do not
-
-Current public fine-tuning stacks still expose user-chosen ranks, alphas,
-dropout, learning rates, warmup, schedulers, and target-module choices in their
-official docs:
-
-- Hugging Face PEFT LoRA config: `r`, `target_modules`, `lora_alpha`,
-  `lora_dropout`, and more
-- Axolotl config reference: `lora_r`, `lora_alpha`, `lora_dropout`,
-  `learning_rate`, `warmup_steps`, scheduler, optimizer
-- TorchTune LoRA recipes: config and CLI overrides for LoRA rank, alpha, epochs,
-  and recipe parameters
-- Unsloth LoRA guide: explicit learning-rate ranges, recommended ranks, alpha,
-  dropout, warmup, scheduler, and batch-size heuristics
-
-ModelCypher's differentiator is not "we also have a recipe". It is that the
-canonical runtime path tries to derive the control surface from model geometry,
-IEEE 754 limits, and measured data, then aggressively removes override paths
-that reintroduce guessing.
-
-Internal evidence:
-
-- `docs/MISSION.md`
-- `docs/research/PRODUCT-MAINTENANCE-AUDIT-2026-03.md`
-- `src/modelcypher/cli/commands/train.py`
-- `src/modelcypher/core/domain/training/mass_step_size.py`
-- `src/modelcypher/core/use_cases/dataset_training_service.py`
-
-### 2. We are stronger on measurement discipline than on raw leaderboard claims
-
-The project now has a better answer than "it looked okay in eval":
-
-- promotion contracts for architecture, scale, precision, and operator validity
-- a maintained SOTA crosswalk in `results/sota_audit_2026_03/`
-- runtime guardrails such as `pipeline_gate_v1`
-- explicit rejection of mixed-model "partial validation" stories
-
-This matters because the main failure mode in the repo is not lack of
-experiments. It is over-promotion from fragmented evidence.
-
-The current internal SOTA crosswalk classifies `21` tracked claims as:
-
-- `8` `CUTTING_EDGE`
-- `5` `ADAPT_OTHERS`
-- `6` `PUSH_FURTHER`
-- `2` `DEPRIORITIZE`
-
-That is real progress, but most of the "cutting edge" material is still about
-measurement, falsification, or merge geometry, not yet about a complete
-end-user training win.
-
-### 3. Quantized correction work shows a real, user-relevant advantage
-
-The strongest current "smaller-and-smarter" evidence is the corrective
-quantization thread.
-
-In `results/closedform_sequential_correction/20260227T173057Z/closedform_correction.json`
-on Qwen3-1.7B:
-
-- mean CKA improved by `+0.0139976`
-- min CKA improved by `+0.180729`
-- perplexity improved by `-0.0633116`
-- max 4-gram repetition improved by `-0.0471629`
-
-That is materially stronger than "quality loss is the price of quantization."
-It is one of the clearest places where the repository has something better than
-standard acceptance of quantization damage.
-
-## Where We Do Not Yet Beat Standard Practice
-
-| Gap | Evidence | Why this is not promotable yet |
-| --- | --- | --- |
-| Zero-guess training is not yet reliably behavior-preserving | `results/pipeline_validation/verdict.json` reports `all_pass=false`; on 350M, structural pass is 5/5 but inference pass is only 3/5 | We do not yet have the causal operator that explains when structural safety fails to preserve behavior |
-| 8B closure is still open | `results/g5_8b_validation_multiseed/multiseed_gates.json` reports `n_seeds=1`, `cka_ok=0`, `degenerate_ok=0`, `all_gates_all_seeds=false` | The user-facing claim "works on any model" remains unclosed |
-| We do not yet have mandatory head-to-head baselines against the standard PEFT ecosystem | The repo has strong internal doctrine and many experiments, but no stable same-model same-data comparison suite against standard LoRA, rsLoRA, PiSSA, EVA, DoRA, or recipe-level baselines; the existing `results/nblora_vs_standard/` family is still not a promotable benchmark bundle | Without these controls, "better than standard practice" is still a thesis, not a measured result |
-| Merge claims are differentiated but not yet industry-positioned | Internal SOTA audit says keep pushing null-space merge, but also says import MergeBench-style evaluation | We have internal strength but not yet benchmark parity with how the field compares merge methods |
-| Identity-layer claims are ahead of infrastructure and evidence | `docs/VISION.md` still correctly marks stacking as partial and sovereignty as not built | The long-term vision remains valid as direction, not yet as delivered capability |
-
-## Why Progress Feels Hard To See
-
-### The repository surface is much larger than the maintained inventories imply
-
-Current generated counts from `results/repo_research_inventory/`:
+Generated inventory on 2026-03-08 reports:
 
 - `133` scripts under `scripts/`
-- `13` scripts with exact name-matched test files under `tests/scripts/` or
-  `tests/experiments/`
 - `90` top-level result families under `results/`
-- about `0.46G` stored under `results/`
+- `5` canonical scripts
+- `31` canonical result families
+- `59` `summary_only` result families
+- `94` `delete` script candidates
 
-`scripts/INVENTORY.md` is now generated from
-`scripts/report_research_inventory.py`, and the full machine-readable inventory
-now lives in `results/repo_research_inventory/`.
+The repo does not have an experiment shortage. It has a prioritization and
+surface-area problem.
 
-Current generated status split after collapsing duplicate and superseded result
-runs into retained summary bundles:
+## Active
 
-- scripts: `5` `canonical`, `34` `summary_only`, `94` `delete`
-- results: `31` `canonical`, `59` `summary_only`, `0` `delete`
+Only the items in this section are allowed to generate new canonical scripts,
+new canonical result families, or repeated agent-driven run families.
 
-### A small number of experiment families dominate the artifact footprint
+| ID | Goal | Primary evidence family | Exit criterion |
+| --- | --- | --- | --- |
+| `R1` | Same-model same-data same-eval baseline suite against standard practice | `results/nblora_vs_standard/` | Pre-registered multi-seed comparison against standard LoRA, rsLoRA, PiSSA, EVA, DoRA, and at least one recipe-level baseline; promotion allowed only if preservation gates stay valid |
+| `R2` | Causal operator for behavioral failure when structural safety passes | `results/pipeline_validation/`, `results/pipeline_validation_blindness_350M_t20/` | A pre-registered operator predicts failure before online degradation, survives intervention, and explains the retained 350M failure cases |
+| `R3` | 8B non-ceiling efficacy closure | `results/g5_8b_validation_multiseed/` | The pre-registered seed set on the fixed non-ceiling eval bundle passes the declared gate set without mixed or measurement-invalid outcomes |
+| `R4` | Quantization frontier law | `results/quantization_frontier/`, `results/closedform_sequential_correction/`, `results/quantization_ab_survey/` | One architecture-conditioned frontier statistic orders achieved CKA floor and degeneration across bit-depth sweeps and survives a held-out family |
+| `R5` | Portable cross-architecture adapter certificate | `results/geometry_sota/` plus a MergeBench-style comparison family | A commensurable preservation certificate plus head-to-head merge baselines show portable behavior, not just probe alignment |
+| `R6` | Consolidation operator that adds structure without forgetting | `results/continual_learning/` | A fixed update operator beats replay-style baselines on preservation and capacity under a frozen evaluator and comparison budget |
 
-The largest current result families are:
+### R1. Baseline Suite Against Standard Practice
 
-| Result family | Size | Share of `results/` |
-| --- | ---: | ---: |
-| `nblora_vs_standard` | `0.22G` | `47.3%` |
-| `quantization_ab_survey` | `0.06G` | `12.0%` |
-| `pipeline_validation_cert_350m` | `0.04G` | `8.1%` |
-| `pipeline_validation_cert_350m_scoped` | `0.04G` | `8.1%` |
+This is the first active blocker because "better than standard practice" is the
+mission claim, not an optional benchmark.
 
-Those four families account for about `75.5%` of the current `results/`
-directory. The cleanup story has changed: the biggest remaining risk is no
-longer static historical dumps, but a live benchmark family
-(`results/nblora_vs_standard/`) repopulating raw adapters inside its canonical
-results path.
+Current state:
 
-### "Checkpoint sprawl" is really "results-as-checkpoints"
+- `results/nblora_vs_standard/` retains standardized slices and a grid-search
+  summary, but it is not yet a promotable benchmark bundle.
+- The repo has no mandatory, stable same-model same-data same-eval suite across
+  the PEFT baseline set.
 
-There is no top-level `checkpoints/` tree right now. Saved adapters, run logs,
-and family summaries still live together under `results/`, so cleanup still has
-to treat `results/` as both evidence store and checkpoint store.
-
-## Roadmap: What We Should Do Next
-
-### R1. Prove the zero-guess training claim against standard baselines
-
-This is the highest-priority user-facing gap.
-
-Required controls on the same model, data, and eval slices:
+Required controls:
 
 - standard LoRA
 - rsLoRA
 - PiSSA
 - EVA
 - DoRA
-- recipe-level baselines where practical (TorchTune, Axolotl, or equivalent)
+- at least one recipe-level baseline such as TorchTune, Axolotl, or an
+  equivalent fixed recipe
 
-Promotion rule:
+### R2. Behavioral Preservation Operator
 
-- do not claim "better than standard practice" unless the comparison is
-  same-model, same-data, same-eval, and survives the preservation gates
+`results/pipeline_validation/verdict.json` still reports:
 
-### R2. Close the preservation gap before widening the claim surface
+- `all_pass = false`
+- `all_structural_pass = true`
+- `all_inference_pass = false`
 
-Current evidence says the structural certificates are not enough by themselves.
-The next measurement pass should focus on:
+This is the shortest path from "interesting geometry" to "the canonical
+training path really preserves behavior."
 
-- the operator behind `pipeline_validation` failures
-- the link between null-space accessibility, CKA blindness, and behavioral
-  degradation
-- the exact condition under which a structurally safe adapter still flips task
-  behavior
+The active work is not "collect more failures." It is to derive the operator
+that links null-space access, CKA blindness, and answer degradation.
 
-This is the shortest path from "interesting geometry" to "training is easier for
-people".
+### R3. 8B Non-Ceiling Closure
 
-### R3. Close the quantized-first story with an actual law, not a good run
+Current state:
 
-Quantized correction is promising, but the frontier claim still needs:
+- 8B mechanical viability exists.
+- `results/g5_8b_validation_multiseed/multiseed_gates.json` still has only one
+  tracked retained seed and does not close the efficacy claim.
 
-- an architecture-conditioned equation from crossing severity to CKA floor
-- paired FP-to-quantized sweeps at multiple bit depths
-- a repeatable closure at 8B
+This item stays active because "works on any model" is still untrue without
+pre-registered multi-seed 8B closure.
 
-Until then, quantized-first remains one of our strongest directions, not yet a
-closed platform advantage.
+### R4. Quantization Frontier Law
 
-### R4. Put the identity-layer vision back under a hard evidence leash
+Current state:
 
-Near-term order:
+- corrective quantization is one of the strongest current directions,
+- but the repo still lacks the law that predicts when geometry and behavior can
+  be preserved under reduced precision.
 
-1. consolidation without forgetting
-2. stacking with preservation certificates
-3. only then portability and sovereignty claims at the user level
+This is the bridge between "quantized-first by doctrine" and "quantized-first
+by measured control."
 
-The project should not talk like the identity layer is operational until the
-preservation math is stronger than the narrative.
+### R5. Portable Adapter Certificate
 
-### R5. Clean the research surface so signal can win
+The merge work is important, but it is still experimental. Alignment on probes
+is not yet a portable identity certificate.
 
-#### Scripts
+This item becomes active only after R1-R4 because portability is downstream of
+having a canonical engine and preservation math that already closes on a fixed
+substrate.
 
-- Classify every script as one of: `canonical`, `summary_only`, `delete`
-- Every script that remains live in the repo must declare:
-  - owner
-  - claim or question served
-  - expected artifact path
-  - whether it has tests
-- Keep `scripts/INVENTORY.md` generated from
-  `scripts/report_research_inventory.py`, not hand-maintained
+### R6. Consolidation Operator
 
-#### Results
+The continual-learning code exists, but the central question is still open:
+what update law adds new structure without forgetting old structure?
 
-- Keep one canonical summary bundle per experiment family:
-  - `REPORT.md` or equivalent narrative
-  - machine-readable summary JSON
-  - one canonical artifact bundle if the experiment really produced a reusable
-    adapter or model
-- Delete per-run bulky adapters from the worktree once their summary metrics are
-  extracted and any genuinely reusable canonical artifact is retained
-- Start with `results/nblora_vs_standard/`, because it is now the main live
-  source of result-family regrowth
+This is a vision gate, not a current mission-closure substitute.
 
-#### Claims
+## Parked
 
-- Maintain the generated registry that maps:
-  - claim
-  - script
-  - artifact path
-  - evidence status
-  - next falsifier
+These threads are scientifically valuable, but they are not allowed to displace
+the active ladder unless they become a direct blocker for one of `R1`-`R6`.
 
-Without this, the project keeps rediscovering its own past work.
+| Thread | Why it is parked | Main artifacts |
+| --- | --- | --- |
+| Entropy-curvature middle chain | important for deeper theory, but not the shortest path to closing the canonical engine | `results/entropy_curvature_operator_split/`, `results/f5_sign_law_analysis_6models/`, [SOTA-AUDIT-2026-03.md](/Users/jasonkempf/ModelCypher/docs/research/SOTA-AUDIT-2026-03.md) |
+| Local-ID mechanism work | mechanism-rich, but not the present blocker on mission promotion | `results/tangent_subspace_id_mechanism/` |
+| DPI-compatible information replacement | important doctrine hygiene, not the immediate reason the canonical path is blocked | `results/information_bridge_linear_cka/`, [linear_accessible_information_derivation.md](/Users/jasonkempf/ModelCypher/docs/research/linear_accessible_information_derivation.md) |
+| LKM capacity sweep | useful benchmark discipline and harness design | `results/lora_memory_capacity_validation/`, [LKM-AREA-1-RUN-MANIFEST.md](/Users/jasonkempf/ModelCypher/docs/research/LKM-AREA-1-RUN-MANIFEST.md) |
+| Quantization A/B surface survey | good measurement surface inventory, not itself the frontier law | `results/quantization_ab_survey/` |
 
-## Exit Criteria For The Next Roadmap Update
+Parked means:
 
-We should update this document again only after at least one of these is true:
+- keep summary artifacts,
+- do not create new canonical work unless reactivated,
+- classify new work as exploration unless it is explicitly tied back to an
+  active blocker.
 
-- A baseline suite proves or refutes that the canonical training path beats
-  standard practice on matched comparisons
-- The 8B closure has at least three complete seeds and either passes all gates
-  or fails with a traced mechanism
-- The preservation operator behind `pipeline_validation` failures is identified
-  and re-tested
-- The script and result inventories are generated and the top storage-heavy
-  result families are reduced to canonical evidence bundles plus retained
-  summaries, with raw runs deleted from the worktree
+## Archived
 
-## References
+Archived means "do not spend new canonical cycles here unless a later blocker
+forces a return."
 
-- `docs/VISION.md`
-- `docs/MISSION.md`
-- `docs/research/OPEN-MATHEMATICAL-QUESTIONS.md`
-- `docs/research/SOTA-AUDIT-2026-03.md`
-- `docs/research/field_map_external_methods.md`
-- `docs/research/PRODUCT-MAINTENANCE-AUDIT-2026-03.md`
-- `results/sota_audit_2026_03/scorecard.md`
-- `results/repo_research_inventory/README.md`
-- `results/repo_research_inventory/retention_plan.md`
-- `results/pipeline_validation/REPORT.md`
-- `results/g5_8b_validation_multiseed/REPORT.md`
-- `results/closedform_sequential_correction/20260227T173057Z/closedform_correction.json`
-- [Hugging Face PEFT LoRA docs](https://huggingface.co/docs/peft/main/package_reference/lora)
-- [Axolotl config reference](https://docs.axolotl.ai/docs/config-reference.html)
-- [TorchTune LoRA single-device recipe](https://docs.pytorch.org/torchtune/0.6/recipes/lora_finetune_single_device.html)
-- [Unsloth LoRA hyperparameters guide](https://unsloth.ai/docs/get-started/fine-tuning-llms-guide/lora-hyperparameters-guide)
+Examples:
+
+- Shannon-style MI depth-decay claims
+- the old Lipschitz LR derivation
+- `beta_1` as a direct reasoning-success predictor
+- mixed-model narratives already downgraded by the first-principles review pass
+
+Historical material belongs in dedicated notes, archived result families, and
+git history, not in the active ladder.
+
+## Operating Rules
+
+### No Linked Blocker, No Experiment
+
+Every new experiment, script, or repeated run family must declare one of:
+
+- an active roadmap item ID (`R1`-`R6`), or
+- an active open-question ID from
+  [OPEN-MATHEMATICAL-QUESTIONS.md](/Users/jasonkempf/ModelCypher/docs/research/OPEN-MATHEMATICAL-QUESTIONS.md).
+
+If it cannot declare one, it is parked exploration and must not create a new
+canonical repo surface.
+
+### Inventory Status Is Binding
+
+Use `results/repo_research_inventory/` as the triage source of truth.
+
+- `canonical`: live evidence bucket tied to an active blocker
+- `summary_only`: dormant unless explicitly reactivated by roadmap/OpenQ linkage
+- `delete`: off-limits for agent resurrection unless a human explicitly
+  reopens the thread
+
+### Canonical Family Artifact Bundle
+
+Every new canonical research family must emit:
+
+1. `REPORT.md`
+2. a machine-readable summary JSON
+3. a run manifest or charter
+4. an append-only ledger
+
+Historical families do not need blanket backfill. This rule applies when a
+family is newly promoted or reactivated.
+
+## What We Should Stop Doing
+
+- stop widening the active surface because a result is interesting
+- stop treating exploratory merge or continual-learning code as mission closure
+- stop creating free-range experiment families that are not tied to `R1`-`R6`
+- stop promoting internal strength as field position without baseline controls
+
+## Bottom Line
+
+The repository should feel narrower after this file, not broader.
+
+If a thread does not close:
+
+1. the baseline suite,
+2. the preservation operator,
+3. 8B closure,
+4. the quantization frontier law,
+5. the portability certificate, or
+6. the consolidation operator,
+
+then it is not the work that should currently dominate the repo or the agents.

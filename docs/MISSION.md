@@ -88,6 +88,23 @@ Retroactive doctrine cleanup is mandatory whenever a claim is found to lack:
 3. measurement commensurability proof,
 4. explicit falsifier.
 
+## Scope Cascade
+
+These four documents do different jobs and must stay aligned:
+
+- **Mission**: what must become promotably true in the canonical geometric
+  engine
+- **Vision**: what mission success may later enable
+- **Roadmap**: the closure order from current evidence to promotable claims
+- **Open Questions**: only the mathematical blockers on that closure order
+
+Mission accounting is intentionally narrow:
+
+- `mc train run` is the only clearly shipped canonical surface counted toward
+  mission closure today
+- merge, continual learning, stacking, and sovereignty remain downstream,
+  experimental, or partial until their own certificates close
+
 ## "Fine" Is the Enemy of Correct
 
 A forward pass is a deterministic geometric map. Given parameters and input, there is exactly one output. There is no "fine." There is no "close enough." There is no "reasonable approximation." There is the correct answer, derived from the geometry, or there is a wrong answer you stopped questioning too early.
@@ -356,55 +373,68 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 
 ## Current State
 
-### Implemented and Validated (all wired into `mc train run`)
+### Canonical Surface Status
 
-- NB-LoRA via Cayley transform — spectral bounds by construction (Wang et al. 2025)
-- Cayley-Stiefel retraction — Stiefel constraint via Cayley map (Wen & Yin 2013, Lezcano-Casado 2019). Pullback metric `P = (I+Z)(I+Z)^T` removed after cross-family falsification (2026-02-23: `P ≈ I`, Cohen's d = 0.12 at 200 steps). See `results/weight_geometry/trajectory_falsification_200_multiseed_summary.json`.
-- Weyl budget monitoring — capacity usage tracking with `compute_budget_ratios()` (Weyl 1912, Shuttleworth et al. 2024)
-- MASS step size — `eta_step = min(eta_ceiling, eta_sps, eta_weyl)`: Weyl ceiling (√N Brownian budget) + SPS (Loizou 2020) + Weyl displacement + val backoff. Replaces broken Lipschitz derivation (HVP spans 3 OOM across minibatches; see `docs/research/lr_derivation_analysis.md`)
-- Validation-based stopping — val loss convergence via `check_val_loss_converged()` + best checkpoint restore (validated in 4-arm × 3-seed ablation, 2026-02-17)
-- CKA verification — post-training capability preservation check against base model activations (Kornblith et al. 2019)
-- Per-layer geometric optimizer config — ε, decay, spectral_gap from SVD
-- Zero magic numbers in training codepath (all thresholds from SVD or IEEE 754)
-- Training validated on 3 model scales (350M, 700M, 1.2B); 8B mechanically validated (spectral ratio 0.062, stopping catches degradation, geometry analysis + injection confirmed)
-- Ablation-validated on 350M (2026-02-17): pure CE + Cayley-Stiefel is optimal; constrained training (invariance, separation, geodesic) monotonically hurts — disabled; available via service API for experiments only
-- Backend abstraction (MLX, JAX, CUDA) — framework imports only in backend files
-- bf16 SVD guard in `compute_per_layer_signal_ranks` (2026-02-27): activations cast to float32 before SVD; required for 8B bf16 models
-- CI-based online eval degradation (2026-02-27): `degraded = degraded_significant` via Clopper-Pearson non-overlap at `alpha = 1/N`. Raw count and significance tracked independently. Replaces single-point comparison that locked in transient valleys.
-- Quantization frontier precheck (2026-03-05): activation-aware centered-Gram validation on FP-vs-quantized probe activations before training. Fails closed only when the frontier operator cannot be measured; raw Weyl crossing remains nested telemetry. Research override: `research_allow_quantization_frontier_invalid=True`.
-- Headroom CI preflight + ceiling override (2026-02-27): when `headroom_upper <= 1/n_total` (baseline at CI ceiling), forces CE-only regime — no REINFORCE, no entropy regularization. Prevents wasted compute at saturated baselines.
-- Marchenko-Pastur domain module (2026-02-27): `marchenko_pastur.py` — noise-edge derivation from eigenvalue spectrum + sample ratio. Used by Tikhonov correction and MP-weighted null-space projector. 23 unit tests.
-- MP-weighted null-space projector (2026-02-27): `compute_null_space_projector()` in `transplant.py` uses Tikhonov shrinkage weights `w_i = λ_i/(λ_i + α)` with α = MP noise edge, replacing binary eigenvalue mask. Diagnostic on real LFM2-350M activations: 60-67% of eigenvalues fall between IEEE threshold and MP edge in non-bottleneck layers. Shrinkage operator has eigenvalues in [0,1] (monotone, not idempotent). 146 null-space/transplant tests passing.
-- MP-weighted null-space projector validated via A/B test (2026-02-28): Tikhonov won all 5 metrics vs binary eigenvalue mask — preserved fraction +35% (0.517 vs 0.384), degeneration 0.088 vs 0.759, PPL 17.93 vs 18.16, CKA 0.9997 vs 0.9996. Binary projector mode removed; Tikhonov is sole mode. `scripts/merge_ab_test.py` retained as validation harness.
-- Quantization correction CLI promotion (2026-02-27): `mc quantize correct` promoted with sequential Tikhonov orchestration in `quantization_correction_service.py`. Command is now part of production CLI surface.
-- ActivationProviderAdapter delegation fix (2026-02-28): 4 adapter methods (`collect_intermediate_activations`, `collect_probe_activations_batch`, `collect_intermediate_activations_batch`, `collect_gate_activations_batch`) now delegate to backend instead of silently returning hidden activations. Root cause of wrong-dimension intermediate/gate data in profiles. 9 delegation contract tests.
-- Scale bound relaxation (2026-03-08): σ_k/2 → σ_max/2 × (1 - √ε). Adapter can perturb at weight scale instead of noise-floor scale. MASS per-step bounds still limit displacement. Val_loss dropped from 2.07 to 0.989 on LFM2-350M.
-- Diagonal Fisher preconditioner (2026-03-08): per-parameter v_t = EMA(g²), d_t = m̂_t/(√v̂_t + ε). β₁ derived from half-epoch window ∩ precision ceiling. β₂ = 0.999 (IEEE 754: EMA error < √ε after 119+ steps). Replaces vanilla SGD in training loop.
-- Certificate gate (2026-03-09): `should_certificate_stop()` — geometric certificate gated by val_loss improvement. If val_loss improved this epoch, model is still learning regardless of gradient snapshot — do not stop. Prevents stochastic false positives from alignment sign flips and high-variance gradient norms.
-- Module selection expansion (2026-03-08): `include_zero_tail=True` — full-rank layers with spectral_gap > 0 get rank-1 adapters. Previously excluded by zero-tail filter.
-- Auto-retention disabled by default (2026-03-08): Cayley bound provides preservation by construction; retention loss diluted gradient signal 2×. Disabled via `auto_retention=False`.
-- Weight decay support (2026-03-08): AdamW-decoupled weight decay in Fisher-preconditioned optimizer. Default 0.0 (no decay unless explicitly set).
-- Head-to-head preliminary result (2026-03-09): NB-LoRA val_loss=0.989 vs standard LoRA 1.180 vs tuned LoRA (best of 9 grid) 1.171 on LFM2-350M (single seed=42, commensurable eval — full val set, batch_size=1, cross-entropy). 0 hyperparameters vs 7+. Spectral bounds verified by construction (max_ratio=0.265). Pending: 5-seed + Qwen3.5-0.8B cross-architecture + lm-eval benchmarks.
-- 82%+ test coverage, 6809 tests passing (2026-02-28)
+Mission accounting is intentionally narrow:
 
-### Remaining Gaps
+- `mc train run` is the only clearly shipped canonical surface counted toward
+  mission closure today
+- its runtime path is geometry-derived and guarded by `pipeline_gate_v1`
+- the canonical engine is still not closed because the baseline suite,
+  behavioral preservation, 8B efficacy, and the quantization frontier law all
+  remain open
 
-| Gap | What's Known | What's Missing | Impact |
-|-----|-------------|---------------|--------|
-| **8B training efficacy** | Mechanical validation passes (no crash, spectral ratio 0.062, stopping catches degradation). Multi-seed on non-ceiling eval (65% baseline): seed 42 done (3/5 gates: no_crash, spectral_ok, accuracy_ok pass; cka_ok fail min=0.925, degenerate_ok fail), seed 43 running. | Aggregate multi-seed results. Need 2+ seeds to assess variance and determine if CKA/degeneration failures are systematic or seed-dependent. | G5 mechanically closed, efficacy open |
-| **Quantization correction ceiling** | Tikhonov closed-form correction validated cross-scale and cross-architecture (2026-02-27). **Qwen3-1.7B**: CKA +0.014/+0.18, PPL -0.06, degen -0.05. **Qwen3-8B**: CKA +0.033/+0.181, PPL -0.04, degen -0.016. **Llama-3.2-3B**: PPL -0.08, degen -0.056, CKA near-flat (baseline already 0.992). Gains scale with quantization damage magnitude. Marchenko-Pastur noise edge (one formula, no sweep). | CKA mean 0.909 (Qwen3-1.7B) still far from 0.9997 guardrail. 8B shows CKA 0.877 post-correction. Llama-3.2-3B shows CKA 0.992 baseline — 4-bit g64 affine causes minimal damage on this architecture. The CKA floor is architecture- and quantization-scheme dependent, not a universal constant. | G4 CKA guardrail not met on 4-bit; ceiling is architecture-dependent |
-| **Scale bound tradeoff [CLOSED 2026-03-08]** | Relaxed σ_k/2 → σ_max/2 × (1 - √ε). MASS per-step displacement still bounded. Val_loss dropped from 2.07 to 0.989 on LFM2-350M. The capacity bottleneck was the scale bound, not the optimizer or stopping criterion. | None — closed. | Closed |
-| **Head-to-head multi-seed closure** | Single seed preliminary (2026-03-09): NB-LoRA 0.989 vs standard LoRA 1.180 vs tuned LoRA 1.171 on LFM2-350M. 0 HPs vs 7+. Commensurable eval (full val set, batch_size=1, CE). | 5-seed run for statistical significance. Qwen3.5-0.8B cross-architecture validation. lm-eval benchmarks (7 tasks). | Promotion from [PRELIMINARY] to [VALIDATED] |
-| **Stopping oscillation sensitivity** | CI-based degradation gate is implemented end-to-end (`degraded = degraded_significant`) with Clopper-Pearson non-overlap at `alpha = 1/N`; raw-vs-significant telemetry is propagated in training + research artifacts. | Multi-seed confirmation that false stop/rollback events are eliminated under transient valleys in 8B non-ceiling runs. | G3 mechanism closed in code, empirical closure pending |
-| **Merge pipeline end-to-end A/B closure [CLOSED 2026-02-28]** | Tikhonov won all 5 metrics: preserved fraction +35%, degeneration 12× better, PPL and CKA both improved. Binary projector mode removed. Pipeline dimension guard added for profiles with hidden-dim fallback intermediates. ActivationProviderAdapter root cause fixed. | None — closed. | Closed |
+What is already true on the canonical path:
 
-### What Closes the Gaps
+- the runtime training surface no longer exposes the old user-facing
+  hyperparameter bypasses
+- spectral safety, MASS control, data-derived stopping, and preservation
+  telemetry are wired into `mc train run`
+- `results/pipeline_validation/verdict.json` still reports `all_pass = false`
+  even while `all_structural_pass = true`
 
-1. **8B efficacy separation**: Build a fixed non-ceiling online-eval set (`scripts/g5_build_non_ceiling_eval_set.py`), then run 3 seeded validations with FP reference required (`scripts/g5_8b_multiseed_closure.py`). Current artifact: `results/g5_8b_validation/non_ceiling_eval_set_8b.json` (`13/20 = 65%`, generated 2026-02-27).
-2. **Quantization correction cross-scale validation [CLOSED 2026-02-27]**: Validated on Qwen3-8B (CKA +0.033/+0.181, PPL -0.04, degen -0.016) and cross-architecture on Llama-3.2-3B (PPL -0.08, degen -0.056). Gains are proportional to quantization damage: 8B (larger damage → larger correction), Llama (minimal damage → minimal CKA change but PPL/degen still improve). CKA ceiling confirmed architecture-dependent.
-3. **Quantization frontier mapping**: Join activation-aware frontier observables and raw Weyl telemetry with observed CKA floors and Tikhonov correction ceilings across bit-depths (4-bit, 8-bit) using centered-Gram perturbation, `D_eff`-conditioned gaps, `max(error/(gap/2))`, and `min_cka`.
-4. **Merge projector closure [CLOSED 2026-02-28]**: A/B test completed — Tikhonov dominated all 5 metrics. Binary projector mode retired. ActivationProviderAdapter delegation fixed (root cause of wrong-dimension intermediate/gate profiles).
-5. **Significance-based stopping**: Implemented. Remaining work is empirical closure in multi-seed 8B non-ceiling runs.
+What does **not** count as mission closure yet:
+
+- experimental merge workflows
+- continual-learning or consolidation infrastructure
+- stacking infrastructure
+- sovereignty or user-owned identity runtime flow
+
+### Mission Blockers
+
+| Blocker | Current evidence | Exit criterion |
+| --- | --- | --- |
+| Head-to-head baseline suite | `results/nblora_vs_standard/` retains standardized slices and a grid summary, but not a promotable benchmark bundle | same-model same-data same-eval multi-seed comparison against standard LoRA, rsLoRA, PiSSA, EVA, DoRA, and a recipe-level baseline survives preservation gates |
+| Behavioral preservation operator | `results/pipeline_validation/verdict.json` shows structural pass without inference closure | a pre-registered operator predicts and explains the retained failure cases before online degradation |
+| 8B non-ceiling efficacy | `results/g5_8b_validation_multiseed/multiseed_gates.json` keeps open failures in `cka_ok` and `degenerate_ok` | the pre-registered 8B seed set closes the full gate bundle on the fixed non-ceiling evaluator |
+| Quantization frontier law | `results/quantization_frontier/` and `results/closedform_sequential_correction/` are promising but incomplete | one architecture-conditioned frontier statistic predicts achieved CKA floor and degeneration behavior across bit-depth sweeps |
+
+### Downstream Vision Gates
+
+These matter, but they are downstream of canonical mission closure:
+
+| Gate | Current state | Why it is downstream |
+| --- | --- | --- |
+| Portable adapter certificate | partial / experimental | depends on stronger preservation math and baselineed merge comparison |
+| Stacking preservation certificate | experimental | requires portable behavior, not just probe alignment |
+| Consolidation operator | experimental | depends on a non-forgetting update law and fixed continual-learning baselines |
+| Sovereignty infrastructure | not built | requires runtime and product infrastructure after the geometry closes |
+
+### Closure Order
+
+Mission-first order:
+
+1. baseline suite against standard practice
+2. causal operator for behavioral failure when structural safety passes
+3. 8B non-ceiling efficacy closure
+4. quantization frontier law
+
+Vision-gate order after that:
+
+5. portable adapter certificate
+6. consolidation operator
+7. stacking preservation certificate
+8. sovereignty infrastructure
 
 ---
 

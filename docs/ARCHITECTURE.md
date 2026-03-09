@@ -84,33 +84,46 @@ The entry points that drive the application.
 
 ## Key Components
 
-### Manifold Stitcher (`domain/geometry/manifold_stitcher.py`)
+### Manifold Stitcher (`src/modelcypher/core/domain/geometry/manifold_stitcher.py`)
 Responsible for aligning two disparate model manifolds using Procrustes analysis.
 
-### Probe inventories (`core/domain/agents/unified_atlas.py`, `data/probes/*.json`)
+### Probe inventories (`src/modelcypher/core/domain/atlas/`, `src/modelcypher/data/`)
 Built-in probe inventories used to elicit comparable activations from different models.
 
-Semantic primes are a separate anchor inventory (see [ATLAS-BASED-GEOMETRY.md](research/ATLAS-BASED-GEOMETRY.md) and `src/modelcypher/data/semantic_primes.json`).
+Semantic primes are a separate anchor inventory (see
+[ATLAS-BASED-GEOMETRY.md](research/ATLAS-BASED-GEOMETRY.md) and
+`src/modelcypher/data/semantic_primes.json`).
 
-### Circuit Breaker (`domain/safety/circuit_breaker_integration.py`)
+### Circuit Breaker (`src/modelcypher/core/domain/safety/`)
 Aggregates safety-relevant signals (entropy/refusal/persona drift, etc.) and exposes a circuit-breaker decision for integrations (jobs, inference, dashboards).
 
 ## Domain Modules
 
-The core domain is organized by concern:
+The canonical core domain is organized by the directories that actually exist:
 
 | Domain | Description |
 |--------|-------------|
 | `geometry/` | Path detection, manifold analysis, CRM, topological fingerprints |
 | `entropy/` | Entropy tracking, divergence calculation, model state classification |
 | `safety/` | Adapter safety, circuit breaker, capability guard |
-| `merging/` | Null-space transplant primitives and merge math |
-| `agents/` | Trace analytics, action validation, LoRA expert routing |
 | `training/` | Checkpoint management, preflight checks, resource guards |
-| `validation/` | Auto-fix engine for training data |
-| `thermo/` | Linguistic thermodynamics, ridge detection, phase transitions |
-| `adapters/` | LoRA inspection, projection, and adapter utilities |
 | `inference/` | Unified generation, entropy dynamics |
+| `atlas/` | Probe inventories and domain anchors |
+| `moe/` | Mixture-of-experts selection and routing support |
+| `star/` | STAR-style training and reasoning support |
+| `cache/` | Canonical cache and memoization helpers |
+
+Experimental work lives under `src/modelcypher/experimental/`.
+
+Important consequence:
+
+- merge workflows are currently experimental
+- continual learning and consolidation are currently experimental
+- stacking is currently experimental
+- user-facing docs should not describe those workflows as if they were canonical
+
+The canonical engine today is centered on `mc train run`, backend-backed model
+loading/activation collection, and the core geometry/training stack.
 
 ## Backend Protocol
 
@@ -179,9 +192,13 @@ sequenceDiagram
     SVC-->>CLI: ProbeResult
 ```
 
-## Data Flow: Model Merge Pipeline
+## Data Flow: Model Merge Pipeline (Experimental)
 
-The `mc merge run` command orchestrates a four-stage merge pipeline implemented in `src/modelcypher/core/use_cases/merge/`:
+The `mc merge run` command currently wraps the experimental merge stack under
+`src/modelcypher/experimental/merge/`.
+
+Pipeline order:
+
 - `PROBE → DENSITY → TRANSPLANT → VALIDATE`
 
 ```mermaid
@@ -228,16 +245,23 @@ flowchart LR
 
 Pipeline order (null-space transplant path):
 
-1. **Probe** (CKA + activations): `src/modelcypher/core/use_cases/merge/stages/probe.py`
-2. **Density** (graft mask): `src/modelcypher/core/use_cases/merge/stages/density.py`
-3. **Transplant** (null-space constrained): `src/modelcypher/core/use_cases/merge/stages/transplant.py`
-4. **Validate** (post-merge checks): `src/modelcypher/core/use_cases/merge/stages/validate.py`
+1. **Probe** (CKA + activations):
+   `src/modelcypher/experimental/merge/stages/probe.py`
+2. **Density** (graft mask):
+   `src/modelcypher/experimental/merge/stages/density.py`
+3. **Transplant** (null-space constrained):
+   `src/modelcypher/experimental/merge/stages/transplant_stage.py`
+4. **Validate** (post-merge checks):
+   `src/modelcypher/experimental/merge/stages/validate.py`
 
-Pre-merge analysis and post-merge validation are orchestrated in `MergePipelineService` (not part of `run_merge()`).
+CLI wiring and orchestration are also experimental today.
 
 **Entry points:**
-- CLI: `mc merge` → `MergePipelineService` (`src/modelcypher/core/use_cases/merge/service.py`)
-- API: `UnifiedGeometricMerger.merge()` → `run_merge()` (`src/modelcypher/core/use_cases/merge/merger.py`)
+- CLI: `mc merge` →
+  `src/modelcypher/cli/commands/merge.py` →
+  `src/modelcypher/cli/composition.py`
+- API: `UnifiedGeometricMerger.merge()` in
+  `src/modelcypher/experimental/merge/merger.py`
 
 **Transplant occupancy:**
 - Stage 3 persists per-layer occupancy weights to `transplant_occupancy.json` in the output dir
@@ -246,27 +270,30 @@ Pre-merge analysis and post-merge validation are orchestrated in `MergePipelineS
 **Permutation alignment note:**
 - The older permutation stage (Git Re-Basin) is intentionally skipped; alignment is handled by the probe stage's Gram/CKA-derived transforms [PROVEN]
 
-### Merge Directory Layout
+### Experimental Merge Directory Layout
 
 ```
-src/modelcypher/core/use_cases/merge/
+src/modelcypher/experimental/merge/
 ├── __init__.py
-├── merger.py              # UnifiedGeometricMerger + run_merge entry
-├── pipeline.py            # run_merge implementation
-├── service.py             # MergePipelineService (CLI orchestration)
-├── models.py              # UnifiedMergeConfig, UnifiedMergeResult
+├── merger.py              # UnifiedGeometricMerger entry point
+├── pipeline.py            # experimental pipeline orchestration
+├── service.py             # service wrapper
+├── models.py              # merge configs and results
 ├── metrics.py             # geometric metric aggregation
-├── validation.py          # MergeValidationService
 ├── helpers.py             # loading/utilities
 ├── infrastructure.py      # adapter wiring helpers
 ├── stages/
 │   ├── probe.py
 │   ├── density.py
-│   ├── transplant.py
+│   ├── transplant_stage.py
 │   ├── validate.py
 │   ├── manifest.py
 │   └── __init__.py
 ```
+
+This workflow remains useful and evidence-bearing, but it should be read as
+experimental until the portability certificate and architecture cleanup pass are
+closed.
 
 **References:**
 - Null-space transplant: *AlphaEdit* ([arXiv:2410.02355](https://arxiv.org/abs/2410.02355))

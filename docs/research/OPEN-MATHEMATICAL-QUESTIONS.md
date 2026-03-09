@@ -1,250 +1,118 @@
 # Open Mathematical Questions
 
-**Updated:** 2026-03-08
+**Updated:** 2026-03-09
 
 ## What This File Is For
 
-This file is now the active derivation backlog.
+This file is the active mathematical blocker list.
 
 A question belongs here only if all three are true:
 
-1. it blocks promotion of a mission, roadmap, or vision claim
-2. it still needs a causal operator, equation, measurement operator, or falsifier
-3. it is still open today
+1. it blocks promotion of a claim in
+   [MISSION.md](/Users/jasonkempf/ModelCypher/docs/MISSION.md),
+   [VISION.md](/Users/jasonkempf/ModelCypher/docs/VISION.md), or
+   [RESEARCH-ROADMAP.md](/Users/jasonkempf/ModelCypher/docs/RESEARCH-ROADMAP.md),
+2. it still needs a causal operator, equation, measurement operator, or
+   falsifier,
+3. it is on the active ladder in
+   [RESEARCH-ROADMAP.md](/Users/jasonkempf/ModelCypher/docs/RESEARCH-ROADMAP.md).
 
-If a topic is mainly about prioritization, benchmarking, repo cleanup, or
-artifact hygiene, it belongs in `docs/RESEARCH-ROADMAP.md`, not here.
-
-Historical solved and refuted material has not been discarded. It now belongs in
-dedicated research notes and the git history instead of living in one giant
-mixed-status file.
+If a topic is mainly about prioritization, repo cleanup, artifact retention, or
+field positioning, it does not belong here.
 
 ## Active Questions
 
 ### Q1. What operator predicts behavioral failure when structural safety still passes?
 
+**Roadmap link:** `R2`
+
 **Why this is open**
 
-The canonical training path can pass structural checks and still fail behavioral
-preservation.
-
-**Why it matters**
-
-This is the main blocker on the claim that training can be easier for people
-because the geometry removes guessing.
+The canonical training path can pass structural checks and still fail
+behavioral preservation.
 
 **Current evidence**
 
 - `results/pipeline_validation/verdict.json`: 350M structural pass `5/5`,
-  inference pass `3/5`, composite pass `3/5`
-- `results/pipeline_validation/REPORT.md`: failures show high
-  `cka_blindness_ratio`, low `null_access_min_behavioral_preserved_fraction`,
-  and margin-sign flips despite acceptable structural measurements
+  inference pass `3/5`
+- retained failure diagnostics point to high `cka_blindness_ratio`, low
+  `null_access_min_behavioral_preserved_fraction`, and margin-sign flips
 
 **What is missing**
 
 - a causal operator from adapter perturbation to behavioral degradation
-- a commensurable measurement linking null-space access, CKA blindness, and
-  answer degradation
+- a commensurable measurement linking null-space accessibility, CKA blindness,
+  and answer degradation
 
 **Next falsifier**
 
 Pre-register a layer-local intervention that predicts failure before online eval
-degrades. If the predicted layer does not move the degradation metric, the
-candidate operator is wrong.
+degrades. If the predicted intervention does not move degradation, the operator
+is wrong.
 
 ### Q2. When is a global MASS ceiling sufficient, and when is per-layer control required?
 
+**Roadmap link:** `R3`
+
 **Why this is open**
 
-MASS is the active training controller, but the scale law is still incomplete.
-
-**Why it matters**
-
-Without this, the one-command training claim cannot honestly generalize across
+MASS is the active controller, but the scale law is still incomplete across
 architectures and scales.
 
 **Current evidence**
 
-- `docs/MISSION.md`: MASS is the canonical controller
-- `results/g5_8b_validation_multiseed/multiseed_gates.json`: mechanical gates
-  are partly healthy at 8B, but full closure is not
-- `results/pipeline_validation/verdict.json`: 350M still shows unresolved
-  behavioral failure cases
+- the canonical controller is wired into `mc train run`
+- 350M still shows unresolved behavioral failures
+- 8B mechanical viability exists, but efficacy closure is open
 
 **What is missing**
 
 - an architecture-conditioned and scale-conditioned law saying when the global
-  ceiling is enough
-- a falsifiable boundary between "global controller is valid" and
-  "per-layer controller is required"
+  controller is sufficient
+- a falsifiable boundary between valid global control and required per-layer
+  control
 
 **Next falsifier**
 
-Run matched global-vs-per-layer MASS experiments on the same model, dataset, and
-preservation suite. If per-layer control does not change the failure regime, the
-missing term is elsewhere.
+Run matched global-vs-per-layer MASS experiments on the same model, data, and
+preservation suite. If per-layer control does not change the failure regime,
+the missing term is elsewhere.
 
 ### Q3. What is the quantization frontier law?
+
+**Roadmap link:** `R4`
 
 **Why this is open**
 
 We have promising quantized correction results but not the law that predicts
-when the quantized model can preserve geometry and behavior.
-
-**Why it matters**
-
-Quantized-first is central to the vision. A few good corrective runs are not
-enough.
+when reduced precision can preserve geometry and behavior.
 
 **Current evidence**
 
-- `docs/research/quantization_frontier_precheck_v1_implementation_2026_03_05.md`
 - `results/quantization_frontier/`
-- `results/closedform_sequential_correction/20260227T173057Z/closedform_correction.json`
+- `results/closedform_sequential_correction/`
+- `results/quantization_ab_survey/`
 
 **What is missing**
 
-- the architecture-conditioned equation linking crossing severity to achievable
-  CKA floor and behavioral preservation
+- an architecture-conditioned equation linking crossing severity to achievable
+  CKA floor and degeneration behavior
 - a commensurable operator across bit-depths and architectures
 
 **Next falsifier**
 
-Run paired FP-to-quantized sweeps across multiple bit-depths and model families.
-If the same crossing statistic does not order the achieved CKA floor and
-degeneration outcomes, the frontier statistic is incomplete.
-
-### Q4. Is unused-subspace residual energy causally anti-degeneration?
-
-**Why this is open**
-
-Corrective and Tikhonov-style quantization work improved degeneration, but the
-causal mechanism is not yet identified.
-
-**Why it matters**
-
-This question decides whether we actually understand preservation under
-correction or are just benefiting from a lucky regularization effect.
-
-**Current evidence**
-
-- `results/closedform_sequential_correction/`
-- `results/stacked_corrective_recovery/` (archived: `/Volumes/CodeCypher/archive/results-refuted/`)
-- `results/corrective_lora_training/` (archived: `/Volumes/CodeCypher/archive/results-refuted/`)
-
-**What is missing**
-
-- the operator linking unused-subspace residuals to repetition suppression
-- an intervention that separates "less damage" from "better implicit
-  regularization"
-
-**Next falsifier**
-
-Use covariance-matched re-noise controls and direct interventions on
-`E_unused`. If degeneration does not track the manipulated residual energy, the
-anti-degeneration story is wrong.
-
-### Q5. What is the architecture-conditioned law from entropy or logit state to curvature and ID?
-
-**Why this is open**
-
-We have a strong middle-chain research thread, but the cross-family law is still
-underspecified.
-
-**Why it matters**
-
-This blocks promotion of the full causal chain behind highway phases and
-cross-architecture geometry claims.
-
-**Current evidence**
-
-- `results/entropy_curvature_operator_split/`
-- `results/f5_sign_law_analysis_6models/cross_model_summary.json`
-- `docs/research/SOTA-AUDIT-2026-03.md`
-
-**What is missing**
-
-- explicit architecture terms for same-GQA divergences such as Qwen3 vs Qwen3.5
-- the correct split between attention entropy, logit entropy, norm coupling, and
-  sublayer effects
-
-**Next falsifier**
-
-Fit one family-conditioned law and require it to predict sign and direction
-before reruns. If the law cannot predict the held-out family, the mechanism is
-still underspecified.
-
-### Q6. What local geometric operator actually drives TwoNN ID changes?
-
-**Why this is open**
-
-Several attractive explanations have already failed.
-
-**Why it matters**
-
-Without this, phase-language remains descriptive instead of mechanistic.
-
-**Current evidence**
-
-- `results/covariance_rank_id/` (archived): covariance-rank injection is not the mechanism
-- `results/tangent_subspace_id_mechanism/`: repaired atlas-backed reruns are the
-  active path; historical 2026-03-07 evidence is exploratory only
-- `docs/research/tangent_subspace_id_mechanism_2026_03_08.md`: repaired rerun
-  checkpoint with LFM2/Qwen completed and Llama still blocked in local tangent
-  alignment at `N=324`
-
-**What is missing**
-
-- a local operator commensurable with geodesic TwoNN
-- a falsifier that survives beyond one neighborhood-size choice
-
-**Next falsifier**
-
-Rerun the tangent-space mechanism with patched operators and higher probe count.
-If the signal disappears under a commensurable geodesic operator, tangent
-misalignment is not the explanation.
-
-### Q7. What is the correct DPI-compatible accessible-information observable for deterministic residual networks?
-
-**Why this is open**
-
-The old mutual-information depth-decay story is dead, but the replacement
-observable is not fully closed.
-
-**Why it matters**
-
-Information claims will keep reappearing unless the replacement observable is
-explicit and enforced.
-
-**Current evidence**
-
-- `docs/research/linear_accessible_information_derivation.md`
-- `results/dpi_analysis/` (archived: `/Volumes/CodeCypher/archive/results-refuted/`)
-- `results/information_bridge/` (archived: `/Volumes/CodeCypher/archive/results-refuted/`)
-- `results/information_bridge_linear_cka/`
-
-**What is missing**
-
-- a DPI-compatible observable that is valid for deterministic residual chains
-- debiased or sampling-aware CKA integration in the canonical geometry path
-
-**Next falsifier**
-
-If the debiased observable changes the cross-model conclusion, then the current
-operator is still too biased to promote.
+Run paired FP-to-quantized sweeps across multiple bit-depths and families. If
+the same frontier statistic does not order the achieved CKA floor and
+degeneration outcomes, the statistic is incomplete.
 
 ### Q8. What measurements are sufficient to certify portable cross-architecture adapters?
 
+**Roadmap link:** `R5`
+
 **Why this is open**
 
-We have merge machinery and portability claims, but not yet a complete
+We have merge machinery and portability language, but not yet a complete
 certificate for transfer and stacking.
-
-**Why it matters**
-
-This is the mathematical bottleneck between current merge work and the identity
-layer described in `docs/VISION.md`.
 
 **Current evidence**
 
@@ -261,21 +129,18 @@ layer described in `docs/VISION.md`.
 
 **Next falsifier**
 
-If a MergeBench-style comparison shows that null-space transfer does not beat or
-match standard merge baselines on preserved behavior, then portability is still
-an internal hypothesis, not a user-facing advantage.
+If a MergeBench-style comparison shows that null-space transfer does not match
+or beat standard baselines on preserved behavior, portability remains an
+internal hypothesis rather than a user-facing advantage.
 
 ### Q9. What consolidation operator adds new user structure without forgetting old structure?
 
+**Roadmap link:** `R6`
+
 **Why this is open**
 
-The nightly consolidation part of the vision depends on a specific update law,
-not on the existence of continual-learning code.
-
-**Why it matters**
-
-Without this operator, the "identity layer" remains narrative rather than
-stable mechanism.
+Nightly consolidation depends on a specific update law, not on the existence of
+continual-learning code.
 
 **Current evidence**
 
@@ -286,51 +151,35 @@ stable mechanism.
 **What is missing**
 
 - the exact additive or projected update operator
-- a preservation metric that is strong enough to certify non-forgetting
-- an intervention showing why the operator works better than replay or standard
-  continual-learning baselines
+- a preservation metric strong enough to certify non-forgetting
+- an intervention showing why the operator beats replay-style baselines
 
 **Next falsifier**
 
-Run before/after preservation tests under a fixed update operator and compare to
-standard replay-style baselines. If preservation is not measurably better, the
+Run before/after preservation tests under a fixed update operator and compare
+to replay-style baselines. If preservation is not measurably better, the
 consolidation story is still open.
 
-## Questions That Are No Longer Open
+## Secondary Research Threads
 
-These do not belong in the active blocker list anymore:
+These are important, but they are not active blocker questions right now:
 
-- Layer Jacobians are not rank-1 in trained transformers; the rank-collapse
-  claim was refuted
-- Highway location is not governed by one universal heuristic
-- The old Lipschitz step-size derivation failed and was replaced by MASS
-- Shannon-style mutual-information decay through deterministic residual depth was
-  refuted
-- `beta_1` as a direct predictor of reasoning success was refuted
+- entropy-curvature middle-chain derivation:
+  [SOTA-AUDIT-2026-03.md](/Users/jasonkempf/ModelCypher/docs/research/SOTA-AUDIT-2026-03.md)
+- local-ID mechanism work:
+  `results/tangent_subspace_id_mechanism/`
+- DPI-compatible information replacement:
+  [linear_accessible_information_derivation.md](/Users/jasonkempf/ModelCypher/docs/research/linear_accessible_information_derivation.md)
 
-If a solved or refuted question still matters, it should live in a dedicated
-note with artifact references, not remain in this file as pseudo-open work.
-
-## Historical Detail Lives Here Now
-
-- `docs/research/SOTA-AUDIT-2026-03.md`
-- `docs/research/field_map_external_methods.md`
-- `docs/research/linear_accessible_information_derivation.md`
-- `docs/research/lr_derivation_analysis.md`
-- `docs/research/covariance_rank_id_phase2_review_2026_03_05.md`
-- `docs/research/TANGENT-SUBSPACE-ID-FALSIFIER-PROTOCOL.md`
-- `docs/research/tangent_subspace_id_mechanism_2026_03_07.md`
-- `docs/research/quantization_frontier_precheck_v1_implementation_2026_03_05.md`
-- `docs/research/cross-architecture-geometry.md`
+If one of these becomes a direct blocker for `R1`-`R6`, it can be promoted back
+into the active list. Otherwise it stays out of this file.
 
 ## Inclusion Rule Going Forward
 
-When a question is solved, refuted, or clearly downgraded to an operational
-roadmap item:
+When a question is solved, refuted, or downgraded to a roadmap-only item:
 
-1. remove it from this file
-2. add the dedicated note or artifact pointer
-3. keep only the active blocker list here
+1. remove it from this file,
+2. link the dedicated note or retained artifact family,
+3. keep only the active blocker list here.
 
-This file should stay short enough that a researcher can read it in one pass and
-know exactly which mathematical questions still block promotion.
+This file should stay short enough to read in one pass.
