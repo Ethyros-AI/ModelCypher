@@ -457,6 +457,38 @@ def check_stopping_certificate(
     )
 
 
+def should_certificate_stop(
+    all_conditions_met: bool,
+    val_losses: list[float],
+) -> bool:
+    """Decide whether the geometric certificate should stop training.
+
+    The certificate evaluates stochastic gradient quantities at a single
+    epoch boundary.  A single-epoch alignment sign flip (``delta_max=0``)
+    or high-variance gradient norms (inflated SE → stationarity pass)
+    can cause false convergence while the loss is still dropping.
+
+    Guard: if val_loss improved this epoch, the model is still learning
+    regardless of what the gradient snapshot says — do not stop.
+
+    Args:
+        all_conditions_met: Whether the 5-condition certificate fired.
+        val_losses: Per-epoch validation losses (most recent last).
+
+    Returns:
+        ``True`` if training should stop, ``False`` to continue.
+    """
+    if not all_conditions_met:
+        return False
+    # Not enough history to determine improvement direction → trust cert
+    if len(val_losses) < 2:
+        return True
+    # Val_loss improved this epoch → model still learning → override cert
+    if val_losses[-1] < val_losses[-2]:
+        return False
+    return True
+
+
 __all__ = [
     "_SQRT_EPS",
     "StoppingCertificate",
@@ -464,4 +496,5 @@ __all__ = [
     "check_loss_stable",
     "check_stopping_certificate",
     "check_val_loss_converged",
+    "should_certificate_stop",
 ]

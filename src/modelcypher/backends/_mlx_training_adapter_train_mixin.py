@@ -29,6 +29,7 @@ from modelcypher.backends.mlx_training_adapter_core import *  # noqa: F403
 from modelcypher.core.domain.training.geometric_early_stopping import (  # noqa: F401
     check_loss_stable,
     check_val_loss_converged,
+    should_certificate_stop,
 )
 from modelcypher.core.domain.training.spectral_budget import (  # noqa: F401
     DTYPE_THRESHOLD_F32,
@@ -1724,39 +1725,28 @@ class _MLXTrainingAdapterTrainMixin:
                         certificate.task_improvement_met,
                         certificate.all_conditions_met,
                     )
-                    if certificate.all_conditions_met:
-                        # Guard: don't stop if val_loss improved this epoch.
-                        # The certificate evaluates stochastic gradient
-                        # quantities at one epoch boundary.  A single-epoch
-                        # alignment sign flip (delta_max=0) or high-variance
-                        # gradient norms (inflated SE → stationarity pass)
-                        # can cause false convergence while the loss is still
-                        # dropping.  If val_loss improved, the model is still
-                        # learning regardless of what the snapshot says.
-                        val_improved_this_epoch = (
-                            len(val_losses) >= 2
-                            and val_losses[-1] < val_losses[-2]
+                    if should_certificate_stop(
+                        certificate.all_conditions_met, val_losses,
+                    ):
+                        stop_reason = (
+                            f"certificate (‖g‖={certificate.grad_norm:.2e}, "
+                            f"Δmax={certificate.delta_max_val:.2e}"
+                            f"<CI={certificate.val_ci_half_width:.2e}, "
+                            f"epoch={epoch_num})"
                         )
-                        if val_improved_this_epoch:
-                            logger.info(
-                                "Certificate met at epoch %d but val_loss "
-                                "improved (%.4f → %.4f) — continuing",
-                                epoch_num,
-                                val_losses[-2],
-                                val_losses[-1],
-                            )
-                        else:
-                            stop_reason = (
-                                f"certificate (‖g‖={certificate.grad_norm:.2e}, "
-                                f"Δmax={certificate.delta_max_val:.2e}"
-                                f"<CI={certificate.val_ci_half_width:.2e}, "
-                                f"epoch={epoch_num})"
-                            )
-                            logger.info(
-                                "Certificate stop at iter %d: %s",
-                                it + 1, stop_reason,
-                            )
-                            break
+                        logger.info(
+                            "Certificate stop at iter %d: %s",
+                            it + 1, stop_reason,
+                        )
+                        break
+                    elif certificate.all_conditions_met:
+                        logger.info(
+                            "Certificate met at epoch %d but val_loss "
+                            "improved (%.4f → %.4f) — continuing",
+                            epoch_num,
+                            val_losses[-2],
+                            val_losses[-1],
+                        )
                 # 7c. Online eval degradation stop
                 if online_eval_stop_basis_degraded:
                     stop_reason = (

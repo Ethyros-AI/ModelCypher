@@ -121,13 +121,13 @@ The training engine is step one. Quantized-first geometric control is step two. 
 
 ---
 
-## Progress Assessment (2026-03-08)
+## Progress Assessment (2026-03-09)
 
 ### Capability Status
 
 | Capability | VISION Status | Actual Status | Evidence |
 |-----------|--------------|---------------|----------|
-| Geometry-derived training | "Validated, CLI-promoted" | **SHIPPED** — `mc train run` works, MASS validated on 350M-1.2B. 8B mechanically validated, efficacy open. | `results/pipeline_validation/`, `dataset_training_service.py` |
+| Geometry-derived training | "Validated, CLI-promoted" | **SHIPPED** — `mc train run` works. Head-to-head on 350M: NB-LoRA val_loss=0.989 vs standard LoRA 1.180 (0 vs 7+ HPs, commensurable eval). Multi-seed + cross-architecture pending. | `results/nblora_vs_standard/`, `dataset_training_service.py` |
 | Cross-architecture adapter portability | "Demonstrated via merge pipeline" | **PARTIAL** — CKA-aligned merging works. Real LoRA transfer across architectures is conjectural. | `experimental/merge/`, Tikhonov A/B test (2026-02-28) |
 | Nightly consolidation | "Experimental, architecture sound" | **EXPERIMENTAL** — Code exists. Not CLI. Not validated on real use case. | `experimental/continual/`, `experimental/use_cases/consolidation_service.py` |
 | Adapter stacking at inference | "Theoretical, infrastructure partial" | **EXPERIMENTAL** — Code exists. Not CLI. No preservation certificate. | `experimental/self_improve/lora_stacker.py` |
@@ -135,19 +135,32 @@ The training engine is step one. Quantized-first geometric control is step two. 
 
 **Summary:** 1/5 shipped. 1/5 partially shipped. 3/5 experimental or unbuilt. The vision is ~20% realized.
 
-### Critical Missing Piece: No Head-to-Head Benchmarks
+### Head-to-Head Status (2026-03-09)
 
-We have never run `mc train run` against HuggingFace PEFT with standard hyperparameters (AdamW + cosine LR) on the same model, data, and eval. The only comparison is val_loss 1.27 (Cayley-Stiefel) vs 1.38 (plain SGD) on 350M — but plain SGD is nobody's baseline.
+**[PRELIMINARY]** First head-to-head comparison on LFM2-350M (single seed=42, commensurable eval — full val set, batch_size=1, cross-entropy):
+
+| Arm | Val Loss | Hyperparameters | Spectral Safety |
+|-----|----------|-----------------|-----------------|
+| NB-LoRA | **0.989** | **0** (geometry derives everything including when to stop) | Bounded by construction (max_ratio=0.265) |
+| Standard LoRA | 1.180 | 7+ (lr, batch_size, rank, scale, dropout, optimizer, schedule, iteration count) | Unbounded (max_norm=1.909) |
+| Tuned LoRA (best of 9 grid) | 1.171 | 7+ (grid search selects config, still requires practitioner to design the grid) | Unbounded (max_norm=1.477) |
+
+Standard LoRA's iteration count is itself a hyperparameter — most practitioners have no idea how many epochs to run and eyeball loss curves or pick a round number from a tutorial. NB-LoRA's geometric certificate tells you when training is done. The comparison axis is adapter quality, not speed or iteration count.
+
+**Pending for promotion to [VALIDATED]:**
+- 5-seed run for statistical significance
+- Qwen3.5-0.8B cross-architecture validation
+- lm-eval benchmarks (7 tasks: arc_easy, arc_challenge, hellaswag, boolq, piqa, winogrande, openbookqa)
 
 **What we CAN claim:**
 - Every parameter is derived, not guessed. No magic numbers.
 - Weight space is Euclidean (cross-family falsification on LFM2 + Qwen).
 - REINFORCE through bounded adapters is algebraically dead.
 - The pipeline runs end-to-end with zero configuration.
+- **[PRELIMINARY]** Geometry-derived training produces a better adapter than standard LoRA with community-default hyperparameters on LFM2-350M — and a better adapter than the best of a 9-point grid search.
 
 **What we CANNOT claim (yet):**
-- That our training produces better adapters than standard LoRA + AdamW + reasonable LR.
+- That this result reproduces across seeds and architectures (pending multi-seed + Qwen3.5-0.8B).
 - That our merging produces better models than TIES/DARE/RegMean.
-- That geometry-derived hyperparameters outperform a good grid search.
 
-The honest assessment: we have reduced guessing in the control plane more than we have proven superiority in the outcome plane. See `docs/RESEARCH-ROADMAP.md` for the full roadmap to close these gaps.
+Preliminary evidence shows superiority in the outcome plane, not just the control plane. Multi-seed cross-architecture validation will determine whether this is promotable. See `scripts/experiment_nblora_vs_standard.py` for the comparison harness.
