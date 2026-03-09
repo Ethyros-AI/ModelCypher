@@ -26,6 +26,9 @@ Tracks doctrine and research documents audited under
 | 2026-03-05 | `docs/research/covariance_rank_id_phase2_review_2026_03_05.md` | Created | Captured Phase 2 review findings for `scripts/covariance_rank_id_analysis.py`: local-rank ceiling, sphere-curvature operator mismatch, and empty-run false confirmation |
 | 2026-03-05 | `docs/research/FIRST_PRINCIPLES_REVIEW_PROTOCOL.md` | Updated | Added `precision_state` to the mandatory claim form and required claim fields for promoted claims |
 | 2026-03-05 | `docs/research/quantized_smarter_execution_closeout_2026_03_05.md` | Created | Captured quantized-smarter implementation scope: benchmark adapter support, Qwen3.5 corrective-LoRA compatibility checks, orchestrator, tests, and deferred gate work |
+| 2026-03-09 | `docs/research/AUTONOMOUS-RESEARCH-PROTOCOL.md` | Created | Added constrained autonomous-iteration contract: frozen evaluators, one mutable surface, baseline-first runs, append-only ledger, and falsifier-aware advancement |
+| 2026-03-09 | `AGENTS.md` | Updated | Added autonomous research loop guardrails and linked the new operating protocol |
+| 2026-03-09 | `CONTRIBUTING.md` | Updated | Added contributor requirements for baseline-first experiment loops and artifact-linked experimental claims |
 
 ---
 

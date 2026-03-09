@@ -23,6 +23,7 @@ poetry run mc --help
 2. **Testing**: New features require unit tests. We maintain >90% test coverage.
 3. **Typing**: Strict `mypy` compliance is required.
 4. **Math**: All geometric operations must be cited in docstrings (e.g., "Implements CKA as per Kornblith et al., 2019").
+5. **Research loops**: Repeated experiment iteration must follow [`docs/research/AUTONOMOUS-RESEARCH-PROTOCOL.md`](docs/research/AUTONOMOUS-RESEARCH-PROTOCOL.md): baseline first, frozen evaluator, one mutable surface per run family, append-only ledger.
 
 ## Commit Message Conventions
 
@@ -80,6 +81,7 @@ test(safety): add property tests for behavioral probes
    - Summary of changes
    - Related issues (if any)
    - Test plan or validation steps
+   - Artifact directory or ledger entry for any experimental claim
 
 ## Code Style
 
@@ -162,6 +164,7 @@ If you are an AI assistant generating code for this repository:
 2. **Rigor**: Prefer Backend protocol vector operations over loop-based logic. Never use numpy (see [AGENTS.md](AGENTS.md#prefer-backend-over-numpy)).
 3. **Context**: Respect the existing "knowledge-as-geometry" ontology. See `docs/GLOSSARY.md`.
 4. **Git Safety**: Do not run destructive git commands. Other agents may be working concurrently.
+5. **Experiment discipline**: Do not iterate on experiments without a frozen evaluator and append-only ledger. See [`docs/research/AUTONOMOUS-RESEARCH-PROTOCOL.md`](docs/research/AUTONOMOUS-RESEARCH-PROTOCOL.md).
 
 ## Getting Help
 

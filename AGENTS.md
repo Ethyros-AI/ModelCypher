@@ -390,6 +390,20 @@ Rules:
 
 If training is running, wait for it to finish before `pytest`.
 
+### Autonomous Research Loops
+
+When running repeated agent-driven experiments, follow:
+
+- `docs/research/AUTONOMOUS-RESEARCH-PROTOCOL.md`
+
+Minimum rules:
+
+1. baseline first
+2. freeze evaluator, probe set, and comparison budget for the whole run family
+3. change one mutable surface per loop unless the operator requires a bundle
+4. keep an append-only ledger for every run, including crashes and invalid measurements
+5. advance only when the predicted observable survives its falsifier and no hard guardrail is violated
+
 ### Documentation
 
 Keep documentation concise, ordered, and falsifier-oriented.
