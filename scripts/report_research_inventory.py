@@ -91,7 +91,6 @@ SCRIPT_ARTIFACT_OVERRIDES = {
     "scripts/estimate_bl_jacobian.py": ("results/bl_estimation",),
     "scripts/g5_build_non_ceiling_eval_set.py": ("results/g5_8b_validation",),
     "scripts/pipeline_validation.py": ("results/pipeline_validation",),
-    "scripts/reinforce_revalidation.py": ("results/reinforce_frontier_1p2b",),
     "scripts/validate_gqa_falsifier_artifacts.py": ("results/gqa_falsifier_protocol",),
     "scripts/weyl_quantization_validation.py": ("results/weyl_quantization_validation",),
 }

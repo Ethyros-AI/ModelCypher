@@ -221,6 +221,34 @@ class LossCapture:
 
 
 # ---------------------------------------------------------------------------
+# LoRA-family layer conversion
+# ---------------------------------------------------------------------------
+def _convert_lora_family_layers(
+    model,
+    num_layers: int,
+    lora_parameters: dict,
+    fine_tune_type: str,
+    converter=None,
+) -> None:
+    """Convert layers to the requested PEFT family.
+
+    mlx-lm uses the same converter entry point for LoRA and DoRA, with DoRA
+    enabled via ``use_dora=True``. Keeping that switch in one helper makes the
+    experiment harness easier to test and prevents nominal DoRA arms from
+    silently training plain LoRA.
+    """
+    if converter is None:
+        from mlx_lm.lora import linear_to_lora_layers as converter
+
+    converter(
+        model,
+        num_layers,
+        lora_parameters,
+        use_dora=(fine_tune_type == "dora"),
+    )
+
+
+# ---------------------------------------------------------------------------
 # lm-eval wrapper
 # ---------------------------------------------------------------------------
 def run_lm_eval(
@@ -289,7 +317,6 @@ def train_standard_lora(
     from mlx_lm.lora import (
         TrainingArgs,
         load_dataset,
-        linear_to_lora_layers,
         save_config,
         train,
     )
@@ -344,7 +371,12 @@ def train_standard_lora(
     train_set, valid_set, _ = load_dataset(args, tokenizer)
 
     model.freeze()
-    linear_to_lora_layers(model, num_layers, args.lora_parameters)
+    _convert_lora_family_layers(
+        model,
+        num_layers,
+        args.lora_parameters,
+        fine_tune_type=fine_tune_type,
+    )
 
     n_trainable = sum(v.size for _, v in tree_flatten(model.trainable_parameters()))
 
@@ -737,6 +769,45 @@ def train_pissa(
 
     spectral_info = measure_standard_lora_spectral_norms(model, 1.0)  # scale=1.0 for PiSSA
 
+    # Fuse LoRA into residual base weights for correct post-hoc evaluation.
+    # PiSSA modifies base weights (W_residual = W - U_r S_r V_r^T), so the
+    # standard "load original model + adapter" path double-counts the principal
+    # components and produces incorrect results.
+    fused_dir = output_dir / "fused_model"
+    fused_dir.mkdir(parents=True, exist_ok=True)
+
+    for name, module in model.named_modules():
+        if hasattr(module, "lora_a") and hasattr(module, "lora_b"):
+            # LoRALinear forward: y = linear(x) + scale * (x @ lora_a) @ lora_b
+            # lora_a: [in, r], lora_b: [r, out], linear.weight: [out, in]
+            # Delta weight = (lora_a @ lora_b).T  shape [out, in]
+            scale = getattr(module, "scale", 1.0)
+            delta = (module.lora_a @ module.lora_b) * scale
+            module.linear.weight = module.linear.weight + delta.T
+
+    # Save fused model weights, excluding LoRA-specific parameters.
+    # After fusion the delta is folded into linear.weight, so LoRA keys
+    # (lora_a, lora_b, scale, etc.) are no longer needed.  LoRALinear
+    # also nests weight as module.linear.weight — remap to module.weight
+    # so the base model can load them.
+    from mlx.utils import tree_flatten as _tf
+    weights = {}
+    for k, v in _tf(model.parameters()):
+        if any(t in k for t in ("lora_a", "lora_b", ".scale")):
+            continue
+        # LoRALinear: proj.linear.weight → proj.weight
+        k = k.replace(".linear.weight", ".weight")
+        k = k.replace(".linear.bias", ".bias")
+        weights[k] = v
+    mx.save_safetensors(str(fused_dir / "model.safetensors"), weights)
+    # Copy config/tokenizer files from original model
+    for fname in ["config.json", "tokenizer.json", "tokenizer_config.json",
+                   "special_tokens_map.json"]:
+        src = Path(model_path) / fname
+        if src.exists():
+            shutil.copy2(src, fused_dir / fname)
+    logger.info(f"  PiSSA: saved fused model to {fused_dir}")
+
     result = {
         "method": "pissa",
         "seed": seed,
@@ -744,6 +815,7 @@ def train_pissa(
         "training_time_seconds": training_time,
         "n_trainable_params": n_trainable,
         "adapter_path": str(output_dir),
+        "fused_model_path": str(fused_dir),
         "config": {k: v for k, v in cfg.items()},
         "hyperparameter_count": len([
             k for k in cfg if k not in ("max_seq_length", "batch_size", "iters")
@@ -828,42 +900,46 @@ def train_eva(
         ):
             target_modules[name] = module
 
-    # Hook-based activation collection
+    # Activation collection via module-tree replacement.
+    # Python's data model dispatches obj(x) through type(obj).__call__,
+    # so instance-level __call__ monkey-patching does not work.  Instead,
+    # temporarily replace each target Linear in the model tree with a thin
+    # wrapper whose class-level __call__ records inputs, then restore.
     layer_activations = {name: [] for name in target_modules}
-    hooks = []
 
-    def make_hook(layer_name):
-        def hook_fn(module, args):
-            x = args[0] if isinstance(args, tuple) else args
-            # Flatten batch and sequence dims
-            x_flat = x.reshape(-1, x.shape[-1])
-            # Subsample to limit memory (keep up to 512 tokens per sample)
-            if x_flat.shape[0] > 512:
-                indices = mx.random.randint(0, x_flat.shape[0], shape=(512,))
-                x_flat = x_flat[indices]
-            layer_activations[layer_name].append(x_flat)
-            return args
-        return hook_fn
+    class _RecordingLinear(nn.Module):
+        """Wrapper that records input activations then delegates to inner."""
 
-    # Note: mlx nn.Module doesn't have register_forward_pre_hook.
-    # We'll collect activations by running forward passes and intercepting.
-    # Simpler approach: just do one forward pass per sample and collect
-    # the input to each linear layer by monkey-patching __call__.
-    original_calls = {}
-    for name, module in target_modules.items():
-        original_calls[name] = module.__call__
+        def __init__(self, inner, activations_list):
+            super().__init__()
+            self.inner = inner
+            self._activations = activations_list
 
-        def patched_call(self, x, _name=name, _orig=module.__call__):
+        def __call__(self, x):
             x_flat = x.reshape(-1, x.shape[-1])
             if x_flat.shape[0] > 512:
                 indices = mx.random.randint(0, x_flat.shape[0], shape=(512,))
                 mx.eval(indices)
                 x_flat = x_flat[indices]
-            layer_activations[_name].append(x_flat)
-            return _orig(x)
+            self._activations.append(x_flat)
+            return self.inner(x)
 
-        import types
-        module.__call__ = types.MethodType(patched_call, module)
+    def _set_nested_attr(obj, dotted_name, value):
+        parts = dotted_name.split(".")
+        for part in parts[:-1]:
+            obj = obj[int(part)] if part.isdigit() else getattr(obj, part)
+        last = parts[-1]
+        if last.isdigit():
+            obj[int(last)] = value
+        else:
+            setattr(obj, last, value)
+
+    # Install recording wrappers
+    for name, module in target_modules.items():
+        _set_nested_attr(
+            model, name,
+            _RecordingLinear(module, layer_activations[name]),
+        )
 
     model.eval()
     for sample in calib_samples[:64]:  # limit to 64 samples for memory
@@ -879,9 +955,9 @@ def train_eva(
         except Exception:
             pass
 
-    # Restore original calls
+    # Restore original modules
     for name, module in target_modules.items():
-        module.__call__ = original_calls[name]
+        _set_nested_attr(model, name, module)
 
     # --- Phase 2: Compute explained variance and allocate ranks ---
     layer_variance = {}
@@ -923,7 +999,11 @@ def train_eva(
             config=cfg, seed=seed, iters_override=iters_override,
         )
 
-    # Allocate ranks proportional to explained variance
+    # Allocate ranks proportional to explained variance (informational only).
+    # EVA-init for R1: we use data-driven eigenvector initialization (EVA's
+    # primary contribution) with uniform rank. Per-layer rank allocation would
+    # require reimplementing linear_to_lora_layers logic for marginal benefit —
+    # the comparison is NB-LoRA vs baselines, not EVA-paper-faithful vs EVA-lite.
     total_budget = len(layer_variance) * base_rank
     total_var_sum = sum(layer_variance.values())
     layer_ranks = {}
@@ -948,7 +1028,8 @@ def train_eva(
                 diff -= adjustment
 
     rank_info = {name: layer_ranks[name] for name in sorted(layer_ranks.keys())}
-    logger.info(f"  EVA rank allocation: {json.dumps(rank_info, indent=2)}")
+    logger.info(f"  EVA rank allocation (informational — uniform rank={base_rank} used): "
+                f"{json.dumps(rank_info, indent=2)}")
 
     # --- Phase 3: Standard LoRA training with EVA initialization ---
     # Reload model fresh (calibration may have polluted state)
@@ -1011,6 +1092,22 @@ def train_eva(
                 eva_init_count += 1
 
     logger.info(f"  EVA: initialized {eva_init_count} layers with eigenvector A")
+
+    # Diagnostic: compare calibration targets vs actual LoRA targets
+    lora_names = {name for name, m in model.named_modules() if hasattr(m, "lora_a")}
+    calib_names = set(layer_eigenvectors.keys())
+    matched = calib_names & lora_names
+    calib_only = calib_names - lora_names
+    lora_only = lora_names - calib_names
+    logger.info(f"  EVA target match: {len(matched)}/{len(lora_names)} LoRA layers have "
+                f"eigenvectors ({len(calib_only)} calib-only, {len(lora_only)} lora-only)")
+    if eva_init_count == 0:
+        logger.error("  EVA: 0 layers initialized — all LoRA layers missed calibration. "
+                     "EVA arm is effectively standard LoRA with random init.")
+    if calib_only:
+        logger.info(f"  EVA calib-only (wasted): {sorted(calib_only)[:5]}{'...' if len(calib_only) > 5 else ''}")
+    if lora_only:
+        logger.info(f"  EVA lora-only (no eigvecs): {sorted(lora_only)[:5]}{'...' if len(lora_only) > 5 else ''}")
 
     n_trainable = sum(v.size for _, v in tree_flatten(model.trainable_parameters()))
 
@@ -1370,45 +1467,48 @@ def _train_method(
 ) -> dict:
     """Dispatch training to the right function based on method name."""
     if method_name == "standard_lora":
-        return train_standard_lora(
+        result = train_standard_lora(
             model_path, num_layers, data_dir, output_dir,
             config=STANDARD_LORA_CONFIG, seed=seed, iters_override=iters,
         )
     elif method_name == "tuned_lora":
         if best_tuned_config is None:
             raise ValueError("tuned_lora requires grid search results")
-        return train_standard_lora(
+        result = train_standard_lora(
             model_path, num_layers, data_dir, output_dir,
             config=best_tuned_config, seed=seed, iters_override=iters,
         )
     elif method_name == "dora":
-        return train_standard_lora(
+        result = train_standard_lora(
             model_path, num_layers, data_dir, output_dir,
             config=DORA_CONFIG, seed=seed, iters_override=iters,
             fine_tune_type="dora",
         )
     elif method_name == "rslora":
-        return train_standard_lora(
+        result = train_standard_lora(
             model_path, num_layers, data_dir, output_dir,
             config=RSLORA_CONFIG, seed=seed, iters_override=iters,
         )
     elif method_name == "pissa":
-        return train_pissa(
+        result = train_pissa(
             model_path, num_layers, data_dir, output_dir,
             seed=seed, iters_override=iters,
         )
     elif method_name == "eva":
-        return train_eva(
+        result = train_eva(
             model_path, num_layers, data_dir, output_dir,
             seed=seed, iters_override=iters,
         )
     elif method_name == "nb_lora":
-        return train_nb_lora(
+        result = train_nb_lora(
             model_path, output_dir, seed=seed,
             weight_decay=weight_decay,
         )
     else:
         raise ValueError(f"Unknown method: {method_name}")
+
+    result["method"] = method_name
+    return result
 
 
 # Method display names
@@ -1516,6 +1616,7 @@ def run_model_experiment(
         results["grid_search"] = "skipped"
     else:
         results["grid_search"] = "not_applicable"
+    results["methods"] = methods
 
     # ------------------------------------------------------------------
     # c. PER-SEED TRAINING + EVAL (generic N-arm loop)
@@ -1562,8 +1663,15 @@ def run_model_experiment(
                 # Commensurable val_loss: same operator for all arms
                 train_result["callback_val_loss"] = train_result.get("final_val_loss")
                 logger.info(f"  Commensurable val_loss eval ({method_name})...")
+
+                # PiSSA modifies base weights, so eval must use the fused model
+                # (original model + adapter would double-count principal components)
+                fused_path = train_result.get("fused_model_path")
+                eval_model = fused_path if fused_path else model_path
+                eval_adapter = None if fused_path else str(method_out)
+
                 train_result["final_val_loss"] = evaluate_val_loss(
-                    model_path, str(method_out), VAL_DATA,
+                    eval_model, eval_adapter, VAL_DATA,
                 )
                 logger.info(f"  val_loss={train_result['final_val_loss']:.4f} "
                             f"(callback={train_result['callback_val_loss']})")
@@ -1574,9 +1682,9 @@ def run_model_experiment(
 
                 if not skip_eval:
                     eval_result = run_lm_eval(
-                        model_path=model_path,
+                        model_path=eval_model,
                         tasks=BENCHMARK_TASKS,
-                        adapter_path=str(method_out),
+                        adapter_path=eval_adapter,
                         limit=eval_limit,
                     )
                 else:
