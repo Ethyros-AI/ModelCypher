@@ -29,6 +29,13 @@ Tracks doctrine and research documents audited under
 | 2026-03-09 | `docs/research/AUTONOMOUS-RESEARCH-PROTOCOL.md` | Created | Added constrained autonomous-iteration contract: frozen evaluators, one mutable surface, baseline-first runs, append-only ledger, and falsifier-aware advancement |
 | 2026-03-09 | `AGENTS.md` | Updated | Added autonomous research loop guardrails and linked the new operating protocol |
 | 2026-03-09 | `CONTRIBUTING.md` | Updated | Added contributor requirements for baseline-first experiment loops and artifact-linked experimental claims |
+| 2026-03-09 | `docs/MISSION.md` | Updated | Added scope cascade and narrowed mission accounting to the canonical engine plus the active blocker ladder |
+| 2026-03-09 | `docs/VISION.md` | Updated | Reframed identity-layer claims as downstream of portability, stacking, and consolidation certificates |
+| 2026-03-09 | `docs/RESEARCH-ROADMAP.md` | Updated | Replaced broad research dump with Active / Parked / Archived ladder tied to repo inventory and blocker IDs |
+| 2026-03-09 | `docs/research/OPEN-MATHEMATICAL-QUESTIONS.md` | Updated | Reduced the active list to blocker-only questions (Q1, Q2, Q3, Q8, Q9) |
+| 2026-03-09 | `docs/ARCHITECTURE.md` | Updated | Corrected canonical-vs-experimental merge architecture references and actual domain layout |
+| 2026-03-09 | `docs/CURIOSITY-DAEMON.md` | Updated | Marked curiosity and consolidation as experimental and corrected module paths |
+| 2026-03-09 | `docs/START-HERE.md` | Updated | Aligned onboarding language with canonical-vs-experimental repo reality |
 
 ---
 

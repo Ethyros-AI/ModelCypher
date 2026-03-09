@@ -1,28 +1,35 @@
 #!/usr/bin/env python3
-"""NB-LoRA vs Standard LoRA — Controlled Head-to-Head Comparison (R1).
+"""NB-LoRA vs PEFT Baselines — Controlled Head-to-Head Comparison (R1).
 
-Three-arm comparison:
-  Arm 1: NB-LoRA (zero HP, geometry-derived)
-  Arm 2: Standard LoRA (community defaults: AdamW, cosine LR, rank=8, alpha=16)
-  Arm 3: Tuned Standard LoRA (best of rank x lr grid search)
+N-arm comparison. Available methods:
+  - nb_lora:       NB-LoRA (zero HP, geometry-derived)
+  - standard_lora: Standard LoRA (community defaults: AdamW, cosine LR, rank=8, alpha=16)
+  - tuned_lora:    Tuned Standard LoRA (best of rank x lr grid search)
+  - dora:          DoRA (weight decomposition — magnitude + direction)
+  - rslora:        rsLoRA (rank-stabilized: scale = alpha / sqrt(rank))
+  - pissa:         PiSSA (SVD-initialized: A,B from principal components of W)
+  - eva:           EVA (Explained Variance Adaptation: data-driven rank + init)
 
-Each arm x N seeds (default 5) for statistical validity.
+Each method x N seeds (default 5) for statistical validity.
 
-Measurements per arm per seed:
+Measurements per method per seed:
   - lm-eval-harness benchmark scores (7 tasks)
   - Training loss convergence (captured via callback)
-  - Spectral safety (post-hoc for standard, by construction for NB-LoRA)
+  - Spectral safety (post-hoc for standard methods, by construction for NB-LoRA)
+  - Commensurable val_loss (full val set, batch_size=1, same CE operator)
   - Inference test responses
 
 Usage:
-  # Quick smoke test (350M, 1 seed, limited evals)
+  # Quick smoke test (350M, 1 seed, default 3 arms)
   poetry run python scripts/experiment_nblora_vs_standard.py --models 350M --quick
 
-  # Full comparison (350M, 5 seeds)
-  poetry run python scripts/experiment_nblora_vs_standard.py --models 350M
+  # Full R1 comparison (all methods, 5 seeds)
+  poetry run python scripts/experiment_nblora_vs_standard.py --models 350M \\
+      --methods standard_lora tuned_lora dora rslora pissa eva nb_lora
 
-  # Custom seeds
-  poetry run python scripts/experiment_nblora_vs_standard.py --models 350M --seeds 42 123 456
+  # Subset of methods
+  poetry run python scripts/experiment_nblora_vs_standard.py --models 350M \\
+      --methods standard_lora dora nb_lora --seeds 42 123 456
 
   # Skip eval for pipeline debugging
   poetry run python scripts/experiment_nblora_vs_standard.py --models 350M --skip-eval --skip-inference
@@ -147,7 +154,22 @@ TUNED_GRID = [
     for lr in [1e-5, 5e-5, 2e-4]
 ]
 
+# rsLoRA: scale = alpha / sqrt(rank) instead of alpha / rank
+RSLORA_CONFIGS = {
+    r: {**STANDARD_LORA_CONFIG, "rank": r, "scale": LORA_ALPHA / math.sqrt(r)}
+    for r in [4, 8, 16]
+}
+RSLORA_CONFIG = RSLORA_CONFIGS[8]  # default rank=8
+
+# DoRA: same hyperparameters as standard LoRA, different layer type
+DORA_CONFIG = {**STANDARD_LORA_CONFIG}
+
 DEFAULT_SEEDS = [42, 123, 456, 789, 1024]
+
+# All available methods (populated after training functions are defined)
+ALL_METHOD_NAMES = [
+    "standard_lora", "tuned_lora", "dora", "rslora", "pissa", "eva", "nb_lora",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -253,8 +275,13 @@ def train_standard_lora(
     config: dict | None = None,
     seed: int = 42,
     iters_override: int | None = None,
+    fine_tune_type: str = "lora",
 ) -> dict:
-    """Train standard LoRA with given config and seed. Returns training metadata."""
+    """Train LoRA-family adapter with given config and seed.
+
+    Supports standard LoRA (fine_tune_type="lora") and DoRA
+    (fine_tune_type="dora") via mlx-lm's built-in layer types.
+    """
     import mlx.core as mx
     import mlx.optimizers as optim
     from mlx.utils import tree_flatten
@@ -284,7 +311,7 @@ def train_standard_lora(
         data=str(data_dir),
         train=True,
         test=False,
-        fine_tune_type="lora",
+        fine_tune_type=fine_tune_type,
         optimizer=cfg["optimizer"],
         optimizer_config={"adam": {}, "adamw": {}, "sgd": {}},
         seed=seed,
@@ -377,7 +404,7 @@ def train_standard_lora(
     spectral_info = measure_standard_lora_spectral_norms(model, cfg["scale"])
 
     result = {
-        "method": "standard_lora",
+        "method": fine_tune_type,
         "seed": seed,
         "iters": iters,
         "training_time_seconds": training_time,
@@ -541,6 +568,524 @@ def derive_wd_from_training_result(
     }
 
     return wd_derived, derivation
+
+
+# ---------------------------------------------------------------------------
+# PiSSA training (SVD-initialized LoRA)
+# ---------------------------------------------------------------------------
+def train_pissa(
+    model_path: str,
+    num_layers: int,
+    data_dir: Path,
+    output_dir: Path,
+    config: dict | None = None,
+    seed: int = 42,
+    iters_override: int | None = None,
+) -> dict:
+    """Train PiSSA: LoRA initialized with principal singular vectors of W.
+
+    1. SVD(W) → U, S, V^T for each target layer
+    2. A_init = V[:, :r] (top-r right singular vectors)
+    3. B_init = (S[:r, None] * U[:, :r]^T) (scaled left singular vectors)
+    4. W_residual stored as base weight (W - U_r @ S_r @ V_r^T)
+    5. Train with standard LoRA machinery on the residual
+    """
+    import mlx.core as mx
+    import mlx.optimizers as optim
+    from mlx.utils import tree_flatten
+    from mlx_lm import load as mlx_load
+    from mlx_lm.lora import (
+        TrainingArgs,
+        load_dataset,
+        linear_to_lora_layers,
+        save_config,
+        train,
+    )
+    from mlx_lm.tuner.datasets import CacheDataset
+
+    cfg = config or STANDARD_LORA_CONFIG
+    iters = iters_override or cfg["iters"]
+    rank = cfg["rank"]
+
+    mx.random.seed(seed)
+    random.seed(seed)
+
+    logger.info(f"  PiSSA: rank={rank}, lr={cfg['lr']}, seed={seed}")
+
+    model, tokenizer = mlx_load(str(model_path))
+
+    args = SimpleNamespace(
+        model=str(model_path),
+        data=str(data_dir),
+        train=True,
+        test=False,
+        fine_tune_type="lora",
+        optimizer=cfg["optimizer"],
+        optimizer_config={"adam": {}, "adamw": {}, "sgd": {}},
+        seed=seed,
+        num_layers=num_layers,
+        batch_size=cfg["batch_size"],
+        iters=iters,
+        val_batches=25,
+        learning_rate=cfg["lr"],
+        steps_per_report=10,
+        steps_per_eval=200,
+        resume_adapter_file=None,
+        adapter_path=str(output_dir),
+        save_every=iters,
+        max_seq_length=cfg["max_seq_length"],
+        config=None,
+        grad_checkpoint=False,
+        grad_accumulation_steps=1,
+        lr_schedule=None,
+        lora_parameters={
+            "rank": rank,
+            "dropout": cfg.get("dropout", 0.0),
+            "scale": 1.0,  # PiSSA: SVD provides the right magnitudes
+        },
+        mask_prompt=False,
+        report_to=None,
+        project_name=None,
+        hf_dataset=False,
+    )
+
+    train_set, valid_set, _ = load_dataset(args, tokenizer)
+
+    model.freeze()
+    linear_to_lora_layers(model, num_layers, args.lora_parameters)
+
+    # PiSSA initialization: replace random A,B with principal SVD components
+    pissa_init_count = 0
+    for name, module in model.named_modules():
+        if hasattr(module, "lora_a") and hasattr(module, "lora_b"):
+            # Get original weight (before LoRA was applied)
+            W = module.linear.weight if hasattr(module, "linear") else None
+            if W is None:
+                continue
+            W_f32 = W.astype(mx.float32)
+            try:
+                U, S, Vt = mx.linalg.svd(W_f32, stream=mx.cpu)
+                mx.eval(U, S, Vt)
+            except Exception:
+                logger.warning(f"  PiSSA SVD failed for {name}, keeping random init")
+                continue
+
+            r = min(rank, S.shape[0])
+            # A_init: [input_dims, r] = V[:, :r] = Vt[:r, :]^T
+            A_init = Vt[:r, :].T.astype(W.dtype)
+            # B_init: [r, output_dims] = diag(S[:r]) @ U[:, :r]^T
+            B_init = (S[:r, None] * U[:, :r].T).astype(W.dtype)
+
+            # Update residual base weight: W - U_r @ S_r @ V_r^T
+            W_principal = (U[:, :r] * S[:r]) @ Vt[:r, :]
+            mx.eval(W_principal)
+            W_residual = (W_f32 - W_principal).astype(W.dtype)
+            module.linear.weight = W_residual
+
+            # Set LoRA weights
+            module.lora_a = A_init
+            module.lora_b = B_init
+            mx.eval(module.lora_a, module.lora_b, module.linear.weight)
+            pissa_init_count += 1
+
+    logger.info(f"  PiSSA: initialized {pissa_init_count} layers with SVD principal components")
+
+    n_trainable = sum(v.size for _, v in tree_flatten(model.trainable_parameters()))
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    adapter_file = output_dir / "adapters.safetensors"
+    save_config(vars(args), output_dir / "adapter_config.json")
+
+    training_args = TrainingArgs(
+        batch_size=args.batch_size,
+        iters=iters,
+        val_batches=args.val_batches,
+        steps_per_report=args.steps_per_report,
+        steps_per_eval=args.steps_per_eval,
+        steps_per_save=args.save_every,
+        adapter_file=adapter_file,
+        max_seq_length=args.max_seq_length,
+        grad_checkpoint=args.grad_checkpoint,
+        grad_accumulation_steps=args.grad_accumulation_steps,
+    )
+
+    lr_value = cfg["lr"]
+    if cfg.get("lr_schedule") == "cosine":
+        lr_value = optim.cosine_decay(init=cfg["lr"], decay_steps=iters)
+    if cfg["optimizer"] == "adamw":
+        opt = optim.AdamW(learning_rate=lr_value, weight_decay=0.0)
+    else:
+        opt = optim.Adam(learning_rate=lr_value)
+
+    loss_capture = LossCapture()
+    t0 = time.time()
+    train(
+        model=model,
+        args=training_args,
+        optimizer=opt,
+        train_dataset=CacheDataset(train_set),
+        val_dataset=CacheDataset(valid_set),
+        training_callback=loss_capture,
+    )
+    training_time = time.time() - t0
+
+    adapter_file_check = output_dir / "adapters.safetensors"
+    if not adapter_file_check.exists():
+        from mlx.utils import tree_flatten as tf
+        adapter_weights = dict(tf(model.trainable_parameters()))
+        mx.save_safetensors(str(adapter_file_check), adapter_weights)
+
+    spectral_info = measure_standard_lora_spectral_norms(model, 1.0)  # scale=1.0 for PiSSA
+
+    result = {
+        "method": "pissa",
+        "seed": seed,
+        "iters": iters,
+        "training_time_seconds": training_time,
+        "n_trainable_params": n_trainable,
+        "adapter_path": str(output_dir),
+        "config": {k: v for k, v in cfg.items()},
+        "hyperparameter_count": len([
+            k for k in cfg if k not in ("max_seq_length", "batch_size", "iters")
+        ]),
+        "pissa_init_layers": pissa_init_count,
+        "final_val_loss": loss_capture.final_val_loss,
+        "final_train_loss": loss_capture.final_train_loss,
+        "loss_history": {
+            "train": loss_capture.train_losses,
+            "val": loss_capture.val_losses,
+        },
+        "spectral_info": spectral_info,
+    }
+
+    del model, tokenizer
+    mx.clear_cache()
+    gc.collect()
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# EVA training (Explained Variance Adaptation)
+# ---------------------------------------------------------------------------
+def train_eva(
+    model_path: str,
+    num_layers: int,
+    data_dir: Path,
+    output_dir: Path,
+    config: dict | None = None,
+    seed: int = 42,
+    iters_override: int | None = None,
+    n_calib_samples: int = 256,
+) -> dict:
+    """Train EVA: rank allocation + initialization from input activation variance.
+
+    1. Collect calibration activations X for each target layer
+    2. Compute input covariance C = X^T @ X / N
+    3. SVD(C) → explained variance per component
+    4. Allocate rank per layer proportional to total explained variance
+       (within total_rank budget = n_layers * base_rank)
+    5. Initialize A with top eigenvectors of C (data-driven)
+    6. B initialized to zero
+    7. Train with standard LoRA machinery
+    """
+    import mlx.core as mx
+    import mlx.nn as nn
+    import mlx.optimizers as optim
+    from mlx.utils import tree_flatten
+    from mlx_lm import load as mlx_load
+    from mlx_lm.lora import (
+        TrainingArgs,
+        load_dataset,
+        linear_to_lora_layers,
+        save_config,
+        train,
+    )
+    from mlx_lm.tuner.datasets import CacheDataset
+
+    cfg = config or STANDARD_LORA_CONFIG
+    iters = iters_override or cfg["iters"]
+    base_rank = cfg["rank"]
+
+    mx.random.seed(seed)
+    random.seed(seed)
+
+    logger.info(f"  EVA: base_rank={base_rank}, lr={cfg['lr']}, seed={seed}, "
+                f"calib_samples={n_calib_samples}")
+
+    model, tokenizer = mlx_load(str(model_path))
+
+    # --- Phase 1: Collect calibration activations ---
+    train_data = load_jsonl(TRAIN_DATA)
+    calib_samples = train_data[:n_calib_samples]
+
+    # Identify target modules (same as what linear_to_lora_layers would target)
+    # We need to collect input activations for each target linear layer
+    target_modules = {}
+    for name, module in model.named_modules():
+        if isinstance(module, nn.Linear) and any(
+            k in name for k in ["self_attn", "mlp", "attention"]
+        ):
+            target_modules[name] = module
+
+    # Hook-based activation collection
+    layer_activations = {name: [] for name in target_modules}
+    hooks = []
+
+    def make_hook(layer_name):
+        def hook_fn(module, args):
+            x = args[0] if isinstance(args, tuple) else args
+            # Flatten batch and sequence dims
+            x_flat = x.reshape(-1, x.shape[-1])
+            # Subsample to limit memory (keep up to 512 tokens per sample)
+            if x_flat.shape[0] > 512:
+                indices = mx.random.randint(0, x_flat.shape[0], shape=(512,))
+                x_flat = x_flat[indices]
+            layer_activations[layer_name].append(x_flat)
+            return args
+        return hook_fn
+
+    # Note: mlx nn.Module doesn't have register_forward_pre_hook.
+    # We'll collect activations by running forward passes and intercepting.
+    # Simpler approach: just do one forward pass per sample and collect
+    # the input to each linear layer by monkey-patching __call__.
+    original_calls = {}
+    for name, module in target_modules.items():
+        original_calls[name] = module.__call__
+
+        def patched_call(self, x, _name=name, _orig=module.__call__):
+            x_flat = x.reshape(-1, x.shape[-1])
+            if x_flat.shape[0] > 512:
+                indices = mx.random.randint(0, x_flat.shape[0], shape=(512,))
+                mx.eval(indices)
+                x_flat = x_flat[indices]
+            layer_activations[_name].append(x_flat)
+            return _orig(x)
+
+        import types
+        module.__call__ = types.MethodType(patched_call, module)
+
+    model.eval()
+    for sample in calib_samples[:64]:  # limit to 64 samples for memory
+        text = sample.get("text", "")
+        tokens = tokenizer.encode(text)
+        if len(tokens) < 2:
+            continue
+        tokens = tokens[:512]  # limit sequence length for calibration
+        x = mx.array(tokens)[None, :]
+        try:
+            model(x)
+            mx.eval(model.parameters())
+        except Exception:
+            pass
+
+    # Restore original calls
+    for name, module in target_modules.items():
+        module.__call__ = original_calls[name]
+
+    # --- Phase 2: Compute explained variance and allocate ranks ---
+    layer_variance = {}
+    layer_eigenvectors = {}
+
+    for name in list(layer_activations.keys()):
+        acts = layer_activations[name]
+        if not acts:
+            continue
+        X = mx.concatenate(acts, axis=0).astype(mx.float32)
+        if X.shape[0] < 2:
+            continue
+        # Covariance: C = X^T @ X / N
+        N = X.shape[0]
+        C = (X.T @ X) / N
+        mx.eval(C)
+
+        try:
+            # Eigendecomposition of covariance (symmetric → use eigvalsh-like)
+            U_c, S_c, _ = mx.linalg.svd(C, stream=mx.cpu)
+            mx.eval(U_c, S_c)
+            total_var = float(mx.sum(S_c))
+            if total_var > 0:
+                layer_variance[name] = total_var
+                layer_eigenvectors[name] = U_c  # columns are eigenvectors
+        except Exception:
+            logger.warning(f"  EVA: SVD failed for {name}, skipping")
+
+        # Free activations
+        layer_activations[name] = []
+
+    if not layer_variance:
+        logger.warning("  EVA: no variance data, falling back to standard LoRA")
+        del model, tokenizer
+        mx.clear_cache()
+        gc.collect()
+        return train_standard_lora(
+            model_path, num_layers, data_dir, output_dir,
+            config=cfg, seed=seed, iters_override=iters_override,
+        )
+
+    # Allocate ranks proportional to explained variance
+    total_budget = len(layer_variance) * base_rank
+    total_var_sum = sum(layer_variance.values())
+    layer_ranks = {}
+    for name, var in layer_variance.items():
+        # Proportional allocation, minimum rank 1
+        raw_rank = max(1, round(total_budget * var / total_var_sum))
+        layer_ranks[name] = min(raw_rank, base_rank * 2)  # cap at 2x base
+
+    # Redistribute to hit budget exactly
+    current_total = sum(layer_ranks.values())
+    if current_total != total_budget:
+        # Sort by variance (highest first) and adjust
+        sorted_layers = sorted(layer_ranks.keys(), key=lambda n: layer_variance[n], reverse=True)
+        diff = total_budget - current_total
+        for layer_name in sorted_layers:
+            if diff == 0:
+                break
+            adjustment = 1 if diff > 0 else -1
+            new_rank = layer_ranks[layer_name] + adjustment
+            if new_rank >= 1:
+                layer_ranks[layer_name] = new_rank
+                diff -= adjustment
+
+    rank_info = {name: layer_ranks[name] for name in sorted(layer_ranks.keys())}
+    logger.info(f"  EVA rank allocation: {json.dumps(rank_info, indent=2)}")
+
+    # --- Phase 3: Standard LoRA training with EVA initialization ---
+    # Reload model fresh (calibration may have polluted state)
+    del model, tokenizer
+    mx.clear_cache()
+    gc.collect()
+    model, tokenizer = mlx_load(str(model_path))
+
+    args = SimpleNamespace(
+        model=str(model_path),
+        data=str(data_dir),
+        train=True,
+        test=False,
+        fine_tune_type="lora",
+        optimizer=cfg["optimizer"],
+        optimizer_config={"adam": {}, "adamw": {}, "sgd": {}},
+        seed=seed,
+        num_layers=num_layers,
+        batch_size=cfg["batch_size"],
+        iters=iters,
+        val_batches=25,
+        learning_rate=cfg["lr"],
+        steps_per_report=10,
+        steps_per_eval=200,
+        resume_adapter_file=None,
+        adapter_path=str(output_dir),
+        save_every=iters,
+        max_seq_length=cfg["max_seq_length"],
+        config=None,
+        grad_checkpoint=False,
+        grad_accumulation_steps=1,
+        lr_schedule=None,
+        lora_parameters={
+            "rank": base_rank,
+            "dropout": cfg.get("dropout", 0.0),
+            "scale": cfg["scale"],
+        },
+        mask_prompt=False,
+        report_to=None,
+        project_name=None,
+        hf_dataset=False,
+    )
+
+    train_set, valid_set, _ = load_dataset(args, tokenizer)
+
+    model.freeze()
+    linear_to_lora_layers(model, num_layers, args.lora_parameters)
+
+    # Apply EVA initialization: set A to top eigenvectors of input covariance
+    eva_init_count = 0
+    for name, module in model.named_modules():
+        if hasattr(module, "lora_a") and name in layer_eigenvectors:
+            eigvecs = layer_eigenvectors[name]
+            r = module.lora_a.shape[1] if module.lora_a.ndim == 2 else base_rank
+            r = min(r, eigvecs.shape[1])
+            A_init = eigvecs[:, :r].astype(module.lora_a.dtype)
+            if A_init.shape == module.lora_a.shape:
+                module.lora_a = A_init
+                mx.eval(module.lora_a)
+                eva_init_count += 1
+
+    logger.info(f"  EVA: initialized {eva_init_count} layers with eigenvector A")
+
+    n_trainable = sum(v.size for _, v in tree_flatten(model.trainable_parameters()))
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    adapter_file = output_dir / "adapters.safetensors"
+    save_config(vars(args), output_dir / "adapter_config.json")
+
+    training_args = TrainingArgs(
+        batch_size=args.batch_size,
+        iters=iters,
+        val_batches=args.val_batches,
+        steps_per_report=args.steps_per_report,
+        steps_per_eval=args.steps_per_eval,
+        steps_per_save=args.save_every,
+        adapter_file=adapter_file,
+        max_seq_length=args.max_seq_length,
+        grad_checkpoint=args.grad_checkpoint,
+        grad_accumulation_steps=args.grad_accumulation_steps,
+    )
+
+    lr_value = cfg["lr"]
+    if cfg.get("lr_schedule") == "cosine":
+        lr_value = optim.cosine_decay(init=cfg["lr"], decay_steps=iters)
+    if cfg["optimizer"] == "adamw":
+        opt = optim.AdamW(learning_rate=lr_value, weight_decay=0.0)
+    else:
+        opt = optim.Adam(learning_rate=lr_value)
+
+    loss_capture = LossCapture()
+    t0 = time.time()
+    train(
+        model=model,
+        args=training_args,
+        optimizer=opt,
+        train_dataset=CacheDataset(train_set),
+        val_dataset=CacheDataset(valid_set),
+        training_callback=loss_capture,
+    )
+    training_time = time.time() - t0
+
+    adapter_file_check = output_dir / "adapters.safetensors"
+    if not adapter_file_check.exists():
+        from mlx.utils import tree_flatten as tf
+        adapter_weights = dict(tf(model.trainable_parameters()))
+        mx.save_safetensors(str(adapter_file_check), adapter_weights)
+
+    spectral_info = measure_standard_lora_spectral_norms(model, cfg["scale"])
+
+    result = {
+        "method": "eva",
+        "seed": seed,
+        "iters": iters,
+        "training_time_seconds": training_time,
+        "n_trainable_params": n_trainable,
+        "adapter_path": str(output_dir),
+        "config": {k: v for k, v in cfg.items()},
+        "hyperparameter_count": len([
+            k for k in cfg if k not in ("max_seq_length", "batch_size", "iters")
+        ]),
+        "eva_init_layers": eva_init_count,
+        "eva_rank_allocation": rank_info,
+        "final_val_loss": loss_capture.final_val_loss,
+        "final_train_loss": loss_capture.final_train_loss,
+        "loss_history": {
+            "train": loss_capture.train_losses,
+            "val": loss_capture.val_losses,
+        },
+        "spectral_info": spectral_info,
+    }
+
+    del model, tokenizer
+    mx.clear_cache()
+    gc.collect()
+
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -810,13 +1355,89 @@ def aggregate_arm_evals(
 
 
 # ---------------------------------------------------------------------------
-# Single model experiment (multi-seed, three-arm)
+# Method dispatch table
+# ---------------------------------------------------------------------------
+def _train_method(
+    method_name: str,
+    model_path: str,
+    num_layers: int,
+    data_dir: Path,
+    output_dir: Path,
+    seed: int,
+    iters: int,
+    best_tuned_config: dict | None = None,
+    weight_decay: float = 0.0,
+) -> dict:
+    """Dispatch training to the right function based on method name."""
+    if method_name == "standard_lora":
+        return train_standard_lora(
+            model_path, num_layers, data_dir, output_dir,
+            config=STANDARD_LORA_CONFIG, seed=seed, iters_override=iters,
+        )
+    elif method_name == "tuned_lora":
+        if best_tuned_config is None:
+            raise ValueError("tuned_lora requires grid search results")
+        return train_standard_lora(
+            model_path, num_layers, data_dir, output_dir,
+            config=best_tuned_config, seed=seed, iters_override=iters,
+        )
+    elif method_name == "dora":
+        return train_standard_lora(
+            model_path, num_layers, data_dir, output_dir,
+            config=DORA_CONFIG, seed=seed, iters_override=iters,
+            fine_tune_type="dora",
+        )
+    elif method_name == "rslora":
+        return train_standard_lora(
+            model_path, num_layers, data_dir, output_dir,
+            config=RSLORA_CONFIG, seed=seed, iters_override=iters,
+        )
+    elif method_name == "pissa":
+        return train_pissa(
+            model_path, num_layers, data_dir, output_dir,
+            seed=seed, iters_override=iters,
+        )
+    elif method_name == "eva":
+        return train_eva(
+            model_path, num_layers, data_dir, output_dir,
+            seed=seed, iters_override=iters,
+        )
+    elif method_name == "nb_lora":
+        return train_nb_lora(
+            model_path, output_dir, seed=seed,
+            weight_decay=weight_decay,
+        )
+    else:
+        raise ValueError(f"Unknown method: {method_name}")
+
+
+# Method display names
+METHOD_DISPLAY = {
+    "standard_lora": "Standard LoRA",
+    "tuned_lora": "Tuned LoRA",
+    "dora": "DoRA",
+    "rslora": "rsLoRA",
+    "pissa": "PiSSA",
+    "eva": "EVA",
+    "nb_lora": "NB-LoRA",
+}
+
+# Methods with post-hoc spectral measurement (not bounded by construction)
+SPECTRAL_POSTHOC_METHODS = {"standard_lora", "tuned_lora", "dora", "rslora", "pissa", "eva"}
+
+# Methods that use NB-LoRA's geometry-derived pipeline
+NBLORA_METHODS = {"nb_lora"}
+
+
+# ---------------------------------------------------------------------------
+# Single model experiment (multi-seed, N-arm)
 # ---------------------------------------------------------------------------
 def run_model_experiment(
     model_key: str,
     model_spec: dict,
     output_dir: Path,
     seeds: list[int],
+    methods: list[str],
     quick: bool = False,
     skip_eval: bool = False,
     skip_inference: bool = False,
@@ -824,7 +1445,7 @@ def run_model_experiment(
     weight_decay: float = 0.0,
     derive_wd_test: bool = False,
 ) -> dict:
-    """Run full three-arm comparison for one model across multiple seeds."""
+    """Run N-arm comparison for one model across multiple seeds."""
     model_path = str(model_spec["path"])
     model_name = model_spec["name"]
     num_layers = model_spec["num_layers"]
@@ -835,6 +1456,7 @@ def run_model_experiment(
     logger.info(f"\n{'='*70}")
     logger.info(f"MODEL: {model_name} ({model_key})")
     logger.info(f"Seeds: {seeds}")
+    logger.info(f"Methods: {methods}")
     logger.info(f"Quick: {quick}, Skip eval: {skip_eval}, Skip grid: {skip_grid}")
     logger.info(f"{'='*70}")
 
@@ -842,6 +1464,7 @@ def run_model_experiment(
         "model": model_name,
         "model_path": model_path,
         "seeds": seeds,
+        "methods": methods,
         "quick": quick,
         "weight_decay": weight_decay,
         "timestamp": datetime.now().isoformat(),
@@ -873,7 +1496,9 @@ def run_model_experiment(
     # ------------------------------------------------------------------
     # b. GRID SEARCH for tuned arm (once, seed=42)
     # ------------------------------------------------------------------
-    if not skip_grid:
+    best_tuned_config = None
+    grid_summary = None
+    if "tuned_lora" in methods and not skip_grid:
         logger.info(f"\n--- [{model_name}] Grid Search for Tuned Arm ---")
         grid_summary = run_grid_search(
             model_spec=model_spec,
@@ -885,26 +1510,24 @@ def run_model_experiment(
         results["grid_search"] = grid_summary
         best_tuned_config = STANDARD_LORA_CONFIG.copy()
         best_tuned_config.update(grid_summary["best_config"])
-    else:
-        grid_summary = None
+    elif "tuned_lora" in methods and skip_grid:
+        # tuned_lora requested but grid skipped — remove from active methods
+        methods = [m for m in methods if m != "tuned_lora"]
         results["grid_search"] = "skipped"
-        best_tuned_config = None
+    else:
+        results["grid_search"] = "not_applicable"
 
     # ------------------------------------------------------------------
-    # c. PER-SEED TRAINING + EVAL
+    # c. PER-SEED TRAINING + EVAL (generic N-arm loop)
     # ------------------------------------------------------------------
-    # Collect per-arm, per-seed results for aggregation
-    # When --derive-wd-test, control arm is always WD=0
     nb_weight_decay = 0.0 if derive_wd_test else weight_decay
 
-    std_evals = []
-    tuned_evals = []
-    nb_evals = []
-    std_trainings = []
-    tuned_trainings = []
-    nb_trainings = []
-    nb_wd_evals = []       # WD=derived arm (only when derive_wd_test)
-    nb_wd_trainings = []   # WD=derived arm (only when derive_wd_test)
+    # Per-method accumulators
+    method_evals: dict[str, list[dict]] = {m: [] for m in methods}
+    method_trainings: dict[str, list[dict]] = {m: [] for m in methods}
+    # WD falsification (opt-in, NB-LoRA only)
+    nb_wd_evals: list[dict] = []
+    nb_wd_trainings: list[dict] = []
     wd_derived_value = None
     wd_derivation_info = None
     per_seed_data = {}
@@ -916,145 +1539,69 @@ def run_model_experiment(
 
         seed_dir = model_dir / "seeds" / f"seed_{seed}"
         seed_dir.mkdir(parents=True, exist_ok=True)
-        seed_result = {"seed": seed}
+        seed_result: dict = {"seed": seed}
 
-        # ---- Standard LoRA ----
-        logger.info(f"\n--- [{model_name}] Standard LoRA (seed={seed}) ---")
-        std_out = seed_dir / "standard_lora"
-        try:
-            std_train = train_standard_lora(
-                model_path=model_path,
-                num_layers=num_layers,
-                data_dir=std_data_dir,
-                output_dir=std_out,
-                config=STANDARD_LORA_CONFIG,
-                seed=seed,
-                iters_override=iters,
-            )
-            # Commensurable val_loss: full val set, batch_size=1, same operator
-            std_train["callback_val_loss"] = std_train.get("final_val_loss")
-            logger.info("  Commensurable val_loss eval (standard)...")
-            std_train["final_val_loss"] = evaluate_val_loss(
-                model_path, str(std_out), VAL_DATA,
-            )
-            logger.info(f"  val_loss={std_train['final_val_loss']:.4f} "
-                        f"(callback={std_train['callback_val_loss']})")
-            with open(std_out / "training_log.json", "w") as f:
-                json.dump(std_train, f, indent=2, default=str)
-            std_trainings.append(std_train)
+        for method_name in methods:
+            display = METHOD_DISPLAY.get(method_name, method_name)
+            logger.info(f"\n--- [{model_name}] {display} (seed={seed}) ---")
+            method_out = seed_dir / method_name
 
-            if not skip_eval:
-                std_eval = run_lm_eval(
-                    model_path=model_path,
-                    tasks=BENCHMARK_TASKS,
-                    adapter_path=str(std_out),
-                    limit=eval_limit,
-                )
-            else:
-                std_eval = {}
-            with open(std_out / "eval_results.json", "w") as f:
-                json.dump(std_eval, f, indent=2)
-            std_evals.append(std_eval)
-            seed_result["standard_lora"] = {"training": std_train, "eval": std_eval}
-        except Exception as e:
-            logger.exception(f"  Standard LoRA seed={seed} failed")
-            seed_result["standard_lora"] = {"error": str(e)}
-
-        # ---- Tuned LoRA ----
-        if best_tuned_config is not None:
-            logger.info(f"\n--- [{model_name}] Tuned LoRA (seed={seed}) ---")
-            tuned_out = seed_dir / "tuned_lora"
             try:
-                tuned_train = train_standard_lora(
+                train_result = _train_method(
+                    method_name=method_name,
                     model_path=model_path,
                     num_layers=num_layers,
                     data_dir=std_data_dir,
-                    output_dir=tuned_out,
-                    config=best_tuned_config,
+                    output_dir=method_out,
                     seed=seed,
-                    iters_override=iters,
+                    iters=iters,
+                    best_tuned_config=best_tuned_config,
+                    weight_decay=nb_weight_decay,
                 )
-                # Commensurable val_loss
-                tuned_train["callback_val_loss"] = tuned_train.get("final_val_loss")
-                logger.info("  Commensurable val_loss eval (tuned)...")
-                tuned_train["final_val_loss"] = evaluate_val_loss(
-                    model_path, str(tuned_out), VAL_DATA,
+
+                # Commensurable val_loss: same operator for all arms
+                train_result["callback_val_loss"] = train_result.get("final_val_loss")
+                logger.info(f"  Commensurable val_loss eval ({method_name})...")
+                train_result["final_val_loss"] = evaluate_val_loss(
+                    model_path, str(method_out), VAL_DATA,
                 )
-                logger.info(f"  val_loss={tuned_train['final_val_loss']:.4f} "
-                            f"(callback={tuned_train['callback_val_loss']})")
-                with open(tuned_out / "training_log.json", "w") as f:
-                    json.dump(tuned_train, f, indent=2, default=str)
-                tuned_trainings.append(tuned_train)
+                logger.info(f"  val_loss={train_result['final_val_loss']:.4f} "
+                            f"(callback={train_result['callback_val_loss']})")
+
+                with open(method_out / "training_log.json", "w") as f:
+                    json.dump(train_result, f, indent=2, default=str)
+                method_trainings[method_name].append(train_result)
 
                 if not skip_eval:
-                    tuned_eval = run_lm_eval(
+                    eval_result = run_lm_eval(
                         model_path=model_path,
                         tasks=BENCHMARK_TASKS,
-                        adapter_path=str(tuned_out),
+                        adapter_path=str(method_out),
                         limit=eval_limit,
                     )
                 else:
-                    tuned_eval = {}
-                with open(tuned_out / "eval_results.json", "w") as f:
-                    json.dump(tuned_eval, f, indent=2)
-                tuned_evals.append(tuned_eval)
-                seed_result["tuned_lora"] = {"training": tuned_train, "eval": tuned_eval}
+                    eval_result = {}
+                with open(method_out / "eval_results.json", "w") as f:
+                    json.dump(eval_result, f, indent=2)
+                method_evals[method_name].append(eval_result)
+
+                seed_result[method_name] = {
+                    "training": train_result, "eval": eval_result,
+                }
             except Exception as e:
-                logger.exception(f"  Tuned LoRA seed={seed} failed")
-                seed_result["tuned_lora"] = {"error": str(e)}
-
-        # ---- NB-LoRA ----
-        # NB-LoRA always runs to convergence certificate (no iteration cap).
-        # Budget-matching by iteration count is not meaningful: NB-LoRA and
-        # standard LoRA use different batch sizes, gradient accumulation,
-        # and stopping criteria.  The valid comparison is convergence-to-
-        # convergence: both arms run until their natural stopping point.
-        logger.info(f"\n--- [{model_name}] NB-LoRA (seed={seed}) ---")
-        nb_out = seed_dir / "nb_lora"
-        try:
-            nb_train = train_nb_lora(
-                model_path=model_path,
-                output_dir=nb_out,
-                seed=seed,
-                weight_decay=nb_weight_decay,
-            )
-            # Commensurable val_loss: same operator as standard arm
-            logger.info("  Commensurable val_loss eval (NB-LoRA)...")
-            nb_train["final_val_loss"] = evaluate_val_loss(
-                model_path, str(nb_out), VAL_DATA,
-            )
-            logger.info(f"  val_loss={nb_train['final_val_loss']:.4f} "
-                        f"(training post_loss={nb_train.get('post_loss_training')})")
-            with open(nb_out / "training_log.json", "w") as f:
-                json.dump(nb_train, f, indent=2, default=str)
-            nb_trainings.append(nb_train)
-
-            if not skip_eval:
-                nb_eval = run_lm_eval(
-                    model_path=model_path,
-                    tasks=BENCHMARK_TASKS,
-                    adapter_path=str(nb_out),
-                    limit=eval_limit,
-                )
-            else:
-                nb_eval = {}
-            with open(nb_out / "eval_results.json", "w") as f:
-                json.dump(nb_eval, f, indent=2)
-            nb_evals.append(nb_eval)
-            seed_result["nb_lora"] = {"training": nb_train, "eval": nb_eval}
-        except Exception as e:
-            logger.exception(f"  NB-LoRA seed={seed} failed")
-            seed_result["nb_lora"] = {"error": str(e)}
+                logger.exception(f"  {display} seed={seed} failed")
+                seed_result[method_name] = {"error": str(e)}
 
         # ---- NB-LoRA WD=derived (if --derive-wd-test) ----
-        if derive_wd_test and "error" not in seed_result.get("nb_lora", {}):
+        if (derive_wd_test
+                and "nb_lora" in methods
+                and "error" not in seed_result.get("nb_lora", {})):
+            nb_out = seed_dir / "nb_lora"
             nb_train_wd0 = seed_result["nb_lora"]["training"]
             try:
                 wd_derived, wd_deriv = derive_wd_from_training_result(
                     nb_train_wd0, str(nb_out),
                 )
-                # Store derived value (same across seeds by construction,
-                # but may vary slightly — keep per-seed for transparency)
                 wd_derived_value = wd_derived
                 wd_derivation_info = wd_deriv
                 logger.info(
@@ -1071,7 +1618,6 @@ def run_model_experiment(
                     seed=seed,
                     weight_decay=wd_derived,
                 )
-                # Commensurable val_loss: same operator as all other arms
                 logger.info("  Commensurable val_loss eval (NB-LoRA WD=derived)...")
                 nb_train_wd["final_val_loss"] = evaluate_val_loss(
                     model_path, str(nb_out_wd), VAL_DATA,
@@ -1118,27 +1664,15 @@ def run_model_experiment(
                     label="base",
                 )
 
-                std_adapter = str(std_out) if "error" not in seed_result.get("standard_lora", {}) else None
-                std_responses = (
-                    generate_inference_responses(model_path, std_adapter, prompts, "standard_lora")
-                    if std_adapter else []
-                )
-
-                tuned_adapter = (
-                    str(seed_dir / "tuned_lora")
-                    if best_tuned_config and "error" not in seed_result.get("tuned_lora", {})
-                    else None
-                )
-                tuned_responses = (
-                    generate_inference_responses(model_path, tuned_adapter, prompts, "tuned_lora")
-                    if tuned_adapter else []
-                )
-
-                nb_adapter = str(nb_out) if "error" not in seed_result.get("nb_lora", {}) else None
-                nb_responses = (
-                    generate_inference_responses(model_path, nb_adapter, prompts, "nb_lora")
-                    if nb_adapter else []
-                )
+                method_responses: dict[str, list] = {"base": base_responses}
+                for method_name in methods:
+                    if "error" not in seed_result.get(method_name, {}):
+                        adapter = str(seed_dir / method_name)
+                        method_responses[method_name] = generate_inference_responses(
+                            model_path, adapter, prompts, method_name,
+                        )
+                    else:
+                        method_responses[method_name] = []
 
                 inference_data = {"prompts": []}
                 for prompt_data in prompts:
@@ -1150,10 +1684,8 @@ def run_model_experiment(
                         "prompt": prompt_data["prompt"],
                         "expected": prompt_data.get("expected", ""),
                         "responses": {
-                            "base": next((r["response"] for r in base_responses if r["id"] == pid), ""),
-                            "standard_lora": next((r["response"] for r in std_responses if r["id"] == pid), ""),
-                            "tuned_lora": next((r["response"] for r in tuned_responses if r["id"] == pid), ""),
-                            "nb_lora": next((r["response"] for r in nb_responses if r["id"] == pid), ""),
+                            name: next((r["response"] for r in resps if r["id"] == pid), "")
+                            for name, resps in method_responses.items()
                         },
                     }
                     inference_data["prompts"].append(entry)
@@ -1176,14 +1708,10 @@ def run_model_experiment(
 
     comparison = build_comparison(
         baseline_scores=baseline_scores,
-        std_evals=std_evals,
-        tuned_evals=tuned_evals,
-        nb_evals=nb_evals,
-        std_trainings=std_trainings,
-        tuned_trainings=tuned_trainings,
-        nb_trainings=nb_trainings,
+        method_evals=method_evals,
+        method_trainings=method_trainings,
+        methods=methods,
         grid_summary=grid_summary,
-        quick=quick,
     )
     results["comparison"] = comparison
 
@@ -1191,9 +1719,9 @@ def run_model_experiment(
     if derive_wd_test and nb_wd_trainings and wd_derived_value is not None:
         wd_falsification = build_wd_falsification(
             baseline_scores=baseline_scores,
-            nb_wd0_evals=nb_evals,
+            nb_wd0_evals=method_evals.get("nb_lora", []),
             nb_wdD_evals=nb_wd_evals,
-            nb_wd0_trainings=nb_trainings,
+            nb_wd0_trainings=method_trainings.get("nb_lora", []),
             nb_wdD_trainings=nb_wd_trainings,
             wd_derived=wd_derived_value,
             wd_derivation=wd_derivation_info,
@@ -1208,7 +1736,7 @@ def run_model_experiment(
     with open(model_dir / "comparison.json", "w") as f:
         json.dump(comparison, f, indent=2)
 
-    print_comparison(model_name, comparison)
+    print_comparison(model_name, comparison, methods)
 
     # Cleanup temp data dir
     shutil.rmtree(std_data_dir, ignore_errors=True)
@@ -1311,17 +1839,13 @@ def build_wd_falsification(
 
 def build_comparison(
     baseline_scores: dict,
-    std_evals: list[dict],
-    tuned_evals: list[dict],
-    nb_evals: list[dict],
-    std_trainings: list[dict],
-    tuned_trainings: list[dict],
-    nb_trainings: list[dict],
-    grid_summary: dict | None,
-    quick: bool = False,
+    method_evals: dict[str, list[dict]],
+    method_trainings: dict[str, list[dict]],
+    methods: list[str],
+    grid_summary: dict | None = None,
 ) -> dict:
-    """Build multi-seed comparison across three arms."""
-    comparison = {
+    """Build multi-seed comparison across N arms."""
+    comparison: dict = {
         "benchmarks": {},
         "training": {},
         "spectral": {},
@@ -1329,122 +1853,120 @@ def build_comparison(
     }
 
     # Aggregate benchmarks per arm
-    std_agg = aggregate_arm_evals(std_evals, baseline_scores)
-    tuned_agg = aggregate_arm_evals(tuned_evals, baseline_scores)
-    nb_agg = aggregate_arm_evals(nb_evals, baseline_scores)
+    method_agg = {
+        m: aggregate_arm_evals(method_evals.get(m, []), baseline_scores)
+        for m in methods
+    }
 
     for task in BENCHMARK_TASKS:
-        entry = {"task": task}
-        if task in std_agg:
-            entry["baseline"] = std_agg[task]["baseline"]
-            entry["metric"] = std_agg[task]["metric"]
-        elif task in nb_agg:
-            entry["baseline"] = nb_agg[task]["baseline"]
-            entry["metric"] = nb_agg[task]["metric"]
-        else:
+        entry: dict = {"task": task}
+        # Find baseline from first method that has it
+        for m in methods:
+            if task in method_agg[m]:
+                entry["baseline"] = method_agg[m][task]["baseline"]
+                entry["metric"] = method_agg[m][task]["metric"]
+                break
+        if "baseline" not in entry:
             continue
 
-        for arm_name, arm_agg in [
-            ("standard_lora", std_agg),
-            ("tuned_lora", tuned_agg),
-            ("nb_lora", nb_agg),
-        ]:
-            if task in arm_agg:
-                entry[arm_name] = {
-                    "mean": arm_agg[task]["mean"],
-                    "std": arm_agg[task]["std"],
-                    "n_seeds": arm_agg[task]["n_seeds"],
-                    "delta_vs_baseline": arm_agg[task]["delta_vs_baseline"],
+        for m in methods:
+            if task in method_agg[m]:
+                entry[m] = {
+                    "mean": method_agg[m][task]["mean"],
+                    "std": method_agg[m][task]["std"],
+                    "n_seeds": method_agg[m][task]["n_seeds"],
+                    "delta_vs_baseline": method_agg[m][task]["delta_vs_baseline"],
                 }
 
         comparison["benchmarks"][task] = entry
 
     # Training stats
-    for arm_name, trainings in [
-        ("standard_lora", std_trainings),
-        ("tuned_lora", tuned_trainings),
-        ("nb_lora", nb_trainings),
-    ]:
+    for m in methods:
+        trainings = method_trainings.get(m, [])
         times = [t.get("training_time_seconds", 0) for t in trainings]
-        val_losses = [t.get("final_val_loss", 0) for t in trainings if t.get("final_val_loss") is not None]
-        comparison["training"][arm_name] = {
+        val_losses = [
+            t.get("final_val_loss", 0) for t in trainings
+            if t.get("final_val_loss") is not None
+        ]
+        comparison["training"][m] = {
             "n_runs": len(trainings),
             "training_time_mean": _safe_mean(times),
             "training_time_std": _safe_stdev(times),
             "final_val_loss_mean": _safe_mean(val_losses),
             "final_val_loss_std": _safe_stdev(val_losses),
-            "hyperparameter_count": trainings[0].get("hyperparameter_count", 0) if trainings else 0,
+            "hyperparameter_count": (
+                trainings[0].get("hyperparameter_count", 0) if trainings else 0
+            ),
         }
 
     # Spectral safety
-    std_max_norms = [t.get("spectral_info", {}).get("max_spectral_norm", 0) for t in std_trainings]
-    tuned_max_norms = [t.get("spectral_info", {}).get("max_spectral_norm", 0) for t in tuned_trainings]
-    comparison["spectral"] = {
-        "standard_lora": {
-            "max_norm_mean": _safe_mean(std_max_norms),
-            "bounded_by_construction": False,
-        },
-        "tuned_lora": {
-            "max_norm_mean": _safe_mean(tuned_max_norms),
-            "bounded_by_construction": False,
-        },
-        "nb_lora": {
-            "bounded_by_construction": True,
-            "max_spectral_ratio_mean": _safe_mean([
-                t.get("max_spectral_ratio", 0) for t in nb_trainings
-            ]),
-            "spectral_bounds_ok": all(
-                t.get("spectral_bounds_ok", False) for t in nb_trainings
-            ),
-        },
-    }
+    for m in methods:
+        trainings = method_trainings.get(m, [])
+        if m in NBLORA_METHODS:
+            comparison["spectral"][m] = {
+                "bounded_by_construction": True,
+                "max_spectral_ratio_mean": _safe_mean([
+                    t.get("max_spectral_ratio", 0) for t in trainings
+                ]),
+                "spectral_bounds_ok": all(
+                    t.get("spectral_bounds_ok", False) for t in trainings
+                ),
+            }
+        else:
+            max_norms = [
+                t.get("spectral_info", {}).get("max_spectral_norm", 0)
+                for t in trainings
+            ]
+            comparison["spectral"][m] = {
+                "max_norm_mean": _safe_mean(max_norms),
+                "bounded_by_construction": False,
+            }
 
-    # Head-to-head: NB vs Standard, NB vs Tuned
-    # Per-task tie band from lm-eval stderr.  Each arm's mean has SE
-    # (se_mean) from aggregate_arm_evals.  The difference of two
-    # independent estimates has SE_diff = sqrt(se1² + se2²).  The 95%
-    # CI for the difference is 2 × SE_diff.
-    for opponent_name, opponent_agg in [
-        ("standard_lora", std_agg),
-        ("tuned_lora", tuned_agg),
-    ]:
-        nb_wins = 0
-        opponent_wins = 0
-        ties = 0
-        deltas = []
-        per_task_bands = {}
+    # Head-to-head: NB-LoRA vs every other method
+    if "nb_lora" in methods:
+        nb_agg = method_agg["nb_lora"]
+        for opponent in methods:
+            if opponent == "nb_lora":
+                continue
+            opp_agg = method_agg[opponent]
 
-        for task in BENCHMARK_TASKS:
-            if task in nb_agg and task in opponent_agg:
-                nb_mean = nb_agg[task]["mean"]
-                opp_mean = opponent_agg[task]["mean"]
-                nb_se = nb_agg[task]["se_mean"]
-                opp_se = opponent_agg[task]["se_mean"]
-                tie_band = 2.0 * math.sqrt(nb_se**2 + opp_se**2)
-                delta = nb_mean - opp_mean
-                deltas.append(delta)
-                per_task_bands[task] = {
-                    "nb_se": nb_se,
-                    "opp_se": opp_se,
-                    "tie_band": tie_band,
-                }
-                if abs(delta) < tie_band:
-                    ties += 1
-                elif delta > 0:
-                    nb_wins += 1
-                else:
-                    opponent_wins += 1
+            nb_wins = 0
+            opponent_wins = 0
+            ties = 0
+            deltas = []
+            per_task_bands = {}
 
-        key = f"nb_vs_{opponent_name}"
-        comparison["head_to_head"][key] = {
-            "nb_wins": nb_wins,
-            "opponent_wins": opponent_wins,
-            "ties": ties,
-            "mean_delta": _safe_mean(deltas),
-            "total_tasks": len(deltas),
-            "tie_band_derivation": "per-task: 2*sqrt(se_nb² + se_opp²)",
-            "per_task_tie_bands": per_task_bands,
-        }
+            for task in BENCHMARK_TASKS:
+                if task in nb_agg and task in opp_agg:
+                    nb_mean = nb_agg[task]["mean"]
+                    opp_mean = opp_agg[task]["mean"]
+                    nb_se = nb_agg[task]["se_mean"]
+                    opp_se = opp_agg[task]["se_mean"]
+                    tie_band = 2.0 * math.sqrt(nb_se**2 + opp_se**2)
+                    delta = nb_mean - opp_mean
+                    deltas.append(delta)
+                    per_task_bands[task] = {
+                        "nb_se": nb_se,
+                        "opp_se": opp_se,
+                        "tie_band": tie_band,
+                    }
+                    if abs(delta) < tie_band:
+                        ties += 1
+                    elif delta > 0:
+                        nb_wins += 1
+                    else:
+                        opponent_wins += 1
+
+            key = f"nb_vs_{opponent}"
+            comparison["head_to_head"][key] = {
+                "nb_wins": nb_wins,
+                "opponent_wins": opponent_wins,
+                "ties": ties,
+                "mean_delta": _safe_mean(deltas),
+                "total_tasks": len(deltas),
+                "tie_band_derivation": "per-task: 2*sqrt(se_nb² + se_opp²)",
+                "per_task_tie_bands": per_task_bands,
+            }
 
     # Grid search info
     if grid_summary:
@@ -1460,66 +1982,74 @@ def build_comparison(
 # ---------------------------------------------------------------------------
 # Print comparison
 # ---------------------------------------------------------------------------
-def print_comparison(model_name: str, comparison: dict):
-    """Print human-readable multi-seed comparison."""
+def print_comparison(
+    model_name: str,
+    comparison: dict,
+    methods: list[str] | None = None,
+):
+    """Print human-readable multi-seed comparison for N arms."""
     benchmarks = comparison.get("benchmarks", {})
     training = comparison.get("training", {})
     h2h = comparison.get("head_to_head", {})
+
+    # Determine which methods are present in the data
+    if methods is None:
+        methods = list(training.keys())
 
     print(f"\n{'='*80}")
     print(f"  COMPARISON: {model_name}")
     print(f"{'='*80}")
 
-    # Header
-    has_tuned = any("tuned_lora" in v for v in benchmarks.values())
-    if has_tuned:
-        print(f"  {'Task':<18} {'Base':>8} {'Std LoRA':>14} {'Tuned LoRA':>14} {'NB-LoRA':>14}")
-    else:
-        print(f"  {'Task':<18} {'Base':>8} {'Std LoRA':>14} {'NB-LoRA':>14}")
-    print(f"  {'-'*72}")
+    # Header: Task | Base | method1 | method2 | ...
+    col_width = 16
+    header = f"  {'Task':<18} {'Base':>8}"
+    for m in methods:
+        label = METHOD_DISPLAY.get(m, m)[:col_width]
+        header += f" {label:>{col_width}}"
+    print(header)
+    print(f"  {'-'*(20 + 8 + (col_width + 1) * len(methods))}")
 
     for task, data in benchmarks.items():
         base = data.get("baseline", 0)
-        std = data.get("standard_lora", {})
-        tuned = data.get("tuned_lora", {})
-        nb = data.get("nb_lora", {})
-
-        std_str = f"{std.get('mean', 0):.4f}+/-{std.get('std', 0):.3f}" if std else "---"
-        nb_str = f"{nb.get('mean', 0):.4f}+/-{nb.get('std', 0):.3f}" if nb else "---"
-
-        if has_tuned:
-            tuned_str = f"{tuned.get('mean', 0):.4f}+/-{tuned.get('std', 0):.3f}" if tuned else "---"
-            print(f"  {task:<18} {base:>8.4f} {std_str:>14} {tuned_str:>14} {nb_str:>14}")
-        else:
-            print(f"  {task:<18} {base:>8.4f} {std_str:>14} {nb_str:>14}")
+        row = f"  {task:<18} {base:>8.4f}"
+        for m in methods:
+            arm = data.get(m, {})
+            if arm:
+                row += f" {arm.get('mean', 0):>7.4f}+/-{arm.get('std', 0):.3f}"
+            else:
+                row += f" {'---':>{col_width}}"
+        print(row)
 
     # Training stats
     print(f"\n  Training:")
-    for arm_name in ["standard_lora", "tuned_lora", "nb_lora"]:
-        t = training.get(arm_name, {})
+    for m in methods:
+        t = training.get(m, {})
         if t.get("n_runs", 0) == 0:
             continue
         hp = t.get("hyperparameter_count", "?")
         time_str = f"{t['training_time_mean']:.1f}+/-{t['training_time_std']:.1f}s"
         vloss_str = f"{t['final_val_loss_mean']:.4f}+/-{t['final_val_loss_std']:.4f}"
-        label = {"standard_lora": "Standard", "tuned_lora": "Tuned", "nb_lora": "NB-LoRA"}[arm_name]
-        print(f"    {label:<12} time={time_str:<18} val_loss={vloss_str:<20} HPs={hp}")
+        label = METHOD_DISPLAY.get(m, m)
+        print(f"    {label:<14} time={time_str:<18} val_loss={vloss_str:<20} HPs={hp}")
 
     # Head-to-head
-    print(f"\n  Head-to-Head:")
-    for key, h in h2h.items():
-        label = key.replace("nb_vs_", "NB vs ")
-        print(f"    {label}: NB wins {h['nb_wins']}, "
-              f"opponent wins {h['opponent_wins']}, "
-              f"ties {h['ties']}, "
-              f"mean delta {h['mean_delta']:+.4f}")
+    if h2h:
+        print(f"\n  Head-to-Head (NB-LoRA vs each):")
+        for key, h in h2h.items():
+            opponent = key.replace("nb_vs_", "")
+            label = METHOD_DISPLAY.get(opponent, opponent)
+            print(f"    vs {label}: NB wins {h['nb_wins']}, "
+                  f"opponent wins {h['opponent_wins']}, "
+                  f"ties {h['ties']}, "
+                  f"mean delta {h['mean_delta']:+.4f}")
 
     # Grid search
     gs = comparison.get("grid_search", {})
     if gs:
         bc = gs.get("best_config", {})
         print(f"\n  Grid Search ({gs.get('n_configs_tested', '?')} configs):")
-        print(f"    Best: rank={bc.get('rank')}, lr={bc.get('lr')}, scale={bc.get('scale', 0):.2f}")
+        print(f"    Best: rank={bc.get('rank')}, lr={bc.get('lr')}, "
+              f"scale={bc.get('scale', 0):.2f}")
         print(f"    Best val loss: {gs.get('best_val_loss', '?')}")
 
     # WD falsification
@@ -1527,11 +2057,13 @@ def print_comparison(model_name: str, comparison: dict):
     if wdf:
         print(f"\n  WD Falsification:")
         print(f"    Prediction: {wdf['prediction']}")
-        print(f"    WD derived: {wdf['wd_derived']:.6f} ({wdf['wd_derivation']['formula']})")
+        print(f"    WD derived: {wdf['wd_derived']:.6f} "
+              f"({wdf['wd_derivation']['formula']})")
         print(f"    Val loss: WD=0 {wdf['training_val_loss']['wd0_mean']:.4f}, "
               f"WD=derived {wdf['training_val_loss']['wdD_mean']:.4f}")
         for task, td in wdf.get("per_task", {}).items():
-            print(f"    {task:<18} WD=0={td['wd0_mean']:.4f}  WD=D={td['wdD_mean']:.4f}  "
+            print(f"    {task:<18} WD=0={td['wd0_mean']:.4f}  "
+                  f"WD=D={td['wdD_mean']:.4f}  "
                   f"band={td['tie_band']:.4f}  {td['verdict']}")
         print(f"    Tasks where WD wins: {wdf['tasks_where_wd_wins']}")
         print(f"    Verdict: {wdf['verdict']}")
@@ -1630,7 +2162,7 @@ def build_summary(all_results: dict) -> dict:
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description="NB-LoRA vs Standard LoRA — three-arm head-to-head comparison",
+        description="NB-LoRA vs PEFT baselines — N-arm head-to-head comparison (R1)",
     )
     parser.add_argument(
         "--models",
@@ -1638,6 +2170,16 @@ def main():
         choices=list(MODEL_SPECS.keys()),
         default=["350M"],
         help="Model scales to test (default: 350M)",
+    )
+    parser.add_argument(
+        "--methods",
+        nargs="+",
+        choices=ALL_METHOD_NAMES,
+        default=["standard_lora", "tuned_lora", "nb_lora"],
+        help=(
+            f"Methods to include (default: standard_lora tuned_lora nb_lora). "
+            f"Available: {', '.join(ALL_METHOD_NAMES)}"
+        ),
     )
     parser.add_argument(
         "--seeds",
@@ -1723,9 +2265,10 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("=" * 70)
-    logger.info("NB-LoRA vs Standard LoRA — Head-to-Head Comparison (R1)")
+    logger.info("NB-LoRA vs PEFT Baselines — Head-to-Head Comparison (R1)")
     logger.info("=" * 70)
     logger.info(f"Models: {args.models}")
+    logger.info(f"Methods: {args.methods}")
     logger.info(f"Seeds: {args.seeds}")
     logger.info(f"Quick: {args.quick}")
     logger.info(f"Output: {output_dir}")
@@ -1745,6 +2288,7 @@ def main():
                 model_spec=spec,
                 output_dir=output_dir,
                 seeds=args.seeds,
+                methods=args.methods,
                 quick=args.quick,
                 skip_eval=args.skip_eval,
                 skip_inference=args.skip_inference,
@@ -1766,6 +2310,7 @@ def main():
         "standard_lora": STANDARD_LORA_CONFIG,
         "lora_alpha": LORA_ALPHA,
         "tuned_grid": TUNED_GRID,
+        "methods": args.methods,
         "seeds": args.seeds,
     }
 

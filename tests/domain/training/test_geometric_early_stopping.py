@@ -18,6 +18,7 @@ from modelcypher.core.domain.training.geometric_early_stopping import (
     check_loss_stable,
     check_stopping_certificate,
     check_val_loss_converged,
+    should_certificate_stop,
 )
 
 
@@ -568,3 +569,31 @@ class TestTaskImprovementGate:
         # 3.0 - 2.0 = 1.0 > 0.1 (CI) → met
         assert cert.task_improvement_met is True
         assert cert.all_conditions_met is True
+
+
+class TestShouldCertificateStop:
+    """Tests for should_certificate_stop() — val_loss gate on certificate."""
+
+    def test_not_met_returns_false(self):
+        """Certificate not met → never stop."""
+        assert should_certificate_stop(False, [1.0, 0.9]) is False
+
+    def test_met_no_history(self):
+        """Certificate met, no val_loss history → trust certificate."""
+        assert should_certificate_stop(True, []) is True
+
+    def test_met_single_loss(self):
+        """Certificate met, single val_loss → trust certificate."""
+        assert should_certificate_stop(True, [1.0]) is True
+
+    def test_met_loss_improved(self):
+        """Certificate met but val_loss improved → override, keep training."""
+        assert should_certificate_stop(True, [1.0, 0.9]) is False
+
+    def test_met_loss_flat(self):
+        """Certificate met and val_loss flat → stop."""
+        assert should_certificate_stop(True, [1.0, 1.0]) is True
+
+    def test_met_loss_worsened(self):
+        """Certificate met and val_loss worsened → stop."""
+        assert should_certificate_stop(True, [0.9, 1.0]) is True

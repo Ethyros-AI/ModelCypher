@@ -94,6 +94,12 @@ A toolkit for measuring the geometric structure of LLM representations.
 
 **The idea:** ModelCypher treats internal activations and weights as representation spaces and measures their geometry (distances, curvature, alignment). The outputs are raw measurements you can compare across models or track over time.
 
+Current repo accounting is intentionally narrow:
+
+- `mc train run` is the canonical shipped surface
+- merge, continual learning, and stacking remain experimental or partial
+- the closure order lives in [RESEARCH-ROADMAP.md](RESEARCH-ROADMAP.md)
+
 ---
 
 ## Three Pathways
@@ -125,11 +131,14 @@ poetry run mc analyze lora-svd /path/to/adapter --base /path/to/model
 → [Geometry Guide](GEOMETRY-GUIDE.md) · [Research Papers](../papers/README.md) · [Glossary](GLOSSARY.md)
 
 ### Path 3: Merge Models (Experimental)
-**Goal**: Transfer knowledge between models via null-space projection.
+**Goal**: Explore cross-model transfer via the experimental null-space merge stack.
 
 ```bash
 poetry run mc merge run -s ./source-model -t ./target-model -o ./merged
 ```
+
+This workflow is useful, but it is not yet counted as canonical mission
+closure. The active closure order is in [RESEARCH-ROADMAP.md](RESEARCH-ROADMAP.md).
 
 → [CLI Reference](CLI-REFERENCE.md) · [Geometry Guide](GEOMETRY-GUIDE.md) · [Verification](VERIFICATION.md)
 
@@ -206,9 +215,10 @@ ModelCypher/
 ├── src/modelcypher/          # Source code
 │   ├── core/domain/          # Pure math + business logic
 │   ├── adapters/             # Concrete integrations (hf_hub, filesystem)
+│   ├── backends/             # ML framework implementations
 │   ├── cli/                  # CLI commands
+│   └── experimental/         # Research surfaces not yet canonical
 ├── docs/                     # Documentation (you are here)
-│   ├── geometry/             # Deep-dive geometry docs
 │   ├── research/             # Research methodology
 │   └── references/arxiv/     # Reference PDFs
 ├── papers/                   # Research manuscripts (0-5)

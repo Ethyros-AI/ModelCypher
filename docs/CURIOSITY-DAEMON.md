@@ -4,6 +4,15 @@ This note documents the math and flow behind the Curiosity Daemon. The design
 is geometry-first: all decisions are derived from manifold measurements and
 machine precision, not heuristics.
 
+## Status
+
+The curiosity and consolidation stack is still experimental.
+
+- it is not part of the canonical mission surface
+- it should not be described as shipped continual learning
+- it remains downstream of the consolidation operator blocker in
+  [OPEN-MATHEMATICAL-QUESTIONS.md](/Users/jasonkempf/ModelCypher/docs/research/OPEN-MATHEMATICAL-QUESTIONS.md)
+
 ## Premise [CONJECTURAL]
 
 LLM behavior is manifold geometry. Curiosity is implemented as targeted
@@ -65,7 +74,7 @@ Convergence:
 
 ## Module Map
 
-- `src/modelcypher/core/domain/continual/curiosity_policy.py`
+- `src/modelcypher/experimental/continual/curiosity_policy.py`
   EFE policy, epistemic value, exploration temperature.
 - `src/modelcypher/core/domain/geometry/acquisition_coreset.py`
   Geodesic k-center distances and coverage radius.
@@ -73,8 +82,11 @@ Convergence:
   Directional gaps + local intrinsic dimension.
 - `src/modelcypher/core/domain/geometry/acquisition_composite.py`
   Geometry-derived weighting and composite score.
-- `src/modelcypher/core/use_cases/curiosity_daemon.py`
+- `src/modelcypher/experimental/use_cases/curiosity_daemon.py`
   Async orchestration and convergence detection.
+- `src/modelcypher/experimental/use_cases/consolidation_service.py`
+  Experimental consolidation service invoked when geometry says the sparse
+  manifold surface is no longer enough.
 
 ## Guarantees [PROVEN]
 
@@ -83,3 +95,7 @@ All thresholds and decisions are derived from:
 - manifold geometry (distance, curvature, intrinsic dimension)
 
 No fixed empirical heuristics are used.
+
+Those guarantees apply to the local formulas in this note. They do **not** by
+themselves close the broader claim that the repo has a promotable
+continual-learning or consolidation operator.
