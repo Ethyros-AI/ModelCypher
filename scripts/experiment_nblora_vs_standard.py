@@ -169,7 +169,16 @@ DEFAULT_SEEDS = [42, 123, 456, 789, 1024]
 # All available methods (populated after training functions are defined)
 ALL_METHOD_NAMES = [
     "standard_lora", "tuned_lora", "dora", "rslora", "pissa", "eva", "nb_lora",
+    "geometric_pissa",
+    "standard_nb_surface", "pissa_nb_surface", "dora_nb_surface",
+    "geometric_pissa_nb_surface",
 ]
+
+# Methods that require an NBTargetSurface (derived once per model)
+NB_SURFACE_METHODS = {
+    "standard_nb_surface", "pissa_nb_surface", "dora_nb_surface",
+    "geometric_pissa_nb_surface",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -838,6 +847,717 @@ def train_pissa(
 
 
 # ---------------------------------------------------------------------------
+# Targeted LoRA conversion (exact NB-LoRA surface)
+# ---------------------------------------------------------------------------
+def targeted_lora_conversion(
+    model,
+    rank_overrides: dict[str, int],
+    scale: float,
+    dropout: float = 0.0,
+    use_dora: bool = False,
+) -> int:
+    """Inject LoRA/DoRA on exact module keys with per-module ranks.
+
+    Navigates the model tree using weight key paths from NB-LoRA geometry
+    analysis.  Each module gets its own rank from rank_overrides.
+    Returns count of converted modules.
+    """
+    import mlx.nn as nn
+    from mlx_lm.tuner.lora import LoRALinear
+
+    if use_dora:
+        from mlx_lm.tuner.dora import DoRALinear
+        LayerClass = DoRALinear
+    else:
+        LayerClass = LoRALinear
+
+    converted = 0
+    for weight_key, rank in rank_overrides.items():
+        # weight_key is like "base.layers.2.mixer.q_proj.weight"
+        # Strip ".weight" suffix to get module path
+        module_path = weight_key.replace(".weight", "")
+        parts = module_path.split(".")
+
+        # Navigate model tree to find the parent and attribute name
+        parent = model
+        for part in parts[:-1]:
+            if part.isdigit():
+                parent = parent[int(part)]
+            else:
+                parent = getattr(parent, part)
+
+        attr_name = parts[-1]
+        linear = getattr(parent, attr_name)
+
+        if not isinstance(linear, (nn.Linear, nn.QuantizedLinear)):
+            logger.warning(
+                "targeted_lora_conversion: %s is %s, not Linear — skipping",
+                weight_key, type(linear).__name__,
+            )
+            continue
+
+        lora_layer = LayerClass.from_base(
+            linear, r=rank, scale=scale, dropout=dropout,
+        )
+        setattr(parent, attr_name, lora_layer)
+        converted += 1
+
+    logger.info(
+        "targeted_lora_conversion: %d/%d modules converted (dora=%s)",
+        converted, len(rank_overrides), use_dora,
+    )
+    return converted
+
+
+# ---------------------------------------------------------------------------
+# Surface-matched training (same surface as NB-LoRA, different method)
+# ---------------------------------------------------------------------------
+def train_surface_matched(
+    model_path: str,
+    data_dir: Path,
+    output_dir: Path,
+    rank_overrides: dict[str, int],
+    config: dict | None = None,
+    seed: int = 42,
+    iters_override: int | None = None,
+    fine_tune_type: str = "lora",
+    pissa_init: bool = False,
+) -> dict:
+    """Train LoRA-family adapter on NB-LoRA's exact module surface.
+
+    Uses targeted_lora_conversion with per-module ranks from
+    derive_nb_target_surface().  Supports standard LoRA, DoRA, and PiSSA
+    init on the matched surface.
+    """
+    import mlx.core as mx
+    import mlx.optimizers as optim
+    from mlx.utils import tree_flatten
+    from mlx_lm import load as mlx_load
+    from mlx_lm.lora import (
+        TrainingArgs,
+        load_dataset,
+        save_config,
+        train,
+    )
+    from mlx_lm.tuner.datasets import CacheDataset
+
+    cfg = config or STANDARD_LORA_CONFIG
+    iters = iters_override or cfg["iters"]
+    use_dora = fine_tune_type == "dora"
+    avg_rank = sum(rank_overrides.values()) / max(len(rank_overrides), 1)
+    scale = cfg.get("scale", LORA_ALPHA / avg_rank)
+
+    mx.random.seed(seed)
+    random.seed(seed)
+
+    logger.info(
+        f"  Surface-matched {fine_tune_type}: {len(rank_overrides)} modules, "
+        f"ranks={sorted(set(rank_overrides.values()))}, "
+        f"pissa={pissa_init}, seed={seed}"
+    )
+
+    model, tokenizer = mlx_load(str(model_path))
+
+    args = SimpleNamespace(
+        model=str(model_path), data=str(data_dir), train=True, test=False,
+        seed=seed, batch_size=cfg["batch_size"],
+        max_seq_length=cfg["max_seq_length"], hf_dataset=False,
+    )
+    train_set, valid_set, _ = load_dataset(args, tokenizer)
+
+    model.freeze()
+    n_converted = targeted_lora_conversion(
+        model, rank_overrides, scale=scale,
+        dropout=cfg.get("dropout", 0.0), use_dora=use_dora,
+    )
+
+    fused_model_path = None
+
+    if pissa_init:
+        # SVD-initialize each LoRA layer from base weight principal components
+        pissa_count = 0
+        for weight_key, rank in rank_overrides.items():
+            module_path = weight_key.replace(".weight", "")
+            parts = module_path.split(".")
+            parent = model
+            for part in parts[:-1]:
+                if part.isdigit():
+                    parent = parent[int(part)]
+                else:
+                    parent = getattr(parent, part)
+            module = getattr(parent, parts[-1])
+
+            if not hasattr(module, "lora_a"):
+                continue
+
+            W = module.linear.weight if hasattr(module, "linear") else None
+            if W is None:
+                continue
+
+            W_f32 = W.astype(mx.float32)
+            try:
+                U, S, Vt = mx.linalg.svd(W_f32, stream=mx.cpu)
+                mx.eval(U, S, Vt)
+            except Exception:
+                logger.warning(f"  PiSSA SVD failed for {weight_key}, keeping random init")
+                continue
+
+            r = min(rank, S.shape[0])
+            A_init = Vt[:r, :].T.astype(W.dtype)
+            B_init = (S[:r, None] * U[:, :r].T).astype(W.dtype)
+
+            W_principal = (U[:, :r] * S[:r]) @ Vt[:r, :]
+            mx.eval(W_principal)
+            W_residual = (W_f32 - W_principal).astype(W.dtype)
+            module.linear.weight = W_residual
+            module.lora_a = A_init
+            module.lora_b = B_init
+            mx.eval(module.lora_a, module.lora_b, module.linear.weight)
+            pissa_count += 1
+
+        logger.info(f"  PiSSA SVD init: {pissa_count}/{n_converted} modules")
+
+        # Save fused model (base+residual) for eval
+        fused_dir = output_dir / "fused_model"
+        fused_dir.mkdir(parents=True, exist_ok=True)
+        # Copy tokenizer + config
+        import shutil as _shutil
+        src_model = Path(model_path)
+        for f in src_model.iterdir():
+            if f.suffix in (".json", ".txt", ".model") or f.name.startswith("tokenizer"):
+                _shutil.copy2(f, fused_dir / f.name)
+        # Save modified base weights
+        from mlx.utils import tree_flatten as tf
+        base_weights = dict(tf(model.parameters()))
+        # Remove LoRA params from base weights
+        base_only = {k: v for k, v in base_weights.items()
+                     if "lora_a" not in k and "lora_b" not in k
+                     and "lora_m" not in k}
+        mx.save_safetensors(str(fused_dir / "model.safetensors"), base_only)
+        fused_model_path = str(fused_dir)
+
+    n_trainable = sum(v.size for _, v in tree_flatten(model.trainable_parameters()))
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    adapter_file = output_dir / "adapters.safetensors"
+    save_config({"rank_overrides": rank_overrides, "scale": scale}, output_dir / "adapter_config.json")
+
+    training_args = TrainingArgs(
+        batch_size=cfg["batch_size"],
+        iters=iters,
+        val_batches=25,
+        steps_per_report=10,
+        steps_per_eval=200,
+        steps_per_save=iters,
+        adapter_file=adapter_file,
+        max_seq_length=cfg["max_seq_length"],
+        grad_checkpoint=False,
+        grad_accumulation_steps=1,
+    )
+
+    lr_value = cfg["lr"]
+    if cfg.get("lr_schedule") == "cosine":
+        lr_value = optim.cosine_decay(init=cfg["lr"], decay_steps=iters)
+
+    if cfg.get("optimizer", "adamw") == "adamw":
+        opt = optim.AdamW(learning_rate=lr_value, weight_decay=0.0)
+    else:
+        opt = optim.Adam(learning_rate=lr_value)
+
+    loss_capture = LossCapture()
+    t0 = time.time()
+    train(
+        model=model,
+        args=training_args,
+        optimizer=opt,
+        train_dataset=CacheDataset(train_set),
+        val_dataset=CacheDataset(valid_set),
+        training_callback=loss_capture,
+    )
+    training_time = time.time() - t0
+
+    # Ensure adapter saved
+    if not adapter_file.exists():
+        from mlx.utils import tree_flatten as tf2
+        adapter_weights = dict(tf2(model.trainable_parameters()))
+        mx.save_safetensors(str(adapter_file), adapter_weights)
+
+    spectral_info = measure_standard_lora_spectral_norms(model, scale)
+
+    result = {
+        "method": fine_tune_type,
+        "seed": seed,
+        "iters": iters,
+        "training_time_seconds": training_time,
+        "n_trainable_params": n_trainable,
+        "adapter_path": str(output_dir),
+        "config": {
+            "lr": cfg["lr"],
+            "batch_size": cfg["batch_size"],
+            "optimizer": cfg.get("optimizer", "adamw"),
+            "scale": scale,
+            "n_modules": len(rank_overrides),
+            "ranks": sorted(set(rank_overrides.values())),
+            "pissa_init": pissa_init,
+            "fine_tune_type": fine_tune_type,
+        },
+        "hyperparameter_count": len([
+            k for k in cfg if k not in ("max_seq_length", "batch_size", "iters")
+        ]),
+        "final_val_loss": loss_capture.final_val_loss,
+        "final_train_loss": loss_capture.final_train_loss,
+        "loss_history": {
+            "train": loss_capture.train_losses,
+            "val": loss_capture.val_losses,
+        },
+        "spectral_info": spectral_info,
+    }
+
+    if fused_model_path:
+        result["fused_model_path"] = fused_model_path
+
+    del model, tokenizer
+    mx.clear_cache()
+    gc.collect()
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Geometric PiSSA: PiSSA init + MASS-derived LR + Fisher preconditioning
+# ---------------------------------------------------------------------------
+def train_geometric_pissa(
+    model_path: str,
+    num_layers: int,
+    data_dir: Path,
+    output_dir: Path,
+    seed: int = 42,
+    rank_overrides: dict[str, int] | None = None,
+) -> dict:
+    """PiSSA SVD initialization + MASS automation.  Zero heuristics.
+
+    1. SVD of W → A, B from principal singular vectors (PiSSA init)
+    2. W_residual = W - U_r S_r V_r^T (PiSSA decomposition)
+    3. MASS-derived learning rate per step (replaces heuristic lr=2e-4)
+    4. Fisher preconditioning (curvature-aware direction)
+    5. Geometric stopping certificate (replaces heuristic iters=1000)
+    6. Spectral budget = (σ_r - σ_{r+1})/2 tracks change from PiSSA init
+
+    When rank_overrides is provided, injects LoRA on those exact modules
+    with per-module ranks (NB surface mode) instead of all linears.
+    """
+    import math
+
+    import mlx.core as mx
+    import mlx.nn as nn
+    from mlx.utils import tree_flatten as mlx_flatten
+    from mlx_lm import load as mlx_load
+    from mlx_lm.lora import linear_to_lora_layers, load_dataset
+    from mlx_lm.tuner.datasets import CacheDataset
+    from mlx_lm.tuner.trainer import default_loss, iterate_batches
+
+    from modelcypher.core.domain.training.diagonal_fisher_preconditioner import (
+        init_fisher_state,
+        precondition_gradient,
+        update_fisher_state,
+    )
+    from modelcypher.core.domain.training.geometric_early_stopping import (
+        check_stopping_certificate,
+        check_val_loss_converged,
+        should_certificate_stop,
+    )
+    from modelcypher.core.domain.training.mass_step_size import (
+        apply_sqrt_n_epoch_correction,
+        compute_per_step_rates,
+        derive_spectral_ceiling,
+    )
+
+    rank = 8
+    batch_size = 4
+    max_seq_length = 2048
+    max_epochs = 100  # safety cap, NOT a tuning knob
+
+    mx.random.seed(seed)
+    random.seed(seed)
+
+    if rank_overrides:
+        logger.info(
+            f"  Geometric PiSSA (NB surface): {len(rank_overrides)} modules, "
+            f"ranks={sorted(set(rank_overrides.values()))}, seed={seed}"
+        )
+    else:
+        logger.info(f"  Geometric PiSSA: rank={rank}, seed={seed} (zero heuristics)")
+
+    model, tokenizer = mlx_load(str(model_path))
+
+    # Load data via mlx-lm's standard pipeline
+    args = SimpleNamespace(
+        model=str(model_path), data=str(data_dir), train=True, test=False,
+        seed=seed, batch_size=batch_size, max_seq_length=max_seq_length,
+        hf_dataset=False,
+    )
+    train_set, valid_set, _ = load_dataset(args, tokenizer)
+
+    # Apply LoRA layers (random init, will be overwritten by SVD)
+    model.freeze()
+    if rank_overrides:
+        targeted_lora_conversion(
+            model, rank_overrides, scale=1.0, dropout=0.0,
+        )
+    else:
+        linear_to_lora_layers(
+            model, num_layers,
+            {"rank": rank, "dropout": 0.0, "scale": 1.0},
+        )
+
+    # ── PiSSA SVD Initialization + geometry extraction ──
+    pissa_init_count = 0
+    layer_geometry = {}  # name → {sigma_r, sigma_r_plus_1, sigma_max, gap, budget}
+    ab_inits = {}        # name → AB_init snapshot for budget tracking
+
+    # Build lookup from module path → rank when using per-module overrides
+    _module_rank_lookup = {}
+    if rank_overrides:
+        for wk, rk in rank_overrides.items():
+            _module_rank_lookup[wk.replace(".weight", "")] = rk
+
+    for name, module in model.named_modules():
+        if not (hasattr(module, "lora_a") and hasattr(module, "lora_b")):
+            continue
+        W = module.linear.weight if hasattr(module, "linear") else None
+        if W is None:
+            continue
+
+        W_f32 = W.astype(mx.float32)
+        try:
+            U, S, Vt = mx.linalg.svd(W_f32, stream=mx.cpu)
+            mx.eval(U, S, Vt)
+        except Exception:
+            logger.warning(f"  Geometric PiSSA SVD failed for {name}, keeping random init")
+            continue
+
+        module_rank = _module_rank_lookup.get(name, rank) if rank_overrides else rank
+        r = min(module_rank, S.shape[0])
+        # PiSSA initialization
+        A_init = Vt[:r, :].T.astype(W.dtype)       # [in, r]
+        B_init = (S[:r, None] * U[:, :r].T).astype(W.dtype)  # [r, out]
+
+        # Residual base weight
+        W_principal = (U[:, :r] * S[:r]) @ Vt[:r, :]
+        mx.eval(W_principal)
+        W_residual = (W_f32 - W_principal).astype(W.dtype)
+        module.linear.weight = W_residual
+
+        # Set LoRA weights
+        module.lora_a = A_init
+        module.lora_b = B_init
+        mx.eval(module.lora_a, module.lora_b, module.linear.weight)
+
+        # Geometry for MASS: spectral gap at rank r
+        sigma_r = float(S[r - 1])
+        sigma_r_plus_1 = float(S[r]) if r < S.shape[0] else 0.0
+        sigma_max = float(S[0])
+        gap = sigma_r - sigma_r_plus_1
+        budget = gap / 2.0  # Weyl crossing threshold
+
+        layer_geometry[name] = {
+            "sigma_r": sigma_r, "sigma_r_plus_1": sigma_r_plus_1,
+            "sigma_max": sigma_max, "gap": gap, "budget": budget,
+        }
+
+        # Snapshot AB_init for budget tracking
+        ab_init = (module.lora_a @ module.lora_b)
+        mx.eval(ab_init)
+        ab_inits[name] = ab_init
+
+        pissa_init_count += 1
+
+    logger.info(f"  Geometric PiSSA: {pissa_init_count} layers SVD-initialized")
+
+    if not layer_geometry:
+        raise RuntimeError("No layers successfully initialized with SVD")
+
+    # Global spectral bounds for MASS
+    gap_min = min(g["gap"] for g in layer_geometry.values())
+    sigma_max_global = max(g["sigma_max"] for g in layer_geometry.values())
+    budget_min = min(g["budget"] for g in layer_geometry.values())
+
+    logger.info(
+        f"  Spectral geometry: gap_min={gap_min:.4e}, σ_max={sigma_max_global:.4e}, "
+        f"budget_min={budget_min:.4e}"
+    )
+
+    n_trainable = sum(v.size for _, v in mlx_flatten(model.trainable_parameters()))
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # ── Data batching ──
+    train_ds = CacheDataset(train_set)
+    valid_ds = CacheDataset(valid_set)
+    batch_iter = iterate_batches(train_ds, batch_size, max_seq_length, loop=True, seed=seed)
+    n_batches_per_epoch = len(
+        list(iterate_batches(train_ds, batch_size, max_seq_length, loop=False, seed=seed))
+    )
+    if n_batches_per_epoch <= 0:
+        raise ValueError("Training dataset produced zero batches")
+    max_iters = n_batches_per_epoch * max_epochs
+
+    logger.info(
+        f"  Training: {n_batches_per_epoch} batches/epoch, max_epochs={max_epochs}, "
+        f"max_iters={max_iters}"
+    )
+
+    # ── MASS Layer 1: Spectral ceiling ──
+    eta_ceiling = derive_spectral_ceiling(
+        sigma_k_min=gap_min, sigma_max_global=sigma_max_global,
+    )
+    eta_ceiling = apply_sqrt_n_epoch_correction(eta_ceiling, n_batches_per_epoch)
+    logger.info(f"  MASS ceiling: η_ceiling={eta_ceiling:.6e}")
+
+    # ── Fisher state ──
+    from modelcypher.backends import initialize_default_backend
+    from modelcypher.core.domain._backend import get_default_backend
+    initialize_default_backend()
+    backend = get_default_backend()
+
+    trainable_flat = dict(mlx_flatten(model.trainable_parameters()))
+    fisher_state = init_fisher_state(
+        trainable_flat, backend, n_batches_per_epoch=n_batches_per_epoch,
+    )
+    del trainable_flat
+    logger.info(f"  Fisher: β₁={fisher_state.beta1:.4f}, β₂={fisher_state.beta2:.4f}")
+
+    # ── Loss function ──
+    loss_fn = default_loss
+    loss_value_and_grad = nn.value_and_grad(model, loss_fn)
+
+    # ── Training state ──
+    remaining_budgets = {name: g["budget"] for name, g in layer_geometry.items()}
+    val_losses_history = []
+    grad_norm_history = []
+    train_losses = []
+    val_losses_log = []
+    stop_reason = "max_iters"
+
+    t0 = time.time()
+
+    for it in range(max_iters):
+        # Forward + backward
+        batch, lengths = next(batch_iter)
+        (loss, ntoks), grad = loss_value_and_grad(model, batch, lengths)
+
+        # Flatten gradient + Fisher preconditioning
+        grad_flat = dict(mlx_flatten(grad))
+        fisher_state = update_fisher_state(fisher_state, grad_flat, backend)
+        update_direction = precondition_gradient(grad_flat, fisher_state, backend)
+
+        # Direction norm
+        d_flat = [p.reshape(-1) for p in update_direction.values() if p.size > 0]
+        d_norm_sq = sum(mx.sum(p * p) for p in d_flat)
+        mx.eval(d_norm_sq, loss)
+        d_norm_val = float(mx.sqrt(d_norm_sq).item())
+        loss_float = float(loss)
+
+        # MASS per-step rates
+        min_remaining = min(remaining_budgets.values()) if remaining_budgets else None
+        eta_step, eta_sps, eta_weyl, displacement, eta_margin = compute_per_step_rates(
+            loss_float, d_norm_val, gap_min, eta_ceiling,
+            remaining_budget=min_remaining,
+        )
+
+        # Parameter update: θ -= η_step × d
+        eta_arr = mx.array(eta_step)
+        current_params = dict(mlx_flatten(model.trainable_parameters()))
+        updated_params = [
+            (k, current_params[k] - eta_arr * update_direction[k])
+            for k in current_params
+            if k in update_direction
+        ]
+        model.load_weights(updated_params, strict=False)
+        mx.eval(*[v for _, v in mlx_flatten(model.trainable_parameters())])
+
+        # Per-step logging
+        if (it + 1) % 10 == 0:
+            logger.info(
+                f"  Step {it+1}/{max_iters} | loss={loss_float:.4f} | "
+                f"η={eta_step:.2e} (sps={eta_sps:.2e} weyl={eta_weyl:.2e} "
+                f"ceil={eta_ceiling:.2e}"
+                f"{f' margin={eta_margin:.2e}' if eta_margin is not None else ''}) | "
+                f"‖d‖={d_norm_val:.4f}"
+            )
+
+        # ── Epoch boundary ──
+        if (it + 1) % n_batches_per_epoch == 0:
+            epoch = (it + 1) // n_batches_per_epoch
+
+            # Measure spectral budget consumption (change from PiSSA init)
+            max_ratio = 0.0
+            for name, module in model.named_modules():
+                if name not in ab_inits:
+                    continue
+                ab_current = module.lora_a @ module.lora_b
+                delta = ab_current - ab_inits[name]
+                # Power iteration for spectral norm of dense delta
+                v = mx.random.normal((delta.shape[1],))
+                mx.eval(v)
+                for _ in range(10):
+                    u = delta @ v
+                    u_norm = mx.linalg.norm(u)
+                    u = u / mx.maximum(u_norm, mx.array(1e-12))
+                    v = delta.T @ u
+                    v_norm = mx.linalg.norm(v)
+                    v = v / mx.maximum(v_norm, mx.array(1e-12))
+                mx.eval(u, v)
+                s_est = float(mx.abs(u @ delta @ v).item())
+                budget = layer_geometry[name]["budget"]
+                remaining_budgets[name] = max(0.0, budget - s_est)
+                if budget > 0:
+                    max_ratio = max(max_ratio, s_est / budget)
+
+            # Validation loss
+            val_loss = 0.0
+            val_ntoks = 0
+            for vb, vl in iterate_batches(valid_ds, batch_size, max_seq_length, loop=False):
+                vl_val, vn = loss_fn(model, vb, vl)
+                mx.eval(vl_val)
+                val_loss += float(vl_val) * int(vn)
+                val_ntoks += int(vn)
+            val_loss = val_loss / max(val_ntoks, 1)
+            val_losses_history.append(val_loss)
+            val_losses_log.append({"epoch": epoch, "val_loss": val_loss})
+
+            # Gradient norm for stationarity
+            raw_flat = [p.reshape(-1) for p in grad_flat.values() if p.size > 0]
+            if raw_flat:
+                gnorm_sq = sum(mx.sum(p * p) for p in raw_flat)
+                mx.eval(gnorm_sq)
+                grad_norm = float(mx.sqrt(gnorm_sq).item())
+            else:
+                grad_norm = 0.0
+            grad_norm_history.append(grad_norm)
+
+            logger.info(
+                f"  Epoch {epoch} | val_loss={val_loss:.4f} | ‖g‖={grad_norm:.4e} | "
+                f"budget_ratio={max_ratio:.4f} | remaining_min={min(remaining_budgets.values()):.4e}"
+            )
+
+            # Check stopping: val loss convergence
+            converged, reason, _ = check_val_loss_converged(val_losses_history)
+            if converged and reason:
+                stop_reason = reason
+                logger.info(f"  Stopping: {reason} at epoch {epoch}")
+                break
+
+            # Check stopping: budget exhausted
+            if any(r <= 0 for r in remaining_budgets.values()):
+                stop_reason = "budget_exhausted"
+                logger.info(f"  Stopping: spectral budget exhausted at epoch {epoch}")
+                break
+
+            # Check stopping: gradient stationarity certificate
+            cert = check_stopping_certificate(
+                grad_norm=grad_norm,
+                grad_norm_history=grad_norm_history,
+                val_loss_baseline=val_losses_history[0] if val_losses_history else None,
+                val_loss_current=val_loss,
+                val_ci_half_width=0.0,  # no per-batch CI available
+            )
+            if should_certificate_stop(cert.all_conditions_met, val_losses_history):
+                stop_reason = "certificate"
+                logger.info(f"  Stopping: geometric certificate at epoch {epoch}")
+                break
+
+        train_losses.append({"iteration": it + 1, "train_loss": loss_float})
+
+    training_time = time.time() - t0
+    actual_iters = it + 1
+
+    logger.info(
+        f"  Geometric PiSSA: {actual_iters} iters in {training_time:.1f}s, "
+        f"stop_reason={stop_reason}"
+    )
+
+    # ── Post-hoc spectral measurement ──
+    spectral_info = measure_standard_lora_spectral_norms(model, 1.0)
+
+    # ── Fuse LoRA into W_residual (identical to PiSSA) ──
+    fused_dir = output_dir / "fused_model"
+    fused_dir.mkdir(parents=True, exist_ok=True)
+
+    for name, module in model.named_modules():
+        if hasattr(module, "lora_a") and hasattr(module, "lora_b"):
+            scale = getattr(module, "scale", 1.0)
+            delta = (module.lora_a @ module.lora_b) * scale
+            module.linear.weight = module.linear.weight + delta.T
+
+    from mlx.utils import tree_flatten as _tf
+    weights = {}
+    for k, v in _tf(model.parameters()):
+        if any(t in k for t in ("lora_a", "lora_b", ".scale")):
+            continue
+        k = k.replace(".linear.weight", ".weight")
+        k = k.replace(".linear.bias", ".bias")
+        weights[k] = v
+    mx.save_safetensors(str(fused_dir / "model.safetensors"), weights)
+    for fname in ["config.json", "tokenizer.json", "tokenizer_config.json",
+                   "special_tokens_map.json"]:
+        src = Path(model_path) / fname
+        if src.exists():
+            shutil.copy2(src, fused_dir / fname)
+    logger.info(f"  Geometric PiSSA: saved fused model to {fused_dir}")
+
+    # Save adapters for reference
+    adapter_weights = dict(mlx_flatten(model.trainable_parameters()))
+    mx.save_safetensors(str(output_dir / "adapters.safetensors"), adapter_weights)
+
+    result = {
+        "method": "geometric_pissa",
+        "seed": seed,
+        "iters": actual_iters,
+        "max_iters": max_iters,
+        "stop_reason": stop_reason,
+        "training_time_seconds": training_time,
+        "n_trainable_params": n_trainable,
+        "adapter_path": str(output_dir),
+        "fused_model_path": str(fused_dir),
+        "config": {
+            "rank": rank,
+            "scale": 1.0,
+            "optimizer": "MASS+Fisher (derived)",
+            "lr": "MASS-derived",
+            "schedule": "SPS natural deceleration",
+            "stopping": "geometric certificate",
+        },
+        "hyperparameter_count": 0,
+        "pissa_init_layers": pissa_init_count,
+        "spectral_geometry": {
+            "gap_min": gap_min,
+            "sigma_max_global": sigma_max_global,
+            "eta_ceiling": eta_ceiling,
+            "per_layer_gaps": {n: g["gap"] for n, g in layer_geometry.items()},
+            "per_layer_budgets": {n: g["budget"] for n, g in layer_geometry.items()},
+        },
+        "mass_telemetry": {
+            "final_eta_step": eta_step,
+            "final_eta_sps": eta_sps,
+            "final_remaining_budget": min(remaining_budgets.values()),
+        },
+        "final_val_loss": val_losses_history[-1] if val_losses_history else None,
+        "final_train_loss": loss_float,
+        "loss_history": {
+            "train": train_losses[-10:],  # last 10 for summary
+            "val": val_losses_log,
+        },
+        "spectral_info": spectral_info,
+    }
+
+    del model, tokenizer
+    mx.clear_cache()
+    gc.collect()
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # EVA training (Explained Variance Adaptation)
 # ---------------------------------------------------------------------------
 def train_eva(
@@ -1464,6 +2184,7 @@ def _train_method(
     iters: int,
     best_tuned_config: dict | None = None,
     weight_decay: float = 0.0,
+    nb_surface: "NBTargetSurface | None" = None,
 ) -> dict:
     """Dispatch training to the right function based on method name."""
     if method_name == "standard_lora":
@@ -1504,6 +2225,45 @@ def _train_method(
             model_path, output_dir, seed=seed,
             weight_decay=weight_decay,
         )
+    elif method_name == "geometric_pissa":
+        result = train_geometric_pissa(
+            model_path, num_layers, data_dir, output_dir,
+            seed=seed,
+        )
+    elif method_name == "standard_nb_surface":
+        if nb_surface is None:
+            raise ValueError("standard_nb_surface requires nb_surface")
+        result = train_surface_matched(
+            model_path, data_dir, output_dir,
+            rank_overrides=nb_surface.rank_overrides,
+            config=STANDARD_LORA_CONFIG, seed=seed, iters_override=iters,
+            fine_tune_type="lora",
+        )
+    elif method_name == "pissa_nb_surface":
+        if nb_surface is None:
+            raise ValueError("pissa_nb_surface requires nb_surface")
+        result = train_surface_matched(
+            model_path, data_dir, output_dir,
+            rank_overrides=nb_surface.rank_overrides,
+            config=STANDARD_LORA_CONFIG, seed=seed, iters_override=iters,
+            fine_tune_type="lora", pissa_init=True,
+        )
+    elif method_name == "dora_nb_surface":
+        if nb_surface is None:
+            raise ValueError("dora_nb_surface requires nb_surface")
+        result = train_surface_matched(
+            model_path, data_dir, output_dir,
+            rank_overrides=nb_surface.rank_overrides,
+            config=DORA_CONFIG, seed=seed, iters_override=iters,
+            fine_tune_type="dora",
+        )
+    elif method_name == "geometric_pissa_nb_surface":
+        if nb_surface is None:
+            raise ValueError("geometric_pissa_nb_surface requires nb_surface")
+        result = train_geometric_pissa(
+            model_path, num_layers, data_dir, output_dir,
+            seed=seed, rank_overrides=nb_surface.rank_overrides,
+        )
     else:
         raise ValueError(f"Unknown method: {method_name}")
 
@@ -1520,10 +2280,20 @@ METHOD_DISPLAY = {
     "pissa": "PiSSA",
     "eva": "EVA",
     "nb_lora": "NB-LoRA",
+    "geometric_pissa": "Geometric PiSSA",
+    "standard_nb_surface": "Standard LoRA (NB surface)",
+    "pissa_nb_surface": "PiSSA (NB surface)",
+    "dora_nb_surface": "DoRA (NB surface)",
+    "geometric_pissa_nb_surface": "Geometric PiSSA (NB surface)",
 }
 
 # Methods with post-hoc spectral measurement (not bounded by construction)
-SPECTRAL_POSTHOC_METHODS = {"standard_lora", "tuned_lora", "dora", "rslora", "pissa", "eva"}
+SPECTRAL_POSTHOC_METHODS = {
+    "standard_lora", "tuned_lora", "dora", "rslora", "pissa", "eva",
+    "geometric_pissa",
+    "standard_nb_surface", "pissa_nb_surface", "dora_nb_surface",
+    "geometric_pissa_nb_surface",
+}
 
 # Methods that use NB-LoRA's geometry-derived pipeline
 NBLORA_METHODS = {"nb_lora"}
@@ -1619,6 +2389,40 @@ def run_model_experiment(
     results["methods"] = methods
 
     # ------------------------------------------------------------------
+    # b2. DERIVE NB TARGET SURFACE (once, if any surface method requested)
+    # ------------------------------------------------------------------
+    nb_surface = None
+    if any(m in NB_SURFACE_METHODS for m in methods):
+        logger.info(f"\n--- [{model_name}] Deriving NB-LoRA target surface ---")
+        from modelcypher.backends import initialize_default_backend
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.use_cases.dataset_training_service import (
+            DatasetTrainingService,
+            NBTargetSurface,
+        )
+        initialize_default_backend()
+        backend = get_default_backend()
+        adapter = backend.create_adapter()
+        svc = DatasetTrainingService(adapter, backend)
+        nb_surface = svc.derive_nb_target_surface(
+            model_path=model_path,
+            dataset_path=str(TRAIN_DATA),
+            eval_dataset_path=str(VAL_DATA),
+            seed=42,
+        )
+        results["nb_surface"] = nb_surface.to_dict()
+        logger.info(
+            f"  NB surface: {len(nb_surface.target_keys)} modules, "
+            f"ranks={sorted(set(nb_surface.rank_overrides.values()))}, "
+            f"ceiling={nb_surface.rank_ceiling_source}"
+        )
+        # Clean up
+        del svc, adapter
+        import mlx.core as mx
+        mx.clear_cache()
+        gc.collect()
+
+    # ------------------------------------------------------------------
     # c. PER-SEED TRAINING + EVAL (generic N-arm loop)
     # ------------------------------------------------------------------
     nb_weight_decay = 0.0 if derive_wd_test else weight_decay
@@ -1658,6 +2462,7 @@ def run_model_experiment(
                     iters=iters,
                     best_tuned_config=best_tuned_config,
                     weight_decay=nb_weight_decay,
+                    nb_surface=nb_surface,
                 )
 
                 # Commensurable val_loss: same operator for all arms

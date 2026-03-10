@@ -320,6 +320,37 @@ class DatasetTrainResult:
         return result
 
 
+@dataclass
+class NBTargetSurface:
+    """Resolved NB-LoRA adaptation surface (geometry-derived).
+
+    Captures the exact modules, per-module ranks, and spectral bounds
+    from the production geometry pipeline.  Reusable by any method that
+    wants to train on the same surface for controlled comparison.
+    """
+
+    target_keys: list[str]
+    rank_overrides: dict[str, int]
+    rank_ceiling_source: str
+    sigma_k_min: float
+    sigma_max: float
+    geometry_info: dict[str, Any]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "target_keys": self.target_keys,
+            "rank_overrides": self.rank_overrides,
+            "rank_ceiling_source": self.rank_ceiling_source,
+            "sigma_k_min": self.sigma_k_min,
+            "sigma_max": self.sigma_max,
+            "n_modules": len(self.target_keys),
+            "rank_range": [
+                min(self.rank_overrides.values()),
+                max(self.rank_overrides.values()),
+            ],
+        }
+
+
 class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
     """Train LoRA adapters from text datasets using NB-LoRA.
 
@@ -338,6 +369,162 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
     ) -> tuple[Any, Any, bool]:
         """Load model + tokenizer with the same path semantics used for training."""
         return self._adapter.load_training_model(str(model_path), backend=self._backend)
+
+    def derive_nb_target_surface(
+        self,
+        model_path: str | Path,
+        dataset_path: str | Path,
+        eval_dataset_path: str | Path | None = None,
+        seed: int = 42,
+    ) -> "NBTargetSurface":
+        """Run the NB-LoRA geometry pipeline and return the resolved surface.
+
+        Executes the exact same pipeline as train_from_dataset (analyze →
+        select_target_modules → compute_coupled_ranks → apply_signal_rank_ceiling
+        or apply_data_rank_ceiling) but returns the surface artifact instead of
+        training.  Cleans up model/cache after analysis.
+        """
+        model_path = Path(model_path).expanduser().resolve()
+        dataset_path = Path(dataset_path).expanduser().resolve()
+        eval_path = (
+            Path(eval_dataset_path).expanduser().resolve()
+            if eval_dataset_path
+            else None
+        )
+
+        random.seed(seed)
+        self._backend.random_seed(seed)
+
+        # 1. Load model + tokenizer
+        logger.info("derive_nb_target_surface: loading model from %s", model_path)
+        model, tokenizer, _ = self._load_training_model(model_path)
+
+        # 2. Load dataset for seq_length derivation and eval split
+        all_samples = load_jsonl_dataset(dataset_path)
+        eval_samples_early = (
+            load_jsonl_dataset(eval_path) if eval_path else None
+        )
+
+        # Derive seq_length from data (same logic as train_from_dataset)
+        token_source_samples = list(all_samples)
+        if eval_samples_early is not None:
+            token_source_samples.extend(eval_samples_early)
+        token_lengths = []
+        for s in token_source_samples:
+            text = s.get("text")
+            if isinstance(text, str) and text:
+                n = len(self._backend.encode_tokens(tokenizer, text))
+                if n > 0:
+                    token_lengths.append(n)
+        if not token_lengths:
+            raise TrainingDerivationError(
+                failure_class="unavailable_measurement",
+                detail="seq_length derivation requires tokenizable text samples.",
+                diagnostics={"n_samples": len(all_samples)},
+            )
+        max_tokens_with_eos = max(token_lengths) + 1
+        seq_length = (
+            (max_tokens_with_eos + _MLX_SIMD_WIDTH - 1) // _MLX_SIMD_WIDTH
+        ) * _MLX_SIMD_WIDTH
+
+        # Derive eval split (same logic as train_from_dataset)
+        if eval_path is not None:
+            train_samples = all_samples
+            eval_samples = eval_samples_early
+        else:
+            shuffled = list(all_samples)
+            random.Random(seed).shuffle(shuffled)
+            split_idx = max(1, int(len(shuffled) * 0.9))
+            train_samples = shuffled[:split_idx]
+            eval_samples = shuffled[split_idx:]
+
+        try:
+            # 3. Analyze geometry
+            if hasattr(self._adapter, "analyze_model_geometry_streaming"):
+                geometries = self._adapter.analyze_model_geometry_streaming(
+                    model, use_randomized=True,
+                )
+            else:
+                weights = self._adapter.extract_weight_matrices(model)
+                geometries = analyze_weight_geometries(weights, self._backend)
+
+            # 4. Collect base activations for signal-rank ceiling
+            base_activations = self._collect_probe_activations(
+                model, tokenizer, eval_samples, seq_length=seq_length,
+            )
+
+            # 5. Select target modules
+            target_modules = select_target_modules(
+                geometries, include_zero_tail=True,
+            )
+            if not target_modules:
+                raise ValueError(
+                    "No targetable layers found from geometric analysis"
+                )
+
+            # 6. Compute coupled ranks
+            coupled_ranks = compute_coupled_ranks(geometries, target_modules)
+
+            # 7. Apply signal-rank or data-rank ceiling
+            signal_rank_results = compute_per_layer_signal_ranks(
+                base_activations, self._backend,
+            )
+            if signal_rank_results:
+                final_ranks = apply_signal_rank_ceiling(
+                    coupled_ranks, signal_rank_results,
+                )
+                ceiling_label = "RMT signal-rank"
+            else:
+                final_ranks = apply_data_rank_ceiling(
+                    coupled_ranks, n_samples=len(train_samples),
+                )
+                ceiling_label = "data-rank (fallback)"
+
+            # 8. Extract spectral bounds
+            sigma_k_min = min(
+                g.sigma_k for g in geometries.values()
+                if g.layer_key in target_modules
+            )
+            sigma_max = max(
+                g.sigma_max for g in geometries.values()
+                if g.layer_key in target_modules
+            )
+
+            # 9. Build geometry_info dict
+            geometry_info = {}
+            for key in target_modules:
+                g = geometries[key]
+                geometry_info[key] = {
+                    "sigma_max": g.sigma_max,
+                    "sigma_k": g.sigma_k,
+                    "effective_rank": g.effective_rank,
+                    "tail_dims": g.tail_dims,
+                    "shannon_effective_rank": g.shannon_effective_rank,
+                    "spectral_gap": g.spectral_gap,
+                    "shape": g.shape,
+                }
+
+            logger.info(
+                "derive_nb_target_surface: %d modules, ranks %s, "
+                "ceiling=%s, σ_k_min=%.4e, σ_max=%.4e",
+                len(target_modules),
+                sorted(set(final_ranks.values())),
+                ceiling_label,
+                sigma_k_min,
+                sigma_max,
+            )
+
+            return NBTargetSurface(
+                target_keys=target_modules,
+                rank_overrides=final_ranks,
+                rank_ceiling_source=ceiling_label,
+                sigma_k_min=sigma_k_min,
+                sigma_max=sigma_max,
+                geometry_info=geometry_info,
+            )
+        finally:
+            del model, tokenizer
+            self._backend.clear_cache()
 
     def _run_quantization_frontier_precheck(
         self,

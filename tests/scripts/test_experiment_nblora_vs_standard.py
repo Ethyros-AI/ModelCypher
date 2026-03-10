@@ -105,6 +105,7 @@ def test_build_comparison_creates_head_to_head_for_each_requested_opponent() -> 
     ("pissa", "train_pissa"),
     ("eva", "train_eva"),
     ("nb_lora", "train_nb_lora"),
+    ("geometric_pissa", "train_geometric_pissa"),
 ])
 def test_train_method_dispatches_to_correct_function(
     monkeypatch, method_name, target_fn_name
@@ -143,3 +144,161 @@ def test_train_method_raises_on_unknown_method() -> None:
             seed=42,
             iters=100,
         )
+
+
+# ---------------------------------------------------------------------------
+# Surface-matched method tests
+# ---------------------------------------------------------------------------
+
+def _make_fake_nb_surface():
+    """Create a minimal NBTargetSurface-like object for dispatch tests."""
+    class FakeSurface:
+        rank_overrides = {
+            "base.layers.2.mixer.q_proj.weight": 68,
+            "base.layers.2.mixer.k_proj.weight": 68,
+        }
+        target_keys = list(rank_overrides.keys())
+        rank_ceiling_source = "RMT signal-rank"
+        sigma_k_min = 0.01
+        sigma_max = 12.5
+    return FakeSurface()
+
+
+@pytest.mark.parametrize("method_name,target_fn_name", [
+    ("standard_nb_surface", "train_surface_matched"),
+    ("pissa_nb_surface", "train_surface_matched"),
+    ("dora_nb_surface", "train_surface_matched"),
+])
+def test_surface_matched_dispatches_to_train_surface_matched(
+    monkeypatch, method_name, target_fn_name,
+) -> None:
+    called_with: dict = {}
+
+    def fake_trainer(*args, **kwargs):
+        called_with["args"] = args
+        called_with["kwargs"] = kwargs
+        return {"method": "surface_matched", "seed": kwargs.get("seed", 0)}
+
+    monkeypatch.setattr(experiment, target_fn_name, fake_trainer)
+
+    result = experiment._train_method(
+        method_name=method_name,
+        model_path="/tmp/model",
+        num_layers=16,
+        data_dir=Path("/tmp/data"),
+        output_dir=Path("/tmp/output"),
+        seed=42,
+        iters=100,
+        nb_surface=_make_fake_nb_surface(),
+    )
+
+    assert called_with, f"{target_fn_name} was never called for {method_name}"
+    assert result["method"] == method_name
+    assert called_with["kwargs"]["rank_overrides"] == _make_fake_nb_surface().rank_overrides
+
+
+def test_geometric_pissa_nb_surface_dispatches_with_rank_overrides(
+    monkeypatch,
+) -> None:
+    called_with: dict = {}
+
+    def fake_trainer(*args, **kwargs):
+        called_with["args"] = args
+        called_with["kwargs"] = kwargs
+        return {"method": "geometric_pissa", "seed": kwargs.get("seed", 0)}
+
+    monkeypatch.setattr(experiment, "train_geometric_pissa", fake_trainer)
+
+    surface = _make_fake_nb_surface()
+    result = experiment._train_method(
+        method_name="geometric_pissa_nb_surface",
+        model_path="/tmp/model",
+        num_layers=16,
+        data_dir=Path("/tmp/data"),
+        output_dir=Path("/tmp/output"),
+        seed=42,
+        iters=100,
+        nb_surface=surface,
+    )
+
+    assert called_with, "train_geometric_pissa was never called"
+    assert result["method"] == "geometric_pissa_nb_surface"
+    assert called_with["kwargs"]["rank_overrides"] == surface.rank_overrides
+
+
+@pytest.mark.parametrize("method_name", [
+    "standard_nb_surface",
+    "pissa_nb_surface",
+    "dora_nb_surface",
+    "geometric_pissa_nb_surface",
+])
+def test_surface_methods_raise_without_nb_surface(method_name) -> None:
+    with pytest.raises(ValueError, match="requires nb_surface"):
+        experiment._train_method(
+            method_name=method_name,
+            model_path="/tmp/model",
+            num_layers=16,
+            data_dir=Path("/tmp/data"),
+            output_dir=Path("/tmp/output"),
+            seed=42,
+            iters=100,
+            nb_surface=None,
+        )
+
+
+def test_nb_surface_methods_set_is_consistent() -> None:
+    """All NB_SURFACE_METHODS must be in ALL_METHOD_NAMES."""
+    for m in experiment.NB_SURFACE_METHODS:
+        assert m in experiment.ALL_METHOD_NAMES, f"{m} missing from ALL_METHOD_NAMES"
+        assert m in experiment.METHOD_DISPLAY, f"{m} missing from METHOD_DISPLAY"
+        assert m in experiment.SPECTRAL_POSTHOC_METHODS, f"{m} missing from SPECTRAL_POSTHOC_METHODS"
+
+
+def test_targeted_lora_conversion_contract() -> None:
+    """targeted_lora_conversion converts exact modules with correct ranks."""
+    import mlx.nn as nn
+
+    # Build a minimal model tree: model.base.layers[0].mixer.q_proj
+    class FakeMixer(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.q_proj = nn.Linear(64, 64)
+            self.k_proj = nn.Linear(64, 64)
+
+    class FakeLayer(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.mixer = FakeMixer()
+
+    class FakeBase(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.layers = [FakeLayer()]
+
+    class FakeModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.base = FakeBase()
+
+    model = FakeModel()
+    model.freeze()
+
+    rank_overrides = {
+        "base.layers.0.mixer.q_proj.weight": 4,
+        "base.layers.0.mixer.k_proj.weight": 8,
+    }
+
+    count = experiment.targeted_lora_conversion(
+        model, rank_overrides, scale=2.0, dropout=0.0,
+    )
+
+    assert count == 2
+
+    from mlx_lm.tuner.lora import LoRALinear
+    q_proj = model.base.layers[0].mixer.q_proj
+    k_proj = model.base.layers[0].mixer.k_proj
+    assert isinstance(q_proj, LoRALinear)
+    assert isinstance(k_proj, LoRALinear)
+    assert q_proj.lora_a.shape[0] == 64  # [in_dims, rank]
+    assert q_proj.lora_a.shape[1] == 4
+    assert k_proj.lora_a.shape[1] == 8
