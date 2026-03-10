@@ -1049,6 +1049,8 @@ class _DatasetTrainingServiceHelperMixin:
         model_path: Path,
         target_modules: list[str],
         geometries: dict[str, Any],
+        rank_overrides: dict[str, int] | None = None,
+        rank_ceiling_source: str | None = None,
     ) -> None:
         """Persist geometry prerequisites needed by strict STaR composition."""
         module_geometry: dict[str, dict[str, Any]] = {}
@@ -1082,6 +1084,13 @@ class _DatasetTrainingServiceHelperMixin:
                 "created_unix_seconds": int(time.time()),
             },
         }
+        if rank_overrides:
+            manifest["rank_by_module"] = {
+                module: int(rank_overrides[module])
+                for module in sorted(rank_overrides)
+            }
+        if rank_ceiling_source is not None:
+            manifest["rank_ceiling_source"] = str(rank_ceiling_source)
         manifest_path = adapter_dir / "geometry_manifest.json"
         with manifest_path.open("w", encoding="utf-8") as handle:
             json.dump(manifest, handle, indent=2, sort_keys=True)

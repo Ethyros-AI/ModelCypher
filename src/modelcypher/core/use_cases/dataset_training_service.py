@@ -113,6 +113,13 @@ class DatasetTrainResult:
     spectral_bounds_ok: bool
     max_spectral_ratio: float
     training_time_seconds: float
+    target_module_count: int | None = None
+    target_modules: list[str] | None = None
+    rank_overrides: dict[str, int] | None = None
+    rank_ceiling_source: str | None = None
+    sigma_k_min: float | None = None
+    sigma_max: float | None = None
+    resolved_batch_size: int | None = None
     epoch_metrics: list[dict[str, Any]] | None = None
     # G4: Capability preservation (CKA alignment to base model)
     min_cka: float | None = None
@@ -194,6 +201,13 @@ class DatasetTrainResult:
             "n_lora_layers": self.n_lora_layers,
             "n_trainable_params": self.n_trainable_params,
             "adapter_path": self.adapter_path,
+            "target_module_count": self.target_module_count,
+            "target_modules": self.target_modules,
+            "rank_overrides": self.rank_overrides,
+            "rank_ceiling_source": self.rank_ceiling_source,
+            "sigma_k_min": self.sigma_k_min,
+            "sigma_max": self.sigma_max,
+            "resolved_batch_size": self.resolved_batch_size,
             "spectral_bounds_ok": self.spectral_bounds_ok,
             "max_spectral_ratio": self.max_spectral_ratio,
             "training_time_seconds": self.training_time_seconds,
@@ -1747,6 +1761,8 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 model_path=model_path,
                 target_modules=target_modules,
                 geometries=geometries,
+                rank_overrides=final_ranks,
+                rank_ceiling_source=ceiling_label,
             )
             saved_adapter_path = str(saved_path)
 
@@ -1814,6 +1830,13 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             n_lora_layers=n_lora_layers,
             n_trainable_params=n_trainable_params,
             adapter_path=saved_adapter_path,
+            target_module_count=int(len(target_modules)),
+            target_modules=list(sorted(target_modules)),
+            rank_overrides={key: int(value) for key, value in sorted(final_ranks.items())},
+            rank_ceiling_source=ceiling_label,
+            sigma_k_min=float(sigma_k_min),
+            sigma_max=float(sigma_max),
+            resolved_batch_size=int(batch_size),
             spectral_bounds_ok=spectral_bounds_ok,
             max_spectral_ratio=max_spectral_ratio,
             training_time_seconds=training_time_seconds,

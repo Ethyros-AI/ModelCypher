@@ -555,12 +555,16 @@ def test_geometry_manifest_written_with_sigma_k(tmp_path: Path):
                 spectral_gap=0.2,
             ),
         },
+        rank_overrides={"model.layers.0.self_attn.q_proj.weight": 17},
+        rank_ceiling_source="RMT signal-rank",
     )
 
     manifest_path = adapter_dir / "geometry_manifest.json"
     assert manifest_path.exists()
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert payload["sigma_k_by_module"]["model.layers.0.self_attn.q_proj.weight"] == pytest.approx(1.5)
+    assert payload["rank_by_module"]["model.layers.0.self_attn.q_proj.weight"] == 17
+    assert payload["rank_ceiling_source"] == "RMT signal-rank"
 
 
 def test_collect_auto_retention_applies_prompt_rules_and_format():
@@ -1340,6 +1344,13 @@ def test_dataset_train_result_to_dict_includes_null_space_diagnostics():
         n_lora_layers=1,
         n_trainable_params=100,
         adapter_path=None,
+        target_module_count=1,
+        target_modules=["model.layers.0.self_attn.q_proj.weight"],
+        rank_overrides={"model.layers.0.self_attn.q_proj.weight": 17},
+        rank_ceiling_source="RMT signal-rank",
+        sigma_k_min=0.125,
+        sigma_max=4.0,
+        resolved_batch_size=3,
         spectral_bounds_ok=True,
         max_spectral_ratio=0.5,
         training_time_seconds=1.0,
@@ -1352,6 +1363,12 @@ def test_dataset_train_result_to_dict_includes_null_space_diagnostics():
         },
     )
     payload = result.to_dict()
+    assert payload["target_module_count"] == 1
+    assert payload["rank_overrides"]["model.layers.0.self_attn.q_proj.weight"] == 17
+    assert payload["rank_ceiling_source"] == "RMT signal-rank"
+    assert payload["sigma_k_min"] == pytest.approx(0.125)
+    assert payload["sigma_max"] == pytest.approx(4.0)
+    assert payload["resolved_batch_size"] == 3
     assert payload["per_layer_null_observability"][0]["condition_number"] == pytest.approx(10.0)
     assert payload["per_layer_null_accessibility"][0]["behavioral_preserved_fraction"] == pytest.approx(0.25)
     assert (
