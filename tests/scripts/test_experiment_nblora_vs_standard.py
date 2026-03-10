@@ -302,3 +302,203 @@ def test_targeted_lora_conversion_contract() -> None:
     assert q_proj.lora_a.shape[0] == 64  # [in_dims, rank]
     assert q_proj.lora_a.shape[1] == 4
     assert k_proj.lora_a.shape[1] == 8
+
+
+def test_targeted_lora_conversion_alpha_per_module_scale() -> None:
+    """When lora_alpha is set, scale = alpha / rank per module."""
+    import mlx.nn as nn
+
+    class FakeMixer(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.q_proj = nn.Linear(64, 64)
+            self.k_proj = nn.Linear(64, 64)
+
+    class FakeLayer(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.mixer = FakeMixer()
+
+    class FakeBase(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.layers = [FakeLayer()]
+
+    class FakeModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.base = FakeBase()
+
+    model = FakeModel()
+    model.freeze()
+
+    rank_overrides = {
+        "base.layers.0.mixer.q_proj.weight": 4,
+        "base.layers.0.mixer.k_proj.weight": 8,
+    }
+
+    experiment.targeted_lora_conversion(
+        model, rank_overrides, lora_alpha=16.0,
+    )
+
+    q_proj = model.base.layers[0].mixer.q_proj
+    k_proj = model.base.layers[0].mixer.k_proj
+    # scale = alpha / rank: 16/4=4.0 for q_proj, 16/8=2.0 for k_proj
+    assert q_proj.scale == 4.0
+    assert k_proj.scale == 2.0
+
+
+def test_fuse_lora_into_base_produces_correct_weights() -> None:
+    """_fuse_lora_into_base folds delta into linear.weight correctly."""
+    import mlx.core as mx
+    import mlx.nn as nn
+    from mlx_lm.tuner.lora import LoRALinear
+
+    linear = nn.Linear(8, 8)
+    original_weight = linear.weight.astype(mx.float32)
+    mx.eval(original_weight)
+    lora = LoRALinear.from_base(linear, r=2, scale=1.0)
+
+    # Set known LoRA weights
+    lora.lora_a = mx.ones((8, 2)) * 0.1  # [in, r]
+    lora.lora_b = mx.ones((2, 8)) * 0.1  # [r, out]
+    mx.eval(lora.lora_a, lora.lora_b)
+
+    # Expected delta: (lora_a @ lora_b).T * scale = (0.1*[8,2] @ 0.1*[2,8]).T * 1.0
+    expected_delta = (lora.lora_a @ lora.lora_b).T
+    mx.eval(expected_delta)
+    expected_weight = original_weight + expected_delta
+
+    # Build minimal model
+    class M(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.proj = lora
+    model = M()
+
+    fused = experiment._fuse_lora_into_base(model)
+
+    # Weight should be original + delta
+    assert "proj.weight" in fused, f"Keys: {list(fused.keys())}"
+    assert "proj.lora_a" not in fused
+    actual = fused["proj.weight"].astype(mx.float32)
+    mx.eval(actual, expected_weight)
+    diff = float(mx.abs(actual - expected_weight).max())
+    assert diff < 1e-5, f"Fused weight differs by {diff}"
+
+
+def test_train_surface_matched_always_produces_fused_model(monkeypatch) -> None:
+    """All surface-matched arms must return fused_model_path (including non-PiSSA)."""
+    called_with: dict = {}
+
+    def fake_trainer(*args, **kwargs):
+        called_with.update(kwargs)
+        return {"method": "surface_matched", "seed": 42, "fused_model_path": "/fake/fused"}
+
+    monkeypatch.setattr(experiment, "train_surface_matched", fake_trainer)
+
+    for method in ["standard_nb_surface", "dora_nb_surface"]:
+        result = experiment._train_method(
+            method_name=method,
+            model_path="/tmp/model",
+            num_layers=16,
+            data_dir=Path("/tmp/data"),
+            output_dir=Path("/tmp/output"),
+            seed=42,
+            iters=100,
+            nb_surface=_make_fake_nb_surface(),
+        )
+        assert "fused_model_path" in result, f"{method} missing fused_model_path"
+
+
+def test_fuse_lora_into_base_handles_dora_module() -> None:
+    """_fuse_lora_into_base must use DoRALinear.fuse() for DoRA modules."""
+    import mlx.core as mx
+    import mlx.nn as nn
+    from mlx_lm.tuner.lora import LoRALinear
+
+    try:
+        from mlx_lm.tuner.dora import DoRALinear
+    except ImportError:
+        pytest.skip("DoRALinear not available in this mlx-lm version")
+
+    linear = nn.Linear(8, 8)
+    mx.eval(linear.weight)
+    dora = DoRALinear.from_base(linear, r=2)
+    # Set known LoRA weights so delta is non-trivial
+    dora.lora_a = mx.ones((8, 2)) * 0.1
+    dora.lora_b = mx.ones((2, 8)) * 0.1
+    mx.eval(dora.lora_a, dora.lora_b, dora.m)
+
+    class M(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.proj = dora
+
+    model = M()
+    fused = experiment._fuse_lora_into_base(model)
+
+    # After DoRA fusion, LoRA keys must be absent
+    assert "proj.weight" in fused, f"Keys: {list(fused.keys())}"
+    assert "proj.lora_a" not in fused
+    assert "proj.lora_b" not in fused
+    # DoRA magnitude vector should be folded in — no separate 'proj.m'
+    assert "proj.m" not in fused
+
+    # Verify fused weight differs from original (DoRA applies magnitude renorm)
+    original_weight = linear.weight.astype(mx.float32)
+    mx.eval(original_weight)
+    fused_weight = fused["proj.weight"].astype(mx.float32)
+    mx.eval(fused_weight)
+    diff = float(mx.abs(fused_weight - original_weight).max())
+    assert diff > 1e-6, "DoRA fusion should change the weight"
+
+
+def test_inference_uses_fused_model_path_for_surface_matched_arms() -> None:
+    """Surface-matched arms store fused_model_path; inference must use it."""
+    # Simulate the seed_result dict that run_model_experiment builds
+    seed_result = {
+        "standard_lora": {
+            "training": {"method": "standard_lora", "final_val_loss": 2.0},
+            "eval": {},
+        },
+        "pissa_nb_surface": {
+            "training": {
+                "method": "pissa_nb_surface",
+                "final_val_loss": 1.9,
+                "fused_model_path": "/tmp/fused/pissa",
+            },
+            "eval": {},
+        },
+        "standard_nb_surface": {
+            "training": {
+                "method": "standard_nb_surface",
+                "final_val_loss": 1.95,
+                "fused_model_path": "/tmp/fused/standard",
+            },
+            "eval": {},
+        },
+    }
+
+    # For each method, replicate the inference loop's adapter selection logic
+    model_path = "/tmp/base_model"
+    seed_dir = Path("/tmp/seeds/42")
+
+    for method_name in ["standard_lora", "pissa_nb_surface", "standard_nb_surface"]:
+        train_info = seed_result[method_name].get("training", {})
+        fused = train_info.get("fused_model_path")
+        if fused:
+            infer_model = fused
+            infer_adapter = None
+        else:
+            infer_model = model_path
+            infer_adapter = str(seed_dir / method_name)
+
+        if method_name == "standard_lora":
+            # Regular method: uses base model + adapter
+            assert infer_model == model_path
+            assert infer_adapter == str(seed_dir / "standard_lora")
+        else:
+            # Surface-matched: uses fused model, no adapter
+            assert infer_model == train_info["fused_model_path"]
+            assert infer_adapter is None

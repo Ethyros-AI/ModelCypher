@@ -852,7 +852,8 @@ def train_pissa(
 def targeted_lora_conversion(
     model,
     rank_overrides: dict[str, int],
-    scale: float,
+    scale: float = 1.0,
+    lora_alpha: float | None = None,
     dropout: float = 0.0,
     use_dora: bool = False,
 ) -> int:
@@ -860,6 +861,10 @@ def targeted_lora_conversion(
 
     Navigates the model tree using weight key paths from NB-LoRA geometry
     analysis.  Each module gets its own rank from rank_overrides.
+
+    When lora_alpha is set, scale = alpha / rank per module (standard LoRA
+    convention).  Otherwise the flat `scale` value is used for all modules.
+
     Returns count of converted modules.
     """
     import mlx.nn as nn
@@ -896,15 +901,18 @@ def targeted_lora_conversion(
             )
             continue
 
+        module_scale = lora_alpha / rank if lora_alpha is not None else scale
         lora_layer = LayerClass.from_base(
-            linear, r=rank, scale=scale, dropout=dropout,
+            linear, r=rank, scale=module_scale, dropout=dropout,
         )
         setattr(parent, attr_name, lora_layer)
         converted += 1
 
     logger.info(
-        "targeted_lora_conversion: %d/%d modules converted (dora=%s)",
+        "targeted_lora_conversion: %d/%d modules converted (dora=%s, "
+        "alpha=%s, flat_scale=%s)",
         converted, len(rank_overrides), use_dora,
+        lora_alpha, scale if lora_alpha is None else "N/A",
     )
     return converted
 
@@ -912,6 +920,76 @@ def targeted_lora_conversion(
 # ---------------------------------------------------------------------------
 # Surface-matched training (same surface as NB-LoRA, different method)
 # ---------------------------------------------------------------------------
+def _navigate_to_module(model, weight_key: str):
+    """Navigate model tree from a weight key like 'base.layers.2.mixer.q_proj.weight'.
+
+    Returns (parent, attr_name, module).
+    """
+    module_path = weight_key.replace(".weight", "")
+    parts = module_path.split(".")
+    parent = model
+    for part in parts[:-1]:
+        if part.isdigit():
+            parent = parent[int(part)]
+        else:
+            parent = getattr(parent, part)
+    attr_name = parts[-1]
+    module = getattr(parent, attr_name)
+    return parent, attr_name, module
+
+
+def _fuse_lora_into_base(model) -> dict:
+    """Fuse trained LoRA/DoRA delta into base weights.  Returns fuse-ready weight dict.
+
+    For plain LoRA: W_fused = W + scale * (lora_a @ lora_b)^T
+    For DoRA: uses DoRALinear.fuse() which applies per-row magnitude
+    renormalization: W_fused = (m / ||W + delta||_row) * (W + delta)
+
+    After fusion, LoRA-specific keys are dropped and LoRALinear/DoRALinear's
+    nested 'linear.weight' is remapped to 'weight'.
+    """
+    import mlx.core as mx
+    from mlx.utils import tree_flatten as _tf
+
+    try:
+        from mlx_lm.tuner.dora import DoRALinear
+    except ImportError:
+        DoRALinear = None
+
+    # Replace each LoRA/DoRA module with its fused nn.Linear equivalent
+    fuse_replacements = []
+    for name, module in model.named_modules():
+        if not (hasattr(module, "lora_a") and hasattr(module, "lora_b")):
+            continue
+        if DoRALinear is not None and isinstance(module, DoRALinear):
+            # DoRA has a built-in fuse() that handles magnitude renormalization
+            fused_linear = module.fuse()
+        else:
+            # Plain LoRA: W_fused = W + scale * (lora_a @ lora_b)^T
+            scale = getattr(module, "scale", 1.0)
+            delta = (module.lora_a @ module.lora_b) * scale
+            module.linear.weight = module.linear.weight + delta.T
+            fused_linear = module.linear
+        fuse_replacements.append((name, fused_linear))
+
+    # Apply replacements by navigating model tree
+    for name, fused_linear in fuse_replacements:
+        parts = name.split(".")
+        parent = model
+        for part in parts[:-1]:
+            if part.isdigit():
+                parent = parent[int(part)]
+            else:
+                parent = getattr(parent, part)
+        setattr(parent, parts[-1], fused_linear)
+
+    # Flatten parameters — now all modules are plain nn.Linear
+    weights = {}
+    for k, v in _tf(model.parameters()):
+        weights[k] = v
+    return weights
+
+
 def train_surface_matched(
     model_path: str,
     data_dir: Path,
@@ -928,6 +1006,14 @@ def train_surface_matched(
     Uses targeted_lora_conversion with per-module ranks from
     derive_nb_target_surface().  Supports standard LoRA, DoRA, and PiSSA
     init on the matched surface.
+
+    All surface-matched arms fuse trained weights into the base model after
+    training because mlx-lm's load_adapters cannot reconstruct targeted
+    per-module-rank LoRA.  Eval uses fused_model_path with no adapter.
+
+    Scale convention:
+      - standard/DoRA: alpha / rank per module (LORA_ALPHA = 16)
+      - PiSSA: scale = 1.0 (SVD provides correct magnitudes)
     """
     import mlx.core as mx
     import mlx.optimizers as optim
@@ -944,8 +1030,14 @@ def train_surface_matched(
     cfg = config or STANDARD_LORA_CONFIG
     iters = iters_override or cfg["iters"]
     use_dora = fine_tune_type == "dora"
-    avg_rank = sum(rank_overrides.values()) / max(len(rank_overrides), 1)
-    scale = cfg.get("scale", LORA_ALPHA / avg_rank)
+
+    # Scale: PiSSA uses flat 1.0; standard/DoRA use alpha/r per module
+    if pissa_init:
+        lora_alpha = None
+        flat_scale = 1.0
+    else:
+        lora_alpha = LORA_ALPHA
+        flat_scale = 1.0  # unused when lora_alpha is set
 
     mx.random.seed(seed)
     random.seed(seed)
@@ -953,7 +1045,7 @@ def train_surface_matched(
     logger.info(
         f"  Surface-matched {fine_tune_type}: {len(rank_overrides)} modules, "
         f"ranks={sorted(set(rank_overrides.values()))}, "
-        f"pissa={pissa_init}, seed={seed}"
+        f"pissa={pissa_init}, alpha={lora_alpha}, seed={seed}"
     )
 
     model, tokenizer = mlx_load(str(model_path))
@@ -967,25 +1059,15 @@ def train_surface_matched(
 
     model.freeze()
     n_converted = targeted_lora_conversion(
-        model, rank_overrides, scale=scale,
+        model, rank_overrides, scale=flat_scale, lora_alpha=lora_alpha,
         dropout=cfg.get("dropout", 0.0), use_dora=use_dora,
     )
-
-    fused_model_path = None
 
     if pissa_init:
         # SVD-initialize each LoRA layer from base weight principal components
         pissa_count = 0
         for weight_key, rank in rank_overrides.items():
-            module_path = weight_key.replace(".weight", "")
-            parts = module_path.split(".")
-            parent = model
-            for part in parts[:-1]:
-                if part.isdigit():
-                    parent = parent[int(part)]
-                else:
-                    parent = getattr(parent, part)
-            module = getattr(parent, parts[-1])
+            _, _, module = _navigate_to_module(model, weight_key)
 
             if not hasattr(module, "lora_a"):
                 continue
@@ -1017,30 +1099,20 @@ def train_surface_matched(
 
         logger.info(f"  PiSSA SVD init: {pissa_count}/{n_converted} modules")
 
-        # Save fused model (base+residual) for eval
-        fused_dir = output_dir / "fused_model"
-        fused_dir.mkdir(parents=True, exist_ok=True)
-        # Copy tokenizer + config
-        import shutil as _shutil
-        src_model = Path(model_path)
-        for f in src_model.iterdir():
-            if f.suffix in (".json", ".txt", ".model") or f.name.startswith("tokenizer"):
-                _shutil.copy2(f, fused_dir / f.name)
-        # Save modified base weights
-        from mlx.utils import tree_flatten as tf
-        base_weights = dict(tf(model.parameters()))
-        # Remove LoRA params from base weights
-        base_only = {k: v for k, v in base_weights.items()
-                     if "lora_a" not in k and "lora_b" not in k
-                     and "lora_m" not in k}
-        mx.save_safetensors(str(fused_dir / "model.safetensors"), base_only)
-        fused_model_path = str(fused_dir)
-
     n_trainable = sum(v.size for _, v in tree_flatten(model.trainable_parameters()))
 
     output_dir.mkdir(parents=True, exist_ok=True)
     adapter_file = output_dir / "adapters.safetensors"
-    save_config({"rank_overrides": rank_overrides, "scale": scale}, output_dir / "adapter_config.json")
+
+    # Save adapter_config for provenance (NOT used by load_adapters —
+    # per-module-rank targeting is incompatible with linear_to_lora_layers).
+    save_config({
+        "fine_tune_type": fine_tune_type,
+        "rank_overrides": rank_overrides,
+        "lora_alpha": lora_alpha,
+        "pissa_init": pissa_init,
+        "note": "surface-matched arm — eval uses fused model, not load_adapters",
+    }, output_dir / "adapter_config.json")
 
     training_args = TrainingArgs(
         batch_size=cfg["batch_size"],
@@ -1076,13 +1148,34 @@ def train_surface_matched(
     )
     training_time = time.time() - t0
 
-    # Ensure adapter saved
+    # Ensure adapter saved (for provenance — eval uses fused model)
     if not adapter_file.exists():
         from mlx.utils import tree_flatten as tf2
         adapter_weights = dict(tf2(model.trainable_parameters()))
         mx.save_safetensors(str(adapter_file), adapter_weights)
 
-    spectral_info = measure_standard_lora_spectral_norms(model, scale)
+    # Measure spectral norms before fusion mutates weights
+    # Use a representative scale for the spectral measurement
+    repr_scale = 1.0 if pissa_init else (
+        lora_alpha / max(rank_overrides.values()) if lora_alpha else flat_scale
+    )
+    spectral_info = measure_standard_lora_spectral_norms(model, repr_scale)
+
+    # Fuse trained LoRA delta into base weights for all surface-matched arms.
+    # mlx-lm's load_adapters cannot reconstruct per-module-rank targeting,
+    # so eval always uses the fused model with no adapter.
+    fused_dir = output_dir / "fused_model"
+    fused_dir.mkdir(parents=True, exist_ok=True)
+    fused_weights = _fuse_lora_into_base(model)
+    mx.save_safetensors(str(fused_dir / "model.safetensors"), fused_weights)
+    # Copy config/tokenizer from original model
+    for fname in ["config.json", "tokenizer.json", "tokenizer_config.json",
+                   "special_tokens_map.json"]:
+        src = Path(model_path) / fname
+        if src.exists():
+            shutil.copy2(src, fused_dir / fname)
+    fused_model_path = str(fused_dir)
+    logger.info(f"  Surface-matched: saved fused model to {fused_dir}")
 
     result = {
         "method": fine_tune_type,
@@ -1091,11 +1184,12 @@ def train_surface_matched(
         "training_time_seconds": training_time,
         "n_trainable_params": n_trainable,
         "adapter_path": str(output_dir),
+        "fused_model_path": fused_model_path,
         "config": {
             "lr": cfg["lr"],
             "batch_size": cfg["batch_size"],
             "optimizer": cfg.get("optimizer", "adamw"),
-            "scale": scale,
+            "lora_alpha": lora_alpha,
             "n_modules": len(rank_overrides),
             "ranks": sorted(set(rank_overrides.values())),
             "pissa_init": pissa_init,
@@ -1112,9 +1206,6 @@ def train_surface_matched(
         },
         "spectral_info": spectral_info,
     }
-
-    if fused_model_path:
-        result["fused_model_path"] = fused_model_path
 
     del model, tokenizer
     mx.clear_cache()
@@ -2580,9 +2671,18 @@ def run_model_experiment(
                 method_responses: dict[str, list] = {"base": base_responses}
                 for method_name in methods:
                     if "error" not in seed_result.get(method_name, {}):
-                        adapter = str(seed_dir / method_name)
+                        # Surface-matched / PiSSA arms fuse weights into a
+                        # standalone model — load that directly with no adapter.
+                        train_info = seed_result[method_name].get("training", {})
+                        fused = train_info.get("fused_model_path")
+                        if fused:
+                            infer_model = fused
+                            infer_adapter = None
+                        else:
+                            infer_model = model_path
+                            infer_adapter = str(seed_dir / method_name)
                         method_responses[method_name] = generate_inference_responses(
-                            model_path, adapter, prompts, method_name,
+                            infer_model, infer_adapter, prompts, method_name,
                         )
                     else:
                         method_responses[method_name] = []
