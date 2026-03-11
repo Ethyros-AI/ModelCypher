@@ -76,6 +76,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def compute_density_dominance_margin(max_source_density_weight: float) -> float:
+    """Convert source-density mixture weight into a signed dominance margin."""
+    return (2.0 * max_source_density_weight) - 1.0
+
+
 @dataclass
 class TransplantStageResult:
     """Result of transplant stage."""
@@ -175,6 +180,8 @@ def stage_transplant(
         "cka_after": [],
         "core_probes": 0,
         "layer_geometry": {},
+        "density_dominance_margin_by_layer": {},
+        "transmission_layer_scores": [],
     }
     manifest = TransplantManifest()
 
@@ -206,6 +213,7 @@ def stage_transplant(
     if injection_layer is not None:
         # Single injection point - the highway geometry is identical across layers
         transmission_layers = {injection_layer}
+        metrics["transmission_selection_policy"] = "single_injection_layer"
         logger.info(
             "TRANSPLANT: SINGLE-POINT INJECTION - Layer %d is THE injection target (full δ=1.0)",
             injection_layer
@@ -216,6 +224,7 @@ def stage_transplant(
     elif layer_profile is not None:
         # Fallback: compute all transmission layers
         transmission_layers = set(layer_profile.compute_transmission_layers())
+        metrics["transmission_selection_policy"] = "exploratory_transmission_layer_set"
         bottleneck_layer = layer_profile.get_bottleneck_layer()
         if transmission_layers:
             logger.info(
@@ -229,6 +238,12 @@ def stage_transplant(
             logger.warning(
                 "TRANSPLANT: No transmission layers found - check layer profile"
             )
+    if layer_profile is not None and hasattr(layer_profile, "compute_transmission_layer_scores"):
+        metrics["transmission_layer_scores"] = (
+            layer_profile.compute_transmission_layer_scores()
+        )
+    metrics["transmission_layers"] = sorted(transmission_layers)
+    metrics["injection_layer"] = injection_layer
 
     if layer_profile is not None and bottleneck_layer is None:
         bottleneck_layer = layer_profile.get_bottleneck_layer()
@@ -567,18 +582,25 @@ def stage_transplant(
                             has_graft_opportunities = True
                             break
 
-                # Check 2: density_weights (trajectory path) - any weight > 0.5 means source denser?
-                # weight = source_density / (source + target), so > 0.5 means source is denser
+                # Check 2: density_weights (trajectory path) - expose the raw dominance
+                # margin rather than a hard-coded threshold interpretation.
+                # weight = source_density / (source + target)
+                # dominance_margin = 2 * weight - 1
                 if not has_graft_opportunities and density_weights is not None:
                     layer_weights = density_weights.get(layer_idx)
                     if layer_weights is not None:
-                        # Check if any activation point has source denser than target
                         max_weight = float(b.to_scalar(b.max(layer_weights)))
-                        if max_weight > 0.5:
+                        dominance_margin = compute_density_dominance_margin(max_weight)
+                        metrics["density_dominance_margin_by_layer"][str(layer_idx)] = (
+                            dominance_margin
+                        )
+                        if dominance_margin > 0.0:
                             has_graft_opportunities = True
                             logger.debug(
-                                "Layer %d: density_weights max=%.4f (source denser)",
-                                layer_idx, max_weight
+                                "Layer %d: density_weights max=%.4f, dominance_margin=%.4f",
+                                layer_idx,
+                                max_weight,
+                                dominance_margin,
                             )
 
                 if has_graft_opportunities:
@@ -1123,6 +1145,12 @@ def stage_transplant(
         diffs = metrics["boundary_relative_diffs"]
         metrics["mean_boundary_relative_diff"] = sum(diffs) / len(diffs)
         metrics["max_boundary_relative_diff"] = max(diffs)
+    if metrics["density_dominance_margin_by_layer"]:
+        dominance_margins = list(metrics["density_dominance_margin_by_layer"].values())
+        metrics["mean_density_dominance_margin"] = sum(dominance_margins) / len(
+            dominance_margins
+        )
+        metrics["max_density_dominance_margin"] = max(dominance_margins)
     if metrics["core_distance_reductions"]:
         reductions = metrics["core_distance_reductions"]
         metrics["core_distance_samples"] = len(reductions)

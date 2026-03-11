@@ -65,6 +65,22 @@ class _DummyLayerProfile:
     def compute_transmission_layers(self) -> list[int]:
         return [0]
 
+    def compute_transmission_layer_scores(self) -> list[dict[str, float | int | bool]]:
+        return [
+            {
+                "layer_idx": 0,
+                "variance_concentration": 0.95,
+                "effective_rank": 1.0,
+                "low_variance_rank_position": 0,
+                "high_rank_position": 0,
+                "low_variance_advantage": 1.0,
+                "high_rank_advantage": 1.0,
+                "transmission_score": 1.0,
+                "distance_to_nearest_edge": 0,
+                "is_embedding_layer": True,
+            }
+        ]
+
 
 class _DummyProfileStore:
     def load(self, _model_path: str):

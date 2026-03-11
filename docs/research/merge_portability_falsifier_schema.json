@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mc.merge.portability.falsifier.v1",
+  "title": "Merge Portability Falsifier Manifest",
+  "type": "object",
+  "required": [
+    "_schema",
+    "run_id",
+    "status",
+    "roadmap_item",
+    "open_question",
+    "frozen_contract",
+    "arms",
+    "measurements",
+    "decision_rule",
+    "claim_form",
+    "artifact_contract"
+  ],
+  "properties": {
+    "_schema": {
+      "const": "mc.merge.portability.falsifier.v1"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "roadmap_item": {
+      "const": "R5"
+    },
+    "open_question": {
+      "const": "Q8"
+    },
+    "frozen_contract": {
+      "type": "object",
+      "required": [
+        "evaluator_bundle",
+        "held_out_probe_set",
+        "comparison_budget",
+        "quantization_policy"
+      ]
+    },
+    "arms": {
+      "type": "array",
+      "minItems": 10
+    },
+    "measurements": {
+      "type": "array",
+      "minItems": 6
+    },
+    "decision_rule": {
+      "type": "string"
+    },
+    "claim_form": {
+      "type": "object",
+      "required": [
+        "claim_id",
+        "status",
+        "mechanism",
+        "equation_or_theorem",
+        "precision_state",
+        "measurement_operator",
+        "commensurability_proof",
+        "directional_prediction",
+        "falsifier"
+      ]
+    },
+    "artifact_contract": {
+      "type": "object",
+      "required": [
+        "required_files",
+        "append_only_ledger"
+      ]
+    }
+  }
+}

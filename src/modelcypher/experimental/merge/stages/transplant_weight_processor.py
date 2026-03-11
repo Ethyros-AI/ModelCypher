@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 import time
 from dataclasses import dataclass
@@ -72,6 +73,51 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
+
+
+def _summarize_mlp_scale_observations(
+    mlp_scales: dict[str, float],
+) -> dict[str, Any]:
+    """Return raw telemetry for independently reconstructed MLP scale factors."""
+    observed_scales = {
+        role: float(scale)
+        for role, scale in mlp_scales.items()
+        if role in {"gate", "up", "down"}
+    }
+    if not observed_scales:
+        return {}
+
+    abs_scales = [abs(scale) for scale in observed_scales.values()]
+    min_abs_scale = min(abs_scales)
+    max_abs_scale = max(abs_scales)
+    divergence_floor = math.ulp(1.0)
+    scale_divergence = max_abs_scale / max(min_abs_scale, divergence_floor)
+    geometric_mean_abs_scale = math.exp(
+        sum(math.log(max(scale, divergence_floor)) for scale in abs_scales)
+        / float(len(abs_scales))
+    )
+
+    summary: dict[str, Any] = {
+        "observed_scales": observed_scales,
+        "min_abs_scale": min_abs_scale,
+        "max_abs_scale": max_abs_scale,
+        "scale_divergence": scale_divergence,
+        "geometric_mean_abs_scale": geometric_mean_abs_scale,
+    }
+
+    if {"gate", "up", "down"}.issubset(observed_scales):
+        corr_gate, corr_up, corr_down = compute_joint_mlp_scale(
+            observed_scales["gate"],
+            observed_scales["up"],
+            observed_scales["down"],
+        )
+        summary["joint_reference_corrections"] = {
+            "gate": corr_gate,
+            "up": corr_up,
+            "down": corr_down,
+        }
+
+    return summary
 
 
 def _stable_sigmoid(backend: "Backend", values: "Array") -> "Array":
@@ -1221,6 +1267,10 @@ def process_layer_weights(
                     # Check for experimental MLP-only mode (useful for cross-arch experiments)
                     skip_attention = os.environ.get("MC_SKIP_ATTENTION_STITCH", "").lower() in ("1", "true", "yes")
                     if skip_attention:
+                        metrics.setdefault("experimental_env_overrides", [])
+                        metrics["experimental_env_overrides"].append(
+                            "MC_SKIP_ATTENTION_STITCH"
+                        )
                         # MLP-ONLY INJECTION MODE: Skip attention weights, preserve target
                         logger.warning(
                             "ATTENTION STITCH UNAVAILABLE: Preserving target for %s (MC_SKIP_ATTENTION_STITCH=1)",
@@ -1788,6 +1838,9 @@ def process_layer_weights(
                 tgt_idx = target_layers.index(layer_idx)
                 if src_idx < len(layer_coupling) and tgt_idx < len(layer_coupling[src_idx]):
                     coupling_weight_for_layer = layer_coupling[src_idx][tgt_idx]
+                    metrics.setdefault("layer_coupling_mass_by_layer", {})[
+                        str(layer_idx)
+                    ] = coupling_weight_for_layer
                     logger.debug(
                         "TRANSPLANT: Layer %d coupling weight = %.4f (src=%d, tgt=%d)",
                         layer_idx,
@@ -1797,6 +1850,7 @@ def process_layer_weights(
                     )
 
         if behavior_jacobian_ctx is not None:
+            projector_mode = "behavior_jacobian"
             G = behavior_jacobian_ctx.backend.compute_per_probe_gradients(
                 model=behavior_jacobian_ctx.model,
                 tokenizer=behavior_jacobian_ctx.tokenizer,
@@ -1809,6 +1863,7 @@ def process_layer_weights(
             )
             del G
         else:
+            projector_mode = "activation_null_space"
             null_space_projector = compute_null_space_projector(
                 input_activations=input_activations,
                 source_activations_for_density=src_density_acts,
@@ -1817,6 +1872,12 @@ def process_layer_weights(
                 coupling_weight=coupling_weight_for_layer,
                 backend=b,
             )
+        metrics.setdefault("projector_mode_by_layer", {})[str(layer_idx)] = projector_mode
+        metrics.setdefault("projector_mode_by_weight", {})[key] = projector_mode
+        metrics.setdefault("projector_mode_counts", {})
+        metrics["projector_mode_counts"][projector_mode] = (
+            metrics["projector_mode_counts"].get(projector_mode, 0) + 1
+        )
 
         result = compute_weight_space_transplant(
             source_aligned=source_aligned,
@@ -1963,86 +2024,25 @@ def process_layer_weights(
     # individual extreme values.
     # =========================================================================
     if len(mlp_scales) >= 2:
-        # Get scale factors (default to 1.0 if missing)
-        scale_gate = mlp_scales.get("gate", 1.0)
-        scale_up = mlp_scales.get("up", 1.0)
-        scale_down = mlp_scales.get("down", 1.0)
-
-        # Check if scales are divergent enough to need correction
-        scales = [scale_gate, scale_up, scale_down]
-        max_scale = max(scales)
-        min_scale = min(scales)
-        scale_divergence = max_scale / max(min_scale, 1e-10)
-
-        if scale_divergence > 2.0:
-            # Scales are divergent - the behavioral reconstruction has extreme scale factors
-            # Check if we should try joint MLP scale correction (experimental)
-            use_joint_scale = os.environ.get("MC_USE_JOINT_MLP_SCALE", "").lower() in ("1", "true", "yes")
-
-            if use_joint_scale:
-                # EXPERIMENTAL: Apply joint MLP scale correction
-                # This computes a geometric mean scale and distributes it evenly
-                logger.info(
-                    "SCALE DIVERGENCE DETECTED (%.2f > 2.0): gate=%.4f, up=%.4f, down=%.4f. "
-                    "Applying JOINT MLP SCALE correction (MC_USE_JOINT_MLP_SCALE=1).",
-                    scale_divergence, scale_gate, scale_up, scale_down
-                )
-
-                # Compute joint scale corrections
-                corr_gate, corr_up, corr_down = compute_joint_mlp_scale(
-                    scale_gate, scale_up, scale_down
-                )
-
-                # Apply corrections to the already-reconstructed weights
-                for weight_key in transplanted_layer_keys:
-                    if weight_key not in merged:
-                        continue
-                    if "feed_forward.w1" in weight_key or "gate_proj" in weight_key:
-                        merged[weight_key] = merged[weight_key] * corr_gate
-                        logger.info("JOINT SCALE: %s *= %.4f (gate correction)", weight_key, corr_gate)
-                    elif "feed_forward.w3" in weight_key or "up_proj" in weight_key:
-                        merged[weight_key] = merged[weight_key] * corr_up
-                        logger.info("JOINT SCALE: %s *= %.4f (up correction)", weight_key, corr_up)
-                    elif "feed_forward.w2" in weight_key or "down_proj" in weight_key:
-                        merged[weight_key] = merged[weight_key] * corr_down
-                        logger.info("JOINT SCALE: %s *= %.4f (down correction)", weight_key, corr_down)
-
-                metrics.setdefault("joint_mlp_correction_applied", True)
-                metrics.setdefault("mlp_reverted_to_target", False)
-                metrics.setdefault("layer_reverted_to_target", False)
-                metrics.setdefault("joint_mlp_scale_divergence", scale_divergence)
-                metrics.setdefault("joint_scale_corrections", {
-                    "gate": corr_gate, "up": corr_up, "down": corr_down
-                })
-            else:
-                # DEFAULT: Revert to target (conservative, prevents garbage output)
-                logger.warning(
-                    "SCALE DIVERGENCE DETECTED (%.2f > 2.0): gate=%.4f, up=%.4f, down=%.4f. "
-                    "Reverting ENTIRE LAYER %d weights to target (reconstruction unstable). "
-                    "Set MC_USE_JOINT_MLP_SCALE=1 to try joint scaling instead.",
-                    scale_divergence, scale_gate, scale_up, scale_down, layer_idx
-                )
-
-                reverted_keys: list[str] = []
-                # Revert ALL transplanted weights in this layer, not just MLP
-                for weight_key in transplanted_layer_keys:
-                    if weight_key in target_weights:
-                        merged[weight_key] = target_weights[weight_key]
-                        reverted_keys.append(weight_key)
-                        logger.info("REVERTED: %s to target weight", weight_key)
-
-                metrics.setdefault("joint_mlp_correction_applied", False)
-                metrics.setdefault("mlp_reverted_to_target", True)
-                metrics.setdefault("layer_reverted_to_target", True)
-                metrics.setdefault("joint_mlp_scale_divergence", scale_divergence)
-                # Track which keys were reverted so compression descent can skip them
-                existing_reverted = metrics.get("mlp_reverted_keys", [])
-                metrics["mlp_reverted_keys"] = existing_reverted + reverted_keys
-        else:
-            logger.debug(
-                "JOINT MLP CORRECTION: skipped (divergence=%.2f < 2.0)",
-                scale_divergence
+        scale_observations = _summarize_mlp_scale_observations(mlp_scales)
+        metrics.setdefault("mlp_scale_observations_by_layer", {})[
+            str(layer_idx)
+        ] = scale_observations
+        if scale_observations:
+            metrics.setdefault("scale_divergence_spectrum", []).append(
+                scale_observations["scale_divergence"]
             )
+            logger.info(
+                "MLP SCALE OBSERVATION: layer=%d gate=%s up=%s down=%s divergence=%.4f",
+                layer_idx,
+                scale_observations["observed_scales"].get("gate"),
+                scale_observations["observed_scales"].get("up"),
+                scale_observations["observed_scales"].get("down"),
+                scale_observations["scale_divergence"],
+            )
+        metrics.setdefault("joint_mlp_correction_applied", False)
+        metrics.setdefault("mlp_reverted_to_target", False)
+        metrics.setdefault("layer_reverted_to_target", False)
 
     return LayerWeightResult(
         weights_processed=weights_processed,

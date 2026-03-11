@@ -93,6 +93,75 @@ def _serialize_density_detail(
     }
 
 
+def _summarize_probe_rank_coverage(
+    final_coverage: dict[str | int, dict[str, Any]],
+) -> dict[str, Any]:
+    per_layer: dict[str, dict[str, Any]] = {}
+    coverage_ratios: list[float] = []
+    for layer_idx, coverage_info in final_coverage.items():
+        layer_key = str(layer_idx)
+        coverage_ratio = coverage_info.get("coverage_ratio")
+        if coverage_ratio is not None:
+            coverage_ratios.append(float(coverage_ratio))
+        per_layer[layer_key] = {
+            "source_rank": coverage_info.get("source_rank"),
+            "source_dim": coverage_info.get("source_dim"),
+            "target_rank": coverage_info.get("target_rank"),
+            "target_dim": coverage_info.get("target_dim"),
+            "alignment_rank": coverage_info.get("alignment_rank"),
+            "coverage_ratio": coverage_ratio,
+            "deficit": coverage_info.get("deficit"),
+            "trajectory_rank": coverage_info.get("trajectory_rank"),
+        }
+
+    if not per_layer:
+        return {}
+
+    summary: dict[str, Any] = {
+        "per_layer": per_layer,
+        "layers_measured": len(per_layer),
+    }
+    if coverage_ratios:
+        summary["mean_coverage_ratio"] = sum(coverage_ratios) / len(coverage_ratios)
+        summary["min_coverage_ratio"] = min(coverage_ratios)
+        summary["max_coverage_ratio"] = max(coverage_ratios)
+    return summary
+
+
+def _summarize_layer_coupling(
+    layer_coupling: list[list[float]] | None,
+    source_layers: list[int] | None,
+    target_layers: list[int] | None,
+) -> dict[str, Any]:
+    if not layer_coupling or not source_layers or not target_layers:
+        return {}
+
+    by_target_layer: dict[str, dict[str, Any]] = {}
+    for tgt_idx, tgt_layer in enumerate(target_layers):
+        incoming_masses: list[tuple[int, float]] = []
+        for src_idx, src_layer in enumerate(source_layers):
+            if src_idx >= len(layer_coupling):
+                continue
+            if tgt_idx >= len(layer_coupling[src_idx]):
+                continue
+            incoming_masses.append((src_layer, float(layer_coupling[src_idx][tgt_idx])))
+
+        if not incoming_masses:
+            continue
+
+        best_source_layer, best_mass = max(incoming_masses, key=lambda item: item[1])
+        by_target_layer[str(tgt_layer)] = {
+            "incoming_mass": sum(mass for _, mass in incoming_masses),
+            "max_source_mass": best_mass,
+            "argmax_source_layer": best_source_layer,
+            "source_masses": {str(src_layer): mass for src_layer, mass in incoming_masses},
+        }
+
+    if not by_target_layer:
+        return {}
+    return {"by_target_layer": by_target_layer, "target_layers_measured": len(by_target_layer)}
+
+
 def run_merge(
     model_loader: "ModelLoaderPort",
     backend: "Backend",
@@ -349,9 +418,9 @@ def run_merge(
     # FAMILY SIMILARITY CHECK (spectral Procrustes distance)
     # =================================================================
     # Fast pre-check: compare spectral profiles of representative weight
-    # matrices to predict merge quality. Same-family merges (Procrustes < 0.5)
-    # are expected to work well. Cross-family (Procrustes > 1.0) may produce
-    # poor results. Does NOT block — informational only.
+    # matrices to predict merge quality. Any quality classes or thresholds used
+    # here remain informational heuristics only and are not portability
+    # certificate criteria. Does NOT block.
     family_similarity = _compute_family_similarity_check(
         source_weights=loaded_source_weights,
         target_weights=loaded_target_weights,
@@ -518,6 +587,9 @@ def run_merge(
     rank_augmentation = probe_metrics.get("rank_augmentation") or {}
     final_coverage = rank_augmentation.get("final_coverage") or {}
     if final_coverage:
+        probe_metrics["probe_rank_coverage"] = _summarize_probe_rank_coverage(
+            final_coverage
+        )
         for layer_idx_str, coverage_info in final_coverage.items():
             try:
                 layer_idx = int(layer_idx_str)
@@ -541,7 +613,7 @@ def run_merge(
     # but TwoNN reports ID=6.39 (not even close to 1).
     #
     # Variance concentration correctly identifies bottlenecks:
-    # - High var_top1 (>70%) = information compressed into few directions
+    # - High var_top1 = information compressed into few directions
     # - Low effective_rank = few dimensions carry the signal
     #
     # MLP output = down_proj @ intermediate
@@ -773,6 +845,26 @@ def run_merge(
         raise RuntimeError(
             "VARIANCE CONCENTRATION: Neither intermediate nor hidden activations available."
         )
+
+    transmission_layer_scores = layer_profile.compute_transmission_layer_scores()
+    if transmission_layer_scores:
+        probe_metrics["transmission_layer_scores"] = transmission_layer_scores
+        probe_metrics.setdefault(
+            "transmission_selection",
+            {
+                "policy": "exploratory_quartile_intersection",
+                "selected_layers": layer_profile.compute_transmission_layers(),
+                "injection_layer": layer_profile.compute_best_injection_layer(),
+            },
+        )
+
+    layer_coupling_summary = _summarize_layer_coupling(
+        layer_coupling,
+        source_layers,
+        target_layers,
+    )
+    if layer_coupling_summary:
+        probe_metrics["layer_coupling_summary"] = layer_coupling_summary
 
     # =================================================================
     # SPARSE REGION ANALYSIS (activation-driven, no heuristics)

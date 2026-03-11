@@ -120,6 +120,7 @@ certificate for transfer and stacking.
 - `src/modelcypher/experimental/self_improve/lora_stacker.py`
 - `results/geometry_sota/analysis_summary.json`
 - `results/sota_audit_2026_03/scorecard.md`
+- `docs/research/merge_bedrock_audit_2026_03_10.md`
 
 **What is missing**
 
@@ -132,6 +133,11 @@ certificate for transfer and stacking.
 If a MergeBench-style comparison shows that null-space transfer does not match
 or beat standard baselines on preserved behavior, portability remains an
 internal hypothesis rather than a user-facing advantage.
+
+The current scaffold for that run family is:
+
+- `scripts/merge_portability_falsifier.py`
+- `docs/research/merge_portability_falsifier_schema.json`
 
 ### Q9. What consolidation operator adds new user structure without forgetting old structure?
 

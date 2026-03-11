@@ -34,7 +34,7 @@ Instead, we observe:
 |---|-------|--------|------------|
 | 1 | Geometric structure convergence | [EMPIRICAL] | CKA ≥ 0.96 across 3 families |
 | 2 | Coordinate system invariance | [VALIDATED] | Raw 0.32 → Aligned 0.97 |
-| 3 | Cross-architecture merging | [VALIDATED] | Coherent merged output |
+| 3 | Cross-architecture merging | [EXPLORATORY] | Probe-aligned feasibility only |
 | 4 | expansion_ratio correlation with correctness | [EMPIRICAL] | Model-dependent |
 | 5 | Null-space projection preserves behavior | [VALIDATED] | 94%+ preservation |
 | 6 | Scale invariance | [VALIDATED] | CKA = 1.0 across scales |
@@ -103,9 +103,9 @@ The 40-193% improvement after alignment proves raw CKA gaps reflect coordinate d
 - Repetition score: 0.0
 - Preserved fraction: 30.5%
 
-### Verdict: [VALIDATED] (existence proof)
+### Verdict: [EXPLORATORY]
 
-Cross-architecture merging is mathematically possible. Capability transfer testing (HumanEval, MMLU) would strengthen this claim.
+Cross-architecture merging has feasibility evidence, but the retained measurements here do not certify portable behavior across model families. Treat this as probe-aligned exploratory evidence until a commensurable preservation certificate and baselineed merge comparison close.
 
 ---
 

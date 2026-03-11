@@ -49,11 +49,21 @@ from modelcypher.core.domain.profile import (
 from .probe_alignment import (
     align_layers,
 )
+from ..models import build_transmission_layer_scores
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
+
+
+def _median(values: list[float]) -> float:
+    """Return the exact median of a non-empty list."""
+    ordered = sorted(values)
+    mid_idx = len(ordered) // 2
+    if len(ordered) % 2 == 0:
+        return (ordered[mid_idx - 1] + ordered[mid_idx]) / 2.0
+    return ordered[mid_idx]
 
 
 @dataclass
@@ -201,6 +211,12 @@ def compute_alignment_from_profiles(
     bottleneck_layer: int | None = None
     injection_layer: int | None = None
     layer_filter: list[int] | None = None
+    transmission_layer_scores: list[dict[str, Any]] = []
+    transmission_selection: dict[str, Any] = {
+        "policy": "exploratory_median_intersection",
+        "candidate_layers": 0,
+        "selected_layers": [],
+    }
 
     if target_acts.intermediate:
         from modelcypher.core.domain.geometry.variance_concentration import (
@@ -226,6 +242,18 @@ def compute_alignment_from_profiles(
                 continue
 
         if layer_variance:
+            variance_concentrations = {
+                layer_idx: result.var_top1 for layer_idx, result in layer_variance.items()
+            }
+            effective_ranks = {
+                layer_idx: result.effective_rank
+                for layer_idx, result in layer_variance.items()
+            }
+            transmission_layer_scores = build_transmission_layer_scores(
+                variance_concentrations,
+                effective_ranks,
+            )
+
             # The bottleneck is the layer with MAXIMUM variance concentration.
             # No threshold - the geometry tells us which layer is most compressed.
             best_layer = max(layer_variance.items(), key=lambda x: x[1].var_top1)
@@ -233,12 +261,10 @@ def compute_alignment_from_profiles(
 
             # Also find TRANSMISSION layers (low var_top1, high effective_rank)
             # These are the ideal injection points (linear highway, massive null space)
-            sorted_by_var = sorted(layer_variance.items(), key=lambda x: x[1].var_top1)
-            n = len(sorted_by_var)
-            median_var = sorted_by_var[n // 2][1].var_top1 if n > 0 else 0.5
-
-            sorted_by_rank = sorted(layer_variance.items(), key=lambda x: x[1].effective_rank, reverse=True)
-            median_rank = sorted_by_rank[n // 2][1].effective_rank if n > 0 else 50.0
+            median_var = _median([result.var_top1 for result in layer_variance.values()])
+            median_rank = _median(
+                [result.effective_rank for result in layer_variance.values()]
+            )
 
             # Transmission = low var_top1 AND high effective_rank
             transmission_layers = [
@@ -256,6 +282,14 @@ def compute_alignment_from_profiles(
             layer_filter = [bottleneck_layer]
             if injection_layer is not None and injection_layer != bottleneck_layer:
                 layer_filter.append(injection_layer)
+            transmission_selection = {
+                "policy": "exploratory_median_intersection",
+                "candidate_layers": len(layer_variance),
+                "median_variance_concentration": median_var,
+                "median_effective_rank": median_rank,
+                "selected_layers": sorted(transmission_layers),
+                "injection_layer": injection_layer,
+            }
 
             logger.info(
                 "PROFILE ALIGNMENT: BOTTLENECK = Layer %d (var_top1=%.1f%%, eff_rank=%.1f).",
@@ -329,6 +363,9 @@ def compute_alignment_from_profiles(
         "target_profile": str(target_profile_dir),
         "layer_mapping": alignment_result.layer_mapping,
         "scale_ratios": alignment_result.scale_ratios,
+        "transmission_layer_scores": transmission_layer_scores,
+        "transmission_selection": transmission_selection,
+        "bottleneck_layer": bottleneck_layer,
     }
 
     # Get probe metadata from profiles for merge consistency

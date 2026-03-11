@@ -26,6 +26,97 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array
 
 
+def _rank_positions(
+    layer_values: dict[int, float],
+    *,
+    descending: bool,
+) -> dict[int, int]:
+    ordered = sorted(
+        layer_values.items(),
+        key=lambda item: (item[1], item[0]),
+        reverse=descending,
+    )
+    return {layer_idx: position for position, (layer_idx, _value) in enumerate(ordered)}
+
+
+def _normalized_rank_advantage(position: int, total: int) -> float:
+    if total <= 1:
+        return 1.0
+    return 1.0 - (position / float(total - 1))
+
+
+def build_transmission_layer_scores(
+    variance_concentrations: dict[int, float],
+    effective_ranks: dict[int, float],
+    *,
+    embedding_layer: int = 0,
+) -> list[dict[str, float | int | bool]]:
+    """Return raw transmission ranking measurements for each measured layer.
+
+    This is telemetry, not a decision rule. It exposes the order statistics used
+    by exploratory transmission-layer selection without collapsing them into
+    quartile labels.
+    """
+    measured_layers = sorted(
+        set(variance_concentrations.keys()) & set(effective_ranks.keys())
+    )
+    if not measured_layers:
+        return []
+
+    variance_positions = _rank_positions(
+        {layer_idx: variance_concentrations[layer_idx] for layer_idx in measured_layers},
+        descending=False,
+    )
+    rank_positions = _rank_positions(
+        {layer_idx: effective_ranks[layer_idx] for layer_idx in measured_layers},
+        descending=True,
+    )
+
+    total_layers = len(measured_layers)
+    max_layer_index = max(measured_layers)
+    telemetry: list[dict[str, float | int | bool]] = []
+    for layer_idx in measured_layers:
+        low_variance_advantage = _normalized_rank_advantage(
+            variance_positions[layer_idx],
+            total_layers,
+        )
+        high_rank_advantage = _normalized_rank_advantage(
+            rank_positions[layer_idx],
+            total_layers,
+        )
+        telemetry.append(
+            {
+                "layer_idx": layer_idx,
+                "variance_concentration": variance_concentrations[layer_idx],
+                "effective_rank": effective_ranks[layer_idx],
+                "low_variance_rank_position": variance_positions[layer_idx],
+                "high_rank_position": rank_positions[layer_idx],
+                "low_variance_advantage": low_variance_advantage,
+                "high_rank_advantage": high_rank_advantage,
+                "transmission_score": (
+                    low_variance_advantage + high_rank_advantage
+                )
+                / 2.0,
+                "distance_to_nearest_edge": min(
+                    layer_idx,
+                    max_layer_index - layer_idx,
+                ),
+                "is_embedding_layer": layer_idx == embedding_layer,
+            }
+        )
+
+    telemetry.sort(
+        key=lambda row: (
+            float(row["transmission_score"]),
+            float(row["low_variance_advantage"]),
+            float(row["high_rank_advantage"]),
+            -int(row["layer_idx"]),
+        ),
+        reverse=True,
+    )
+    return telemetry
+
+
 @dataclass
 class LayerMergeState:
     """State carried through layers during merge (zipper)."""
@@ -148,7 +239,7 @@ class LayerSemanticProfile:
     """
 
     # Per-layer variance concentration (var_top1 = % of variance in top-1 singular value)
-    # High value (>0.7) = bottleneck layer
+    # Higher values indicate stronger compression into fewer directions
     variance_concentrations: dict[int, float] = field(default_factory=dict)
 
     # Per-layer effective rank (entropy-based dimensionality)
@@ -216,12 +307,14 @@ class LayerSemanticProfile:
         return layer_radius / max_radius
 
     def compute_highway_layers(self) -> list[int]:
-        """Identify highway layers based on variance concentration.
+        """Identify highway layers from an exploratory median split.
 
         Algorithm:
         1. Find median variance concentration across all layers
         2. Highway = layers where var_top1 >= median
         3. Ramps are the complement (var_top1 < median)
+
+        This is a research-time partitioning rule, not a promotable observable.
 
         Returns:
             List of layer indices that are part of the semantic highway.
@@ -298,6 +391,14 @@ class LayerSemanticProfile:
         bottleneck = self.get_bottleneck_layer()
         return [bottleneck] if bottleneck is not None else []
 
+    def compute_transmission_layer_scores(self) -> list[dict[str, float | int | bool]]:
+        """Return raw ranking telemetry for exploratory transmission selection."""
+        return build_transmission_layer_scores(
+            self.variance_concentrations,
+            self.effective_ranks,
+            embedding_layer=self.embedding_layer,
+        )
+
     def set_cross_architecture_skip_layers(self) -> None:
         """Auto-populate skip_layers for cross-architecture merges.
 
@@ -325,11 +426,14 @@ class LayerSemanticProfile:
         self.skip_layers = sorted(combined)
 
     def compute_transmission_layers(self) -> list[int]:
-        """Identify transmission layers based on variance concentration and rank.
+        """Identify exploratory transmission layers based on rank ordering.
 
-        Heuristic:
+        Exploratory policy:
         - Low variance concentration (bottom quartile)
         - High effective rank (top quartile)
+
+        The promotable measurement is ``compute_transmission_layer_scores()``.
+        This method remains a research-time selection policy only.
 
         Returns:
             List of layer indices that are transmission layers.
