@@ -35,6 +35,7 @@ from modelcypher.core.domain.agent_protocol import (
     AgentEnvelope,
     AgentRecommendation,
     make_metadata,
+    model_id,
 )
 from modelcypher.core.domain.data_preparation import (
     DatasetStatistics,
@@ -152,6 +153,7 @@ class DataPreparationService:
         self,
         result: DataPrepareResult,
         model_path: str | None = None,
+        data_path: str | None = None,
     ) -> AgentEnvelope:
         """Wrap a DataPrepareResult in an AgentEnvelope."""
         stats = result.statistics
@@ -203,7 +205,11 @@ class DataPreparationService:
                 observations=observations,
                 recommendations=recs,
             ),
-            metadata=make_metadata(model=model_path),
+            metadata=make_metadata(
+                model=model_path,
+                model_id_value=model_id(model_path) if model_path else None,
+                data_path=data_path,
+            ),
         )
 
     # ------------------------------------------------------------------

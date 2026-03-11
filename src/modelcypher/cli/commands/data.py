@@ -124,7 +124,9 @@ def data_prepare(
         raise typer.Exit(code=EXIT_RUNTIME)
 
     envelope = service.make_envelope(
-        result, model_path=str(model_path) if model_path else None,
+        result,
+        model_path=str(model_path) if model_path else None,
+        data_path=source,
     )
 
     if context.ai_mode or context.output_format != "text":

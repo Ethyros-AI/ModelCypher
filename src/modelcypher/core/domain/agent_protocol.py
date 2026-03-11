@@ -23,9 +23,15 @@ to interpret results, advise humans, and chain commands autonomously.
 
 from __future__ import annotations
 
+import hashlib
+import json
+import logging
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -68,6 +74,11 @@ class AgentMetadata:
     adapter_path: str | None = None
     duration_seconds: float | None = None
     seed: int | None = None
+    # Commensurability identity fields
+    model_id: str | None = None
+    data_hash: str | None = None
+    eval_data_hash: str | None = None
+    benchmark_suite: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {"timestamp": self.timestamp}
@@ -79,6 +90,14 @@ class AgentMetadata:
             d["duration_seconds"] = self.duration_seconds
         if self.seed is not None:
             d["seed"] = self.seed
+        if self.model_id is not None:
+            d["model_id"] = self.model_id
+        if self.data_hash is not None:
+            d["data_hash"] = self.data_hash
+        if self.eval_data_hash is not None:
+            d["eval_data_hash"] = self.eval_data_hash
+        if self.benchmark_suite is not None:
+            d["benchmark_suite"] = self.benchmark_suite
         return d
 
 
@@ -108,18 +127,75 @@ class AgentEnvelope:
         }
 
 
+def file_hash(path: str | Path) -> str | None:
+    """Compute SHA-256 hex digest of a file's contents.
+
+    Returns None if the file doesn't exist or can't be read.
+    """
+    try:
+        p = Path(path)
+        if not p.is_file():
+            return None
+        h = hashlib.sha256()
+        with p.open("rb") as f:
+            for chunk in iter(lambda: f.read(8192), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
+
+
+def model_id(model_path: str | Path) -> str | None:
+    """Compute architecture identity hash from config.json.
+
+    Hashes (architecture, hidden_size, num_layers, vocab_size) to produce
+    a stable identifier for the model architecture. Returns None if
+    config.json is missing or unreadable.
+    """
+    try:
+        config_path = Path(model_path) / "config.json"
+        if not config_path.is_file():
+            return None
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        # Extract architecture identity fields
+        identity = (
+            config.get("architectures", config.get("model_type", "")),
+            config.get("hidden_size", config.get("d_model", "")),
+            config.get("num_hidden_layers", config.get("num_layers", "")),
+            config.get("vocab_size", ""),
+        )
+        return hashlib.sha256(str(identity).encode()).hexdigest()[:16]
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
 def make_metadata(
     *,
     model: str | None = None,
     adapter_path: str | None = None,
     duration_seconds: float | None = None,
     seed: int | None = None,
+    model_id_value: str | None = None,
+    data_path: str | None = None,
+    eval_data_path: str | None = None,
+    benchmark_suite: str | None = None,
 ) -> AgentMetadata:
-    """Create metadata with current UTC timestamp."""
+    """Create metadata with current UTC timestamp.
+
+    If ``data_path`` or ``eval_data_path`` are provided, their SHA-256
+    content hashes are computed and stored for commensurability checks.
+    """
+    data_hash_val = file_hash(data_path) if data_path else None
+    eval_data_hash_val = file_hash(eval_data_path) if eval_data_path else None
+
     return AgentMetadata(
         timestamp=datetime.now(timezone.utc).isoformat(),
         model=model,
         adapter_path=adapter_path,
         duration_seconds=duration_seconds,
         seed=seed,
+        model_id=model_id_value,
+        data_hash=data_hash_val,
+        eval_data_hash=eval_data_hash_val,
+        benchmark_suite=benchmark_suite,
     )

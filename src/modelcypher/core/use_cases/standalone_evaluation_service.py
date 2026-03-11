@@ -53,7 +53,7 @@ class InferenceComparison:
     base_response: str
     adapted_response: str
     reference: str | None
-    verdict: str  # "improved" | "degraded" | "unchanged" | "degenerated"
+    verdict: str  # "improved" | "degraded" | "unchanged" | "degenerated" | "unmeasured"
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -79,6 +79,7 @@ class StandaloneEvalResult:
     n_degraded: int = 0
     n_unchanged: int = 0
     n_degenerated: int = 0
+    n_unmeasured: int = 0
     base_perplexity: float | None = None
     adapted_perplexity: float | None = None
     base_loss: float | None = None
@@ -100,6 +101,7 @@ class StandaloneEvalResult:
             d["n_degraded"] = self.n_degraded
             d["n_unchanged"] = self.n_unchanged
             d["n_degenerated"] = self.n_degenerated
+            d["n_unmeasured"] = self.n_unmeasured
             d["per_prompt"] = [p.to_dict() for p in self.per_prompt]
         if self.base_perplexity is not None:
             d["base_perplexity"] = self.base_perplexity
@@ -157,16 +159,26 @@ class StandaloneEvaluationService:
     def make_envelope(
         self,
         result: StandaloneEvalResult,
+        model_id_value: str | None = None,
+        eval_data_path: str | None = None,
+        benchmark_suite: str | None = None,
     ) -> AgentEnvelope:
         """Wrap an eval result in an AgentEnvelope."""
         observations: list[str] = []
         recommendations: list[AgentRecommendation] = []
 
         if result.mode == "inference":
+            obs_parts = [
+                f"{result.n_improved} improved",
+                f"{result.n_degraded} degraded",
+                f"{result.n_unchanged} unchanged",
+                f"{result.n_degenerated} degenerated",
+            ]
+            if result.n_unmeasured > 0:
+                obs_parts.append(f"{result.n_unmeasured} unmeasured")
             observations.append(
-                f"Inference comparison: {result.n_improved} improved, "
-                f"{result.n_degraded} degraded, {result.n_unchanged} unchanged, "
-                f"{result.n_degenerated} degenerated out of {result.n_prompts} prompts"
+                f"Inference comparison: {', '.join(obs_parts)} "
+                f"out of {result.n_prompts} prompts"
             )
             if result.n_degenerated > 0:
                 recommendations.append(
@@ -199,12 +211,23 @@ class StandaloneEvaluationService:
                 )
             )
         elif result.overall_verdict == "improved" and result.adapter_path:
-            recommendations.append(
-                AgentRecommendation(
-                    action="deploy",
-                    reason="Adapter improves model performance. Consider deploying.",
+            if result.mode in ("loss", "benchmark"):
+                recommendations.append(
+                    AgentRecommendation(
+                        action="deploy",
+                        reason="Adapter improves model performance on measured evaluation.",
+                    )
                 )
-            )
+            elif result.mode == "inference":
+                recommendations.append(
+                    AgentRecommendation(
+                        action="evaluate_benchmark",
+                        reason="Adapter shows improvement on prompt references. "
+                        "Run benchmark evaluation for deployment decision.",
+                        command=f"mc train evaluate -m {result.model_path} "
+                        f"-a {result.adapter_path} --benchmark quick",
+                    )
+                )
 
         summary = self._build_summary(result)
 
@@ -220,6 +243,9 @@ class StandaloneEvaluationService:
             metadata=make_metadata(
                 model=str(result.model_path),
                 adapter_path=str(result.adapter_path) if result.adapter_path else None,
+                model_id_value=model_id_value,
+                eval_data_path=eval_data_path,
+                benchmark_suite=benchmark_suite,
             ),
         )
 
@@ -281,7 +307,7 @@ class StandaloneEvaluationService:
 
         # Compare
         comparisons: list[InferenceComparison] = []
-        n_improved = n_degraded = n_unchanged = n_degenerated = 0
+        n_improved = n_degraded = n_unchanged = n_degenerated = n_unmeasured = 0
 
         sqrt_eps = math.sqrt(float(self._backend.finfo().eps))
 
@@ -290,20 +316,26 @@ class StandaloneEvaluationService:
         ):
             reference = prompt_data.get("reference")
 
-            # Check for degeneration
+            # Compute ngram repetition rate for BOTH base and adapted
+            base_degen_rate = 0.0
+            adapted_degen_rate = 0.0
+            if base_resp:
+                try:
+                    base_degen_rate = ngram_repetition_rate(base_resp, n=3)
+                except Exception:
+                    pass
             if adapted_resp:
                 try:
-                    degen_rate = ngram_repetition_rate(adapted_resp, n=3)
+                    adapted_degen_rate = ngram_repetition_rate(adapted_resp, n=3)
                 except Exception:
-                    degen_rate = 0.0
-            else:
-                degen_rate = 0.0
+                    pass
 
-            if degen_rate > 0.5:
+            # Degeneration: adapted is measurably more repetitive than base
+            if adapted_degen_rate > base_degen_rate + sqrt_eps:
                 verdict = "degenerated"
                 n_degenerated += 1
             elif reference:
-                # If reference provided, check if adapted is closer
+                # Reference substring matching (binary, not heuristic)
                 base_match = reference.strip().lower() in base_resp.strip().lower()
                 adapted_match = reference.strip().lower() in adapted_resp.strip().lower()
                 if adapted_match and not base_match:
@@ -316,17 +348,9 @@ class StandaloneEvaluationService:
                     verdict = "unchanged"
                     n_unchanged += 1
             else:
-                # No reference — compare response lengths as rough heuristic
-                # (longer coherent response is generally better, but this is weak)
-                if len(adapted_resp) > len(base_resp) * 1.1 and degen_rate < 0.3:
-                    verdict = "improved"
-                    n_improved += 1
-                elif len(adapted_resp) < len(base_resp) * 0.5:
-                    verdict = "degraded"
-                    n_degraded += 1
-                else:
-                    verdict = "unchanged"
-                    n_unchanged += 1
+                # No reference — cannot measure improvement
+                verdict = "unmeasured"
+                n_unmeasured += 1
 
             comparisons.append(
                 InferenceComparison(
@@ -339,7 +363,7 @@ class StandaloneEvaluationService:
             )
 
         overall = self._determine_verdict(
-            n_improved, n_degraded, n_unchanged, n_degenerated,
+            n_improved, n_degraded, n_unchanged, n_degenerated, n_unmeasured,
         )
 
         return StandaloneEvalResult(
@@ -351,6 +375,7 @@ class StandaloneEvaluationService:
             n_degraded=n_degraded,
             n_unchanged=n_unchanged,
             n_degenerated=n_degenerated,
+            n_unmeasured=n_unmeasured,
             per_prompt=comparisons,
             overall_verdict=overall,
         )
@@ -472,13 +497,22 @@ class StandaloneEvaluationService:
 
     @staticmethod
     def _determine_verdict(
-        improved: int, degraded: int, unchanged: int, degenerated: int,
+        improved: int,
+        degraded: int,
+        unchanged: int,
+        degenerated: int,
+        unmeasured: int = 0,
     ) -> str:
-        """Determine overall verdict from per-prompt counts."""
-        total = improved + degraded + unchanged + degenerated
-        if total == 0:
+        """Determine overall verdict from per-prompt counts.
+
+        Unmeasured prompts are excluded from tallies.
+        Degeneration dominates if it outweighs improvement (a comparison,
+        not a threshold).
+        """
+        measured = improved + degraded + unchanged + degenerated
+        if measured == 0:
             return "neutral"
-        if degenerated > total * 0.3:
+        if degenerated > 0 and degenerated >= improved:
             return "degenerated"
         if improved > degraded:
             return "improved"

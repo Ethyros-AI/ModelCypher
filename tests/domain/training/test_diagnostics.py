@@ -31,7 +31,9 @@ from modelcypher.core.domain.agent_protocol import (
     AgentEnvelope,
     AgentMetadata,
     AgentRecommendation,
+    file_hash,
     make_metadata,
+    model_id,
 )
 from modelcypher.core.domain.training.diagnostics import (
     diagnose_training_result,
@@ -328,7 +330,7 @@ class TestDiagnoseTrainingResult:
         assert len(cka_obs) > 0
         assert "0.96" in cka_obs[0]
 
-    def test_evaluate_command_includes_paths(self):
+    def test_evaluate_command_includes_paths_and_mode(self):
         result = _make_result(adapter_path="/tmp/adapter")
         diag = diagnose_training_result(
             result, model_path="/model", adapter_path="/tmp/adapter"
@@ -337,9 +339,136 @@ class TestDiagnoseTrainingResult:
         assert len(eval_recs) > 0
         assert "/model" in eval_recs[0].command
         assert "/tmp/adapter" in eval_recs[0].command
+        assert "--benchmark quick" in eval_recs[0].command
 
     def test_no_adapter_path_skips_evaluate(self):
         result = _make_result(adapter_path=None)
         diag = diagnose_training_result(result, model_path=None)
         actions = [r.action for r in diag.recommendations]
         assert "evaluate" not in actions
+
+
+# ---------------------------------------------------------------------------
+# Commensurability infrastructure (C1+C2)
+# ---------------------------------------------------------------------------
+
+
+class TestFileHash:
+    def test_computes_sha256(self, tmp_path):
+        f = tmp_path / "data.jsonl"
+        f.write_text('{"text": "hello"}')
+        h = file_hash(f)
+        assert h is not None
+        assert len(h) == 64  # SHA-256 hex
+
+    def test_same_content_same_hash(self, tmp_path):
+        f1 = tmp_path / "a.jsonl"
+        f2 = tmp_path / "b.jsonl"
+        content = '{"text": "identical"}'
+        f1.write_text(content)
+        f2.write_text(content)
+        assert file_hash(f1) == file_hash(f2)
+
+    def test_different_content_different_hash(self, tmp_path):
+        f1 = tmp_path / "a.jsonl"
+        f2 = tmp_path / "b.jsonl"
+        f1.write_text("aaa")
+        f2.write_text("bbb")
+        assert file_hash(f1) != file_hash(f2)
+
+    def test_nonexistent_returns_none(self, tmp_path):
+        assert file_hash(tmp_path / "nope.jsonl") is None
+
+    def test_directory_returns_none(self, tmp_path):
+        assert file_hash(tmp_path) is None
+
+
+class TestModelId:
+    def test_from_config(self, tmp_path):
+        config = {
+            "architectures": ["LlamaForCausalLM"],
+            "hidden_size": 2048,
+            "num_hidden_layers": 24,
+            "vocab_size": 32000,
+        }
+        (tmp_path / "config.json").write_text(json.dumps(config))
+        mid = model_id(tmp_path)
+        assert mid is not None
+        assert len(mid) == 16  # Truncated SHA-256
+
+    def test_same_config_same_id(self, tmp_path):
+        config = {
+            "architectures": ["LlamaForCausalLM"],
+            "hidden_size": 2048,
+            "num_hidden_layers": 24,
+            "vocab_size": 32000,
+        }
+        d1 = tmp_path / "m1"
+        d2 = tmp_path / "m2"
+        d1.mkdir()
+        d2.mkdir()
+        (d1 / "config.json").write_text(json.dumps(config))
+        (d2 / "config.json").write_text(json.dumps(config))
+        assert model_id(d1) == model_id(d2)
+
+    def test_different_architecture_different_id(self, tmp_path):
+        d1 = tmp_path / "m1"
+        d2 = tmp_path / "m2"
+        d1.mkdir()
+        d2.mkdir()
+        (d1 / "config.json").write_text(json.dumps({
+            "architectures": ["LlamaForCausalLM"],
+            "hidden_size": 2048,
+            "num_hidden_layers": 24,
+            "vocab_size": 32000,
+        }))
+        (d2 / "config.json").write_text(json.dumps({
+            "architectures": ["Qwen3ForCausalLM"],
+            "hidden_size": 2048,
+            "num_hidden_layers": 24,
+            "vocab_size": 32000,
+        }))
+        assert model_id(d1) != model_id(d2)
+
+    def test_missing_config_returns_none(self, tmp_path):
+        assert model_id(tmp_path) is None
+
+    def test_invalid_json_returns_none(self, tmp_path):
+        (tmp_path / "config.json").write_text("not json")
+        assert model_id(tmp_path) is None
+
+
+class TestMetadataIdentityFields:
+    def test_to_dict_includes_identity(self):
+        meta = AgentMetadata(
+            timestamp="2026-03-11T00:00:00Z",
+            model="/model",
+            model_id="abc123",
+            data_hash="def456",
+            eval_data_hash="ghi789",
+            benchmark_suite="quick",
+        )
+        d = meta.to_dict()
+        assert d["model_id"] == "abc123"
+        assert d["data_hash"] == "def456"
+        assert d["eval_data_hash"] == "ghi789"
+        assert d["benchmark_suite"] == "quick"
+
+    def test_to_dict_omits_none_identity(self):
+        meta = AgentMetadata(timestamp="2026-03-11T00:00:00Z")
+        d = meta.to_dict()
+        assert "model_id" not in d
+        assert "data_hash" not in d
+        assert "eval_data_hash" not in d
+        assert "benchmark_suite" not in d
+
+    def test_make_metadata_hashes_file(self, tmp_path):
+        f = tmp_path / "data.jsonl"
+        f.write_text('{"text": "hello"}')
+        meta = make_metadata(data_path=str(f))
+        assert meta.data_hash is not None
+        assert len(meta.data_hash) == 64
+
+    def test_make_metadata_nonexistent_file(self):
+        meta = make_metadata(data_path="/nonexistent/data.jsonl")
+        assert meta.data_hash is None

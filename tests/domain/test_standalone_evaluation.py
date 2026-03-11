@@ -83,6 +83,7 @@ class TestStandaloneEvalResult:
             n_degraded=2,
             n_unchanged=1,
             n_degenerated=1,
+            n_unmeasured=0,
             overall_verdict="improved",
             per_prompt=[
                 InferenceComparison(
@@ -98,6 +99,7 @@ class TestStandaloneEvalResult:
         assert d["mode"] == "inference"
         assert d["n_prompts"] == 10
         assert d["n_improved"] == 6
+        assert d["n_unmeasured"] == 0
         assert len(d["per_prompt"]) == 1
         assert "base_perplexity" not in d
 
@@ -141,6 +143,7 @@ class TestStandaloneEvalResult:
         d = result.to_dict()
         assert d["overall_verdict"] == "neutral"
         assert d["n_prompts"] == 0
+        assert d["n_unmeasured"] == 0
 
     def test_to_dict_is_json_serializable(self):
         result = StandaloneEvalResult(
@@ -174,13 +177,18 @@ class TestDetermineVerdict:
         verdict = StandaloneEvaluationService._determine_verdict(3, 3, 2, 0)
         assert verdict == "neutral"
 
-    def test_degenerated_threshold(self):
-        # >30% degenerated → degenerated
+    def test_degeneration_dominates_when_exceeds_improved(self):
+        # 4 degenerated >= 2 improved → degenerated
         verdict = StandaloneEvaluationService._determine_verdict(2, 1, 1, 4)
         assert verdict == "degenerated"
 
-    def test_degenerated_below_threshold(self):
-        # 2/10 = 20% < 30% → not degenerated, improved wins
+    def test_degeneration_equal_to_improved(self):
+        # 3 degenerated >= 3 improved → degenerated (degenerated wins ties)
+        verdict = StandaloneEvaluationService._determine_verdict(3, 1, 1, 3)
+        assert verdict == "degenerated"
+
+    def test_degeneration_below_improved(self):
+        # 2 degenerated < 5 improved → improved wins
         verdict = StandaloneEvaluationService._determine_verdict(5, 2, 1, 2)
         assert verdict == "improved"
 
@@ -191,6 +199,21 @@ class TestDetermineVerdict:
     def test_all_unchanged(self):
         verdict = StandaloneEvaluationService._determine_verdict(0, 0, 5, 0)
         assert verdict == "neutral"
+
+    def test_unmeasured_excluded(self):
+        # 3 improved + 7 unmeasured → "improved" (unmeasured doesn't dilute)
+        verdict = StandaloneEvaluationService._determine_verdict(3, 1, 0, 0, unmeasured=7)
+        assert verdict == "improved"
+
+    def test_all_unmeasured(self):
+        # 0 measured → "neutral"
+        verdict = StandaloneEvaluationService._determine_verdict(0, 0, 0, 0, unmeasured=10)
+        assert verdict == "neutral"
+
+    def test_single_degeneration_no_improvement(self):
+        # 1 degenerated, 0 improved → degenerated (1 >= 0)
+        verdict = StandaloneEvaluationService._determine_verdict(0, 0, 5, 1)
+        assert verdict == "degenerated"
 
 
 # ---------------------------------------------------------------------------
@@ -323,7 +346,10 @@ class TestMakeEnvelope:
         assert envelope.status == "success"
         d = envelope.to_dict()
         assert "diagnostics" in d
-        assert "deploy" in [r["action"] for r in d["diagnostics"]["recommendations"]]
+        # Inference mode recommends benchmark evaluation, not direct deploy
+        actions = [r["action"] for r in d["diagnostics"]["recommendations"]]
+        assert "evaluate_benchmark" in actions
+        assert "deploy" not in actions
 
     def test_loss_envelope(self, service):
         result = StandaloneEvalResult(
@@ -372,6 +398,47 @@ class TestMakeEnvelope:
         d = envelope.to_dict()
         actions = [r["action"] for r in d["diagnostics"]["recommendations"]]
         assert "investigate_degeneration" in actions
+
+    def test_loss_improved_recommends_deploy(self, service):
+        result = StandaloneEvalResult(
+            model_path="/model",
+            adapter_path="/adapter",
+            mode="loss",
+            base_loss=2.5,
+            adapted_loss=1.8,
+            overall_verdict="improved",
+        )
+        envelope = service.make_envelope(result)
+        d = envelope.to_dict()
+        actions = [r["action"] for r in d["diagnostics"]["recommendations"]]
+        assert "deploy" in actions
+
+    def test_benchmark_improved_recommends_deploy(self, service):
+        result = StandaloneEvalResult(
+            model_path="/model",
+            adapter_path="/adapter",
+            mode="benchmark",
+            overall_verdict="improved",
+        )
+        envelope = service.make_envelope(result)
+        d = envelope.to_dict()
+        actions = [r["action"] for r in d["diagnostics"]["recommendations"]]
+        assert "deploy" in actions
+
+    def test_unmeasured_in_observation(self, service):
+        result = StandaloneEvalResult(
+            model_path="/model",
+            adapter_path="/adapter",
+            mode="inference",
+            n_prompts=5,
+            n_improved=2,
+            n_unmeasured=3,
+            overall_verdict="improved",
+        )
+        envelope = service.make_envelope(result)
+        d = envelope.to_dict()
+        obs = " ".join(d["diagnostics"]["observations"])
+        assert "unmeasured" in obs
 
     def test_envelope_is_json_serializable(self, service):
         result = StandaloneEvalResult(

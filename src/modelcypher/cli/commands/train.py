@@ -283,6 +283,7 @@ def train_run(
     from modelcypher.core.domain.agent_protocol import (
         AgentEnvelope,
         make_metadata,
+        model_id,
     )
     from modelcypher.core.domain.training.diagnostics import (
         diagnose_training_result,
@@ -305,6 +306,10 @@ def train_run(
             adapter_path=result.adapter_path,
             duration_seconds=result.training_time_seconds,
             seed=seed,
+            model_id_value=model_id(str(model_path)),
+            data_path=data,
+            eval_data_path=eval_data,
+            benchmark_suite=benchmark,
         ),
     )
 
@@ -783,6 +788,17 @@ def train_evaluate(
         write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_INPUT)
         raise typer.Exit(code=EXIT_INPUT)
 
+    if prompts is not None and adapter is None:
+        error = ErrorDetail(
+            code="MC-2019",
+            title="Adapter required for prompt comparison",
+            detail="--prompts mode compares base vs adapted output. Provide --adapter.",
+            hint="mc train evaluate -m /model -a /adapter --prompts eval.jsonl",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_INPUT)
+        raise typer.Exit(code=EXIT_INPUT)
+
     from modelcypher.cli.composition import get_backend
     from modelcypher.core.use_cases.standalone_evaluation_service import (
         StandaloneEvaluationService,
@@ -810,7 +826,14 @@ def train_evaluate(
         write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
         raise typer.Exit(code=EXIT_RUNTIME)
 
-    envelope = service.make_envelope(result)
+    from modelcypher.core.domain.agent_protocol import model_id as _model_id
+
+    envelope = service.make_envelope(
+        result,
+        model_id_value=_model_id(str(model_path)),
+        eval_data_path=data if data else (prompts if prompts else None),
+        benchmark_suite=benchmark,
+    )
     write_agent_output(envelope, context.output_format, context.pretty)
 
 

@@ -248,8 +248,8 @@ def suggest_next_steps(
         recs.append(
             AgentRecommendation(
                 action="evaluate",
-                reason="Assess inference quality on test prompts",
-                command=f"mc train evaluate -m {model_path} -a {adapter}",
+                reason="Assess adapter quality on benchmark tasks",
+                command=f"mc train evaluate -m {model_path} -a {adapter} --benchmark quick",
             )
         )
 

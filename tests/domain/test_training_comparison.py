@@ -87,6 +87,7 @@ class TestComparisonResult:
         assert d["label_a"] == "run1"
         assert d["winner"] == "b"
         assert len(d["metrics"]) == 1
+        assert d["commensurable"] is True
 
     def test_no_winner(self):
         result = ComparisonResult(
@@ -190,6 +191,14 @@ class TestCompareDicts:
         assert metric_map["post_loss"].better == "b"
         assert metric_map["min_cka"].better == "b"
         assert metric_map["final_loss"].better == "a"
+
+    def test_pipeline_gate_compared(self, service):
+        a = {"pipeline_gate_passed": 0}
+        b = {"pipeline_gate_passed": 1}
+        metrics = service._compare_dicts(a, b)
+        assert len(metrics) == 1
+        assert metrics[0].metric == "pipeline_gate_passed"
+        assert metrics[0].better == "b"
 
 
 # ---------------------------------------------------------------------------
@@ -385,6 +394,36 @@ class TestComparisonEnvelope:
         assert any("post_loss" in o for o in obs)
         assert any("min_cka" in o for o in obs)
 
+    def test_gate_status_in_observations(self, service):
+        result = ComparisonResult(
+            label_a="run1",
+            label_b="run2",
+            metrics=[MetricDelta("post_loss", 1.5, 1.2, -0.3, "b")],
+            winner="b",
+            winner_reason="Lower post-training loss",
+            _raw_a={"pipeline_gate_passed": True},
+            _raw_b={"pipeline_gate_passed": False},
+        )
+        envelope = service.make_envelope(result)
+        d = envelope.to_dict()
+        obs = d["diagnostics"]["observations"]
+        assert any("Run A: pipeline gate passed" in o for o in obs)
+        assert any("Run B: pipeline gate failed" in o for o in obs)
+
+    def test_gate_status_missing_no_observation(self, service):
+        result = ComparisonResult(
+            label_a="run1",
+            label_b="run2",
+            winner=None,
+            winner_reason="No clear winner",
+            _raw_a={"post_loss": 1.5},
+            _raw_b={"post_loss": 1.2},
+        )
+        envelope = service.make_envelope(result)
+        d = envelope.to_dict()
+        obs = d["diagnostics"]["observations"]
+        assert not any("pipeline gate" in o for o in obs)
+
     def test_envelope_is_json_serializable(self, service):
         result = ComparisonResult(
             label_a="a",
@@ -396,3 +435,110 @@ class TestComparisonEnvelope:
         serialized = json.dumps(envelope.to_dict())
         parsed = json.loads(serialized)
         assert parsed["command"] == "mc train compare"
+
+
+# ---------------------------------------------------------------------------
+# Commensurability (C3)
+# ---------------------------------------------------------------------------
+
+
+class TestCommensurability:
+    @pytest.fixture()
+    def service(self):
+        return TrainingComparisonService()
+
+    def test_commensurable_by_default(self):
+        result = ComparisonResult(label_a="a", label_b="b")
+        assert result.commensurable is True
+        assert result.to_dict()["commensurable"] is True
+
+    def test_matching_metadata_commensurable(self, service, tmp_path):
+        envelope_a = {
+            "command": "mc train run",
+            "result": {"post_loss": 1.5, "adapter_path": "/a"},
+            "metadata": {"model_id": "abc123", "data_hash": "hash1"},
+        }
+        envelope_b = {
+            "command": "mc train run",
+            "result": {"post_loss": 1.2, "adapter_path": "/b"},
+            "metadata": {"model_id": "abc123", "data_hash": "hash1"},
+        }
+        (tmp_path / "a.json").write_text(json.dumps(envelope_a))
+        (tmp_path / "b.json").write_text(json.dumps(envelope_b))
+        result = service.compare_results(tmp_path / "a.json", tmp_path / "b.json")
+        assert result.commensurable is True
+
+    def test_mismatched_model_id(self, service, tmp_path):
+        envelope_a = {
+            "command": "mc train run",
+            "result": {"post_loss": 1.5, "adapter_path": "/a"},
+            "metadata": {"model_id": "abc123"},
+        }
+        envelope_b = {
+            "command": "mc train run",
+            "result": {"post_loss": 1.2, "adapter_path": "/b"},
+            "metadata": {"model_id": "xyz789"},
+        }
+        (tmp_path / "a.json").write_text(json.dumps(envelope_a))
+        (tmp_path / "b.json").write_text(json.dumps(envelope_b))
+        result = service.compare_results(tmp_path / "a.json", tmp_path / "b.json")
+        assert result.commensurable is False
+
+    def test_mismatched_data_hash(self, service, tmp_path):
+        envelope_a = {
+            "command": "mc train run",
+            "result": {"post_loss": 1.5},
+            "metadata": {"data_hash": "hash_a"},
+        }
+        envelope_b = {
+            "command": "mc train run",
+            "result": {"post_loss": 1.2},
+            "metadata": {"data_hash": "hash_b"},
+        }
+        (tmp_path / "a.json").write_text(json.dumps(envelope_a))
+        (tmp_path / "b.json").write_text(json.dumps(envelope_b))
+        result = service.compare_results(tmp_path / "a.json", tmp_path / "b.json")
+        assert result.commensurable is False
+
+    def test_missing_metadata_backward_compat(self, service, tmp_path):
+        # Old results without metadata → commensurable (no info to contradict)
+        (tmp_path / "a.json").write_text(json.dumps({"post_loss": 1.5}))
+        (tmp_path / "b.json").write_text(json.dumps({"post_loss": 1.2}))
+        result = service.compare_results(tmp_path / "a.json", tmp_path / "b.json")
+        assert result.commensurable is True
+
+    def test_mismatch_observation_in_envelope(self, service, tmp_path):
+        envelope_a = {
+            "command": "mc train run",
+            "result": {"post_loss": 1.5},
+            "metadata": {"model_id": "abc"},
+        }
+        envelope_b = {
+            "command": "mc train run",
+            "result": {"post_loss": 1.2},
+            "metadata": {"model_id": "xyz"},
+        }
+        (tmp_path / "a.json").write_text(json.dumps(envelope_a))
+        (tmp_path / "b.json").write_text(json.dumps(envelope_b))
+        result = service.compare_results(tmp_path / "a.json", tmp_path / "b.json")
+        envelope = service.make_envelope(result)
+        d = envelope.to_dict()
+        obs = d["diagnostics"]["observations"]
+        assert any("different model architecture" in o for o in obs)
+
+    def test_one_side_missing_field_still_commensurable(self, service, tmp_path):
+        # If only one side has the field, can't determine mismatch
+        envelope_a = {
+            "command": "mc train run",
+            "result": {"post_loss": 1.5},
+            "metadata": {"model_id": "abc"},
+        }
+        envelope_b = {
+            "command": "mc train run",
+            "result": {"post_loss": 1.2},
+            "metadata": {},
+        }
+        (tmp_path / "a.json").write_text(json.dumps(envelope_a))
+        (tmp_path / "b.json").write_text(json.dumps(envelope_b))
+        result = service.compare_results(tmp_path / "a.json", tmp_path / "b.json")
+        assert result.commensurable is True

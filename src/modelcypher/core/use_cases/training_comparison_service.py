@@ -65,6 +65,11 @@ class ComparisonResult:
     metrics: list[MetricDelta] = field(default_factory=list)
     winner: str | None = None  # "a", "b", None
     winner_reason: str = ""
+    commensurable: bool = True
+    # Raw data dicts for envelope construction (not serialized)
+    _raw_a: dict[str, Any] = field(default_factory=dict, repr=False)
+    _raw_b: dict[str, Any] = field(default_factory=dict, repr=False)
+    _commensurability_notes: list[str] = field(default_factory=list, repr=False)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -73,6 +78,7 @@ class ComparisonResult:
             "metrics": [m.to_dict() for m in self.metrics],
             "winner": self.winner,
             "winner_reason": self.winner_reason,
+            "commensurable": self.commensurable,
         }
 
 
@@ -85,10 +91,16 @@ class TrainingComparisonService:
         result_b_path: Path,
     ) -> ComparisonResult:
         """Compare two saved training result JSON files."""
-        data_a = json.loads(result_a_path.read_text(encoding="utf-8"))
-        data_b = json.loads(result_b_path.read_text(encoding="utf-8"))
+        raw_a = json.loads(result_a_path.read_text(encoding="utf-8"))
+        raw_b = json.loads(result_b_path.read_text(encoding="utf-8"))
+
+        # Extract metadata before unwrapping envelope
+        meta_a = raw_a.get("metadata", {}) if isinstance(raw_a, dict) else {}
+        meta_b = raw_b.get("metadata", {}) if isinstance(raw_b, dict) else {}
 
         # Handle AgentEnvelope wrapping
+        data_a = raw_a
+        data_b = raw_b
         if "result" in data_a and "command" in data_a:
             data_a = data_a["result"]
         if "result" in data_b and "command" in data_b:
@@ -100,12 +112,21 @@ class TrainingComparisonService:
         metrics = self._compare_dicts(data_a, data_b)
         winner, reason = self._determine_winner(metrics, data_a, data_b)
 
+        # Check commensurability from metadata identity fields
+        commensurable, mismatch_observations = self._check_commensurability(
+            meta_a, meta_b,
+        )
+
         return ComparisonResult(
             label_a=label_a,
             label_b=label_b,
             metrics=metrics,
             winner=winner,
             winner_reason=reason,
+            commensurable=commensurable,
+            _raw_a=data_a,
+            _raw_b=data_b,
+            _commensurability_notes=mismatch_observations,
         )
 
     def compare_adapters(
@@ -164,6 +185,20 @@ class TrainingComparisonService:
                     f"(Δ={m.delta:+.4f}, better={m.better})"
                 )
 
+        # Report pipeline gate status (informational, not a winner blocker)
+        for label, data in [("A", result._raw_a), ("B", result._raw_b)]:
+            if not data:
+                continue
+            gate = data.get("pipeline_gate_passed")
+            if gate is True:
+                observations.append(f"Run {label}: pipeline gate passed")
+            elif gate is False:
+                observations.append(f"Run {label}: pipeline gate failed")
+                # None / missing = not evaluated, no observation
+
+        # Report commensurability mismatches
+        observations.extend(result._commensurability_notes)
+
         recs: list[AgentRecommendation] = []
         if result.winner:
             winner_label = result.label_a if result.winner == "a" else result.label_b
@@ -218,6 +253,7 @@ class TrainingComparisonService:
         "training_time_seconds", "train_iters",
         "adapted_loss", "adapted_perplexity",
         "n_improved", "n_degraded", "n_degenerated",
+        "pipeline_gate_passed",
     ]
 
     def _compare_dicts(
@@ -273,25 +309,25 @@ class TrainingComparisonService:
         # Primary: post_loss (lower is better)
         for m in metrics:
             if m.metric == "post_loss" and m.delta is not None:
-                if m.delta < -1e-4:
+                if m.delta < -1e-4:  # TODO: derive tolerance from machine epsilon
                     return "b", f"Lower post-training loss ({m.value_b:.4f} vs {m.value_a:.4f})"
-                elif m.delta > 1e-4:
+                elif m.delta > 1e-4:  # TODO: derive tolerance from machine epsilon
                     return "a", f"Lower post-training loss ({m.value_a:.4f} vs {m.value_b:.4f})"
 
         # Secondary: adapted_loss
         for m in metrics:
             if m.metric == "adapted_loss" and m.delta is not None:
-                if m.delta < -1e-4:
+                if m.delta < -1e-4:  # TODO: derive tolerance from machine epsilon
                     return "b", f"Lower adapted loss ({m.value_b:.4f} vs {m.value_a:.4f})"
-                elif m.delta > 1e-4:
+                elif m.delta > 1e-4:  # TODO: derive tolerance from machine epsilon
                     return "a", f"Lower adapted loss ({m.value_a:.4f} vs {m.value_b:.4f})"
 
         # Tertiary: min_cka (higher is better)
         for m in metrics:
             if m.metric == "min_cka" and m.delta is not None:
-                if m.delta > 0.01:
+                if m.delta > 0.01:  # TODO: derive tolerance from CKA precision
                     return "b", f"Better CKA preservation ({m.value_b:.3f} vs {m.value_a:.3f})"
-                elif m.delta < -0.01:
+                elif m.delta < -0.01:  # TODO: derive tolerance from CKA precision
                     return "a", f"Better CKA preservation ({m.value_a:.3f} vs {m.value_b:.3f})"
 
         # Count wins
@@ -304,3 +340,33 @@ class TrainingComparisonService:
             return "b", f"Wins on {b_wins}/{len(metrics)} metrics"
 
         return None, "No clear winner — results are comparable"
+
+    @staticmethod
+    def _check_commensurability(
+        meta_a: dict[str, Any],
+        meta_b: dict[str, Any],
+    ) -> tuple[bool, list[str]]:
+        """Check if two results are commensurable based on identity metadata.
+
+        Returns (commensurable, mismatch_observations).
+        Results without metadata are treated as commensurable (backward compat).
+        """
+        observations: list[str] = []
+        commensurable = True
+
+        identity_fields = {
+            "model_id": "model architecture",
+            "data_hash": "training data",
+            "eval_data_hash": "evaluation data",
+        }
+
+        for field, label in identity_fields.items():
+            val_a = meta_a.get(field)
+            val_b = meta_b.get(field)
+            if val_a is not None and val_b is not None and val_a != val_b:
+                observations.append(
+                    f"Results use different {label} — comparison may not be meaningful"
+                )
+                commensurable = False
+
+        return commensurable, observations
