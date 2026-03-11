@@ -2486,6 +2486,7 @@ def run_model_experiment(
     if any(m in NB_SURFACE_METHODS for m in methods):
         logger.info(f"\n--- [{model_name}] Deriving NB-LoRA target surface ---")
         from modelcypher.backends import initialize_default_backend
+        from modelcypher.backends.mlx_training_adapter import MLXTrainingAdapter
         from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.use_cases.dataset_training_service import (
             DatasetTrainingService,
@@ -2493,7 +2494,7 @@ def run_model_experiment(
         )
         initialize_default_backend()
         backend = get_default_backend()
-        adapter = backend.create_adapter()
+        adapter = MLXTrainingAdapter(backend)
         svc = DatasetTrainingService(adapter, backend)
         nb_surface = svc.derive_nb_target_surface(
             model_path=model_path,
