@@ -229,6 +229,102 @@ class LossCapture:
         return self.train_losses[-1]["train_loss"] if self.train_losses else None
 
 
+class RetentionTracker:
+    """Tracks KL divergence and top-token flips vs cached base model logits.
+
+    Designed for lightweight per-epoch retention measurement during
+    diagnostic training runs. Caches base model logits once at init,
+    then measure() re-runs probes through the (adapted) model and compares.
+    """
+
+    def __init__(self, model, tokenizer, probe_texts: list[str]):
+        import mlx.core as mx
+
+        self._tokenizer = tokenizer
+        self._probe_tokens: list[mx.array] = []
+        self._base_logits: dict[int, mx.array] = {}
+        self._base_top_tokens: dict[int, int] = {}
+
+        # Tokenize probes and cache base model logits
+        model.eval()
+        for idx, text in enumerate(probe_texts[:30]):  # cap at 30 probes
+            tokens = mx.array(tokenizer.encode(text))
+            if tokens.size == 0:
+                continue
+            # Truncate long probes for memory efficiency
+            if tokens.size > 64:
+                tokens = tokens[:64]
+            self._probe_tokens.append(tokens)
+
+            # Forward pass for base logits (last token)
+            logits = model(tokens[None])  # [1, seq, vocab]
+            last_logits = logits[0, -1, :]  # [vocab]
+            mx.eval(last_logits)
+            self._base_logits[len(self._probe_tokens) - 1] = last_logits
+            self._base_top_tokens[len(self._probe_tokens) - 1] = int(
+                mx.argmax(last_logits).item()
+            )
+        model.train()
+
+    def measure(self, model) -> dict:
+        """Run probes through current model, return KL + flip metrics."""
+        import mlx.core as mx
+
+        kl_values = []
+        flips = 0
+
+        for idx, tokens in enumerate(self._probe_tokens):
+            if idx not in self._base_logits:
+                continue
+
+            logits = model(tokens[None])
+            last_logits = logits[0, -1, :]
+            mx.eval(last_logits)
+
+            # KL divergence: D_KL(adapted || base)
+            base_l = self._base_logits[idx]
+            # Stable log-softmax
+            adapted_lsm = last_logits - mx.logsumexp(last_logits, keepdims=True)
+            base_lsm = base_l - mx.logsumexp(base_l, keepdims=True)
+            # D_KL(adapted || base) = sum(p_adapted * (log p_adapted - log p_base))
+            p_adapted = mx.softmax(last_logits)
+            kl = mx.sum(p_adapted * (adapted_lsm - base_lsm))
+            mx.eval(kl)
+            kl_val = max(0.0, float(kl.item()))  # clamp numerical noise
+            kl_values.append(kl_val)
+
+            # Top-token flip
+            adapted_top = int(mx.argmax(last_logits).item())
+            if adapted_top != self._base_top_tokens[idx]:
+                flips += 1
+
+        return {
+            "kl_mean": sum(kl_values) / max(len(kl_values), 1),
+            "kl_max": max(kl_values) if kl_values else 0.0,
+            "top_token_flips": flips,
+            "n_probes": len(self._probe_tokens),
+        }
+
+
+class RetentionCapture(LossCapture):
+    """LossCapture subclass that also measures retention at each val step."""
+
+    def __init__(self, model, tracker: RetentionTracker | None):
+        super().__init__()
+        self._model = model
+        self._tracker = tracker
+        self.retention_log: list[dict] = []
+
+    def on_val_loss_report(self, info: dict):
+        super().on_val_loss_report(info)
+        if self._tracker is not None:
+            self._model.eval()
+            metrics = self._tracker.measure(self._model)
+            metrics["iteration"] = info["iteration"]
+            self.retention_log.append(metrics)
+            self._model.train()
+
+
 # ---------------------------------------------------------------------------
 # LoRA-family layer conversion
 # ---------------------------------------------------------------------------
@@ -990,6 +1086,281 @@ def _fuse_lora_into_base(model) -> dict:
     return weights
 
 
+def _snapshot_fused_weights(model) -> dict:
+    """Snapshot fused weights without mutating the model.
+
+    For each LoRA module, computes W_fused = W_residual + scale * (A @ B)^T
+    and substitutes it in the returned weight dict.  The model itself is
+    unchanged after this call.
+    """
+    import mlx.core as mx
+    from mlx.utils import tree_flatten as _tf
+
+    try:
+        from mlx_lm.tuner.dora import DoRALinear
+    except ImportError:
+        DoRALinear = None
+
+    # Collect LoRA module paths and their fused weights
+    fused_overrides: dict[str, mx.array] = {}  # "path.linear.weight" -> W_fused
+    drop_prefixes: list[str] = []  # LoRA key prefixes to skip
+
+    for name, module in model.named_modules():
+        if not (hasattr(module, "lora_a") and hasattr(module, "lora_b")):
+            continue
+        drop_prefixes.append(name + ".")
+
+        if DoRALinear is not None and isinstance(module, DoRALinear):
+            # DoRA: use fuse() on a copy.  fuse() returns nn.Linear.
+            fused_lin = module.fuse()
+            mx.eval(fused_lin.weight)
+            fused_overrides[name + ".weight"] = fused_lin.weight
+        else:
+            scale = getattr(module, "scale", 1.0)
+            delta = (module.lora_a @ module.lora_b) * scale
+            W_base = module.linear.weight
+            W_fused = W_base + delta.T
+            mx.eval(W_fused)
+            fused_overrides[name + ".weight"] = W_fused
+
+    # Build output dict: original params, replacing LoRA sub-trees
+    weights: dict[str, mx.array] = {}
+    from mlx.utils import tree_flatten as _tf2
+    for k, v in _tf2(model.parameters()):
+        # Skip LoRA internal keys (lora_a, lora_b, linear.weight, etc.)
+        skip = False
+        for prefix in drop_prefixes:
+            if k.startswith(prefix):
+                skip = True
+                break
+        if skip:
+            continue
+        weights[k] = v
+
+    # Insert fused weights
+    weights.update(fused_overrides)
+    return weights
+
+
+def train_pissa_init_only(
+    model_path: str,
+    output_dir: Path,
+    rank_overrides: dict[str, int],
+    seed: int = 42,
+) -> dict:
+    """PiSSA init + immediate fusion (zero training steps).
+
+    Bug check: if benchmarks differ from base model, the decompose-recompose
+    cycle has a numerical precision issue.
+    """
+    import mlx.core as mx
+    from mlx.utils import tree_flatten as _tf
+
+    mx.random.seed(seed)
+    model, tokenizer = mlx_load(str(model_path))
+
+    # Save original weights for reconstruction error measurement
+    original_weights = {}
+    for weight_key in rank_overrides:
+        _, _, module = _navigate_to_module(model, weight_key)
+        W = module.weight if hasattr(module, "weight") else None
+        if W is not None:
+            original_weights[weight_key] = W.astype(mx.float32)
+            mx.eval(original_weights[weight_key])
+
+    model.freeze()
+    n_converted = targeted_lora_conversion(
+        model, rank_overrides, scale=1.0,
+    )
+
+    # PiSSA SVD init (same code path as train_surface_matched pissa_init=True)
+    pissa_count = 0
+    for weight_key, rank in rank_overrides.items():
+        _, _, module = _navigate_to_module(model, weight_key)
+        if not hasattr(module, "lora_a"):
+            continue
+        W = module.linear.weight if hasattr(module, "linear") else None
+        if W is None:
+            continue
+
+        W_f32 = W.astype(mx.float32)
+        try:
+            U, S, Vt = mx.linalg.svd(W_f32, stream=mx.cpu)
+            mx.eval(U, S, Vt)
+        except Exception:
+            logger.warning(f"  PiSSA SVD failed for {weight_key}, keeping random init")
+            continue
+
+        r = min(rank, S.shape[0])
+        A_init = Vt[:r, :].T.astype(W.dtype)
+        B_init = (S[:r, None] * U[:, :r].T).astype(W.dtype)
+
+        W_principal = (U[:, :r] * S[:r]) @ Vt[:r, :]
+        mx.eval(W_principal)
+        W_residual = (W_f32 - W_principal).astype(W.dtype)
+        module.linear.weight = W_residual
+        module.lora_a = A_init
+        module.lora_b = B_init
+        mx.eval(module.lora_a, module.lora_b, module.linear.weight)
+        pissa_count += 1
+
+    logger.info(f"  PiSSA init-only: {pissa_count}/{n_converted} modules initialized")
+
+    # Measure reconstruction error per module (before fusion mutates model)
+    reconstruction_errors = {}
+    for weight_key in rank_overrides:
+        if weight_key not in original_weights:
+            continue
+        _, _, module = _navigate_to_module(model, weight_key)
+        if not hasattr(module, "lora_a"):
+            continue
+
+        W_orig = original_weights[weight_key]
+        scale = getattr(module, "scale", 1.0)
+        delta = (module.lora_a @ module.lora_b) * scale
+        W_reconstructed = module.linear.weight.astype(mx.float32) + delta.T.astype(mx.float32)
+        mx.eval(W_reconstructed)
+
+        diff = W_reconstructed - W_orig
+        mx.eval(diff)
+        max_abs_err = float(mx.max(mx.abs(diff)).item())
+        orig_norm = float(mx.linalg.norm(W_orig).item())
+        diff_norm = float(mx.linalg.norm(diff).item())
+        rel_F_err = diff_norm / max(orig_norm, 1e-12)
+
+        reconstruction_errors[weight_key] = {
+            "max_abs_err": max_abs_err,
+            "rel_F_err": rel_F_err,
+        }
+        logger.info(
+            f"  {weight_key}: max_abs_err={max_abs_err:.2e}, "
+            f"rel_F_err={rel_F_err:.2e}"
+        )
+
+    # Fuse and save
+    output_dir.mkdir(parents=True, exist_ok=True)
+    fused_dir = output_dir / "fused_model"
+    fused_dir.mkdir(parents=True, exist_ok=True)
+    fused_weights = _fuse_lora_into_base(model)
+    mx.save_safetensors(str(fused_dir / "model.safetensors"), fused_weights)
+    for fname in ["config.json", "tokenizer.json", "tokenizer_config.json",
+                   "special_tokens_map.json"]:
+        src = Path(model_path) / fname
+        if src.exists():
+            shutil.copy2(src, fused_dir / fname)
+
+    fused_model_path = str(fused_dir)
+    logger.info(f"  PiSSA init-only: saved fused model to {fused_dir}")
+
+    del model, tokenizer
+    mx.clear_cache()
+    gc.collect()
+
+    return {
+        "method": "pissa_init_only",
+        "seed": seed,
+        "iters": 0,
+        "training_time_seconds": 0.0,
+        "n_trainable_params": 0,
+        "fused_model_path": fused_model_path,
+        "reconstruction_errors": reconstruction_errors,
+    }
+
+
+def evaluate_surface_checkpoints(
+    model_path: str,
+    output_dir: Path,
+    rank_overrides: dict[str, int],
+    pissa_init: bool,
+    tasks: list[str],
+    limit: int | None = None,
+) -> dict[int, dict]:
+    """Evaluate surface-matched checkpoints saved by mlx-lm train().
+
+    For each checkpoint adapter file, reconstructs the full fused model
+    (redo targeted conversion + optional PiSSA SVD init + load adapter
+    weights + fuse) and runs lm-eval.
+
+    Returns dict mapping step number to benchmark scores.
+    """
+    import mlx.core as mx
+
+    checkpoint_files = sorted(output_dir.glob("*_adapters.safetensors"))
+    if not checkpoint_files:
+        logger.info("  No checkpoint files found for evaluation")
+        return {}
+
+    results = {}
+    for ckpt_file in checkpoint_files:
+        # Extract step number from filename: "0000050_adapters.safetensors" -> 50
+        step_str = ckpt_file.stem.replace("_adapters", "")
+        try:
+            step = int(step_str)
+        except ValueError:
+            continue
+
+        logger.info(f"  Evaluating checkpoint step={step}")
+
+        model, tokenizer = mlx_load(str(model_path))
+        model.freeze()
+        targeted_lora_conversion(model, rank_overrides, scale=1.0)
+
+        if pissa_init:
+            # Redo SVD init to get correct W_residual (deterministic for same W)
+            for weight_key, rank in rank_overrides.items():
+                _, _, module = _navigate_to_module(model, weight_key)
+                if not hasattr(module, "lora_a"):
+                    continue
+                W = module.linear.weight if hasattr(module, "linear") else None
+                if W is None:
+                    continue
+                W_f32 = W.astype(mx.float32)
+                try:
+                    U, S, Vt = mx.linalg.svd(W_f32, stream=mx.cpu)
+                    mx.eval(U, S, Vt)
+                except Exception:
+                    continue
+                r = min(rank, S.shape[0])
+                W_principal = (U[:, :r] * S[:r]) @ Vt[:r, :]
+                mx.eval(W_principal)
+                W_residual = (W_f32 - W_principal).astype(W.dtype)
+                module.linear.weight = W_residual
+                module.lora_a = Vt[:r, :].T.astype(W.dtype)
+                module.lora_b = (S[:r, None] * U[:, :r].T).astype(W.dtype)
+                mx.eval(module.lora_a, module.lora_b, module.linear.weight)
+
+        # Load checkpoint adapter weights over the initialized/PiSSA values
+        adapter_weights = mx.load(str(ckpt_file))
+        model.load_weights(list(adapter_weights.items()), strict=False)
+
+        # Fuse and save to temp directory
+        fused_dir = output_dir / f"checkpoint_step_{step}" / "fused_model"
+        fused_dir.mkdir(parents=True, exist_ok=True)
+        fused_weights = _fuse_lora_into_base(model)
+        mx.save_safetensors(str(fused_dir / "model.safetensors"), fused_weights)
+        for fname in ["config.json", "tokenizer.json", "tokenizer_config.json",
+                       "special_tokens_map.json"]:
+            src = Path(model_path) / fname
+            if src.exists():
+                shutil.copy2(src, fused_dir / fname)
+
+        # Eval
+        scores = run_lm_eval(
+            model_path=str(fused_dir),
+            tasks=tasks,
+            adapter_path=None,
+            limit=limit,
+        )
+        results[step] = scores
+        logger.info(f"  Step {step}: {scores}")
+
+        del model, tokenizer
+        mx.clear_cache()
+        gc.collect()
+
+    return results
+
+
 def train_surface_matched(
     model_path: str,
     data_dir: Path,
@@ -1000,6 +1371,8 @@ def train_surface_matched(
     iters_override: int | None = None,
     fine_tune_type: str = "lora",
     pissa_init: bool = False,
+    steps_per_save: int | None = None,
+    retention_tracker: "RetentionTracker | None" = None,
 ) -> dict:
     """Train LoRA-family adapter on NB-LoRA's exact module surface.
 
@@ -1120,7 +1493,7 @@ def train_surface_matched(
         val_batches=25,
         steps_per_report=10,
         steps_per_eval=200,
-        steps_per_save=iters,
+        steps_per_save=steps_per_save if steps_per_save is not None else iters,
         adapter_file=adapter_file,
         max_seq_length=cfg["max_seq_length"],
         grad_checkpoint=False,
@@ -1136,7 +1509,10 @@ def train_surface_matched(
     else:
         opt = optim.Adam(learning_rate=lr_value)
 
-    loss_capture = LossCapture()
+    if retention_tracker is not None:
+        callback = RetentionCapture(model, retention_tracker)
+    else:
+        callback = LossCapture()
     t0 = time.time()
     train(
         model=model,
@@ -1144,7 +1520,7 @@ def train_surface_matched(
         optimizer=opt,
         train_dataset=CacheDataset(train_set),
         val_dataset=CacheDataset(valid_set),
-        training_callback=loss_capture,
+        training_callback=callback,
     )
     training_time = time.time() - t0
 
@@ -1198,13 +1574,293 @@ def train_surface_matched(
         "hyperparameter_count": len([
             k for k in cfg if k not in ("max_seq_length", "batch_size", "iters")
         ]),
-        "final_val_loss": loss_capture.final_val_loss,
-        "final_train_loss": loss_capture.final_train_loss,
+        "final_val_loss": callback.final_val_loss,
+        "final_train_loss": callback.final_train_loss,
         "loss_history": {
-            "train": loss_capture.train_losses,
-            "val": loss_capture.val_losses,
+            "train": callback.train_losses,
+            "val": callback.val_losses,
         },
         "spectral_info": spectral_info,
+    }
+    if hasattr(callback, "retention_log") and callback.retention_log:
+        result["retention_log"] = callback.retention_log
+
+    del model, tokenizer
+    mx.clear_cache()
+    gc.collect()
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# First-step mechanism probe
+# ---------------------------------------------------------------------------
+def first_step_probe(
+    model_path: str,
+    rank_overrides: dict[str, int],
+    scale_bounds: dict[str, float],
+    method: str,
+    probe_texts: list[str],
+    data_dir: Path,
+    seed: int = 42,
+) -> dict:
+    """Compare one training step of geo-pissa vs NB-LoRA on the same surface.
+
+    All comparisons in effective weight-space / function-space:
+    - DeltaW_eff per module (materialized effective weight change)
+    - KL divergence on probe logits (behavioral drift)
+    - Loss decrease (learning signal)
+    - Drift-per-learning ratio (KL / |loss_pre - loss_post|)
+    - Subspace alignment of DeltaW_eff to top-r SVD directions
+
+    method: "geo_pissa" or "nblora"
+    """
+    import math
+
+    import mlx.core as mx
+    import mlx.nn as nn
+    from mlx.utils import tree_flatten as mlx_flatten
+    from mlx_lm import load as mlx_load
+    from mlx_lm.lora import load_dataset
+    from mlx_lm.tuner.datasets import CacheDataset
+    from mlx_lm.tuner.trainer import default_loss, iterate_batches
+
+    if method not in ("geo_pissa", "nblora"):
+        raise ValueError(f"Unknown method: {method}")
+
+    mx.random.seed(seed)
+    random.seed(seed)
+
+    model, tokenizer = mlx_load(str(model_path))
+    model.freeze()
+
+    # Load one training batch
+    args = SimpleNamespace(
+        model=str(model_path), data=str(data_dir), train=True, test=False,
+        seed=seed, batch_size=4, max_seq_length=2048, hf_dataset=False,
+    )
+    train_set, _, _ = load_dataset(args, tokenizer)
+    train_ds = CacheDataset(train_set)
+    batch_iter = iterate_batches(train_ds, 4, 2048, loop=True, seed=seed)
+
+    # ── Inject adapters ──
+    if method == "geo_pissa":
+        targeted_lora_conversion(model, rank_overrides, scale=1.0, dropout=0.0)
+
+        # PiSSA SVD init
+        _module_rank_lookup = {}
+        for wk, rk in rank_overrides.items():
+            _module_rank_lookup[wk.replace(".weight", "")] = rk
+
+        for name, module in model.named_modules():
+            if not (hasattr(module, "lora_a") and hasattr(module, "lora_b")):
+                continue
+            W = module.linear.weight if hasattr(module, "linear") else None
+            if W is None:
+                continue
+            W_f32 = W.astype(mx.float32)
+            U, S, Vt = mx.linalg.svd(W_f32, stream=mx.cpu)
+            mx.eval(U, S, Vt)
+            r = min(_module_rank_lookup.get(name, 8), S.shape[0])
+            module.lora_a = Vt[:r, :].T.astype(W.dtype)
+            module.lora_b = (S[:r, None] * U[:, :r].T).astype(W.dtype)
+            W_principal = (U[:, :r] * S[:r]) @ Vt[:r, :]
+            mx.eval(W_principal)
+            module.linear.weight = (W_f32 - W_principal).astype(W.dtype)
+            mx.eval(module.lora_a, module.lora_b, module.linear.weight)
+
+    elif method == "nblora":
+        from modelcypher.backends.mlx_training_adapter_core import NBLoRALinear
+
+        # Inject NBLoRALinear on exact same modules with production scale_bounds
+        for weight_key, rank in rank_overrides.items():
+            module_path = weight_key.replace(".weight", "")
+            sb = scale_bounds.get(weight_key, 1.0)
+            parent, attr_name = _navigate_to_module(model, module_path)
+            linear = getattr(parent, attr_name)
+            nb_lora = NBLoRALinear.from_base(linear, rank=rank, scale_bound=sb)
+            setattr(parent, attr_name, nb_lora)
+
+    # ── Pre-step measurements ──
+    # Cache probe logits
+    model.eval()
+    pre_logits = {}
+    for idx, text in enumerate(probe_texts[:30]):
+        tokens = mx.array(tokenizer.encode(text))
+        if tokens.size == 0:
+            continue
+        if tokens.size > 64:
+            tokens = tokens[:64]
+        logits = model(tokens[None])
+        pre_logits[idx] = logits[0, -1, :]
+        mx.eval(pre_logits[idx])
+    model.train()
+
+    # Cache pre-step effective weights per module
+    pre_delta_eff = {}
+    for name, module in model.named_modules():
+        if method == "geo_pissa" and hasattr(module, "lora_a"):
+            scale = getattr(module, "scale", 1.0)
+            delta = scale * (module.lora_a @ module.lora_b).T  # [out, in]
+            mx.eval(delta)
+            pre_delta_eff[name] = delta
+        elif method == "nblora" and isinstance(module, NBLoRALinear):
+            delta = module.get_effective_delta()  # [out, in]
+            pre_delta_eff[name] = delta
+
+    # Pre-step loss
+    loss_fn = default_loss
+    loss_vg = nn.value_and_grad(model, loss_fn)
+    batch, lengths = next(batch_iter)
+    (loss_pre, ntoks_pre), grad = loss_vg(model, batch, lengths)
+    mx.eval(loss_pre)
+    loss_pre_val = float(loss_pre)
+
+    # ── One step ──
+    if method == "geo_pissa":
+        # AdamW step (matches surface-matched arms)
+        import mlx.optimizers as optim
+        opt = optim.AdamW(learning_rate=2e-4, weight_decay=0.0)
+        opt.init(model.trainable_parameters())
+        opt.apply_gradients(grad, model)
+        mx.eval(*[v for _, v in mlx_flatten(model.trainable_parameters())])
+
+    elif method == "nblora":
+        # MASS step (matches production training loop)
+        from modelcypher.core.domain.training.mass_step_size import (
+            compute_per_step_rates,
+            derive_spectral_ceiling,
+        )
+        from modelcypher.core.domain.training.diagonal_fisher_preconditioner import (
+            init_fisher_state,
+            precondition_gradient,
+            update_fisher_state,
+        )
+        from modelcypher.backends import initialize_default_backend
+        from modelcypher.core.domain._backend import get_default_backend
+        initialize_default_backend()
+        backend = get_default_backend()
+
+        # Spectral geometry for MASS
+        gap_min = float("inf")
+        sigma_max_global = 0.0
+        for wk, sb in scale_bounds.items():
+            sigma_max_global = max(sigma_max_global, sb * 2.0)
+            gap_min = min(gap_min, sb * 4.0)  # conservative
+
+        eta_ceiling = derive_spectral_ceiling(
+            sigma_k_min=gap_min, sigma_max_global=sigma_max_global,
+        )
+
+        grad_flat = dict(mlx_flatten(grad))
+        trainable_flat = dict(mlx_flatten(model.trainable_parameters()))
+        fisher_state = init_fisher_state(
+            trainable_flat, backend, n_batches_per_epoch=1,
+        )
+        fisher_state = update_fisher_state(fisher_state, grad_flat, backend)
+        update_direction = precondition_gradient(grad_flat, fisher_state, backend)
+
+        d_flat = [p.reshape(-1) for p in update_direction.values() if p.size > 0]
+        d_norm_sq = sum(mx.sum(p * p) for p in d_flat)
+        mx.eval(d_norm_sq)
+        d_norm_val = float(mx.sqrt(d_norm_sq).item())
+
+        eta_step, _, _, _, _ = compute_per_step_rates(
+            loss_pre_val, d_norm_val, gap_min, eta_ceiling,
+            remaining_budget=None,
+        )
+
+        current_params = dict(mlx_flatten(model.trainable_parameters()))
+        eta_arr = mx.array(eta_step)
+        updated_params = [
+            (k, current_params[k] - eta_arr * update_direction[k])
+            for k in current_params if k in update_direction
+        ]
+        model.load_weights(updated_params, strict=False)
+        mx.eval(*[v for _, v in mlx_flatten(model.trainable_parameters())])
+
+        # Clamp scale for NBLoRALinear
+        for _, module in model.named_modules():
+            if isinstance(module, NBLoRALinear):
+                module.clamp_scale()
+
+    # ── Post-step measurements ──
+    # Post-step loss
+    (loss_post, _), _ = loss_vg(model, batch, lengths)
+    mx.eval(loss_post)
+    loss_post_val = float(loss_post)
+
+    # Post-step probe logits → KL + flips
+    model.eval()
+    kl_values = []
+    flips = 0
+    for idx in pre_logits:
+        text = probe_texts[idx]
+        tokens = mx.array(tokenizer.encode(text))
+        if tokens.size > 64:
+            tokens = tokens[:64]
+        logits = model(tokens[None])
+        post_l = logits[0, -1, :]
+        mx.eval(post_l)
+
+        base_l = pre_logits[idx]
+        adapted_lsm = post_l - mx.logsumexp(post_l, keepdims=True)
+        base_lsm = base_l - mx.logsumexp(base_l, keepdims=True)
+        p_adapted = mx.softmax(post_l)
+        kl = mx.sum(p_adapted * (adapted_lsm - base_lsm))
+        mx.eval(kl)
+        kl_values.append(max(0.0, float(kl.item())))
+
+        pre_top = int(mx.argmax(base_l).item())
+        post_top = int(mx.argmax(post_l).item())
+        if pre_top != post_top:
+            flips += 1
+
+    # Post-step effective weight deltas
+    post_delta_eff = {}
+    for name, module in model.named_modules():
+        if method == "geo_pissa" and hasattr(module, "lora_a"):
+            scale = getattr(module, "scale", 1.0)
+            delta = scale * (module.lora_a @ module.lora_b).T
+            mx.eval(delta)
+            post_delta_eff[name] = delta
+        elif method == "nblora" and isinstance(module, NBLoRALinear):
+            delta = module.get_effective_delta()
+            post_delta_eff[name] = delta
+
+    # Compute per-module DeltaW_eff and norms
+    per_module_metrics = {}
+    total_delta_norm_sq = 0.0
+    for name in pre_delta_eff:
+        if name not in post_delta_eff:
+            continue
+        delta_w = post_delta_eff[name] - pre_delta_eff[name]  # [out, in]
+        mx.eval(delta_w)
+        delta_f = float(mx.sqrt(mx.sum(delta_w * delta_w)).item())
+        per_module_metrics[name] = {
+            "delta_w_fro": delta_f,
+        }
+        total_delta_norm_sq += delta_f ** 2
+
+    total_delta_norm = math.sqrt(total_delta_norm_sq)
+    loss_decrease = loss_pre_val - loss_post_val
+    kl_mean = sum(kl_values) / max(len(kl_values), 1)
+
+    result = {
+        "method": method,
+        "seed": seed,
+        "loss_pre": loss_pre_val,
+        "loss_post": loss_post_val,
+        "loss_decrease": loss_decrease,
+        "kl_mean": kl_mean,
+        "kl_max": max(kl_values) if kl_values else 0.0,
+        "top_token_flips": flips,
+        "n_probes": len(pre_logits),
+        "total_delta_w_fro": total_delta_norm,
+        "drift_per_learning": (
+            kl_mean / abs(loss_decrease) if abs(loss_decrease) > 1e-12 else float("inf")
+        ),
+        "per_module": per_module_metrics,
     }
 
     del model, tokenizer
@@ -1224,6 +1880,8 @@ def train_geometric_pissa(
     output_dir: Path,
     seed: int = 42,
     rank_overrides: dict[str, int] | None = None,
+    save_checkpoints: bool = False,
+    retention_tracker: "RetentionTracker | None" = None,
 ) -> dict:
     """PiSSA SVD initialization + MASS automation.  Zero heuristics.
 
@@ -1427,6 +2085,7 @@ def train_geometric_pissa(
     grad_norm_history = []
     train_losses = []
     val_losses_log = []
+    retention_log: list[dict] = []
     stop_reason = "max_iters"
 
     t0 = time.time()
@@ -1530,6 +2189,29 @@ def train_geometric_pissa(
                 f"  Epoch {epoch} | val_loss={val_loss:.4f} | ‖g‖={grad_norm:.4e} | "
                 f"budget_ratio={max_ratio:.4f} | remaining_min={min(remaining_budgets.values()):.4e}"
             )
+
+            # Save fused checkpoint (diagnostic mode)
+            if save_checkpoints:
+                ckpt_dir = output_dir / f"checkpoint_epoch_{epoch}" / "fused_model"
+                ckpt_dir.mkdir(parents=True, exist_ok=True)
+                fused_dict = _snapshot_fused_weights(model)
+                mx.save_safetensors(str(ckpt_dir / "model.safetensors"), fused_dict)
+                for fname in ["config.json", "tokenizer.json",
+                              "tokenizer_config.json", "special_tokens_map.json"]:
+                    src = Path(model_path) / fname
+                    if src.exists():
+                        shutil.copy2(src, ckpt_dir / fname)
+                logger.info(f"  Checkpoint saved: epoch {epoch}")
+                del fused_dict
+
+            # Retention measurement (diagnostic mode)
+            if retention_tracker is not None:
+                model.eval()
+                ret = retention_tracker.measure(model)
+                ret["epoch"] = epoch
+                ret["val_loss"] = val_loss
+                retention_log.append(ret)
+                model.train()
 
             # Check stopping: val loss convergence
             converged, reason, _ = check_val_loss_converged(val_losses_history)
@@ -1639,6 +2321,7 @@ def train_geometric_pissa(
             "val": val_losses_log,
         },
         "spectral_info": spectral_info,
+        "retention_log": retention_log if retention_log else None,
     }
 
     del model, tokenizer
@@ -2354,6 +3037,15 @@ def _train_method(
         result = train_geometric_pissa(
             model_path, num_layers, data_dir, output_dir,
             seed=seed, rank_overrides=nb_surface.rank_overrides,
+        )
+    elif method_name == "pissa_init_only_nb_surface":
+        if nb_surface is None:
+            raise ValueError("pissa_init_only_nb_surface requires nb_surface")
+        result = train_pissa_init_only(
+            model_path=model_path,
+            output_dir=output_dir,
+            rank_overrides=nb_surface.rank_overrides,
+            seed=seed,
         )
     else:
         raise ValueError(f"Unknown method: {method_name}")
@@ -3172,6 +3864,275 @@ def build_summary(all_results: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Diagnostic experiment orchestrator
+# ---------------------------------------------------------------------------
+DIAGNOSTIC_PROBE_TEXTS = [
+    "The capital of France is",
+    "In quantum mechanics, the wave function",
+    "def fibonacci(n):",
+    "The theory of general relativity describes",
+    "Once upon a time in a kingdom far away",
+    "The most important thing about machine learning is",
+    "Water boils at a temperature of",
+    "The Pythagorean theorem states that",
+    "According to the second law of thermodynamics",
+    "The human brain contains approximately",
+    "In Python, a decorator is a function that",
+    "The periodic table organizes elements by",
+    "Shakespeare wrote many plays including",
+    "The speed of light in a vacuum is",
+    "Neural networks learn by adjusting",
+    "The mitochondria is often called the",
+    "A binary search algorithm works by",
+    "The French Revolution began in",
+    "Photosynthesis converts sunlight into",
+    "The derivative of sin(x) is",
+]
+
+
+def run_diagnostic_experiment(
+    model_key: str,
+    model_spec: dict,
+    output_dir: Path,
+    seed: int = 42,
+    skip_eval: bool = False,
+) -> dict:
+    """Run the post-falsification diagnostic investigation.
+
+    Sequencing (cleanest falsifiers first):
+    1. Derive NB surface + base model eval
+    2. Zero-step PiSSA control (bug check)
+    3. Geo-PiSSA with checkpoints + retention
+    4. PiSSA NB-surface with checkpoints + retention
+    5. First-step mechanism probe (geo-pissa vs NB-LoRA)
+    """
+    import math
+
+    import mlx.core as mx
+    from mlx_lm import load as mlx_load
+
+    model_path = str(model_spec["path"])
+    model_name = model_spec["name"]
+    num_layers = model_spec["num_layers"]
+    diag_dir = output_dir / model_name
+    diag_dir.mkdir(parents=True, exist_ok=True)
+
+    results = {"model": model_name, "seed": seed}
+    data_dir = TRAIN_DATA.parent
+
+    # ── 1. Derive NB surface ──
+    logger.info(f"\n{'='*60}")
+    logger.info(f"DIAGNOSTIC: {model_name} seed={seed}")
+    logger.info(f"{'='*60}")
+
+    logger.info("\n--- Step 1: Derive NB target surface ---")
+    from modelcypher.backends import initialize_default_backend
+    from modelcypher.backends.mlx_training_adapter import MLXTrainingAdapter
+    from modelcypher.core.domain._backend import get_default_backend
+    from modelcypher.core.use_cases.dataset_training_service import (
+        DatasetTrainingService,
+    )
+    initialize_default_backend()
+    backend = get_default_backend()
+    adapter = MLXTrainingAdapter(backend)
+    svc = DatasetTrainingService(adapter, backend)
+    nb_surface = svc.derive_nb_target_surface(
+        model_path=model_path,
+        dataset_path=str(TRAIN_DATA),
+        eval_dataset_path=str(VAL_DATA),
+        seed=seed,
+    )
+    rank_overrides = nb_surface.rank_overrides
+    geometry_info = nb_surface.geometry_info
+    results["nb_surface"] = nb_surface.to_dict()
+    logger.info(
+        f"  NB surface: {len(rank_overrides)} modules, "
+        f"ranks={sorted(set(rank_overrides.values()))}"
+    )
+    del svc, adapter
+    mx.clear_cache()
+    gc.collect()
+
+    # Derive scale_bounds from geometry_info (production formula)
+    margin = 1.0 - math.sqrt(float(mx.array(1.0, dtype=mx.float32).item()) * 1.1920929e-07)
+    # More precisely: margin = 1 - sqrt(eps_f32)
+    import numpy as np
+    margin = 1.0 - math.sqrt(np.finfo(np.float32).eps)
+    scale_bounds = {}
+    for key, info in geometry_info.items():
+        if info.get("tail_dims", 0) > 0:
+            scale_bounds[key] = (info["sigma_max"] / 2.0) * margin
+        elif info.get("spectral_gap", 0) > 0:
+            scale_bounds[key] = (info["spectral_gap"] / 4.0) * margin
+    logger.info(f"  Scale bounds: {len(scale_bounds)} modules derived")
+
+    # ── 1b. Base model eval ──
+    if not skip_eval:
+        logger.info("\n--- Step 1b: Base model eval ---")
+        tasks = ["arc_easy", "hellaswag", "piqa", "winogrande",
+                 "boolq", "openbookqa", "sciq"]
+        base_eval = run_lm_eval(model_path, tasks)
+        results["base_eval"] = base_eval
+        with open(diag_dir / "baseline_eval.json", "w") as f:
+            json.dump(base_eval, f, indent=2)
+        logger.info(f"  Base eval: {base_eval}")
+        mx.clear_cache()
+        gc.collect()
+
+    # ── 2. Zero-step PiSSA control ──
+    logger.info("\n--- Step 2: Zero-step PiSSA control ---")
+    pissa_init_dir = diag_dir / "pissa_init_only"
+    pissa_init_result = train_pissa_init_only(
+        model_path=model_path,
+        output_dir=pissa_init_dir,
+        rank_overrides=rank_overrides,
+        seed=seed,
+    )
+    results["pissa_init_only"] = pissa_init_result
+
+    if not skip_eval:
+        fused_path = pissa_init_result["fused_model_path"]
+        pissa_init_eval = run_lm_eval(fused_path, tasks)
+        results["pissa_init_only"]["eval"] = pissa_init_eval
+        with open(pissa_init_dir / "eval_results.json", "w") as f:
+            json.dump(pissa_init_eval, f, indent=2)
+        logger.info(f"  Zero-step PiSSA eval: {pissa_init_eval}")
+
+        # Check if benchmarks match base (±0.02 tolerance)
+        if "base_eval" in results:
+            for task in tasks:
+                base_score = results["base_eval"].get(task, {}).get("acc_norm",
+                    results["base_eval"].get(task, {}).get("acc", 0))
+                init_score = pissa_init_eval.get(task, {}).get("acc_norm",
+                    pissa_init_eval.get(task, {}).get("acc", 0))
+                delta = abs(base_score - init_score) if isinstance(base_score, (int, float)) and isinstance(init_score, (int, float)) else None
+                if delta is not None and delta > 0.02:
+                    logger.warning(
+                        f"  MISMATCH: {task} base={base_score:.3f} init={init_score:.3f} "
+                        f"delta={delta:.3f} > 0.02"
+                    )
+
+    mx.clear_cache()
+    gc.collect()
+
+    # ── 3. Geo-PiSSA with checkpoints + retention ──
+    logger.info("\n--- Step 3: Geo-PiSSA checkpointed ---")
+    geo_dir = diag_dir / "geo_pissa_checkpointed"
+
+    # Create retention tracker from base model
+    model_tmp, tok_tmp = mlx_load(model_path)
+    tracker = RetentionTracker(model_tmp, tok_tmp, DIAGNOSTIC_PROBE_TEXTS)
+    del model_tmp
+    mx.clear_cache()
+    gc.collect()
+
+    geo_result = train_geometric_pissa(
+        model_path=model_path,
+        num_layers=num_layers,
+        data_dir=data_dir,
+        output_dir=geo_dir,
+        seed=seed,
+        rank_overrides=rank_overrides,
+        save_checkpoints=True,
+        retention_tracker=tracker,
+    )
+    results["geo_pissa_checkpointed"] = geo_result
+
+    # Eval checkpoints
+    if not skip_eval:
+        checkpoint_evals = {}
+        ckpt_dirs = sorted(geo_dir.glob("checkpoint_epoch_*/fused_model"))
+        for ckpt_dir in ckpt_dirs:
+            epoch_str = ckpt_dir.parent.name.replace("checkpoint_epoch_", "")
+            epoch_num = int(epoch_str)
+            logger.info(f"  Evaluating geo-pissa checkpoint epoch {epoch_num}")
+            ckpt_eval = run_lm_eval(str(ckpt_dir), tasks)
+            checkpoint_evals[epoch_num] = ckpt_eval
+            mx.clear_cache()
+            gc.collect()
+        results["geo_pissa_checkpointed"]["checkpoint_evals"] = checkpoint_evals
+        with open(geo_dir / "checkpoint_evals.json", "w") as f:
+            json.dump(checkpoint_evals, f, indent=2, default=str)
+
+    if geo_result.get("retention_log"):
+        with open(geo_dir / "retention_trajectory.json", "w") as f:
+            json.dump(geo_result["retention_log"], f, indent=2)
+
+    mx.clear_cache()
+    gc.collect()
+
+    # ── 4. PiSSA NB-surface with checkpoints + retention ──
+    logger.info("\n--- Step 4: PiSSA NB-surface checkpointed ---")
+    pissa_surface_dir = diag_dir / "pissa_nb_surface_checkpointed"
+
+    model_tmp2, tok_tmp2 = mlx_load(model_path)
+    tracker2 = RetentionTracker(model_tmp2, tok_tmp2, DIAGNOSTIC_PROBE_TEXTS)
+    del model_tmp2
+    mx.clear_cache()
+    gc.collect()
+
+    pissa_result = train_surface_matched(
+        model_path=model_path,
+        data_dir=data_dir,
+        output_dir=pissa_surface_dir,
+        rank_overrides=rank_overrides,
+        seed=seed,
+        pissa_init=True,
+        steps_per_save=50,
+        retention_tracker=tracker2,
+    )
+    results["pissa_nb_surface_checkpointed"] = pissa_result
+
+    if not skip_eval:
+        ckpt_evals = evaluate_surface_checkpoints(
+            model_path=model_path,
+            output_dir=pissa_surface_dir,
+            rank_overrides=rank_overrides,
+            pissa_init=True,
+            tasks=tasks,
+        )
+        results["pissa_nb_surface_checkpointed"]["checkpoint_evals"] = ckpt_evals
+        with open(pissa_surface_dir / "checkpoint_evals.json", "w") as f:
+            json.dump(ckpt_evals, f, indent=2, default=str)
+
+    if pissa_result.get("retention_log"):
+        with open(pissa_surface_dir / "retention_trajectory.json", "w") as f:
+            json.dump(pissa_result["retention_log"], f, indent=2)
+
+    mx.clear_cache()
+    gc.collect()
+
+    # ── 5. First-step mechanism probe ──
+    logger.info("\n--- Step 5: First-step mechanism probe ---")
+    probe_dir = diag_dir / "first_step_probe"
+    probe_dir.mkdir(parents=True, exist_ok=True)
+
+    for method in ["geo_pissa", "nblora"]:
+        logger.info(f"  First-step probe: {method}")
+        probe_result = first_step_probe(
+            model_path=model_path,
+            rank_overrides=rank_overrides,
+            scale_bounds=scale_bounds,
+            method=method,
+            probe_texts=DIAGNOSTIC_PROBE_TEXTS,
+            data_dir=data_dir,
+            seed=seed,
+        )
+        results[f"first_step_{method}"] = probe_result
+        with open(probe_dir / f"{method}.json", "w") as f:
+            json.dump(probe_result, f, indent=2, default=str)
+        mx.clear_cache()
+        gc.collect()
+
+    # ── Save summary ──
+    with open(diag_dir / "summary.json", "w") as f:
+        json.dump(results, f, indent=2, default=str)
+    logger.info(f"\nDiagnostic results saved to {diag_dir}")
+
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main():
@@ -3239,6 +4200,11 @@ def main():
         action="store_true",
         help="Run WD redundancy falsification: WD=0 vs WD=derived",
     )
+    parser.add_argument(
+        "--diagnostic",
+        action="store_true",
+        help="Run post-falsification diagnostic investigation instead of standard experiment",
+    )
     args = parser.parse_args()
 
     # Quick mode: 1 seed
@@ -3273,10 +4239,32 @@ def main():
                 sys.exit(1)
 
     # Output directory
-    output_dir = Path(args.output_dir) if args.output_dir else (
-        REPO_ROOT / "results" / "nblora_vs_standard"
-    )
+    if args.diagnostic:
+        output_dir = Path(args.output_dir) if args.output_dir else (
+            REPO_ROOT / "results" / "nblora_diagnostic"
+        )
+    else:
+        output_dir = Path(args.output_dir) if args.output_dir else (
+            REPO_ROOT / "results" / "nblora_vs_standard"
+        )
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # ── Diagnostic mode ──
+    if args.diagnostic:
+        logger.info("=" * 70)
+        logger.info("NB-LoRA Post-Falsification Diagnostic Investigation")
+        logger.info("=" * 70)
+        seed = args.seeds[0] if args.seeds else 42
+        for model_key in args.models:
+            spec = MODEL_SPECS[model_key]
+            run_diagnostic_experiment(
+                model_key=model_key,
+                model_spec=spec,
+                output_dir=output_dir,
+                seed=seed,
+                skip_eval=args.skip_eval,
+            )
+        return
 
     logger.info("=" * 70)
     logger.info("NB-LoRA vs PEFT Baselines — Head-to-Head Comparison (R1)")

@@ -502,3 +502,154 @@ def test_inference_uses_fused_model_path_for_surface_matched_arms() -> None:
             # Surface-matched: uses fused model, no adapter
             assert infer_model == train_info["fused_model_path"]
             assert infer_adapter is None
+
+
+# ---------------------------------------------------------------------------
+# Diagnostic function tests (Step 6)
+# ---------------------------------------------------------------------------
+
+def test_pissa_init_only_dispatches_correctly(monkeypatch) -> None:
+    """_train_method routes pissa_init_only_nb_surface to train_pissa_init_only."""
+    called_with: dict = {}
+
+    def fake_trainer(*args, **kwargs):
+        called_with.update(kwargs)
+        return {"method": "pissa_init_only", "seed": 42, "fused_model_path": "/fake"}
+
+    monkeypatch.setattr(experiment, "train_pissa_init_only", fake_trainer)
+
+    surface = _make_fake_nb_surface()
+    result = experiment._train_method(
+        method_name="pissa_init_only_nb_surface",
+        model_path="/tmp/model",
+        num_layers=16,
+        data_dir=Path("/tmp/data"),
+        output_dir=Path("/tmp/output"),
+        seed=42,
+        iters=100,
+        nb_surface=surface,
+    )
+
+    assert called_with, "train_pissa_init_only was never called"
+    assert result["method"] == "pissa_init_only_nb_surface"
+    assert called_with["rank_overrides"] == surface.rank_overrides
+
+
+def test_pissa_init_only_not_in_public_registries() -> None:
+    """Diagnostic arms must NOT appear in public method registries."""
+    assert "pissa_init_only_nb_surface" not in experiment.ALL_METHOD_NAMES
+    assert "pissa_init_only_nb_surface" not in experiment.METHOD_DISPLAY
+    assert "pissa_init_only_nb_surface" not in experiment.NB_SURFACE_METHODS
+
+
+def test_snapshot_fused_weights_does_not_mutate_model() -> None:
+    """_snapshot_fused_weights returns fused dict without changing the model."""
+    import mlx.core as mx
+    import mlx.nn as nn
+    from mlx_lm.tuner.lora import LoRALinear
+
+    linear = nn.Linear(8, 8)
+    mx.eval(linear.weight)
+    original_weight = linear.weight.astype(mx.float32)
+    mx.eval(original_weight)
+
+    lora = LoRALinear.from_base(linear, r=2, scale=1.0)
+    lora.lora_a = mx.ones((8, 2)) * 0.1
+    lora.lora_b = mx.ones((2, 8)) * 0.1
+    mx.eval(lora.lora_a, lora.lora_b)
+
+    class M(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.proj = lora
+
+    model = M()
+
+    # Capture state before
+    pre_base_weight = model.proj.linear.weight.astype(mx.float32)
+    pre_lora_a = model.proj.lora_a.astype(mx.float32)
+    pre_lora_b = model.proj.lora_b.astype(mx.float32)
+    mx.eval(pre_base_weight, pre_lora_a, pre_lora_b)
+
+    # Snapshot
+    fused = experiment._snapshot_fused_weights(model)
+
+    # Model must be unchanged
+    post_base_weight = model.proj.linear.weight.astype(mx.float32)
+    post_lora_a = model.proj.lora_a.astype(mx.float32)
+    post_lora_b = model.proj.lora_b.astype(mx.float32)
+    mx.eval(post_base_weight, post_lora_a, post_lora_b)
+
+    assert float(mx.abs(post_base_weight - pre_base_weight).max()) < 1e-7
+    assert float(mx.abs(post_lora_a - pre_lora_a).max()) < 1e-7
+    assert float(mx.abs(post_lora_b - pre_lora_b).max()) < 1e-7
+
+    # Fused dict should have the combined weight
+    assert "proj.weight" in fused
+
+
+def test_retention_tracker_zero_drift_on_same_model() -> None:
+    """When model matches base, KL≈0 and flips=0."""
+    import mlx.core as mx
+    import mlx.nn as nn
+
+    # Minimal model that returns fixed logits
+    class ConstantModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self._logits = mx.random.normal((1, 10, 100))
+            mx.eval(self._logits)
+
+        def __call__(self, x):
+            seq_len = x.shape[-1] if x.ndim > 1 else x.shape[0]
+            return self._logits[:, :seq_len, :]
+
+        def eval(self):
+            pass
+
+        def train(self):
+            pass
+
+    class FakeTokenizer:
+        def encode(self, text):
+            return list(range(min(len(text), 10)))
+
+    model = ConstantModel()
+    tokenizer = FakeTokenizer()
+
+    tracker = experiment.RetentionTracker(model, tokenizer, ["hello world", "test probe"])
+
+    # Measure same model — should show zero drift
+    metrics = tracker.measure(model)
+    assert metrics["kl_mean"] < 1e-5, f"KL should be ~0, got {metrics['kl_mean']}"
+    assert metrics["top_token_flips"] == 0
+    assert metrics["n_probes"] == 2
+
+
+def test_retention_capture_extends_loss_capture() -> None:
+    """RetentionCapture inherits LossCapture behavior."""
+    callback = experiment.RetentionCapture(model=None, tracker=None)
+
+    # Should have LossCapture's interface
+    assert hasattr(callback, "train_losses")
+    assert hasattr(callback, "val_losses")
+    assert hasattr(callback, "retention_log")
+    assert isinstance(callback, experiment.LossCapture)
+
+    # Without tracker, on_val_loss_report should not crash
+    callback.on_val_loss_report({"iteration": 1, "val_loss": 1.5})
+    assert len(callback.val_losses) == 1
+    assert len(callback.retention_log) == 0  # no tracker → no retention
+
+
+def test_first_step_probe_rejects_unknown_method() -> None:
+    """first_step_probe raises on unknown method."""
+    with pytest.raises(ValueError, match="Unknown method"):
+        experiment.first_step_probe(
+            model_path="/tmp/model",
+            rank_overrides={},
+            scale_bounds={},
+            method="bogus",
+            probe_texts=["test"],
+            data_dir=Path("/tmp"),
+        )
