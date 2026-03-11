@@ -2,11 +2,28 @@
 
 ## Mission Statement
 
-**Train models better than they have ever been trained before, using only geometry.**
+**Demonstrate, with measurements, when geometry-derived training beats standard practice.**
 
 Every training decision — learning rate, rank, scale, convergence, batch size, weight decay, initialization, target selection, dropout, stopping — is derived from the spectral structure of weight matrices and the Riemannian geometry of activation manifolds. No grid search. No "what worked last time." No knobs.
 
-Point any model at any dataset. Hit train. Get a LoRA that perfectly captures either the knowledge or the behavioral shapes contained in the data.
+End-state target, not current claim: point a model at a dataset, hit train, and
+get a LoRA that captures the target structure while preserving the base model.
+
+## Current Evidence State (2026-03-11)
+
+- `mc train run` is the canonical shipped training surface, and its runtime path
+  is geometry-derived.
+- `results/pipeline_validation/verdict.json` still reports structural pass
+  without full inference closure: `all_structural_pass = true`,
+  `all_inference_pass = false`, `all_pass = false`.
+- `results/nblora_vs_standard/` is retained as `summary_only`; the kept
+  single-seed LFM2-350M summary does not yet support a promotable "better than
+  standard practice" claim.
+- `results/g5_8b_validation_multiseed/multiseed_gates.json` shows 8B
+  mechanical viability, but `cka_ok` and `degenerate_ok` remain open.
+- `results/quantization_frontier/20260227T235714Z/quantization_frontier.json`
+  shows encouraging correction measurements, but not the frontier law required
+  for mission closure.
 
 ## Precision Objective (2026-03-05)
 
@@ -22,7 +39,7 @@ Quantization in this project is treated as a deterministic geometric perturbatio
 Deep-research integration context:
 - `docs/research/deep_research_integration_2026_02.md`
 
-## Why Geometry Instead of Standard Practice [PROVEN]
+## Why Geometry Instead of Standard Practice
 
 The ML industry is built on a fundamental category error: treating probability as a causal mechanism rather than an epistemic measurement. A forward pass is a deterministic geometric map from input to logits. Softmax normalizes the output for human interpretation. Probability describes uncertainty about outcomes; it does not produce them.
 
@@ -283,9 +300,15 @@ CKA and PPL recovery alone are insufficient. Hard-cutoff quantization correction
 
 ### G5: Reproducible Across Models and Datasets
 
-The system works on ANY model architecture and ANY dataset. Not just the ones we tested on.
+Mission closure requires the system to work on new model architectures and data
+regimes, not just the ones already tested.
 
-- **Tested model scales**: 350M, 700M, 1.2B (validated), 8B (mechanically validated: geometry, injection, spectral bounds, stopping — see below for efficacy status)
+- **Current retained state**: small-model and mid-scale evidence exists, but the
+  promotable baseline suite is still open and 8B efficacy closure is still open
+  even though mechanical viability exists
+- **Tested model scales**: 350M, 700M, 1.2B on retained smaller-scale surfaces;
+  8B is mechanically viable (geometry, injection, spectral bounds, stopping)
+  but still open on efficacy
 - **Tested data types**: Logical rules, behavioral patterns, domain knowledge, compositional reasoning
 - **Architecture requirement**: Must have extractable weight matrices (attention + MLP projections)
 - **No model-specific code in the training loop**: All adaptation flows through the Backend protocol

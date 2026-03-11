@@ -1155,6 +1155,7 @@ def train_pissa_init_only(
     """
     import mlx.core as mx
     from mlx.utils import tree_flatten as _tf
+    from mlx_lm import load as mlx_load
 
     mx.random.seed(seed)
     model, tokenizer = mlx_load(str(model_path))
@@ -1284,6 +1285,7 @@ def evaluate_surface_checkpoints(
     Returns dict mapping step number to benchmark scores.
     """
     import mlx.core as mx
+    from mlx_lm import load as mlx_load
 
     checkpoint_files = sorted(output_dir.glob("*_adapters.safetensors"))
     if not checkpoint_files:

@@ -2,9 +2,18 @@
 
 > **Purpose**: Rigorous validation of ModelCypher's theoretical claims with statistical evidence.
 > **Last Updated**: 2026-01-30
-> **Status**: Phase 4 Validation Complete
+> **Status**: Historical snapshot
 >
 > **Note:** Point-in-time snapshot. For current project state, see [MISSION.md](MISSION.md).
+
+> **ARCHIVAL NOTE [2026-03-11]:** This report predates the current
+> first-principles cleanup and should not be used as the repository's current
+> training-state summary. In particular, it does not close the present
+> "better than standard practice" training claim, and portability remains
+> experimental. Use [MISSION.md](MISSION.md),
+> [RESEARCH-ROADMAP.md](RESEARCH-ROADMAP.md), and
+> [OPEN-MATHEMATICAL-QUESTIONS.md](research/OPEN-MATHEMATICAL-QUESTIONS.md)
+> for current claim status.
 
 ---
 

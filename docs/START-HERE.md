@@ -12,6 +12,16 @@ What this repo uses (examples, not promises):
 
 If you want receipts, start with [Geometry Guide](GEOMETRY-GUIDE.md) and [Verification](VERIFICATION.md).
 
+## Current Evidence State (2026-03-11)
+
+- `mc train run` is the canonical shipped training surface.
+- The repo has not yet closed the promotable claim that geometric training is
+  better than standard practice.
+- Retained 350M pipeline validation still shows structural pass without full
+  inference closure: `5/5` structural, `3/5` inference.
+- Merge, continual learning, and stacking remain experimental or partial; the
+  active closure order is in [RESEARCH-ROADMAP.md](RESEARCH-ROADMAP.md).
+
 ## Quick Install
 
 ```bash
@@ -105,7 +115,10 @@ Current repo accounting is intentionally narrow:
 ## Three Pathways
 
 ### Path 1: Train a Model
-**Goal**: Train a LoRA adapter with geometry-derived hyperparameters.
+**Goal**: Run the canonical geometry-derived training path.
+
+This is the shipped training surface. It is not yet a closed head-to-head claim
+against standard LoRA recipes; that benchmark remains an active roadmap item.
 
 ```bash
 # Train — all 15 hyperparameters derived from the weight matrices

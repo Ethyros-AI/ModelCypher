@@ -6,10 +6,16 @@ Notes:
 - In this repo, run CLI commands as `poetry run mc ...`.
 - This guide covers only currently implemented training commands.
 
+Current evidence state (2026-03-11):
+- `mc train run` is the canonical shipped training path.
+- Its control plane is geometry-derived, but the repo has not yet closed a
+  promotable head-to-head advantage over standard practice.
+- Retained 350M pipeline validation still shows structural pass without full
+  inference closure (`5/5` structural, `3/5` inference).
+
 ## Command Surface
 
 Training-related commands available now:
-- `mc train run`
 - `mc train run`
 - `mc train validate-derived`
 - `mc train star`
@@ -69,9 +75,10 @@ Options:
 - `--output`, `-o`
 - `--eval-data`
 
-## `mc train run`
+### Instrumentation on `mc train run`
 
-Research command with instrumentation controls.
+The canonical path exposes instrumentation flags on the same command rather
+than through a separate research-only subcommand.
 
 ```bash
 poetry run mc train run \

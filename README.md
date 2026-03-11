@@ -2,6 +2,12 @@
 
 **Geometry-first LoRA training. Every hyperparameter derived from the weight matrix, not tuned.**
 
+Current evidence state (2026-03-11): `mc train run` is shipped and
+geometry-derived, but the
+repo has not yet closed the promotable same-model same-data same-eval benchmark
+needed to claim "better than standard practice." See
+[RESEARCH-ROADMAP.md](docs/RESEARCH-ROADMAP.md).
+
 ## The Thesis
 
 A forward pass is a deterministic geometric map. The industry treats 15 training hyperparameters as knobs to tune — learning rate, rank, scale, warmup, clipping, schedule, decay, dropout, batch size, early stopping, target modules, weight init, epsilon, momentum, residual scaling. Every one of these has a closed-form geometric replacement derived from SVD, IEEE 754 machine precision, or a cited theorem. ModelCypher replaces all 15. See [AGENTS.md](AGENTS.md) for the full derivation philosophy.
@@ -14,9 +20,8 @@ poetry run mc train run --model /path/to/model --data /path/to/dataset --output 
 
 No learning rate. No rank selection. No warmup schedule. No gradient clipping. The optimizer (Cayley-Stiefel retraction on the Stiefel manifold) and step size (MASS: `eta = min(eta_ceiling, eta_sps, eta_weyl)`) are derived from the weight matrices at initialization.
 
-Need explicit control for research instrumentation? Use `mc train run-research`.
-
-**Validated result** (LFM2-350M): val_loss 1.27 (Cayley-Stiefel) vs 1.38 (plain SGD), with geometric stopping certificate.
+Need extra instrumentation? Use flags on the same command path, such as
+`--benchmark`, `--topo-monitor`, `--dim-monitor`, or `--entropy-reg`.
 
 ## What Gets Derived
 
@@ -66,18 +71,17 @@ poetry run mc analyze dimension-profile --model /path/to/model --samples 50
 poetry run mc analyze lora-svd /path/to/adapter --base /path/to/model
 ```
 
-## Results
+## Evidence Snapshot
 
-### What Worked
+| Question | What retained artifacts show | Tag |
+|---|---|---|
+| Canonical training path exists | `mc train run` is the shipped geometry-derived runtime path guarded by `pipeline_gate_v1` | [EMPIRICAL] |
+| Does the retained 350M validation bundle close preservation? | No. `results/pipeline_validation/verdict.json` reports structural pass `5/5`, inference pass `3/5`, `all_pass = false` | [EMPIRICAL] |
+| Does the retained evidence close "better than standard practice"? | No. `results/nblora_vs_standard/` is retained as `summary_only`, and the retained single-seed LFM2-350M summary does not support superiority of `nb_lora` over the kept baselines | [EMPIRICAL] |
+| Does the 8B bundle close efficacy? | No. `results/g5_8b_validation_multiseed/multiseed_gates.json` still fails `cka_ok` and `degenerate_ok` | [EMPIRICAL] |
+| Is quantization promising? | Yes as a measurement surface: `results/quantization_frontier/20260227T235714Z/quantization_frontier.json` shows PPL and degeneration improvement on all 3 retained models, but the frontier law is still open | [EMPIRICAL] |
 
-| Model | Method | Result | Tag |
-|-------|--------|--------|-----|
-| LFM2-350M | Cayley-Stiefel + CE | val_loss 1.27 vs 1.38 (plain SGD) | [VALIDATED] |
-| LFM2-1.2B | Answer-mask + retention replay | 36/46 (78%), 0 degenerate outputs | [VALIDATED] |
-| Cross-family | Weight geometry falsification (LFM2 + Qwen2.5) | Weight space Euclidean, activation space curved | [PROVEN] |
-| CKA alignment | Procrustes on training probes | CKA = 1.0 (by construction: `F = pinv(source) @ target`) | [PROVEN] |
-
-### What Failed
+### Falsified Training Claims
 
 | Hypothesis | Result | Tag |
 |------------|--------|-----|
@@ -87,7 +91,9 @@ poetry run mc analyze lora-svd /path/to/adapter --base /path/to/model
 | Stable rank predicts adapter rank | Pearson r = -0.51 vs tail_dims; measures different property | [DISPROVEN] |
 | Constrained training (paired) | Constraints monotonically hurt | [DISPROVEN] |
 
-We publish failures because intellectual honesty is not optional. Full details: [MISSION.md](docs/MISSION.md)
+We publish failures because intellectual honesty is not optional. Current
+training blockers and exit criteria live in [MISSION.md](docs/MISSION.md) and
+[RESEARCH-ROADMAP.md](docs/RESEARCH-ROADMAP.md).
 
 ## Measurement Toolkit
 
