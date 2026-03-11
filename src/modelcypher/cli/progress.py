@@ -603,7 +603,7 @@ class ProgressReporter:
                 substage="started",
                 model=None,
                 what="Starting NB-LoRA training pipeline",
-                why="Loading model and dataset to derive geometry-based training configuration",
+                why="Loading model and dataset to derive the plan before training; there is no fixed LR and MASS will choose step sizes online",
                 progress={"model_path": model_path, "dataset_path": dataset_path},
                 event_type="training_progress",
             )
@@ -663,7 +663,13 @@ class ProgressReporter:
         )
 
     def training_geometry_complete(
-        self, n_target_modules: int, n_trainable_params: int, batch_size: int
+        self,
+        n_target_modules: int,
+        n_trainable_params: int,
+        batch_size: int,
+        rank_min: int,
+        rank_max: int,
+        split_method: str,
     ) -> None:
         """Report geometry analysis and NB-LoRA injection complete."""
         self._emit(
@@ -677,9 +683,16 @@ class ProgressReporter:
                     "target_modules": n_target_modules,
                     "trainable_params": n_trainable_params,
                     "batch_size": batch_size,
+                    "rank_min": rank_min,
+                    "rank_max": rank_max,
+                    "split_method": split_method,
                 },
                 geometry={
-                    "explanation": "Every training parameter (rank, learning rate, batch size, stopping criterion) is derived from SVD and IEEE 754 bounds",
+                    "explanation": (
+                        "Target surface, ranks, split method, and spectral ceilings are "
+                        "resolved before training; only online controller terms remain "
+                        "to be measured."
+                    ),
                 },
                 event_type="training_progress",
             )
@@ -698,7 +711,7 @@ class ProgressReporter:
                 substage="started",
                 model=None,
                 what="Starting Cayley-Stiefel training loop",
-                why="Optimizing NB-LoRA adapters on the Stiefel manifold with spectral bounds",
+                why="Optimizing NB-LoRA adapters on the Stiefel manifold; there is no fixed LR and MASS will choose step sizes online",
                 progress={"max_iters": max_iters},
                 event_type="training_progress",
             )
@@ -735,7 +748,7 @@ class ProgressReporter:
     # TRAINING: VERIFICATION
     # =========================================================================
 
-    def training_verification_started(self) -> None:
+    def training_verification_started(self, gates: list[str] | None = None) -> None:
         """Report post-training verification started."""
         self._current_stage = "verify"
         self._emit(
@@ -744,8 +757,8 @@ class ProgressReporter:
                 substage="started",
                 model=None,
                 what="Starting post-training verification",
-                why="Checking spectral bounds and CKA alignment to confirm training preserved model capabilities",
-                progress={},
+                why="Checking the exact post-training gates that determine whether the adapter is promotable on this run",
+                progress={"gates": list(gates or [])},
                 event_type="training_progress",
             )
         )
@@ -755,6 +768,7 @@ class ProgressReporter:
         spectral_bounds_ok: bool,
         min_cka: float | None,
         mean_cka: float | None,
+        gates: list[str] | None = None,
     ) -> None:
         """Report verification complete."""
         progress: dict[str, Any] = {"spectral_bounds_ok": spectral_bounds_ok}
@@ -762,16 +776,22 @@ class ProgressReporter:
             progress["min_cka"] = round(min_cka, 4)
         if mean_cka is not None:
             progress["mean_cka"] = round(mean_cka, 4)
+        if gates:
+            progress["gates"] = list(gates)
         self._emit(
             ProgressEvent(
                 stage="verify",
                 substage="complete",
                 model=None,
                 what="Post-training verification complete",
-                why="Spectral bounds and CKA alignment checked — confirms adapter preserves base capabilities",
+                why="Verification completed against the same explicit gates that were announced before training",
                 progress=progress,
                 geometry={
-                    "explanation": "CKA measures how well adapted model preserves base representations (1.0 = perfect)",
+                    "explanation": (
+                        "CKA measures how well adapted model preserves base "
+                        "representations (1.0 = perfect); promotability also checks "
+                        "degeneration and the pipeline gate."
+                    ),
                 },
                 event_type="training_progress",
             )

@@ -416,8 +416,18 @@ class DerivedTrainingValidationService:
                 train_kwargs["output_path"] = trial_output_dir
                 train_kwargs["no_save"] = False
 
+            plan = self._dataset_training_service.build_training_plan(
+                model_path=resolved_model_path,
+                dataset_path=resolved_dataset_path,
+                output_path=train_kwargs.get("output_path"),
+                eval_dataset_path=resolved_eval_path,
+                seq_length=seq_length,
+                seed=seed,
+                no_save=bool(train_kwargs["no_save"]),
+            )
             result = self._dataset_training_service.train_from_dataset(
                 **train_kwargs,
+                plan=plan,
             )
 
             loss_delta = float(result.baseline_loss - result.post_loss)

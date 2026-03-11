@@ -83,6 +83,11 @@ class _FakeDatasetTrainingService:
     def __init__(self, results: list[_FakeTrainResult]):
         self._results = list(results)
         self.calls: list[dict] = []
+        self.plan_calls: list[dict] = []
+
+    def build_training_plan(self, **kwargs):
+        self.plan_calls.append(dict(kwargs))
+        return {"plan": "derived"}
 
     def train_from_dataset(self, **kwargs):
         self.calls.append(dict(kwargs))
@@ -155,8 +160,10 @@ def test_validate_all_trials_pass_when_metrics_improve(tmp_path):
     assert result.seeds == (100, 101)
     assert len(result.counterexamples) == 0
     assert len(fake.calls) == 2
+    assert len(fake.plan_calls) == 2
     for call in fake.calls:
         assert call["no_save"] is True
+        assert call["plan"] == {"plan": "derived"}
 
 
 def test_validate_records_counterexamples(tmp_path):

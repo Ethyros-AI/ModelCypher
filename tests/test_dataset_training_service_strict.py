@@ -35,6 +35,9 @@ class _DummyBackend:
     def random_seed(self, _seed: int) -> None:
         return None
 
+    def clear_cache(self) -> None:
+        return None
+
     def load_model(self, _model_path: str):
         return object(), object()
 
@@ -74,6 +77,8 @@ class _Geom:
     spectral_gap: float
     full_rank: int = 2
     shannon_effective_rank: float = 1.0
+    effective_rank: int = 1
+    shape: tuple[int, int] = (2, 2)
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
@@ -749,7 +754,8 @@ def test_train_from_dataset_seed_override_is_respected(monkeypatch, tmp_path: Pa
         seed=1234,
     )
 
-    assert seen_seeds == [1234]
+    assert seen_seeds
+    assert seen_seeds == [1234, 1234]
 
 
 def test_train_from_dataset_auto_output_path_uses_derived_seed(
@@ -1476,3 +1482,103 @@ def test_signal_rank_ceiling_preserves_unmeasured_layers():
     result = apply_signal_rank_ceiling(ranks, signal)
     assert result["model.layers.0.self_attn.q_proj.weight"] == 25
     assert result["model.layers.5.self_attn.q_proj.weight"] == 300
+
+
+def test_build_training_plan_exposes_resolved_surface(monkeypatch, tmp_path: Path):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(train_path, [{"text": "train sample one"}, {"text": "train sample two"}])
+    _write_jsonl(eval_path, [{"text": "eval sample"}])
+
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
+    _patch_lightweight_training(monkeypatch, service)
+
+    plan = service.build_training_plan(
+        model_path=model_dir,
+        dataset_path=train_path,
+        eval_dataset_path=eval_path,
+        seed=123,
+    )
+
+    payload = plan.to_dict()
+    assert payload["inputs"]["seed"] == 123
+    assert payload["inputs"]["output_path"] == str(
+        model_dir.parent / "adapters" / "model-nblora-123"
+    )
+    assert payload["data_plan"]["split_method"] == "explicit_eval_dataset"
+    assert payload["data_plan"]["n_train"] == 2
+    assert payload["data_plan"]["n_eval"] == 1
+    assert payload["adaptation_surface"]["target_module_count"] == 1
+    assert payload["adaptation_surface"]["rank_range"] == [1, 1]
+    assert payload["adaptation_surface"]["rank_ceiling_source"] == "data-rank (fallback)"
+    assert payload["controller_plan"]["learning_rate_policy"].startswith(
+        "No fixed scalar LR",
+    )
+    assert not (model_dir.parent / "adapters" / "model-nblora-123").exists()
+
+
+def test_build_training_plan_requires_tokenizable_text(tmp_path: Path):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    train_path = tmp_path / "train.jsonl"
+    _write_jsonl(train_path, [{"messages": [{"role": "user", "content": "hello"}]}])
+
+    service = DatasetTrainingService(adapter=_DummyAdapter(), backend=_DummyBackend())
+
+    with pytest.raises(TrainingDerivationError) as excinfo:
+        service.build_training_plan(
+            model_path=model_dir,
+            dataset_path=train_path,
+            no_save=True,
+        )
+
+    err = excinfo.value
+    assert err.failure_class == "unavailable_measurement"
+    assert "tokenizable text samples" in err.detail
+
+
+def test_train_from_dataset_persists_training_plan_and_matches_plan(
+    monkeypatch,
+    tmp_path: Path,
+):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    adapter_dir = tmp_path / "adapter"
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(train_path, [{"text": "train sample one"}, {"text": "train sample two"}])
+    _write_jsonl(eval_path, [{"text": "eval sample"}])
+
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
+    _patch_lightweight_training(monkeypatch, service)
+
+    plan = service.build_training_plan(
+        model_path=model_dir,
+        dataset_path=train_path,
+        output_path=adapter_dir,
+        eval_dataset_path=eval_path,
+        seed=55,
+    )
+
+    result = service.train_from_dataset(
+        model_path=model_dir,
+        dataset_path=train_path,
+        output_path=adapter_dir,
+        eval_dataset_path=eval_path,
+        seed=55,
+        plan=plan,
+        max_iters_cap=1,
+    )
+
+    plan_payload = plan.to_dict()
+    assert result.derived_plan == plan_payload
+    assert result.seq_length_used == plan.seq_length
+    assert result.rank_ceiling_source == plan.rank_ceiling_source
+    assert result.target_modules == sorted(plan.target_modules)
+    assert result.rank_overrides == dict(sorted(plan.rank_overrides.items()))
+    saved_plan = json.loads((adapter_dir / "training_plan.json").read_text(encoding="utf-8"))
+    assert saved_plan == plan_payload
+    result_payload = result.to_dict()
+    assert result_payload["derived_plan"] == plan_payload

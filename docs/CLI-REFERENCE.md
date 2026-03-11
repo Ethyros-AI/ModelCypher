@@ -42,17 +42,30 @@ Commands: `run`, `validate-derived`, `star`, `status`, `merge`, `export`.
 
 ```bash
 poetry run mc train run -m /path/to/model -d /path/to/data.jsonl -o /path/to/adapter
+poetry run mc train run -m /path/to/model -d /path/to/data.jsonl --plan-only
+poetry run mc train run -m /path/to/model -d /path/to/data.jsonl --explain --benchmark quick
 poetry run mc train star -m /path/to/model -d /path/to/base_data.jsonl -o /path/to/star_run
 poetry run mc train status --agent agent-001 --model /path/to/model
 poetry run mc train merge --agent agent-001 --model /path/to/model --save --output /path/to/merged
 poetry run mc train export --agent agent-001 --model /path/to/model --output /path/to/export
 
-# Research path with explicit training controls
-poetry run mc train run -m /path/to/model -d /path/to/data.jsonl -o /path/to/adapter --topo-monitor
-
 # Repeated derived-training validation (counterexample search)
 poetry run mc train validate-derived --model /path/to/model --data /path/to/data.jsonl --trials 5
 ```
+
+`mc train run` surfaces a `derived_plan` object in JSON/YAML output. The plan is
+organized as:
+- `inputs`
+- `data_plan`
+- `adaptation_surface`
+- `controller_plan`
+- `derived_now`
+- `measured_during_training`
+- `verified_after_training`
+- `removed_user_knobs`
+
+Text mode keeps the summary concise. Full per-module rank maps live in
+structured output and in `training_plan.json` saved next to adapter artifacts.
 
 ## `mc merge`
 

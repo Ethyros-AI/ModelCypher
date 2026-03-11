@@ -77,6 +77,8 @@ class TestTrainCommandHelp:
         assert result.exit_code == 0
         assert "--seq-length" in result.stdout
         assert "--seed" in result.stdout
+        assert "--explain" in result.stdout
+        assert "--plan-only" in result.stdout
         assert "--topo-monitor" in result.stdout
         assert "--dim-monitor" in result.stdout
         assert "--no-save" in result.stdout
@@ -246,13 +248,101 @@ class _DummyStarService:
 class _CaptureDatasetService:
     def __init__(self):
         self.calls: list[dict] = []
+        self.plan_calls: list[dict] = []
+
+    class _Plan:
+        def __init__(self, output_path: str | None = None):
+            self._payload = {
+                "inputs": {
+                    "model_path": "/tmp/model",
+                    "dataset_path": "/tmp/train.jsonl",
+                    "eval_dataset_path": None,
+                    "seed": 7,
+                    "seed_source": "derived_from_model_dataset_hash",
+                    "output_path": output_path,
+                },
+                "data_plan": {
+                    "seq_length": 64,
+                    "seq_length_source": "data_derived_max_token_length",
+                    "split_method": "pilot_variance",
+                    "n_train": 2,
+                    "n_eval": 1,
+                    "validation_split": {"method": "pilot_variance", "n_train": 2, "n_eval": 1},
+                },
+                "adaptation_surface": {
+                    "target_module_count": 3,
+                    "target_modules": ["a", "b", "c"],
+                    "per_module_ranks": {"a": 2, "b": 3, "c": 4},
+                    "rank_range": [2, 4],
+                    "rank_ceiling_source": "RMT signal-rank",
+                    "estimated_trainable_params": 123,
+                    "sigma_k_min": 0.5,
+                    "sigma_max": 1.5,
+                    "module_geometry": {},
+                    "signal_rank_summary": None,
+                },
+                "controller_plan": {
+                    "optimizer_type": "cayley_stiefel",
+                    "controller_mode": "structural_observe",
+                    "optimizer_research_mode": "cayley_stiefel_mass",
+                    "learning_rate_policy": "No fixed scalar LR.",
+                    "batch_size_policy": "Derived online.",
+                },
+                "derived_now": {
+                    "seed": 7,
+                    "resolved_output_path": output_path,
+                    "sequence_length": 64,
+                    "validation_split": {"method": "pilot_variance", "n_train": 2, "n_eval": 1},
+                    "target_surface": {
+                        "target_module_count": 3,
+                        "rank_range": [2, 4],
+                        "rank_ceiling_source": "RMT signal-rank",
+                    },
+                    "optimizer_geometry_config": {"n_layers": 1, "base_lr": 0.001},
+                    "quantization_frontier_precheck": None,
+                },
+                "measured_during_training": {
+                    "controller_terms": ["eta_ceiling", "eta_sps", "eta_weyl", "eta_step"],
+                    "runtime_signals": ["gradient_noise_scale"],
+                    "stopping_signals": ["certificate"],
+                },
+                "verified_after_training": {
+                    "post_training_gates": ["spectral_bounds_ok", "min_cka", "pipeline_gate_passed"],
+                    "optional_outputs": ["benchmark_delta (when --benchmark is enabled)"],
+                },
+                "removed_user_knobs": ["learning_rate", "manual_rank"],
+            }
+
+        def to_dict(self):
+            return dict(self._payload)
+
+        def to_text_summary(self):
+            return (
+                "Resolved training plan\n"
+                "Split: pilot_variance | train=2 eval=1\n"
+                "Target surface: 3 modules | ranks=2-4 | params~123"
+            )
+
+    def build_training_plan(self, **kwargs):
+        self.plan_calls.append(dict(kwargs))
+        output_path = kwargs.get("output_path")
+        return self._Plan(str(output_path) if output_path is not None else None)
 
     def train_from_dataset(self, **kwargs):
         self.calls.append(dict(kwargs))
 
         class _Result:
             def to_dict(self):
-                return {"ok": True}
+                return {
+                    "baseline_loss": 2.0,
+                    "final_loss": 1.5,
+                    "post_loss": 1.4,
+                    "adapter_path": "/tmp/adapter",
+                    "spectral_bounds_ok": True,
+                    "min_cka": 0.99,
+                    "pipeline_gate_passed": True,
+                    "derived_plan": _CaptureDatasetService._Plan("/tmp/adapter").to_dict(),
+                }
 
         return _Result()
 
@@ -274,6 +364,10 @@ class _CounterexampleDatasetService:
     def train_from_dataset(self, **kwargs):
         _ = kwargs
         return self._Result()
+
+    def build_training_plan(self, **kwargs):
+        _ = kwargs
+        return _CaptureDatasetService._Plan(None)
 
 
 class TestFailFastCoverage:
@@ -416,3 +510,104 @@ def test_train_validate_derived_no_fail_on_counterexample(monkeypatch, tmp_path)
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["all_passed"] is False
+
+
+def test_train_run_plan_only_json_returns_derived_plan(monkeypatch, tmp_path):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    data_path = tmp_path / "train.jsonl"
+    data_path.write_text('{"text":"hello"}\n', encoding="utf-8")
+
+    capture = _CaptureDatasetService()
+    monkeypatch.setattr(
+        "modelcypher.cli.composition.get_dataset_training_service",
+        lambda: capture,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "--json",
+            "train",
+            "run",
+            "--model",
+            str(model_dir),
+            "--data",
+            str(data_path),
+            "--plan-only",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert "derived_plan" in payload
+    assert payload["derived_plan"]["adaptation_surface"]["rank_range"] == [2, 4]
+    assert capture.plan_calls
+    assert capture.calls == []
+
+
+def test_train_run_explain_text_prints_plan_before_result(monkeypatch, tmp_path):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    data_path = tmp_path / "train.jsonl"
+    data_path.write_text('{"text":"hello"}\n', encoding="utf-8")
+
+    capture = _CaptureDatasetService()
+    monkeypatch.setattr(
+        "modelcypher.cli.composition.get_dataset_training_service",
+        lambda: capture,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "--text",
+            "train",
+            "run",
+            "--model",
+            str(model_dir),
+            "--data",
+            str(data_path),
+            "--explain",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Resolved training plan" in result.stdout
+    assert "Training result" in result.stdout
+    assert result.stdout.index("Resolved training plan") < result.stdout.index("Training result")
+    assert capture.plan_calls
+    assert capture.calls
+    assert "plan" in capture.calls[0]
+
+
+def test_train_run_plan_only_text_uses_summary_not_raw_json(monkeypatch, tmp_path):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    data_path = tmp_path / "train.jsonl"
+    data_path.write_text('{"text":"hello"}\n', encoding="utf-8")
+
+    capture = _CaptureDatasetService()
+    monkeypatch.setattr(
+        "modelcypher.cli.composition.get_dataset_training_service",
+        lambda: capture,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "--text",
+            "train",
+            "run",
+            "--model",
+            str(model_dir),
+            "--data",
+            str(data_path),
+            "--plan-only",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Resolved training plan" in result.stdout
+    assert "\"derived_plan\"" not in result.stdout
+    assert capture.calls == []

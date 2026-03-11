@@ -26,18 +26,24 @@ Training-related commands available now:
 ## Quick Start
 
 ```bash
-# 1) Train a LoRA adapter with geometry-derived settings
+# 1) Inspect the resolved training plan without mutating model state
+poetry run mc train run \
+  --model /path/to/base_model \
+  --data /path/to/train.jsonl \
+  --plan-only
+
+# 2) Train a LoRA adapter with geometry-derived settings
 poetry run mc train run \
   --model /path/to/base_model \
   --data /path/to/train.jsonl \
   --output /path/to/adapter
 
-# 2) Inspect training state for an agent/model pair
+# 3) Inspect training state for an agent/model pair
 poetry run mc train status \
   --agent agent-001 \
   --model /path/to/base_model
 
-# 3) Export adapter artifacts
+# 4) Export adapter artifacts
 poetry run mc train export \
   --agent agent-001 \
   --model /path/to/base_model \
@@ -59,7 +65,9 @@ Examples:
 
 ## `mc train run`
 
-Strict training command. All hyperparameters are derived from geometry.
+Canonical NB-LoRA training command. The goal is not to expose more knobs. The
+goal is to show the exact derived plan before training and then execute that
+same plan without drift.
 
 ```bash
 poetry run mc train run \
@@ -74,38 +82,88 @@ Options:
 - `--data`, `-d` (required)
 - `--output`, `-o`
 - `--eval-data`
+- `--explain`
+- `--plan-only`
+- `--benchmark`
+- `--no-save`
+- `--seq-length`
+- `--seed`
+- `--topo-monitor/--no-topo-monitor`
+- `--dim-monitor/--no-dim-monitor`
+- `--target-experts`
+- `--entropy-reg/--no-entropy-reg`
 
-### Instrumentation on `mc train run`
+### Three-Bucket Model
 
-The canonical path exposes instrumentation flags on the same command rather
-than through a separate research-only subcommand.
+`mc train run` now surfaces training state in three buckets:
+
+- `derived_now`
+  Fixed before training starts: seed, output path, sequence length, eval split,
+  target modules, per-module ranks, optimizer geometry config.
+- `measured_during_training`
+  Runtime controller quantities: `eta_ceiling`, `eta_sps`, `eta_weyl`,
+  `eta_step`, gradient-noise-derived batch size, and stopping certificate
+  signals.
+- `verified_after_training`
+  Post-training gates: spectral bounds, CKA, degeneration, pipeline gate, and
+  optional benchmark delta when `--benchmark` is enabled.
+
+The controller does not expose a fixed scalar LR. The canonical statement is:
+
+```text
+eta_step = min(eta_ceiling, eta_sps, eta_weyl)
+```
+
+### Preflight Surfaces
+
+Use `--plan-only` to derive the exact plan without injecting adapters or
+creating output directories:
 
 ```bash
 poetry run mc train run \
   -m /path/to/model \
   -d /path/to/data.jsonl \
-  --seed 42 \
-  --topo-monitor
+  --plan-only
 ```
 
-Options:
-- `--model`, `-m` (required)
-- `--data`, `-d` (required)
-- `--output`, `-o`
-- `--eval-data`
-- `--seed`
-- `--lr` (explicit override)
-- `--seq-length`
-- `--topo-monitor/--no-topo-monitor`
-- `--dim-monitor/--no-dim-monitor`
-- `--auto-regime/--no-auto-regime`
-- `--no-save`
+Example text output:
+
+```text
+Resolved training plan
+Model: /path/to/model
+Dataset: /path/to/data.jsonl
+Eval: derived split (pilot_variance)
+Seed: 123456789 (derived_from_model_dataset_hash)
+Output: /path/to/adapters/model-nblora-123456789
+Seq length: 256 (data_derived_max_token_length)
+Split: pilot_variance | train=480 eval=32
+Target surface: 96 modules | ranks=4-16 | params~1,572,864
+Spectral bounds: sigma_k_min=2.1e-02 | sigma_max=8.7e+00 | ceiling=RMT signal-rank
+Controller: no fixed scalar LR; MASS will choose eta_step = min(eta_ceiling, eta_sps, eta_weyl) online
+Measured during training: eta_sps, eta_weyl, eta_step, gradient-noise batch size, stopping certificate, preservation telemetry
+Verified after training: spectral bounds, CKA, degeneration, pipeline gate, optional benchmark delta
+Benchmark: opt-in only; add --benchmark quick for pre/post task scores
+```
+
+Use `--explain` to print that same summary and then continue into training:
+
+```bash
+poetry run mc train run \
+  -m /path/to/model \
+  -d /path/to/data.jsonl \
+  --explain \
+  --benchmark quick
+```
+
+`--benchmark` remains opt-in. It is useful when you want pre/post task scores,
+but it is not part of the default canonical run.
 
 ## `mc train validate-derived`
 
 Counterexample search for derived training. Runs repeated training trials with
 derived settings, records failures where post-training metrics do not improve
-over baseline, and can fail CI on first counterexample set.
+over baseline, and now reuses the same shared planning surface as `mc train run`
+before each trial.
 
 ```bash
 poetry run mc train validate-derived \

@@ -74,6 +74,58 @@ def _write_training_derivation_error(
     raise typer.Exit(code=EXIT_RUNTIME)
 
 
+def _format_training_result_text(payload: dict[str, object]) -> str:
+    """Render a concise human summary for text-mode training output."""
+    lines = ["Training result"]
+    derived_plan = payload.get("derived_plan")
+    if isinstance(derived_plan, dict):
+        data_plan = derived_plan.get("data_plan")
+        if isinstance(data_plan, dict):
+            lines.append(
+                "Data: split="
+                f"{data_plan.get('split_method', 'unknown')} | "
+                f"train={data_plan.get('n_train', '?')} "
+                f"eval={data_plan.get('n_eval', '?')} | "
+                f"seq_length={data_plan.get('seq_length', '?')}"
+            )
+        adaptation_surface = derived_plan.get("adaptation_surface")
+        if isinstance(adaptation_surface, dict):
+            rank_range = adaptation_surface.get("rank_range", [0, 0])
+            if not isinstance(rank_range, list) or len(rank_range) != 2:
+                rank_range = [0, 0]
+            lines.append(
+                "Resolved surface: "
+                f"{adaptation_surface.get('target_module_count', '?')} modules | "
+                f"ranks={rank_range[0]}-{rank_range[1]} | "
+                f"params~{adaptation_surface.get('estimated_trainable_params', '?')}"
+            )
+    lines.append(
+        "Losses: "
+        f"baseline={payload.get('baseline_loss', '?')} | "
+        f"train_final={payload.get('final_loss', '?')} | "
+        f"post_eval={payload.get('post_loss', '?')}"
+    )
+    lines.append(
+        "Verification: "
+        f"spectral_bounds_ok={payload.get('spectral_bounds_ok', '?')} | "
+        f"min_cka={payload.get('min_cka', 'n/a')} | "
+        f"pipeline_gate_passed={payload.get('pipeline_gate_passed', '?')}"
+    )
+    benchmark_delta = payload.get("benchmark_delta")
+    if isinstance(benchmark_delta, dict) and benchmark_delta:
+        overall_delta = benchmark_delta.get("overall")
+        if isinstance(overall_delta, (int, float)):
+            lines.append(f"Benchmark delta: overall={overall_delta:+.4f}")
+        else:
+            lines.append("Benchmark delta: available in structured output")
+    adapter_path = payload.get("adapter_path")
+    if adapter_path:
+        lines.append(f"Adapter: {adapter_path}")
+    else:
+        lines.append("Adapter: not saved")
+    return "\n".join(lines)
+
+
 @train_app.callback()
 def train() -> None:
     """Training command group.
@@ -102,6 +154,16 @@ def train_run(
         False,
         "--no-save",
         help="Run training without saving an adapter",
+    ),
+    explain: bool = typer.Option(
+        False,
+        "--explain",
+        help="Show the resolved training plan before training, then continue.",
+    ),
+    plan_only: bool = typer.Option(
+        False,
+        "--plan-only",
+        help="Derive and print the exact training plan without injecting adapters or training.",
     ),
     seq_length: int = typer.Option(
         None,
@@ -141,22 +203,23 @@ def train_run(
     expose instrumentation on the same path.
 
     Output fields (when --json):
-        epochs: Number of training epochs completed
-        finalLoss: Final training loss
-        ckaRetention: CKA similarity between pre/post-training activations (1.0 = no drift)
-        adapterPath: Path to saved adapter weights
-        derivedHyperparameters: All geometry-derived settings (learning rate, rank, etc.)
-        benchmarkBaseline: Pre-training benchmark scores (with --benchmark)
-        benchmarkPost: Post-training benchmark scores (with --benchmark)
-        benchmarkDelta: Score deltas (with --benchmark)
+        train_iters: Number of training iterations completed
+        final_loss: Final training loss
+        adapter_path: Path to saved adapter weights
+        derived_plan: Exact resolved preflight plan used by the run
+        benchmark_baseline: Pre-training benchmark scores (with --benchmark)
+        benchmark_post: Post-training benchmark scores (with --benchmark)
+        benchmark_delta: Score deltas (with --benchmark)
 
     Example:
         mc train run --model /path/to/model --data /path/to/data.jsonl
-        mc train run -m /path/to/model -d /path/to/data.jsonl --benchmark quick --topo-monitor
+        mc train run -m /path/to/model -d /path/to/data.jsonl --explain --benchmark quick
     """
     context = _context(ctx)
     model_path = Path(model)
     _validate_model_path(model_path, context)
+    if explain and plan_only:
+        raise typer.BadParameter("--explain and --plan-only cannot be used together")
 
     from modelcypher.cli.composition import get_dataset_training_service
 
@@ -170,25 +233,55 @@ def train_run(
 
     service = get_dataset_training_service()
     service._progress_reporter = reporter
+    plan = None
     try:
-        result = service.train_from_dataset(
-            model_path=model_path,
-            dataset_path=data,
-            output_path=output,
-            eval_dataset_path=eval_data,
-            seq_length=seq_length,
-            seed=seed,
-            topo_monitor=topo_monitor,
-            dim_monitor=dim_monitor,
-            no_save=no_save,
-            benchmark_suite=benchmark,
-            target_experts=target_experts,
-            entropy_regularization=entropy_reg,
-        )
+        if explain or plan_only:
+            plan = service.build_training_plan(
+                model_path=model_path,
+                dataset_path=data,
+                output_path=output,
+                eval_dataset_path=eval_data,
+                seq_length=seq_length,
+                seed=seed,
+                no_save=no_save,
+                target_experts=target_experts,
+            )
+            if plan_only:
+                payload = {"derived_plan": plan.to_dict()}
+                if context.output_format == "text":
+                    write_output(plan.to_text_summary(), context.output_format, context.pretty)
+                else:
+                    write_output(payload, context.output_format, context.pretty)
+                return
+            if context.output_format == "text":
+                typer.echo(plan.to_text_summary())
+                typer.echo("")
+
+        train_kwargs = {
+            "model_path": model_path,
+            "dataset_path": data,
+            "output_path": output,
+            "eval_dataset_path": eval_data,
+            "seq_length": seq_length,
+            "seed": seed,
+            "topo_monitor": topo_monitor,
+            "dim_monitor": dim_monitor,
+            "no_save": no_save,
+            "benchmark_suite": benchmark,
+            "target_experts": target_experts,
+            "entropy_regularization": entropy_reg,
+        }
+        if plan is not None:
+            train_kwargs["plan"] = plan
+        result = service.train_from_dataset(**train_kwargs)
     except TrainingDerivationError as exc:
         _write_training_derivation_error(exc, context)
 
-    write_output(result.to_dict(), context.output_format, context.pretty)
+    payload = result.to_dict()
+    if context.output_format == "text":
+        write_output(_format_training_result_text(payload), context.output_format, context.pretty)
+        return
+    write_output(payload, context.output_format, context.pretty)
 
 
 @train_app.command("validate-derived")

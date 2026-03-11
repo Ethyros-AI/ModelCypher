@@ -1095,6 +1095,18 @@ class _DatasetTrainingServiceHelperMixin:
         with manifest_path.open("w", encoding="utf-8") as handle:
             json.dump(manifest, handle, indent=2, sort_keys=True)
 
+    def _write_training_plan(
+        self,
+        *,
+        adapter_dir: Path,
+        derived_plan: dict[str, Any],
+    ) -> None:
+        """Persist the exact resolved training plan alongside adapter artifacts."""
+        plan_path = adapter_dir / "training_plan.json"
+        with plan_path.open("w", encoding="utf-8") as handle:
+            json.dump(derived_plan, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+
     def _hash_model_artifacts(self, model_path: Path) -> str:
         """Compute SHA256 over model config + safetensors for adapter provenance."""
         digest = hashlib.sha256()

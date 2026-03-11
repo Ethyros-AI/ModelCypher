@@ -8,6 +8,12 @@
 training/merging controls. The community has observations; we have mechanisms. The community
 has tooling; we have derivations. Neither side has both.
 
+**Important (2026-03-11):** The causal chain (Section 7) is mostly [EXPLORATORY] — most
+links lack formal causal derivation per `FIRST_PRINCIPLES_REVIEW_PROTOCOL.md`. The novelty
+claim is structural (linking observations end-to-end), not that each link is proven.
+Zero-hyperparameter training has not yet been demonstrated to produce better inference
+outcomes than standard LoRA. RESEARCH-ROADMAP R1 is the active blocker.
+
 ---
 
 ## Executive Summary
@@ -223,7 +229,7 @@ SVD/IEEE 754/data. No other group claims zero tunable hyperparameters.
 | Entropy → Curvature | Ricci curvature papers (arXiv 2509.22362, ICLR 2025 submission) | Emerging |
 | Curvature → ID | Ricci flow (class separability) | Partially |
 | ID → Phases | Cagnetta et al. (ICLR 2025), Ansuini (NeurIPS 2019) | Established |
-| **Full chain end-to-end** | **No one** | **ModelCypher** |
+| **Full chain end-to-end** | **No one** | **ModelCypher [EXPLORATORY — most links not formally derived]** |
 
 Closest competitor: Bayesian geometry group (3 papers, Jan 2026). They cover the middle of
 the chain (QK alignment → entropy) with rigorous Bayesian formalization. **Read (2026-03-03).**

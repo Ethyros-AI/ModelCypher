@@ -186,6 +186,7 @@ class DatasetTrainResult:
     optimizer_research_mode: str | None = None
     controller_trace: list[dict[str, Any]] | None = None
     offline_replay: dict[str, Any] | None = None
+    derived_plan: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert result to a JSON-serializable dictionary."""
@@ -312,6 +313,8 @@ class DatasetTrainResult:
             result["controller_trace"] = self.controller_trace
         if self.offline_replay is not None:
             result["offline_replay"] = self.offline_replay
+        if self.derived_plan is not None:
+            result["derived_plan"] = self.derived_plan
         if self.benchmark_baseline is not None and self.benchmark_post is not None:
             result["benchmark_delta"] = {
                 k: self.benchmark_post[k] - self.benchmark_baseline.get(k, 0.0)
@@ -351,6 +354,243 @@ class NBTargetSurface:
         }
 
 
+@dataclass
+class DerivedTrainingPlan:
+    """Resolved pre-training plan for the canonical NB-LoRA path.
+
+    The plan carries both the user-facing derivation summary and the internal
+    resolved artifacts needed to run training without re-deriving the target
+    surface.
+    """
+
+    model_path: Path
+    dataset_path: Path
+    eval_dataset_path: Path | None
+    output_path: Path | None
+    seed: int
+    seed_source: str
+    seq_length: int
+    seq_length_source: str
+    validation_split: dict[str, Any]
+    train_samples: list[dict[str, Any]]
+    eval_samples: list[dict[str, Any]]
+    geometries: dict[str, Any]
+    target_modules: list[str]
+    rank_overrides: dict[str, int]
+    rank_ceiling_source: str
+    signal_rank_results: dict[int, Any]
+    sigma_k_min: float
+    sigma_max: float
+    estimated_trainable_params: int
+    optimizer_geometry_config: Any
+    quantization_frontier_precheck: dict[str, Any] | None
+    controller_mode: str
+    optimizer_research_mode: str
+
+    def _module_geometry_payload(self) -> dict[str, dict[str, Any]]:
+        payload: dict[str, dict[str, Any]] = {}
+        for module in sorted(self.target_modules):
+            geom = self.geometries[module]
+            payload[module] = {
+                "shape": [int(geom.shape[0]), int(geom.shape[1])],
+                "sigma_max": float(geom.sigma_max),
+                "sigma_k": float(geom.sigma_k),
+                "effective_rank": int(geom.effective_rank),
+                "full_rank": int(geom.full_rank),
+                "tail_dims": int(geom.tail_dims),
+                "shannon_effective_rank": float(geom.shannon_effective_rank),
+                "spectral_gap": float(geom.spectral_gap),
+            }
+        return payload
+
+    def _signal_rank_payload(self) -> dict[int, dict[str, Any]] | None:
+        if not self.signal_rank_results:
+            return None
+        return {
+            int(layer_idx): {
+                "signal_rank": int(result.signal_rank),
+                "noise_rank": int(result.noise_rank),
+                "mp_upper_edge": float(result.mp_upper_edge),
+                "signal_variance_fraction": float(result.signal_variance_fraction),
+            }
+            for layer_idx, result in sorted(self.signal_rank_results.items())
+        }
+
+    def to_dict(self) -> dict[str, Any]:
+        rank_values = list(self.rank_overrides.values())
+        rank_range = [
+            int(min(rank_values)) if rank_values else 0,
+            int(max(rank_values)) if rank_values else 0,
+        ]
+        optimizer_type = (
+            "adamw"
+            if self.optimizer_research_mode == OPTIMIZER_MODE_ADAMW_MATCHED_TRACE
+            else "cayley_stiefel"
+        )
+        return {
+            "inputs": {
+                "model_path": str(self.model_path),
+                "dataset_path": str(self.dataset_path),
+                "eval_dataset_path": (
+                    str(self.eval_dataset_path) if self.eval_dataset_path else None
+                ),
+                "seed": int(self.seed),
+                "seed_source": self.seed_source,
+                "output_path": str(self.output_path) if self.output_path else None,
+            },
+            "data_plan": {
+                "seq_length": int(self.seq_length),
+                "seq_length_source": self.seq_length_source,
+                "split_method": self.validation_split.get("method"),
+                "n_train": int(len(self.train_samples)),
+                "n_eval": int(len(self.eval_samples)),
+                "validation_split": self.validation_split,
+            },
+            "adaptation_surface": {
+                "target_module_count": int(len(self.target_modules)),
+                "target_modules": list(sorted(self.target_modules)),
+                "per_module_ranks": {
+                    module: int(self.rank_overrides[module])
+                    for module in sorted(self.rank_overrides)
+                },
+                "rank_range": rank_range,
+                "rank_ceiling_source": self.rank_ceiling_source,
+                "estimated_trainable_params": int(self.estimated_trainable_params),
+                "sigma_k_min": float(self.sigma_k_min),
+                "sigma_max": float(self.sigma_max),
+                "module_geometry": self._module_geometry_payload(),
+                "signal_rank_summary": self._signal_rank_payload(),
+            },
+            "controller_plan": {
+                "optimizer_type": optimizer_type,
+                "controller_mode": self.controller_mode,
+                "optimizer_research_mode": self.optimizer_research_mode,
+                "learning_rate_policy": (
+                    "No fixed scalar LR is derived upfront. MASS chooses "
+                    "eta_step = min(eta_ceiling, eta_sps, eta_weyl) online."
+                ),
+                "batch_size_policy": (
+                    "Batch size is derived during training from gradient noise "
+                    "scale after NB-LoRA injection."
+                ),
+            },
+            "derived_now": {
+                "seed": int(self.seed),
+                "resolved_output_path": (
+                    str(self.output_path) if self.output_path is not None else None
+                ),
+                "sequence_length": int(self.seq_length),
+                "validation_split": dict(self.validation_split),
+                "target_surface": {
+                    "target_module_count": int(len(self.target_modules)),
+                    "rank_range": rank_range,
+                    "rank_ceiling_source": self.rank_ceiling_source,
+                },
+                "optimizer_geometry_config": {
+                    "n_layers": int(getattr(self.optimizer_geometry_config, "n_layers", 0)),
+                    "base_lr": float(getattr(self.optimizer_geometry_config, "base_lr", 0.0)),
+                },
+                "quantization_frontier_precheck": self.quantization_frontier_precheck,
+            },
+            "measured_during_training": {
+                "controller_terms": [
+                    "eta_ceiling",
+                    "eta_sps",
+                    "eta_weyl",
+                    "eta_step",
+                    "effective_gain_ratio",
+                ],
+                "runtime_signals": [
+                    "gradient_noise_scale",
+                    "behavioral_transport_norm",
+                    "spectral_budget_ratio",
+                    "remaining_budget",
+                    "margin_mean_delta",
+                    "cka_blindness_ratio",
+                    "null_accessibility",
+                ],
+                "stopping_signals": [
+                    "loss_stable",
+                    "adapter_saturation_exhausted",
+                    "certificate",
+                ],
+            },
+            "verified_after_training": {
+                "post_training_gates": [
+                    "spectral_bounds_ok",
+                    "min_cka",
+                    "mean_cka",
+                    "degeneration_max_ngram_repeat",
+                    "mode_connectivity_barrier",
+                    "pipeline_gate_passed",
+                ],
+                "optional_outputs": [
+                    "benchmark_delta (when --benchmark is enabled)",
+                ],
+            },
+            "removed_user_knobs": [
+                "learning_rate",
+                "warmup",
+                "lr_schedule",
+                "gradient_clipping",
+                "manual_rank",
+                "manual_target_module_selection",
+                "patience_early_stopping",
+                "manual_dropout_default",
+            ],
+        }
+
+    def to_text_summary(self) -> str:
+        rank_values = list(self.rank_overrides.values())
+        rank_min = min(rank_values) if rank_values else 0
+        rank_max = max(rank_values) if rank_values else 0
+        split_method = self.validation_split.get("method", "unknown")
+        lines = [
+            "Resolved training plan",
+            f"Model: {self.model_path}",
+            f"Dataset: {self.dataset_path}",
+            (
+                f"Eval: {self.eval_dataset_path}"
+                if self.eval_dataset_path is not None
+                else f"Eval: derived split ({split_method})"
+            ),
+            f"Seed: {self.seed} ({self.seed_source})",
+            (
+                f"Output: {self.output_path}"
+                if self.output_path is not None
+                else "Output: no adapter will be saved"
+            ),
+            f"Seq length: {self.seq_length} ({self.seq_length_source})",
+            (
+                f"Split: {split_method} | train={len(self.train_samples)} "
+                f"eval={len(self.eval_samples)}"
+            ),
+            (
+                f"Target surface: {len(self.target_modules)} modules | "
+                f"ranks={rank_min}-{rank_max} | "
+                f"params~{self.estimated_trainable_params:,}"
+            ),
+            (
+                f"Spectral bounds: sigma_k_min={self.sigma_k_min:.4e} | "
+                f"sigma_max={self.sigma_max:.4e} | ceiling={self.rank_ceiling_source}"
+            ),
+            (
+                "Controller: no fixed scalar LR; MASS will choose "
+                "eta_step = min(eta_ceiling, eta_sps, eta_weyl) online"
+            ),
+            (
+                "Measured during training: eta_sps, eta_weyl, eta_step, "
+                "gradient-noise batch size, stopping certificate, preservation telemetry"
+            ),
+            (
+                "Verified after training: spectral bounds, CKA, degeneration, "
+                "pipeline gate, optional benchmark delta"
+            ),
+            "Benchmark: opt-in only; add --benchmark quick for pre/post task scores",
+        ]
+        return "\n".join(lines)
+
+
 class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
     """Train LoRA adapters from text datasets using NB-LoRA.
 
@@ -377,13 +617,51 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         eval_dataset_path: str | Path | None = None,
         seed: int = 42,
     ) -> "NBTargetSurface":
-        """Run the NB-LoRA geometry pipeline and return the resolved surface.
+        """Run the canonical derivation path and return the resolved NB surface."""
+        plan = self.build_training_plan(
+            model_path=model_path,
+            dataset_path=dataset_path,
+            eval_dataset_path=eval_dataset_path,
+            seed=seed,
+            no_save=True,
+        )
+        geometry_info = {}
+        for key in plan.target_modules:
+            geom = plan.geometries[key]
+            geometry_info[key] = {
+                "sigma_max": geom.sigma_max,
+                "sigma_k": geom.sigma_k,
+                "effective_rank": geom.effective_rank,
+                "tail_dims": geom.tail_dims,
+                "shannon_effective_rank": geom.shannon_effective_rank,
+                "spectral_gap": geom.spectral_gap,
+                "shape": geom.shape,
+            }
+        return NBTargetSurface(
+            target_keys=list(plan.target_modules),
+            rank_overrides=dict(plan.rank_overrides),
+            rank_ceiling_source=plan.rank_ceiling_source,
+            sigma_k_min=plan.sigma_k_min,
+            sigma_max=plan.sigma_max,
+            geometry_info=geometry_info,
+        )
 
-        Executes the exact same pipeline as train_from_dataset (analyze →
-        select_target_modules → compute_coupled_ranks → apply_signal_rank_ceiling
-        or apply_data_rank_ceiling) but returns the surface artifact instead of
-        training.  Cleans up model/cache after analysis.
-        """
+    def build_training_plan(
+        self,
+        model_path: str | Path,
+        dataset_path: str | Path,
+        output_path: str | Path | None = None,
+        eval_dataset_path: str | Path | None = None,
+        seq_length: int | None = None,
+        seed: int | None = None,
+        retention_dataset_path: str | Path | None = None,
+        quantization_reference_model_path: str | Path | None = None,
+        no_save: bool = False,
+        target_experts: list[str] | str | None = None,
+        controller_mode: str = CONTROLLER_MODE_STRUCTURAL_OBSERVE,
+        optimizer_research_mode: str = OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+    ) -> DerivedTrainingPlan:
+        """Resolve the exact canonical training plan without mutating model state."""
         model_path = Path(model_path).expanduser().resolve()
         dataset_path = Path(dataset_path).expanduser().resolve()
         eval_path = (
@@ -392,135 +670,251 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             else None
         )
 
-        random.seed(seed)
-        self._backend.random_seed(seed)
+        if seed is None:
+            resolved_seed = self._derive_training_seed(
+                model_path=model_path,
+                dataset_path=dataset_path,
+            )
+            seed_source = "derived_from_model_dataset_hash"
+        else:
+            resolved_seed = int(seed)
+            seed_source = "user_supplied_override"
 
-        # 1. Load model + tokenizer
-        logger.info("derive_nb_target_surface: loading model from %s", model_path)
-        model, tokenizer, _ = self._load_training_model(model_path)
-
-        # 2. Load dataset for seq_length derivation and eval split
-        all_samples = load_jsonl_dataset(dataset_path)
-        eval_samples_early = (
-            load_jsonl_dataset(eval_path) if eval_path else None
+        controller_mode = validate_controller_mode(controller_mode)
+        optimizer_research_mode = validate_optimizer_research_mode(
+            optimizer_research_mode,
         )
 
-        # Derive seq_length from data (same logic as train_from_dataset)
-        token_source_samples = list(all_samples)
-        if eval_samples_early is not None:
-            token_source_samples.extend(eval_samples_early)
-        token_lengths = []
-        for s in token_source_samples:
-            text = s.get("text")
-            if isinstance(text, str) and text:
-                n = len(self._backend.encode_tokens(tokenizer, text))
-                if n > 0:
-                    token_lengths.append(n)
-        if not token_lengths:
-            raise TrainingDerivationError(
-                failure_class="unavailable_measurement",
-                detail="seq_length derivation requires tokenizable text samples.",
-                diagnostics={"n_samples": len(all_samples)},
-            )
-        max_tokens_with_eos = max(token_lengths) + 1
-        seq_length = (
-            (max_tokens_with_eos + _MLX_SIMD_WIDTH - 1) // _MLX_SIMD_WIDTH
-        ) * _MLX_SIMD_WIDTH
-
-        # Derive eval split (same logic as train_from_dataset)
-        if eval_path is not None:
-            train_samples = all_samples
-            eval_samples = eval_samples_early
+        if no_save:
+            output_dir = None
+        elif output_path is not None:
+            output_dir = Path(output_path).expanduser().resolve()
         else:
-            shuffled = list(all_samples)
-            random.Random(seed).shuffle(shuffled)
-            split_idx = max(1, int(len(shuffled) * 0.9))
-            train_samples = shuffled[:split_idx]
-            eval_samples = shuffled[split_idx:]
+            output_dir = (
+                model_path.parent
+                / "adapters"
+                / f"{model_path.name}-nblora-{resolved_seed}"
+            )
 
+        random.seed(resolved_seed)
+        self._backend.random_seed(resolved_seed)
+
+        logger.info("build_training_plan: loading model from %s", model_path)
+        model, tokenizer, _ = self._load_training_model(model_path)
         try:
-            # 3. Analyze geometry
+            all_samples = load_jsonl_dataset(dataset_path)
+            explicit_retention_samples: list[dict[str, Any]] | None = None
+            if retention_dataset_path is not None:
+                retention_path = Path(retention_dataset_path).expanduser().resolve()
+                explicit_retention_samples = load_jsonl_dataset(retention_path)
+
+            eval_samples_early = (
+                load_jsonl_dataset(eval_path) if eval_path is not None else None
+            )
+
+            if seq_length is None:
+                token_lengths = []
+                token_source_samples = list(all_samples)
+                if explicit_retention_samples is not None:
+                    token_source_samples.extend(explicit_retention_samples)
+                if eval_samples_early is not None:
+                    token_source_samples.extend(eval_samples_early)
+                for sample in token_source_samples:
+                    text = sample.get("text")
+                    if isinstance(text, str) and text:
+                        n_tokens = len(self._backend.encode_tokens(tokenizer, text))
+                        if n_tokens > 0:
+                            token_lengths.append(n_tokens)
+                if not token_lengths:
+                    raise TrainingDerivationError(
+                        failure_class="unavailable_measurement",
+                        detail="seq_length derivation requires tokenizable text samples.",
+                        diagnostics={"n_samples": len(all_samples)},
+                    )
+                max_tokens = max(token_lengths)
+                max_tokens_with_eos = max_tokens + 1
+                resolved_seq_length = (
+                    (max_tokens_with_eos + _MLX_SIMD_WIDTH - 1) // _MLX_SIMD_WIDTH
+                ) * _MLX_SIMD_WIDTH
+                seq_length_source = "data_derived_max_token_length"
+            else:
+                resolved_seq_length = int(seq_length)
+                seq_length_source = "user_supplied_override"
+
+            if eval_path is not None:
+                train_samples = list(all_samples)
+                eval_samples = list(eval_samples_early or [])
+                validation_split_info = {
+                    "method": "explicit_eval_dataset",
+                    "n_train": len(train_samples),
+                    "n_eval": len(eval_samples),
+                }
+            else:
+                shuffled_samples = list(all_samples)
+                random.Random(resolved_seed).shuffle(shuffled_samples)
+                split_index, validation_split_info = (
+                    self._derive_validation_split_from_pilot(
+                        model=model,
+                        tokenizer=tokenizer,
+                        samples=shuffled_samples,
+                        seq_length=resolved_seq_length,
+                    )
+                )
+                eval_samples = shuffled_samples[:split_index]
+                train_samples = shuffled_samples[split_index:]
+
+            quantization_frontier_precheck_result: dict[str, Any] | None = None
+            if quantization_reference_model_path is not None:
+                fp_reference_path = Path(
+                    quantization_reference_model_path,
+                ).expanduser().resolve()
+                if not fp_reference_path.exists():
+                    raise FileNotFoundError(
+                        "quantization_reference_model_path does not exist: "
+                        f"{fp_reference_path}",
+                    )
+                probe_texts = self._derive_probe_texts(
+                    eval_samples,
+                    tokenizer,
+                    int(resolved_seq_length),
+                )
+                quantization_frontier_precheck_result = (
+                    self._run_quantization_frontier_precheck(
+                        model=model,
+                        tokenizer=tokenizer,
+                        model_path=model_path,
+                        fp_reference_path=fp_reference_path,
+                        probe_texts=probe_texts,
+                    )
+                )
+                if not bool(
+                    quantization_frontier_precheck_result.get("valid", False),
+                ):
+                    raise TrainingDerivationError(
+                        failure_class="quantization_frontier_unavailable",
+                        detail=(
+                            "Quantization frontier precheck could not measure "
+                            "activation-aware centered-Gram diagnostics; "
+                            "training is blocked."
+                        ),
+                        diagnostics={
+                            "reference_model_path": str(fp_reference_path),
+                            "candidate_model_path": str(model_path),
+                            "failure_modes": list(
+                                quantization_frontier_precheck_result.get(
+                                    "failure_modes",
+                                    [],
+                                )
+                            ),
+                            "n_probes": int(
+                                quantization_frontier_precheck_result.get(
+                                    "n_probes",
+                                    0,
+                                )
+                            ),
+                            "raw_weyl": quantization_frontier_precheck_result.get(
+                                "raw_weyl",
+                            ),
+                        },
+                    )
+
             if hasattr(self._adapter, "analyze_model_geometry_streaming"):
                 geometries = self._adapter.analyze_model_geometry_streaming(
-                    model, use_randomized=True,
+                    model,
+                    use_randomized=True,
                 )
+                weights = {}
             else:
                 weights = self._adapter.extract_weight_matrices(model)
                 geometries = analyze_weight_geometries(weights, self._backend)
 
-            # 4. Collect base activations for signal-rank ceiling
+            opt_config = derive_optimizer_geometry_config(
+                weights,
+                self._backend,
+                geometries=geometries,
+            )
             base_activations = self._collect_probe_activations(
-                model, tokenizer, eval_samples, seq_length=seq_length,
+                model,
+                tokenizer,
+                eval_samples,
+                seq_length=resolved_seq_length,
             )
 
-            # 5. Select target modules
-            target_modules = select_target_modules(
-                geometries, include_zero_tail=True,
-            )
+            target_modules = select_target_modules(geometries, include_zero_tail=True)
+            manual_target_expert_keys = self._parse_target_expert_keys(target_experts)
+            if manual_target_expert_keys:
+                filtered = [
+                    key for key in target_modules if key in manual_target_expert_keys
+                ]
+                if not filtered:
+                    raise ValueError(
+                        "No manually targeted experts were geometrically targetable "
+                        "(tail_dims > 0).",
+                    )
+                target_modules = filtered
             if not target_modules:
-                raise ValueError(
-                    "No targetable layers found from geometric analysis"
-                )
+                raise ValueError("No targetable layers found from geometric analysis")
 
-            # 6. Compute coupled ranks
             coupled_ranks = compute_coupled_ranks(geometries, target_modules)
-
-            # 7. Apply signal-rank or data-rank ceiling
             signal_rank_results = compute_per_layer_signal_ranks(
-                base_activations, self._backend,
+                base_activations,
+                self._backend,
             )
             if signal_rank_results:
                 final_ranks = apply_signal_rank_ceiling(
-                    coupled_ranks, signal_rank_results,
+                    coupled_ranks,
+                    signal_rank_results,
                 )
                 ceiling_label = "RMT signal-rank"
             else:
                 final_ranks = apply_data_rank_ceiling(
-                    coupled_ranks, n_samples=len(train_samples),
+                    coupled_ranks,
+                    n_samples=len(train_samples),
                 )
                 ceiling_label = "data-rank (fallback)"
 
-            # 8. Extract spectral bounds
             sigma_k_min = min(
-                g.sigma_k for g in geometries.values()
-                if g.layer_key in target_modules
+                geom.sigma_k
+                for module_key, geom in geometries.items()
+                if module_key in target_modules
             )
             sigma_max = max(
-                g.sigma_max for g in geometries.values()
-                if g.layer_key in target_modules
+                geom.sigma_max
+                for module_key, geom in geometries.items()
+                if module_key in target_modules
+            )
+            estimated_trainable_params = estimate_nb_lora_parameter_count(
+                geometries,
+                final_ranks,
             )
 
-            # 9. Build geometry_info dict
-            geometry_info = {}
-            for key in target_modules:
-                g = geometries[key]
-                geometry_info[key] = {
-                    "sigma_max": g.sigma_max,
-                    "sigma_k": g.sigma_k,
-                    "effective_rank": g.effective_rank,
-                    "tail_dims": g.tail_dims,
-                    "shannon_effective_rank": g.shannon_effective_rank,
-                    "spectral_gap": g.spectral_gap,
-                    "shape": g.shape,
-                }
-
-            logger.info(
-                "derive_nb_target_surface: %d modules, ranks %s, "
-                "ceiling=%s, σ_k_min=%.4e, σ_max=%.4e",
-                len(target_modules),
-                sorted(set(final_ranks.values())),
-                ceiling_label,
-                sigma_k_min,
-                sigma_max,
-            )
-
-            return NBTargetSurface(
-                target_keys=target_modules,
-                rank_overrides=final_ranks,
+            return DerivedTrainingPlan(
+                model_path=model_path,
+                dataset_path=dataset_path,
+                eval_dataset_path=eval_path,
+                output_path=output_dir,
+                seed=resolved_seed,
+                seed_source=seed_source,
+                seq_length=resolved_seq_length,
+                seq_length_source=seq_length_source,
+                validation_split=dict(validation_split_info or {}),
+                train_samples=list(train_samples),
+                eval_samples=list(eval_samples),
+                geometries=geometries,
+                target_modules=list(target_modules),
+                rank_overrides={
+                    module: int(rank)
+                    for module, rank in sorted(final_ranks.items())
+                },
                 rank_ceiling_source=ceiling_label,
-                sigma_k_min=sigma_k_min,
-                sigma_max=sigma_max,
-                geometry_info=geometry_info,
+                signal_rank_results=signal_rank_results,
+                sigma_k_min=float(sigma_k_min),
+                sigma_max=float(sigma_max),
+                estimated_trainable_params=int(estimated_trainable_params),
+                optimizer_geometry_config=opt_config,
+                quantization_frontier_precheck=quantization_frontier_precheck_result,
+                controller_mode=controller_mode,
+                optimizer_research_mode=optimizer_research_mode,
             )
         finally:
             del model, tokenizer
@@ -644,6 +1038,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         gradient_hook: "Callable | None" = None,
         # AdamW-decoupled weight decay (research variable, default 0.0)
         weight_decay: float = 0.0,
+        plan: DerivedTrainingPlan | None = None,
     ) -> DatasetTrainResult:
         """Train an NB-LoRA adapter from a JSONL dataset.
 
@@ -656,172 +1051,113 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         init_adapter = (
             Path(init_adapter_path).expanduser().resolve() if init_adapter_path else None
         )
-        if seed is None:
-            seed = self._derive_training_seed(model_path=model_path, dataset_path=dataset_path)
-            logger.info(
-                "Training seed derived from model+dataset hashes: seed=%d",
-                seed,
+        requested_output_dir = (
+            None
+            if no_save
+            else (
+                Path(output_path).expanduser().resolve()
+                if output_path is not None
+                else None
             )
-        else:
-            logger.info("Training seed override: seed=%d", seed)
-
+        )
         controller_mode = validate_controller_mode(controller_mode)
         optimizer_research_mode = validate_optimizer_research_mode(
             optimizer_research_mode,
         )
-
-        if no_save:
-            output_dir = None
-        elif output_path is not None:
-            output_dir = Path(output_path).expanduser().resolve()
-        else:
-            # Auto-derive: <model_parent>/adapters/<model_name>-nblora-<seed>
-            # Encodes provenance (model), method (nblora), uniqueness (seed).
-            output_dir = model_path.parent / "adapters" / f"{model_path.name}-nblora-{seed}"
-            logger.info("Auto-derived output path: %s", output_dir)
 
         # Emit training started progress event
         rp = self._progress_reporter
         if rp is not None:
             rp.training_started(str(model_path), str(dataset_path))
 
-        # Deterministic training state for reproducible experiments.
-        random.seed(seed)
-        self._backend.random_seed(seed)
-        logger.info("RNG seeded: seed=%d", seed)
+        if plan is None:
+            plan = self.build_training_plan(
+                model_path=model_path,
+                dataset_path=dataset_path,
+                output_path=output_path,
+                eval_dataset_path=eval_dataset_path,
+                seq_length=seq_length,
+                seed=seed,
+                retention_dataset_path=retention_dataset_path,
+                quantization_reference_model_path=quantization_reference_model_path,
+                no_save=no_save,
+                target_experts=target_experts,
+                controller_mode=controller_mode,
+                optimizer_research_mode=optimizer_research_mode,
+            )
+        else:
+            if plan.model_path != model_path or plan.dataset_path != dataset_path:
+                raise ValueError(
+                    "Provided plan does not match the requested model_path/dataset_path.",
+                )
+            if eval_path != plan.eval_dataset_path:
+                raise ValueError(
+                    "Provided plan does not match the requested eval_dataset_path.",
+                )
+            if plan.controller_mode != controller_mode:
+                raise ValueError(
+                    "Provided plan does not match controller_mode.",
+                )
+            if plan.optimizer_research_mode != optimizer_research_mode:
+                raise ValueError(
+                    "Provided plan does not match optimizer_research_mode.",
+                )
+            if no_save and plan.output_path is not None:
+                raise ValueError("Provided plan does not match no_save=True.")
+            if not no_save:
+                if requested_output_dir is not None and plan.output_path != requested_output_dir:
+                    raise ValueError("Provided plan does not match output_path.")
+                if requested_output_dir is None:
+                    expected_output_dir = (
+                        model_path.parent / "adapters" / f"{model_path.name}-nblora-{plan.seed}"
+                    )
+                    if plan.output_path != expected_output_dir:
+                        raise ValueError(
+                            "Provided plan does not match the derived output path.",
+                        )
+
+        model_path = plan.model_path
+        dataset_path = plan.dataset_path
+        eval_path = plan.eval_dataset_path
+        output_dir = plan.output_path
+        seed = plan.seed
+        seq_length = plan.seq_length
+        validation_split_info = dict(plan.validation_split)
+        train_samples = list(plan.train_samples)
+        eval_samples = list(plan.eval_samples)
+        quantization_frontier_precheck_result = plan.quantization_frontier_precheck
+        sigma_k_min = float(plan.sigma_k_min)
+        sigma_max = float(plan.sigma_max)
+        logger.info(
+            "Training plan resolved: seed=%d, seq_length=%d, target_modules=%d, "
+            "rank_range=%s, split=%s",
+            seed,
+            seq_length,
+            len(plan.target_modules),
+            (
+                [
+                    min(plan.rank_overrides.values()),
+                    max(plan.rank_overrides.values()),
+                ]
+                if plan.rank_overrides
+                else [0, 0]
+            ),
+            validation_split_info.get("method"),
+        )
 
         # 1. Load model + tokenizer
         logger.info("Loading model from %s", model_path)
         model, tokenizer, vl_model = self._load_training_model(model_path)
+        random.seed(seed)
+        self._backend.random_seed(seed)
+        logger.info("RNG seeded for training execution: seed=%d", seed)
 
-        # 2. Load + split dataset
+        # 2. Load dataset-dependent auxiliary surfaces
         logger.info("Loading dataset from %s", dataset_path)
-        all_samples = load_jsonl_dataset(dataset_path)
         explicit_retention_samples: list[dict[str, Any]] | None = None
         if retention_dataset_path is not None:
             retention_path = Path(retention_dataset_path).expanduser().resolve()
             explicit_retention_samples = load_jsonl_dataset(retention_path)
-
-        # Load eval data early so seq_length derivation covers ALL splits.
-        # Without this, eval samples longer than train max get truncated silently.
-        eval_samples_early: list[dict[str, Any]] | None = None
-        if eval_path is not None:
-            eval_samples_early = load_jsonl_dataset(eval_path)
-
-        # Derive seq_length from data: max token length rounded up to SIMD width.
-        # Max preserves ALL training signal — zero truncation by construction.
-        if seq_length is None:
-            token_lengths = []
-            token_source_samples = list(all_samples)
-            if explicit_retention_samples is not None:
-                token_source_samples.extend(explicit_retention_samples)
-            if eval_samples_early is not None:
-                token_source_samples.extend(eval_samples_early)
-            for s in token_source_samples:
-                text = s.get("text")
-                if isinstance(text, str) and text:
-                    n = len(self._backend.encode_tokens(tokenizer, text))
-                    if n > 0:
-                        token_lengths.append(n)
-            if not token_lengths:
-                raise TrainingDerivationError(
-                    failure_class="unavailable_measurement",
-                    detail="seq_length derivation requires tokenizable text samples.",
-                    diagnostics={"n_samples": len(all_samples)},
-                )
-            max_tokens = max(token_lengths)
-            # +1 for EOS token appended by prepare_dataset() after tokenization.
-            max_tokens_with_eos = max_tokens + 1
-            # Round up to SIMD width boundary for Metal kernel alignment.
-            seq_length = (
-                (max_tokens_with_eos + _MLX_SIMD_WIDTH - 1) // _MLX_SIMD_WIDTH
-            ) * _MLX_SIMD_WIDTH
-            logger.info(
-                "Derived seq_length=%d from data (max_tokens=%d, +1 EOS=%d, n_primary=%d, "
-                "n_retention=%d, n_eval=%d, SIMD_width=%d)",
-                seq_length,
-                max_tokens,
-                max_tokens_with_eos,
-                len(all_samples),
-                len(explicit_retention_samples) if explicit_retention_samples is not None else 0,
-                len(eval_samples_early) if eval_samples_early is not None else 0,
-                _MLX_SIMD_WIDTH,
-            )
-
-        validation_split_info: dict[str, Any] | None = None
-        if eval_path is not None:
-            train_samples = all_samples
-            eval_samples = eval_samples_early  # already loaded above
-            logger.info(
-                "Using explicit eval split: %d train / %d eval",
-                len(train_samples), len(eval_samples),
-            )
-            validation_split_info = {
-                "method": "explicit_eval_dataset",
-                "n_train": len(train_samples),
-                "n_eval": len(eval_samples),
-            }
-        else:
-            shuffled_samples = list(all_samples)
-            random.Random(seed).shuffle(shuffled_samples)
-            split_index, validation_split_info = self._derive_validation_split_from_pilot(
-                model=model,
-                tokenizer=tokenizer,
-                samples=shuffled_samples,
-                seq_length=seq_length,
-            )
-            eval_samples = shuffled_samples[:split_index]
-            train_samples = shuffled_samples[split_index:]
-            logger.info(
-                "Using derived split from pilot loss variance: %d train / %d eval",
-                len(train_samples), len(eval_samples),
-            )
-
-        quantization_frontier_precheck_result: dict[str, Any] | None = None
-        if quantization_reference_model_path is not None:
-            fp_reference_path = Path(quantization_reference_model_path).expanduser().resolve()
-            if not fp_reference_path.exists():
-                raise FileNotFoundError(
-                    f"quantization_reference_model_path does not exist: {fp_reference_path}",
-                )
-            probe_texts = self._derive_probe_texts(eval_samples, tokenizer, int(seq_length))
-            quantization_frontier_precheck_result = self._run_quantization_frontier_precheck(
-                model=model,
-                tokenizer=tokenizer,
-                model_path=model_path,
-                fp_reference_path=fp_reference_path,
-                probe_texts=probe_texts,
-            )
-            logger.info(
-                "Quantization frontier precheck: valid=%s, probes=%d, layers=%d, raw_weyl_max=%.6f",
-                bool(quantization_frontier_precheck_result.get("valid", False)),
-                int(quantization_frontier_precheck_result.get("n_probes", 0)),
-                int(quantization_frontier_precheck_result.get("n_layers", 0)),
-                float(
-                    (
-                        quantization_frontier_precheck_result.get("raw_weyl") or {}
-                    ).get("max_error_over_gap_half", 0.0)
-                ),
-            )
-            if not bool(quantization_frontier_precheck_result.get("valid", False)):
-                raise TrainingDerivationError(
-                    failure_class="quantization_frontier_unavailable",
-                    detail=(
-                        "Quantization frontier precheck could not measure activation-aware "
-                        "centered-Gram diagnostics; training is blocked."
-                    ),
-                    diagnostics={
-                        "reference_model_path": str(fp_reference_path),
-                        "candidate_model_path": str(model_path),
-                        "failure_modes": list(
-                            quantization_frontier_precheck_result.get("failure_modes", [])
-                        ),
-                        "n_probes": int(
-                            quantization_frontier_precheck_result.get("n_probes", 0)
-                        ),
-                        "raw_weyl": quantization_frontier_precheck_result.get("raw_weyl"),
-                    },
-                )
 
         if init_adapter is not None:
             if not hasattr(self._adapter, "apply_standard_lora_adapter"):
@@ -1028,30 +1364,15 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         if rp is not None:
             rp.training_geometry_started()
 
-        # Use streaming analysis when available — processes one layer at a
-        # time, releasing weights immediately.  Falls back to batch analysis
-        # for adapters that don't implement the streaming method.
-        if hasattr(self._adapter, "analyze_model_geometry_streaming"):
-            geometries = self._adapter.analyze_model_geometry_streaming(
-                model, use_randomized=True,
-            )
-            weights = {}  # not needed — optimizer config uses precomputed geometries
-        else:
-            weights = self._adapter.extract_weight_matrices(model)
-            geometries = analyze_weight_geometries(weights, self._backend)
-
-        # 4.5. Derive optimizer geometry config (ScaledGD epsilon, decay per layer)
-        opt_config = derive_optimizer_geometry_config(
-            weights,
-            self._backend,
-            geometries=geometries,
-        )
+        geometries = plan.geometries
+        opt_config = plan.optimizer_geometry_config
         logger.info(
             "Geometric optimizer config: %d layers, base_lr=%.2e",
             opt_config.n_layers, opt_config.base_lr,
         )
 
-        # 4.6. Collect base model activations for CKA verification (before injection)
+        # 4.6. Collect base model activations for verification only.
+        # The target surface and ranks are already fixed by the shared plan.
         base_activations = self._collect_probe_activations(
             model, tokenizer, eval_samples, seq_length=seq_length,
         )
@@ -1136,49 +1457,14 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                     sorted(constraint_state.frozen),
                 )
 
-        # 5. Select targets: layers with null-space (tail_dims > 0) PLUS
-        # full-rank layers with positive spectral gap (rank-1 adaptation).
-        target_modules = select_target_modules(geometries, include_zero_tail=True)
+        target_modules = list(plan.target_modules)
         moe_topology = self._load_moe_topology(model_path)
-        manual_target_expert_keys = self._parse_target_expert_keys(target_experts)
-        if manual_target_expert_keys:
-            filtered = [key for key in target_modules if key in manual_target_expert_keys]
-            if not filtered:
-                raise ValueError(
-                    "No manually targeted experts were geometrically targetable "
-                    "(tail_dims > 0).",
-                )
-            target_modules = filtered
-            logger.info(
-                "Manual MoE expert targeting applied: %d target modules "
-                "(requested=%d)",
-                len(target_modules),
-                len(manual_target_expert_keys),
-            )
         if not target_modules:
             raise ValueError("No targetable layers found from geometric analysis")
 
-        # 5.5. Cross-projection rank coupling (geometry-derived)
-        # Caps q_proj rank at k_proj tail_dims per attention layer.
-        # Prevents query-space overshoot beyond key discriminability.
-        coupled_ranks = compute_coupled_ranks(geometries, target_modules)
-
-        # 5.6. Signal-rank ceiling via RMT Marchenko-Pastur separation.
-        # Caps ranks at the intrinsic signal dimensionality of the training
-        # data's activation space (typically 10–50, not tail_dims ~959).
-        # Uses base_activations already collected for CKA (zero extra passes).
-        signal_rank_results = compute_per_layer_signal_ranks(
-            base_activations, self._backend,
-        )
-        if signal_rank_results:
-            final_ranks = apply_signal_rank_ceiling(coupled_ranks, signal_rank_results)
-            ceiling_label = "RMT signal-rank"
-        else:
-            # Fallback: data-rank ceiling if signal rank computation returned empty
-            final_ranks = apply_data_rank_ceiling(
-                coupled_ranks, n_samples=len(train_dataset),
-            )
-            ceiling_label = "data-rank (fallback)"
+        final_ranks = dict(plan.rank_overrides)
+        signal_rank_results = dict(plan.signal_rank_results)
+        ceiling_label = plan.rank_ceiling_source
 
         moe_targets = self._build_moe_target_selection(
             target_modules=target_modules,
@@ -1188,22 +1474,14 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             num_layers=self._backend.get_num_layers(model),
         )
 
-        uncapped_params = estimate_nb_lora_parameter_count(geometries, coupled_ranks)
-        capped_params = estimate_nb_lora_parameter_count(geometries, final_ranks)
-        n_rank_capped = sum(
-            1 for key, rank in coupled_ranks.items()
-            if final_ranks.get(key, rank) < rank
+        logger.info(
+            "Resolved target surface from shared plan: %d modules, ranks=%s, "
+            "ceiling=%s, params~%d",
+            len(target_modules),
+            sorted(set(final_ranks.values())),
+            ceiling_label,
+            plan.estimated_trainable_params,
         )
-        if n_rank_capped > 0 and uncapped_params > 0:
-            logger.info(
-                "%s ceiling applied: %d layers capped, "
-                "params %d -> %d (%.2fx reduction)",
-                ceiling_label,
-                n_rank_capped,
-                uncapped_params,
-                capped_params,
-                uncapped_params / max(capped_params, 1),
-            )
 
         # 5.9. Pre-training routing snapshot (MoE only).
         # Collect routing decisions BEFORE LoRA injection so the post-training
@@ -1342,6 +1620,9 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 n_target_modules=len(target_modules),
                 n_trainable_params=n_trainable_params,
                 batch_size=batch_size,
+                rank_min=min(final_ranks.values()) if final_ranks else 0,
+                rank_max=max(final_ranks.values()) if final_ranks else 0,
+                split_method=str(validation_split_info.get("method", "unknown")),
             )
 
         derived_max_iters_cap = self._derive_training_safety_cap(
@@ -1361,22 +1642,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             max_iters_cap is not None,
         )
 
-        # 8. MASS: sigma_max and sigma_k_min for spectral ceiling (Weyl 1912)
-        # sigma_k_min computed ONLY over modules with tail_dims > 0 (structural
-        # spectral gaps that the Weyl displacement bound protects). Full-rank
-        # modules (tail_dims = 0) have no gap → should not constrain the ceiling.
-        sigma_max = max(g.sigma_max for g in geometries.values() if g.sigma_max > 0)
-        sigma_k_vals = [
-            g.sigma_k for g in geometries.values()
-            if g.sigma_k > 0 and g.tail_dims > 0
-        ]
-        if not sigma_k_vals:
-            raise TrainingDerivationError(
-                failure_class="insufficient_adapter_geometry",
-                detail="No positive sigma_k found across adapted layers with tail_dims > 0.",
-                diagnostics={"n_geometries": len(geometries)},
-            )
-        sigma_k_min = min(sigma_k_vals)
+        # 8. MASS: reuse the canonical spectral ceilings from the shared plan.
         logger.info(
             "MASS geometry: sigma_max=%.4e, sigma_k_min=%.4e, ceiling=%.4e",
             sigma_max, sigma_k_min, sigma_k_min / sigma_max,
@@ -1676,7 +1942,16 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
 
         # 11. Verify bounds (should always pass — by construction)
         if rp is not None:
-            rp.training_verification_started()
+            rp.training_verification_started(
+                gates=[
+                    "spectral_bounds_ok",
+                    "min_cka",
+                    "mean_cka",
+                    "degeneration_max_ngram_repeat",
+                    "mode_connectivity_barrier",
+                    "pipeline_gate_passed",
+                ],
+            )
         logger.info("Verifying spectral bounds...")
         spectral_bounds_ok, max_spectral_ratio, _ = self._adapter.verify_bounds(model)
         logger.info("Spectral bounds verified: ok=%s, max_ratio=%.4f", spectral_bounds_ok, max_spectral_ratio)
@@ -1747,6 +2022,14 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 spectral_bounds_ok=spectral_bounds_ok,
                 min_cka=min_cka,
                 mean_cka=mean_cka,
+                gates=[
+                    "spectral_bounds_ok",
+                    "min_cka",
+                    "mean_cka",
+                    "degeneration_max_ngram_repeat",
+                    "mode_connectivity_barrier",
+                    "pipeline_gate_passed",
+                ],
             )
 
         # Extract adapter saturation ratio from last epoch metrics
@@ -1951,6 +2234,10 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 rank_overrides=final_ranks,
                 rank_ceiling_source=ceiling_label,
             )
+            self._write_training_plan(
+                adapter_dir=saved_path,
+                derived_plan=plan.to_dict(),
+            )
             saved_adapter_path = str(saved_path)
 
         moe_saturated_during_training: list[str] | None = None
@@ -2091,6 +2378,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             optimizer_research_mode=optimizer_research_mode,
             controller_trace=controller_trace_payload,
             offline_replay=offline_replay,
+            derived_plan=plan.to_dict(),
         )
 
-__all__ = ["DatasetTrainResult", "DatasetTrainingService"]
+__all__ = ["DatasetTrainResult", "DatasetTrainingService", "DerivedTrainingPlan"]
