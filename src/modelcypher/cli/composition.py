@@ -455,6 +455,31 @@ def get_merge_service():
     )
 
 
+def get_data_preparation_service():
+    """Get DataPreparationService for data ingestion and conversion."""
+    from modelcypher.core.use_cases.data_preparation_service import DataPreparationService
+
+    return DataPreparationService()
+
+
+def get_standalone_evaluation_service():
+    """Get StandaloneEvaluationService for post-training evaluation."""
+    from modelcypher.core.use_cases.standalone_evaluation_service import (
+        StandaloneEvaluationService,
+    )
+
+    return StandaloneEvaluationService(backend=_get_registry().backend)
+
+
+def get_training_comparison_service():
+    """Get TrainingComparisonService for side-by-side run comparison."""
+    from modelcypher.core.use_cases.training_comparison_service import (
+        TrainingComparisonService,
+    )
+
+    return TrainingComparisonService()
+
+
 def get_geodesic_trajectory_service():
     """Get GeodesicTrajectoryService for CoT geodesic measurement.
 

@@ -31,7 +31,7 @@ import typer
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.exit_codes import EXIT_INPUT, EXIT_RUNTIME
-from modelcypher.cli.output import write_error, write_output
+from modelcypher.cli.output import write_agent_output, write_error, write_output
 from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 from modelcypher.utils.errors import ErrorDetail
 
@@ -278,10 +278,43 @@ def train_run(
         _write_training_derivation_error(exc, context)
 
     payload = result.to_dict()
-    if context.output_format == "text":
-        write_output(_format_training_result_text(payload), context.output_format, context.pretty)
-        return
-    write_output(payload, context.output_format, context.pretty)
+
+    # Wrap in AgentEnvelope for structured agent-readable output
+    from modelcypher.core.domain.agent_protocol import (
+        AgentEnvelope,
+        make_metadata,
+    )
+    from modelcypher.core.domain.training.diagnostics import (
+        diagnose_training_result,
+    )
+
+    diagnostics = diagnose_training_result(
+        payload,
+        model_path=str(model_path),
+        adapter_path=result.adapter_path,
+    )
+    gate_passed = result.pipeline_gate_passed
+    status = "success" if gate_passed is not False else "partial"
+    envelope = AgentEnvelope(
+        command="mc train run",
+        status=status,
+        result=payload,
+        diagnostics=diagnostics,
+        metadata=make_metadata(
+            model=str(model_path),
+            adapter_path=result.adapter_path,
+            duration_seconds=result.training_time_seconds,
+            seed=seed,
+        ),
+    )
+
+    if context.ai_mode or context.output_format != "text":
+        write_agent_output(envelope, context.output_format, context.pretty)
+    else:
+        text_result = _format_training_result_text(payload)
+        write_agent_output(
+            envelope, context.output_format, context.pretty, text_result=text_result,
+        )
 
 
 @train_app.command("validate-derived")
@@ -688,3 +721,180 @@ def train_export(
     }
 
     write_output(result, context.output_format, context.pretty)
+
+
+@train_app.command("evaluate")
+def train_evaluate(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", "-m", help="Path to model directory"),
+    adapter: str = typer.Option(
+        None, "--adapter", "-a", help="Path to LoRA adapter directory"
+    ),
+    prompts: str = typer.Option(
+        None,
+        "--prompts",
+        help='JSONL with {"prompt": "...", "reference": "..."} for inference comparison',
+    ),
+    data: str = typer.Option(
+        None, "--data", "-d", help="JSONL dataset for loss/perplexity evaluation"
+    ),
+    benchmark: str = typer.Option(
+        None,
+        "--benchmark",
+        help="lm-eval benchmark suite (quick, reasoning, factual, comprehensive)",
+    ),
+    max_tokens: int = typer.Option(
+        256, "--max-tokens", help="Max tokens for inference generation"
+    ),
+) -> None:
+    """Evaluate a trained adapter against base model.
+
+    Three evaluation modes (specify exactly one):
+      --prompts: Inference comparison — generate with base vs adapted, compare per-prompt
+      --data: Loss evaluation — compute loss/perplexity on a dataset
+      --benchmark: Benchmark suite — run lm-eval pre/post
+
+    Output fields (when --json):
+        mode: Evaluation mode used
+        overall_verdict: "improved", "degraded", "neutral", or "degenerated"
+        n_prompts: Number of prompts evaluated (inference mode)
+        n_improved/n_degraded/n_degenerated: Per-prompt counts (inference mode)
+        base_loss/adapted_loss: Loss values (loss mode)
+        benchmark_results: Benchmark scores (benchmark mode)
+
+    Examples:
+        mc train evaluate -m /path/to/model -a /path/to/adapter --prompts eval.jsonl
+        mc train evaluate -m /path/to/model -a /path/to/adapter -d val.jsonl
+        mc train evaluate -m /path/to/model --benchmark quick
+    """
+    context = _context(ctx)
+    model_path = Path(model)
+    _validate_model_path(model_path, context)
+
+    n_modes = sum(1 for x in [prompts, data, benchmark] if x is not None)
+    if n_modes != 1:
+        error = ErrorDetail(
+            code="MC-2015",
+            title="Invalid evaluation mode",
+            detail="Specify exactly one of --prompts, --data, or --benchmark",
+            hint="Use --prompts for inference, --data for loss, or --benchmark for lm-eval",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_INPUT)
+        raise typer.Exit(code=EXIT_INPUT)
+
+    from modelcypher.cli.composition import get_backend
+    from modelcypher.core.use_cases.standalone_evaluation_service import (
+        StandaloneEvaluationService,
+    )
+
+    service = StandaloneEvaluationService(backend=get_backend())
+
+    try:
+        result = service.evaluate(
+            model_path=model_path,
+            adapter_path=Path(adapter) if adapter else None,
+            prompts_path=Path(prompts) if prompts else None,
+            data_path=Path(data) if data else None,
+            benchmark_suite=benchmark,
+            max_tokens=max_tokens,
+        )
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-2016",
+            title="Evaluation failed",
+            detail=str(exc),
+            hint="Check model path, adapter path, and evaluation data",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
+
+    envelope = service.make_envelope(result)
+    write_agent_output(envelope, context.output_format, context.pretty)
+
+
+@train_app.command("compare")
+def train_compare(
+    ctx: typer.Context,
+    model: str = typer.Option(
+        None, "--model", "-m", help="Path to model (required for adapter comparison)"
+    ),
+    adapter_a: str = typer.Option(
+        None, "--adapter-a", help="First adapter path"
+    ),
+    adapter_b: str = typer.Option(
+        None, "--adapter-b", help="Second adapter path"
+    ),
+    result_a: str = typer.Option(
+        None, "--result-a", help="First training result JSON path"
+    ),
+    result_b: str = typer.Option(
+        None, "--result-b", help="Second training result JSON path"
+    ),
+    data: str = typer.Option(
+        None, "--data", "-d", help="JSONL dataset for adapter comparison"
+    ),
+) -> None:
+    """Compare two training runs or adapters side-by-side.
+
+    Two comparison modes:
+      --result-a/--result-b: Compare saved training result JSON files
+      --adapter-a/--adapter-b with --model: Evaluate both adapters and compare
+
+    Output fields (when --json):
+        label_a/label_b: Labels for each run
+        metrics: Per-metric comparison with delta and winner
+        winner: Overall winner ("a", "b", or null if inconclusive)
+        winner_reason: Explanation of winner determination
+
+    Examples:
+        mc train compare --result-a run1.json --result-b run2.json
+        mc train compare -m /path/to/model --adapter-a /a1 --adapter-b /a2 -d val.jsonl
+    """
+    context = _context(ctx)
+
+    from modelcypher.core.use_cases.training_comparison_service import (
+        TrainingComparisonService,
+    )
+
+    service = TrainingComparisonService()
+
+    try:
+        if result_a and result_b:
+            result = service.compare_results(
+                Path(result_a), Path(result_b),
+            )
+        elif adapter_a and adapter_b and model:
+            from modelcypher.cli.composition import get_backend
+
+            result = service.compare_adapters(
+                model_path=Path(model),
+                adapter_a_path=Path(adapter_a),
+                adapter_b_path=Path(adapter_b),
+                data_path=Path(data) if data else None,
+                backend=get_backend(),
+            )
+        else:
+            error = ErrorDetail(
+                code="MC-2017",
+                title="Invalid comparison mode",
+                detail="Provide either --result-a/--result-b or --model/--adapter-a/--adapter-b",
+                hint="Compare result files: --result-a r1.json --result-b r2.json",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_INPUT)
+            raise typer.Exit(code=EXIT_INPUT)
+    except Exception as exc:
+        error = ErrorDetail(
+            code="MC-2018",
+            title="Comparison failed",
+            detail=str(exc),
+            hint="Check file paths and data format",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
+
+    envelope = service.make_envelope(result)
+    write_agent_output(envelope, context.output_format, context.pretty)

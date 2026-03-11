@@ -18,9 +18,12 @@
 from __future__ import annotations
 
 import sys
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.utils.json import dump_json
+
+if TYPE_CHECKING:
+    from modelcypher.core.domain.agent_protocol import AgentEnvelope
 
 
 def write_output(
@@ -49,6 +52,42 @@ def write_output(
     else:
         sys.stdout.write(dump_json(data, pretty=pretty))
     sys.stdout.write("\n")
+
+
+def write_agent_output(
+    envelope: "AgentEnvelope",
+    output_format: str = "json",
+    pretty: bool = False,
+    text_result: str | None = None,
+) -> None:
+    """Write an AgentEnvelope to stdout.
+
+    In JSON/YAML mode, writes the full envelope structure.
+    In text mode, writes ``text_result`` (if provided) followed by a
+    diagnostics summary section.
+    """
+    if output_format == "text":
+        parts: list[str] = []
+        if text_result:
+            parts.append(text_result)
+        diag = envelope.diagnostics
+        parts.append("")
+        parts.append(f"Summary: {diag.summary}")
+        if diag.observations:
+            parts.append("")
+            for obs in diag.observations:
+                parts.append(f"  - {obs}")
+        if diag.recommendations:
+            parts.append("")
+            parts.append("Next steps:")
+            for rec in diag.recommendations:
+                line = f"  [{rec.action}] {rec.reason}"
+                if rec.command:
+                    line += f"\n    $ {rec.command}"
+                parts.append(line)
+        write_output("\n".join(parts), output_format, pretty)
+    else:
+        write_output(envelope.to_dict(), output_format, pretty)
 
 
 def write_error(
