@@ -1150,7 +1150,7 @@ def calibrate_geometric_weights(
 def compute_token_weighted_val_loss(
     model,
     eval_dataset: list,
-    batch_size: int,
+    eval_batch_size: int,
     seq_length: int,
     base_token_losses: list[Any],
     tokenizer=None,
@@ -1175,7 +1175,8 @@ def compute_token_weighted_val_loss(
     Args:
         model: Current (adapted) model.
         eval_dataset: Evaluation batches.
-        batch_size: Batch size for evaluation.
+        eval_batch_size: Evaluation batch size. Must match the batching used
+            to collect ``base_token_losses``.
         seq_length: Sequence length.
         base_token_losses: Pre-computed per-token CE losses from the base
             model (before training). List of mx arrays, one per eval batch.
@@ -1187,38 +1188,137 @@ def compute_token_weighted_val_loss(
         return None
 
     try:
+        from mlx_lm.tuner.trainer import iterate_batches
+
+        is_vl = (
+            isinstance(eval_dataset, list)
+            and len(eval_dataset) > 0
+            and isinstance(eval_dataset[0], dict)
+            and "tokens" in eval_dataset[0]
+            and "pixel_values" in eval_dataset[0]
+        )
+        image_token_id = eval_dataset[0].get("image_token_id") if is_vl else None
+        video_token_id = eval_dataset[0].get("video_token_id") if is_vl else None
+        batch_iter = (
+            iterate_vl_batches(eval_dataset, eval_batch_size, seq_length, loop=False)
+            if is_vl
+            else iterate_batches(eval_dataset, eval_batch_size, seq_length, loop=False)
+        )
         total_weighted_loss = mx.array(0.0, dtype=mx.float32)
         total_weight = mx.array(0.0, dtype=mx.float32)
 
-        for batch_idx, batch_data in enumerate(eval_dataset):
+        for batch_idx, batch_data in enumerate(batch_iter):
             if batch_idx >= len(base_token_losses):
                 break
 
-            batch = batch_data[0] if isinstance(batch_data, (tuple, list)) else batch_data
-            if not hasattr(batch, 'shape') or len(batch.shape) < 2:
+            base_losses = base_token_losses[batch_idx]
+            if base_losses is None:
                 continue
 
-            inputs = batch[:, :-1]
-            targets = batch[:, 1:]
-
-            logits = model(inputs)
-            per_token_ce = nn.losses.cross_entropy(logits, targets)
-
-            # Base model self-information as weights
-            base_losses = base_token_losses[batch_idx]
-            # Clamp weights to avoid extreme values; use sqrt to moderate
-            weights = mx.sqrt(mx.maximum(base_losses, mx.array(0.0)))
-
-            # Apply length mask if available
-            if isinstance(batch_data, (tuple, list)) and len(batch_data) > 1:
-                lengths = batch_data[1]
+            if is_vl:
+                batch, lengths, pixel_values_batch, position_ids_batch = batch_data
+                inputs = batch[:, :-1]
+                targets = batch[:, 1:]
                 steps = mx.arange(1, targets.shape[1] + 1)
                 mask = mx.logical_and(
                     steps >= lengths[:, 0:1], steps <= lengths[:, 1:],
                 ).astype(mx.float32)
-                weights = weights * mask
+                if image_token_id is not None:
+                    mask = mask * (targets != image_token_id).astype(mx.float32)
+                if video_token_id is not None:
+                    mask = mask * (targets != video_token_id).astype(mx.float32)
 
-            # Weighted sum
+                batch_ce_rows: list[Any] = []
+                text_model = getattr(model, "language_model", None)
+                text_backbone = getattr(text_model, "model", text_model)
+                embed_tokens = getattr(text_backbone, "embed_tokens", None)
+
+                for i in range(inputs.shape[0]):
+                    sample_inputs = inputs[i : i + 1]
+                    sample_targets = targets[i : i + 1]
+                    sample_mask = mask[i : i + 1]
+                    pixel_values = (
+                        pixel_values_batch[i] if i < len(pixel_values_batch) else None
+                    )
+                    position_ids = (
+                        position_ids_batch[i] if i < len(position_ids_batch) else None
+                    )
+
+                    if (
+                        pixel_values is not None
+                        and position_ids is not None
+                        and hasattr(model, "visual")
+                    ):
+                        if embed_tokens is None:
+                            raise RuntimeError(
+                                "VL token-weighted loss requires model.language_model.model.embed_tokens."
+                            )
+                        if image_token_id is None:
+                            raise RuntimeError(
+                                "VL token-weighted loss requires image_token_id for embedding replacement."
+                            )
+
+                        token_embeds = embed_tokens(sample_inputs)
+                        visual_embeds = model.visual(
+                            pixel_values, position_ids,
+                        ).astype(token_embeds.dtype)
+                        placeholder_positions = [
+                            j
+                            for j, tid in enumerate(sample_inputs[0].tolist())
+                            if tid == image_token_id
+                        ]
+                        if len(placeholder_positions) != int(visual_embeds.shape[0]):
+                            raise RuntimeError(
+                                "Image placeholder count does not match visual token count: "
+                                f"{len(placeholder_positions)} vs {int(visual_embeds.shape[0])}."
+                            )
+
+                        if placeholder_positions:
+                            parts = []
+                            start = 0
+                            for k, pos in enumerate(placeholder_positions):
+                                if pos > start:
+                                    parts.append(token_embeds[:, start:pos, :])
+                                vis_k = mx.expand_dims(
+                                    mx.expand_dims(visual_embeds[k], axis=0),
+                                    axis=0,
+                                )
+                                parts.append(vis_k)
+                                start = pos + 1
+                            if start < token_embeds.shape[1]:
+                                parts.append(token_embeds[:, start:, :])
+                            input_embeddings = mx.concatenate(parts, axis=1)
+                        else:
+                            input_embeddings = token_embeds
+
+                        logits = model(sample_inputs, input_embeddings=input_embeddings)
+                    else:
+                        logits = model(sample_inputs)
+
+                    batch_ce_rows.append(
+                        (
+                            nn.losses.cross_entropy(logits, sample_targets)
+                            * sample_mask
+                        ).astype(mx.float32),
+                    )
+
+                if not batch_ce_rows:
+                    continue
+                per_token_ce = mx.concatenate(batch_ce_rows, axis=0)
+            else:
+                batch, lengths = batch_data
+                inputs = batch[:, :-1]
+                targets = batch[:, 1:]
+                logits = model(inputs)
+                per_token_ce = nn.losses.cross_entropy(logits, targets)
+                steps = mx.arange(1, targets.shape[1] + 1)
+                mask = mx.logical_and(
+                    steps >= lengths[:, 0:1], steps <= lengths[:, 1:],
+                ).astype(mx.float32)
+                per_token_ce = per_token_ce.astype(mx.float32) * mask
+
+            weights = mx.maximum(base_losses.astype(mx.float32), mx.array(0.0, dtype=mx.float32))
+
             weighted = (per_token_ce * weights).sum()
             w_sum = weights.sum()
             total_weighted_loss = total_weighted_loss + weighted
@@ -1237,6 +1337,8 @@ def compute_token_weighted_val_loss(
 def collect_base_token_losses(
     model,
     eval_dataset: list,
+    eval_batch_size: int,
+    seq_length: int,
 ) -> list[Any]:
     """Collect per-token CE losses from the base model before training.
 
@@ -1247,27 +1349,144 @@ def collect_base_token_losses(
     Must be called BEFORE training modifies the model's weights.
 
     Args:
-        model: Base model (before NB-LoRA injection or with identity adapter).
-        eval_dataset: Evaluation batches (same format as training batches).
+        model: Base-equivalent model state before any training step. PiSSA
+            reconstructs the original weight exactly at scale=1.0; NB-LoRA
+            starts at identity.
+        eval_dataset: Evaluation samples in canonical adapter format.
+        eval_batch_size: Evaluation batch size. Must match the later
+            token-weighted validation pass.
+        seq_length: Sequence length used for evaluation batching.
 
     Returns:
         List of per-token loss arrays (one per batch), detached from graph.
     """
+    from mlx_lm.tuner.trainer import iterate_batches
+
     base_losses: list[Any] = []
-    for batch_data in eval_dataset:
+    if not eval_dataset:
+        return base_losses
+
+    is_vl = (
+        isinstance(eval_dataset, list)
+        and len(eval_dataset) > 0
+        and isinstance(eval_dataset[0], dict)
+        and "tokens" in eval_dataset[0]
+        and "pixel_values" in eval_dataset[0]
+    )
+    image_token_id = eval_dataset[0].get("image_token_id") if is_vl else None
+    video_token_id = eval_dataset[0].get("video_token_id") if is_vl else None
+    batch_iter = (
+        iterate_vl_batches(eval_dataset, eval_batch_size, seq_length, loop=False)
+        if is_vl
+        else iterate_batches(eval_dataset, eval_batch_size, seq_length, loop=False)
+    )
+
+    for batch_data in batch_iter:
         try:
-            batch = batch_data[0] if isinstance(batch_data, (tuple, list)) else batch_data
-            if not hasattr(batch, 'shape') or len(batch.shape) < 2:
-                base_losses.append(None)
-                continue
+            if is_vl:
+                batch, lengths, pixel_values_batch, position_ids_batch = batch_data
+                inputs = batch[:, :-1]
+                targets = batch[:, 1:]
+                steps = mx.arange(1, targets.shape[1] + 1)
+                mask = mx.logical_and(
+                    steps >= lengths[:, 0:1], steps <= lengths[:, 1:],
+                ).astype(mx.float32)
+                if image_token_id is not None:
+                    mask = mask * (targets != image_token_id).astype(mx.float32)
+                if video_token_id is not None:
+                    mask = mask * (targets != video_token_id).astype(mx.float32)
 
-            inputs = batch[:, :-1]
-            targets = batch[:, 1:]
+                batch_ce_rows: list[Any] = []
+                text_model = getattr(model, "language_model", None)
+                text_backbone = getattr(text_model, "model", text_model)
+                embed_tokens = getattr(text_backbone, "embed_tokens", None)
 
-            logits = model(inputs)
-            per_token_ce = nn.losses.cross_entropy(logits, targets)
+                for i in range(inputs.shape[0]):
+                    sample_inputs = inputs[i : i + 1]
+                    sample_targets = targets[i : i + 1]
+                    sample_mask = mask[i : i + 1]
+                    pixel_values = (
+                        pixel_values_batch[i] if i < len(pixel_values_batch) else None
+                    )
+                    position_ids = (
+                        position_ids_batch[i] if i < len(position_ids_batch) else None
+                    )
+
+                    if (
+                        pixel_values is not None
+                        and position_ids is not None
+                        and hasattr(model, "visual")
+                    ):
+                        if embed_tokens is None:
+                            raise RuntimeError(
+                                "VL token-weighted loss requires model.language_model.model.embed_tokens."
+                            )
+                        if image_token_id is None:
+                            raise RuntimeError(
+                                "VL token-weighted loss requires image_token_id for embedding replacement."
+                            )
+
+                        token_embeds = embed_tokens(sample_inputs)
+                        visual_embeds = model.visual(
+                            pixel_values, position_ids,
+                        ).astype(token_embeds.dtype)
+                        placeholder_positions = [
+                            j
+                            for j, tid in enumerate(sample_inputs[0].tolist())
+                            if tid == image_token_id
+                        ]
+                        if len(placeholder_positions) != int(visual_embeds.shape[0]):
+                            raise RuntimeError(
+                                "Image placeholder count does not match visual token count: "
+                                f"{len(placeholder_positions)} vs {int(visual_embeds.shape[0])}."
+                            )
+
+                        if placeholder_positions:
+                            parts = []
+                            start = 0
+                            for k, pos in enumerate(placeholder_positions):
+                                if pos > start:
+                                    parts.append(token_embeds[:, start:pos, :])
+                                vis_k = mx.expand_dims(
+                                    mx.expand_dims(visual_embeds[k], axis=0),
+                                    axis=0,
+                                )
+                                parts.append(vis_k)
+                                start = pos + 1
+                            if start < token_embeds.shape[1]:
+                                parts.append(token_embeds[:, start:, :])
+                            input_embeddings = mx.concatenate(parts, axis=1)
+                        else:
+                            input_embeddings = token_embeds
+
+                        logits = model(sample_inputs, input_embeddings=input_embeddings)
+                    else:
+                        logits = model(sample_inputs)
+
+                    batch_ce_rows.append(
+                        (
+                            nn.losses.cross_entropy(logits, sample_targets)
+                            * sample_mask
+                        ).astype(mx.float32),
+                    )
+
+                if not batch_ce_rows:
+                    base_losses.append(None)
+                    continue
+                per_token_ce = mx.concatenate(batch_ce_rows, axis=0)
+            else:
+                batch, lengths = batch_data
+                inputs = batch[:, :-1]
+                targets = batch[:, 1:]
+                logits = model(inputs)
+                per_token_ce = nn.losses.cross_entropy(logits, targets)
+                steps = mx.arange(1, targets.shape[1] + 1)
+                mask = mx.logical_and(
+                    steps >= lengths[:, 0:1], steps <= lengths[:, 1:],
+                ).astype(mx.float32)
+                per_token_ce = per_token_ce.astype(mx.float32) * mask
+
             mx.eval(per_token_ce)
-            # Detach from computation graph
             base_losses.append(mx.stop_gradient(per_token_ce))
         except Exception:
             base_losses.append(None)

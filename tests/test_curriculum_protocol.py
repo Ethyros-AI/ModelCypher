@@ -372,9 +372,9 @@ class TestValidation:
             skills=skills,
             training_data=(
                 TrainingDataSpec(skill_name="orphan", filename="o_train.jsonl", file_type="train",
-                                 samples=_make_samples(60, skill="orphan")),
+                                 samples=_make_samples(60, prefix="orphan_train", skill="orphan")),
                 TrainingDataSpec(skill_name="orphan", filename="o_eval.jsonl", file_type="eval",
-                                 samples=_make_samples(55, skill="orphan")),
+                                 samples=_make_samples(55, prefix="orphan_eval", skill="orphan")),
             ),
         )
         result = validate_curriculum(spec)
@@ -393,9 +393,9 @@ class TestValidation:
             skills=skills,
             training_data=(
                 TrainingDataSpec(skill_name="child_skill", filename="c_train.jsonl", file_type="train",
-                                 samples=_make_samples(60, skill="child_skill")),
+                                 samples=_make_samples(60, prefix="child_train", skill="child_skill")),
                 TrainingDataSpec(skill_name="child_skill", filename="c_eval.jsonl", file_type="eval",
-                                 samples=_make_samples(55, skill="child_skill")),
+                                 samples=_make_samples(55, prefix="child_eval", skill="child_skill")),
             ),
         )
         result = validate_curriculum(spec, mastered_skills={"already_mastered"})
@@ -555,9 +555,9 @@ class TestValidation:
             skills=skills,
             training_data=(
                 TrainingDataSpec(skill_name="short_fs", filename="sf_train.jsonl", file_type="train",
-                                 samples=_make_samples(60, skill="short_fs")),
+                                 samples=_make_samples(60, prefix="sf_train", skill="short_fs")),
                 TrainingDataSpec(skill_name="short_fs", filename="sf_eval.jsonl", file_type="eval",
-                                 samples=_make_samples(55, skill="short_fs")),
+                                 samples=_make_samples(55, prefix="sf_eval", skill="short_fs")),
             ),
         )
         result = validate_curriculum(spec)

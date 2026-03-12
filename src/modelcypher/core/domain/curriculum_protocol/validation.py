@@ -262,9 +262,11 @@ def validate_curriculum(
             if skill is None or not skill.prerequisites:
                 depths[name] = 0
                 return 0
-            d = 1 + max(
-                _depth(p) for p in skill.prerequisites if p in skill_names
-            )
+            in_curriculum = [p for p in skill.prerequisites if p in skill_names]
+            if not in_curriculum:
+                depths[name] = 0
+                return 0
+            d = 1 + max(_depth(p) for p in in_curriculum)
             depths[name] = d
             return d
 

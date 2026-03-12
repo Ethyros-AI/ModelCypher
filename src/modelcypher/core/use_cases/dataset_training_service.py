@@ -1887,15 +1887,24 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             )
 
         # 8.10.3. Collect base token losses for token-weighted val loss (P4).
-        # Geometric LoRA starts as an exact reconstruction of the base weights,
-        # so model output == base model output.
+        # Mirror train_loop's eval batching exactly so the per-token weights
+        # align with the token-weighted validation pass.
         base_token_losses = None
         if eval_dataset:
+            eval_batch_size = min(
+                batch_size,
+                max(1, len(eval_dataset) // max(1, eval_batches)),
+            )
             try:
                 from modelcypher.backends.mlx_training_adapter_core import (
                     collect_base_token_losses,
                 )
-                base_token_losses = collect_base_token_losses(model, eval_dataset)
+                base_token_losses = collect_base_token_losses(
+                    model,
+                    eval_dataset,
+                    eval_batch_size,
+                    seq_length,
+                )
                 n_valid = sum(1 for b in base_token_losses if b is not None)
                 logger.info(
                     "Collected base token losses for %d/%d eval batches (P4 token-weighted loss)",

@@ -1542,8 +1542,9 @@ class _MLXTrainingAdapterTrainMixin:
                             em.topo_ricci_curvature_std or 0.0,
                         )
 
-                # 6c. Dimensional expansion monitoring (optional)
-                if dim_monitor and tokenizer is not None:
+                # 6c. Dimensional snapshot (always for P5; detailed diagnostics when enabled)
+                dim_snapshot = None
+                if tokenizer is not None:
                     dim_snapshot = self._compute_dimensional_snapshot(
                         model, tokenizer,
                         dim_probe_texts or ["The", "Once upon a time", "In the beginning",
@@ -1551,47 +1552,48 @@ class _MLXTrainingAdapterTrainMixin:
                         epoch_num,
                     )
                     if dim_snapshot is not None:
-                        from modelcypher.core.domain.training.dimensional_monitor import (
-                            compute_null_space_recruitment,
-                        )
-
-                        em = epoch_metrics_list[-1]
-                        em.dim_expansion_ratio = dim_snapshot.expansion_ratio
-                        em.dim_peak_dim = dim_snapshot.peak_dim
-                        em.dim_final_dim = dim_snapshot.final_dim
-                        used_fraction = dim_snapshot.final_used_fraction
-                        null_fraction = dim_snapshot.final_null_fraction
-                        if used_fraction == used_fraction:
-                            em.dim_final_used_fraction = used_fraction
-                        if null_fraction == null_fraction:
-                            em.dim_final_null_fraction = null_fraction
                         dim_snapshots.append(dim_snapshot)
-                        baseline_snapshot = dim_snapshots[0]
-                        recruitment = compute_null_space_recruitment(
-                            baseline_snapshot, dim_snapshot,
-                        )
-                        if recruitment == recruitment:
-                            em.dim_null_recruitment_from_baseline = recruitment
-                        if len(dim_snapshots) >= 2:
+                        if dim_monitor:
                             from modelcypher.core.domain.training.dimensional_monitor import (
-                                assess_trend,
+                                compute_null_space_recruitment,
                             )
-                            trend = assess_trend(dim_snapshots)
-                            em.dim_delta_from_baseline = trend.delta
-                            em.dim_is_contracting = trend.is_contracting
-                            if trend.is_contracting:
-                                logger.warning(
-                                    "DIMENSIONAL CONTRACTION: expansion_ratio %.3f → %.3f (Δ=%.3f)",
-                                    trend.baseline_expansion_ratio,
-                                    trend.current_expansion_ratio,
-                                    trend.delta,
+
+                            em = epoch_metrics_list[-1]
+                            em.dim_expansion_ratio = dim_snapshot.expansion_ratio
+                            em.dim_peak_dim = dim_snapshot.peak_dim
+                            em.dim_final_dim = dim_snapshot.final_dim
+                            used_fraction = dim_snapshot.final_used_fraction
+                            null_fraction = dim_snapshot.final_null_fraction
+                            if used_fraction == used_fraction:
+                                em.dim_final_used_fraction = used_fraction
+                            if null_fraction == null_fraction:
+                                em.dim_final_null_fraction = null_fraction
+                            baseline_snapshot = dim_snapshots[0]
+                            recruitment = compute_null_space_recruitment(
+                                baseline_snapshot, dim_snapshot,
+                            )
+                            if recruitment == recruitment:
+                                em.dim_null_recruitment_from_baseline = recruitment
+                            if len(dim_snapshots) >= 2:
+                                from modelcypher.core.domain.training.dimensional_monitor import (
+                                    assess_trend,
                                 )
-                        logger.info(
-                            "Dim: exp_ratio=%.3f peak=%.1f final=%.1f",
-                            dim_snapshot.expansion_ratio,
-                            dim_snapshot.peak_dim,
-                            dim_snapshot.final_dim,
-                        )
+                                trend = assess_trend(dim_snapshots)
+                                em.dim_delta_from_baseline = trend.delta
+                                em.dim_is_contracting = trend.is_contracting
+                                if trend.is_contracting:
+                                    logger.warning(
+                                        "DIMENSIONAL CONTRACTION: expansion_ratio %.3f → %.3f (Δ=%.3f)",
+                                        trend.baseline_expansion_ratio,
+                                        trend.current_expansion_ratio,
+                                        trend.delta,
+                                    )
+                            logger.info(
+                                "Dim: exp_ratio=%.3f peak=%.1f final=%.1f",
+                                dim_snapshot.expansion_ratio,
+                                dim_snapshot.peak_dim,
+                                dim_snapshot.final_dim,
+                            )
 
                 # 6d. Constraint diagnostics (constrained training mode)
                 if use_constrained and constraint_state is not None:
@@ -1702,41 +1704,45 @@ class _MLXTrainingAdapterTrainMixin:
                 epoch_stable_rank_median = None
                 epoch_stable_rank_min = None
                 epoch_per_layer_stable_rank: dict[str, float] | None = None
-                if not use_pissa_lora:
-                    try:
-                        layer_stable_ranks: dict[str, float] = {}
+                try:
+                    layer_stable_ranks: dict[str, float] = {}
+                    if use_pissa_lora:
+                        for name, lora in self._iter_pissa_lora_modules(model):
+                            product = lora.scale * mx.matmul(lora.lora_a, lora.lora_b)
+                            mx.eval(product)
+                            sr = compute_stable_rank(product, self._backend)
+                            layer_stable_ranks[name] = sr
+                            if adapter_rank_for_stopping is None:
+                                adapter_rank_for_stopping = int(lora.lora_a.shape[1])
+                    else:
                         for name, nb_lora in self._iter_nb_lora_modules(model):
                             A, B = nb_lora._cayley_transform()
                             S = mx.clip(nb_lora.S_raw, 0.0, nb_lora._scale_bound)
-                            # Compute effective LoRA product: scale * B^T @ S @ A
                             product = 2.0 * mx.matmul((S[:, None] * A).T, B)
                             mx.eval(product)
                             sr = compute_stable_rank(product, self._backend)
                             layer_stable_ranks[name] = sr
                             if adapter_rank_for_stopping is None:
                                 adapter_rank_for_stopping = int(nb_lora.A_tilde.shape[0])
-                        if layer_stable_ranks:
-                            sr_vals = sorted(layer_stable_ranks.values())
-                            epoch_stable_rank_median = sr_vals[len(sr_vals) // 2]
-                            epoch_stable_rank_min = sr_vals[0]
-                            epoch_per_layer_stable_rank = layer_stable_ranks
-                            stable_rank_history.append(epoch_stable_rank_median)
-                            logger.info(
-                                "Stable rank: median=%.2f min=%.2f (rank=%s)",
-                                epoch_stable_rank_median, epoch_stable_rank_min,
-                                adapter_rank_for_stopping,
-                            )
-                    except Exception:
-                        logger.debug("Stable rank computation failed", exc_info=True)
+                    if layer_stable_ranks:
+                        sr_vals = sorted(layer_stable_ranks.values())
+                        epoch_stable_rank_median = sr_vals[len(sr_vals) // 2]
+                        epoch_stable_rank_min = sr_vals[0]
+                        epoch_per_layer_stable_rank = layer_stable_ranks
+                        stable_rank_history.append(epoch_stable_rank_median)
+                        logger.info(
+                            "Stable rank: median=%.2f min=%.2f (rank=%s)",
+                            epoch_stable_rank_median, epoch_stable_rank_min,
+                            adapter_rank_for_stopping,
+                        )
+                except Exception:
+                    logger.debug("Stable rank computation failed", exc_info=True)
 
                 # 6i. Effective rank for trend detection (P5)
-                # Use dim_monitor's final_dim when available, else derive from
-                # the adapter's spectral structure
                 epoch_effective_rank = None
                 epoch_rank_declining_streak = 0
-                if dim_monitor and dim_snapshots:
-                    latest = dim_snapshots[-1]
-                    epoch_effective_rank = latest.final_dim
+                if dim_snapshot is not None:
+                    epoch_effective_rank = dim_snapshot.final_dim
                     if epoch_effective_rank is not None:
                         effective_rank_history.append(epoch_effective_rank)
                         _, epoch_rank_declining_streak = check_effective_rank_declining(
@@ -1748,7 +1754,7 @@ class _MLXTrainingAdapterTrainMixin:
                 if base_token_losses and eval_dataset:
                     try:
                         epoch_token_weighted_val_loss = compute_token_weighted_val_loss(
-                            model, eval_dataset, batch_size, seq_length,
+                            model, eval_dataset, eval_batch_size, seq_length,
                             base_token_losses,
                         )
                         if epoch_token_weighted_val_loss is not None:
@@ -1943,7 +1949,29 @@ class _MLXTrainingAdapterTrainMixin:
                     )
                     break
 
-                # 7c'. Margin collapse stop (P2)
+                # 7c'. Margin decline stop (P2)
+                if (
+                    tokenizer is not None
+                    and len(margin_history) >= 2 * loss_stability_window_epochs
+                ):
+                    margin_declining, margin_trend_threshold = (
+                        check_margin_trend_declining(
+                            margin_history,
+                            window=loss_stability_window_epochs,
+                        )
+                    )
+                    if margin_declining:
+                        stop_reason = (
+                            f"margin_declining (threshold={margin_trend_threshold:.4e}, "
+                            f"epoch={epoch_num})"
+                        )
+                        logger.info(
+                            "Margin trend stop at iter %d: %s",
+                            it + 1, stop_reason,
+                        )
+                        break
+
+                # 7c''. Margin collapse stop (P2)
                 if len(margin_history) >= 2 and tokenizer is not None:
                     vocab_size = getattr(tokenizer, "vocab_size", 32000)
                     margin_collapsed, margin_threshold = check_margin_collapse(
@@ -1960,7 +1988,7 @@ class _MLXTrainingAdapterTrainMixin:
                         )
                         break
 
-                # 7c''. Stable rank concentration stop (P3)
+                # 7c'''. Stable rank concentration stop (P3)
                 if (
                     stable_rank_history
                     and adapter_rank_for_stopping is not None
@@ -1980,7 +2008,7 @@ class _MLXTrainingAdapterTrainMixin:
                         )
                         break
 
-                # 7c'''. Effective rank declining stop (P5)
+                # 7c''''. Effective rank declining stop (P5)
                 if len(effective_rank_history) >= 4:
                     rank_declining, n_declining = check_effective_rank_declining(
                         effective_rank_history, window=3,

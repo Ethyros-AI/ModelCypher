@@ -337,16 +337,28 @@ class _CaptureDatasetService:
         self.calls.append(dict(kwargs))
 
         class _Result:
+            adapter_path = "/tmp/adapter"
+            validation_split = None
+            derived_plan = _CaptureDatasetService._Plan("/tmp/adapter").to_dict()
+            pipeline_gate_passed = True
+            training_time_seconds = 0.25
+
             def to_dict(self):
                 return {
+                    "train_iters": 7,
+                    "stop_reason": "certificate",
                     "baseline_loss": 2.0,
                     "final_loss": 1.5,
                     "post_loss": 1.4,
-                    "adapter_path": "/tmp/adapter",
+                    "baseline_perplexity": 7.39,
+                    "post_perplexity": 4.05,
+                    "adapter_path": self.adapter_path,
                     "spectral_bounds_ok": True,
                     "min_cka": 0.99,
-                    "pipeline_gate_passed": True,
-                    "derived_plan": _CaptureDatasetService._Plan("/tmp/adapter").to_dict(),
+                    "mean_cka": 0.995,
+                    "max_spectral_ratio": 0.5,
+                    "pipeline_gate_passed": self.pipeline_gate_passed,
+                    "derived_plan": self.derived_plan,
                 }
 
         return _Result()
@@ -579,8 +591,8 @@ def test_train_run_explain_text_prints_plan_before_result(monkeypatch, tmp_path)
 
     assert result.exit_code == 0
     assert "Resolved training plan" in result.stdout
-    assert "Training result" in result.stdout
-    assert result.stdout.index("Resolved training plan") < result.stdout.index("Training result")
+    assert "Summary:" in result.stdout
+    assert result.stdout.index("Resolved training plan") < result.stdout.index("Summary:")
     assert capture.plan_calls
     assert capture.calls
     assert "plan" in capture.calls[0]
