@@ -108,7 +108,7 @@ class EpochMetrics:
     topo_persistence_entropy: float | None = None
     topo_mean_ricci_curvature: float | None = None
     topo_ricci_curvature_std: float | None = None
-    # Dimensional expansion monitoring (optional, computed when dim_monitor=True)
+    # Detailed dimensional expansion monitoring (emitted when dim_monitor=True)
     dim_expansion_ratio: float | None = None
     dim_peak_dim: float | None = None
     dim_final_dim: float | None = None
@@ -1174,7 +1174,7 @@ def compute_token_weighted_val_loss(
 
     Args:
         model: Current (adapted) model.
-        eval_dataset: Evaluation batches.
+        eval_dataset: Evaluation samples in canonical adapter format.
         eval_batch_size: Evaluation batch size. Must match the batching used
             to collect ``base_token_losses``.
         seq_length: Sequence length.

@@ -56,6 +56,7 @@ from modelcypher.core.domain.training.mass_step_size import (
 )
 from modelcypher.core.domain.training.identity import (
     GEOMETRIC_LORA_CONTROLLER,
+    GEOMETRIC_LORA_INIT_METHOD_CAYLEY,
     GEOMETRIC_LORA_INIT_METHOD,
     GEOMETRIC_LORA_METHOD,
     GEOMETRIC_LORA_OPTIMIZER,
@@ -682,7 +683,7 @@ class _MLXTrainingAdapterTrainMixin:
         margin_history: list[float] = []  # Per-epoch median margins
         # P3: Adapter stable rank time series
         stable_rank_history: list[float] = []  # Per-epoch median stable ranks
-        adapter_rank_for_stopping: int | None = None  # Set once from first NB-LoRA module
+        adapter_rank_for_stopping: int | None = None  # Set once from first adapter module
         # P5: Effective rank time series
         effective_rank_history: list[float] = []  # Per-epoch effective ranks
 
@@ -827,8 +828,12 @@ class _MLXTrainingAdapterTrainMixin:
             if optimizer_research_mode == OPTIMIZER_MODE_ADAMW_MATCHED_TRACE
             else GEOMETRIC_LORA_OPTIMIZER
         )
-        method_name = GEOMETRIC_LORA_METHOD if use_pissa_lora else "nb_lora_cayley"
-        init_name = GEOMETRIC_LORA_INIT_METHOD if use_pissa_lora else "cayley"
+        method_name = GEOMETRIC_LORA_METHOD
+        init_name = (
+            GEOMETRIC_LORA_INIT_METHOD
+            if use_pissa_lora
+            else GEOMETRIC_LORA_INIT_METHOD_CAYLEY
+        )
         logger.info(
             (
                 "Training: method=%s, init=%s, optimizer=%s, controller=%s, "

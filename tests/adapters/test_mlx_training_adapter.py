@@ -252,6 +252,12 @@ def test_save_adapter_per_layer_ranks(backend_name, tmp_path) -> None:
     with config_path.open() as f:
         config = json.load(f)
 
+    assert config["type"] == "geometric_lora"
+    assert config["method"] == "geometric_lora"
+    assert config["init_method"] == "cayley"
+    assert config["optimizer"] == "fisher_mass"
+    assert config["controller"] == "mass"
+    assert config["stopping"] == "geometric_certificate"
     assert "per_layer_ranks" in config
     plr = config["per_layer_ranks"]
     assert isinstance(plr, dict)

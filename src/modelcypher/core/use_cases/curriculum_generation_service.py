@@ -204,8 +204,8 @@ class CurriculumGenerationService:
                 "Wrote %d samples to %s", len(td.samples), filepath
             )
 
-        # Build SkillDAG
-        dag = spec.to_skill_dag(output_dir)
+        # Build SkillDAG (strip external mastered prerequisites)
+        dag = spec.to_skill_dag(output_dir, mastered_skills=mastered_skills)
 
         # Build PhaseScheduler
         state_path = output_dir / "curriculum_state.json"

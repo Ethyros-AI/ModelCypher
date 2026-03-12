@@ -1104,6 +1104,82 @@ def test_research_online_eval_problem_set_path_overrides_generated_eval_problems
     assert len(captured_train_loop_kwargs["online_eval_problems"]) == 1
 
 
+def test_online_eval_defaults_to_twenty_problems_when_omitted(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from modelcypher.core.domain.training.online_eval import OnlineEvalResult
+
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(train_path, [{"text": "train 1"}])
+    _write_jsonl(eval_path, [{"text": "eval 1"}])
+
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
+    _patch_lightweight_training(monkeypatch, service)
+    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        "modelcypher.backends.mlx_training_adapter_core.collect_base_token_losses",
+        lambda *_args, **_kwargs: [],
+    )
+
+    generated_problems = StarProblemGenerator(seed=19).generate(20)
+    captured_create: dict[str, object] = {}
+    captured_train_loop_kwargs: dict[str, object] = {}
+
+    def _capture_create_eval_problem_set(*, n_problems: int, seed: int):
+        captured_create["n_problems"] = n_problems
+        captured_create["seed"] = seed
+        return generated_problems
+
+    def _capture_eval_correctness(**kwargs):
+        problem_ids = frozenset(problem.problem_id for problem in kwargs["problems"])
+        return OnlineEvalResult(
+            epoch=kwargs["epoch"],
+            accuracy=1.0,
+            n_correct=len(problem_ids),
+            n_total=len(problem_ids),
+            correct_ids=problem_ids,
+            baseline_n_correct=len(problem_ids),
+            baseline_accuracy=1.0,
+            n_lost=0,
+            n_gained=0,
+            degraded=False,
+            per_type_accuracy={},
+            per_type_correct={},
+            per_type_total={},
+            degraded_raw=False,
+            degraded_significant=False,
+        )
+
+    def _capture_train_loop(**kwargs):
+        captured_train_loop_kwargs.update(kwargs)
+        return [(1, 1.0, 1.0)], "max_iters", []
+
+    monkeypatch.setattr(
+        "modelcypher.core.domain.training.online_eval.create_eval_problem_set",
+        _capture_create_eval_problem_set,
+    )
+    monkeypatch.setattr(
+        "modelcypher.core.domain.training.online_eval.evaluate_correctness",
+        _capture_eval_correctness,
+    )
+    monkeypatch.setattr(service._adapter, "train_loop", _capture_train_loop)
+
+    service.train_from_dataset(
+        model_path=model_dir,
+        dataset_path=train_path,
+        eval_dataset_path=eval_path,
+        no_save=True,
+    )
+
+    assert captured_create["n_problems"] == 20
+    assert len(captured_train_loop_kwargs["online_eval_problems"]) == 20
+    assert len(captured_train_loop_kwargs["online_eval_baseline_ids"]) == 20
+
+
 
 def test_train_from_dataset_auto_retention_disabled_by_default(monkeypatch, tmp_path: Path):
     """Auto-retention is disabled by default (Cayley-Stiefel bound provides preservation).
@@ -1523,7 +1599,6 @@ def test_build_training_plan_exposes_resolved_surface(monkeypatch, tmp_path: Pat
     assert payload["controller_plan"]["optimizer"] == "fisher_mass"
     assert payload["controller_plan"]["controller"] == "mass"
     assert payload["controller_plan"]["stopping"] == "geometric_certificate"
-    assert payload["controller_plan"]["optimizer_type"] == "geometric_lora"
     assert payload["controller_plan"]["learning_rate_policy"].startswith(
         "No fixed scalar LR",
     )

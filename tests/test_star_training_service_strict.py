@@ -190,6 +190,12 @@ def test_compose_derives_scale_from_geometry_manifest(tmp_path: Path, monkeypatc
 
     assert config["lora_parameters"]["scale"] == pytest.approx(2.0)
     assert config["lora_parameters"]["scale"] != pytest.approx(1.0)
+    assert config["type"] == "geometric_lora"
+    assert config["method"] == "geometric_lora"
+    assert config["init_method"] == "pissa"
+    assert config["optimizer"] == "fisher_mass"
+    assert config["controller"] == "mass"
+    assert config["stopping"] == "geometric_certificate"
     assert "scale_derivation" in config
     assert config["scale_derivation"]["method"] == "min_module_sigma_k_over_spectral_norm"
     with (out / "geometry_manifest.json").open("r", encoding="utf-8") as handle:

@@ -9,13 +9,19 @@
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from modelcypher.core.domain.training.geometric_early_stopping import (
     _SQRT_EPS,
     StoppingCertificate,
+    check_effective_rank_declining,
     check_grad_norm_stable,
     check_loss_stable,
+    check_margin_collapse,
+    check_margin_trend_declining,
+    check_stable_rank_concentration,
     check_stopping_certificate,
     check_val_loss_converged,
     should_certificate_stop,
@@ -156,6 +162,76 @@ class TestCheckValLossConverged:
 
         assert should_stop is True
         assert reason == "val_increasing"
+
+
+class TestMarginStopping:
+    def test_margin_collapse_uses_derived_vocab_floor(self):
+        vocab_size = 32000
+        expected_threshold = pytest.approx(math.log(vocab_size) * _SQRT_EPS)
+
+        collapsed, threshold = check_margin_collapse(
+            [1.0, math.log(vocab_size) * _SQRT_EPS * 0.5],
+            vocab_size=vocab_size,
+        )
+
+        assert collapsed is True
+        assert threshold == expected_threshold
+
+    def test_margin_trend_declining_detects_windowed_erosion(self):
+        declining, threshold = check_margin_trend_declining(
+            [5.0, 5.0, 0.0, 0.0],
+            window=2,
+        )
+
+        assert declining is True
+        assert threshold == pytest.approx(_SQRT_EPS)
+
+    def test_margin_trend_declining_ignores_flat_history(self):
+        declining, threshold = check_margin_trend_declining(
+            [1.0, 1.0, 1.0, 1.0],
+            window=2,
+        )
+
+        assert declining is False
+        assert threshold == pytest.approx(_SQRT_EPS)
+
+
+class TestRankStopping:
+    def test_effective_rank_declining_counts_consecutive_epochs(self):
+        declining, streak = check_effective_rank_declining(
+            [4.0, 3.0, 2.0, 1.0],
+            window=3,
+        )
+
+        assert declining is True
+        assert streak == 3
+
+    def test_effective_rank_declining_breaks_on_non_decrease(self):
+        declining, streak = check_effective_rank_declining(
+            [4.0, 3.0, 3.0, 2.0],
+            window=3,
+        )
+
+        assert declining is False
+        assert streak == 1
+
+    def test_stable_rank_concentration_uses_sqrt_rank_threshold(self):
+        concentrated, threshold = check_stable_rank_concentration(
+            [4.5, 2.9],
+            adapter_rank=9,
+        )
+
+        assert concentrated is True
+        assert threshold == pytest.approx(3.0)
+
+    def test_stable_rank_concentration_ignores_healthy_adapter(self):
+        concentrated, threshold = check_stable_rank_concentration(
+            [4.5, 3.1],
+            adapter_rank=9,
+        )
+
+        assert concentrated is False
+        assert threshold == pytest.approx(3.0)
 
 
 class TestCheckStoppingCertificate:

@@ -444,11 +444,6 @@ class DerivedTrainingPlan:
             int(min(rank_values)) if rank_values else 0,
             int(max(rank_values)) if rank_values else 0,
         ]
-        optimizer_type = (
-            "adamw"
-            if self.optimizer_research_mode == OPTIMIZER_MODE_ADAMW_MATCHED_TRACE
-            else GEOMETRIC_LORA_METHOD
-        )
         return {
             "inputs": {
                 "model_path": str(self.model_path),
@@ -493,7 +488,6 @@ class DerivedTrainingPlan:
                 ),
                 "controller": GEOMETRIC_LORA_CONTROLLER,
                 "stopping": GEOMETRIC_LORA_STOPPING,
-                "optimizer_type": optimizer_type,
                 "controller_mode": self.controller_mode,
                 "optimizer_research_mode": self.optimizer_research_mode,
                 "learning_rate_policy": (

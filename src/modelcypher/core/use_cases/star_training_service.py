@@ -56,6 +56,13 @@ from modelcypher.core.domain.star.prompting import (
 )
 from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 from modelcypher.core.domain.training.geometric_lora import analyze_weight_geometries
+from modelcypher.core.domain.training.identity import (
+    GEOMETRIC_LORA_CONTROLLER,
+    GEOMETRIC_LORA_INIT_METHOD,
+    GEOMETRIC_LORA_METHOD,
+    GEOMETRIC_LORA_OPTIMIZER,
+    GEOMETRIC_LORA_STOPPING,
+)
 from modelcypher.core.domain.training.spectral_budget import compute_budget_ratios
 
 if TYPE_CHECKING:
@@ -976,6 +983,7 @@ class StarTrainingService:
 
         config = {
             "fine_tune_type": "lora",
+            "type": GEOMETRIC_LORA_METHOD,
             "num_layers": prior_config.get("num_layers", delta_config.get("num_layers")),
             "lora_parameters": {
                 "rank": rank,
@@ -985,7 +993,23 @@ class StarTrainingService:
             },
             "target_modules": target_modules,
             "rank": rank,
-            "method": "nb_lora_cayley_composed",
+            "method": GEOMETRIC_LORA_METHOD,
+            "init_method": prior_config.get(
+                "init_method",
+                delta_config.get("init_method", GEOMETRIC_LORA_INIT_METHOD),
+            ),
+            "optimizer": prior_config.get(
+                "optimizer",
+                delta_config.get("optimizer", GEOMETRIC_LORA_OPTIMIZER),
+            ),
+            "controller": prior_config.get(
+                "controller",
+                delta_config.get("controller", GEOMETRIC_LORA_CONTROLLER),
+            ),
+            "stopping": prior_config.get(
+                "stopping",
+                delta_config.get("stopping", GEOMETRIC_LORA_STOPPING),
+            ),
             "scale_derivation": {
                 "method": "min_module_sigma_k_over_spectral_norm",
                 "global_scale": derived_scale,

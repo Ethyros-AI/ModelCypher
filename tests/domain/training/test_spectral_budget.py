@@ -15,6 +15,7 @@ from modelcypher.core.domain.training.spectral_budget import (
     compute_budget_ratios,
     compute_initialization_vectors,
     compute_projected_residuals,
+    compute_stable_rank,
     is_budget_exhausted,
 )
 
@@ -65,6 +66,35 @@ class TestComputeBudgetRatios:
         ratios_s2 = compute_budget_ratios([(2.0, A, B, sigma_k)], b)
 
         assert ratios_s2[0] == pytest.approx(2.0 * ratios_s1[0], abs=1e-5)
+
+
+class TestComputeStableRank:
+    def test_zero_matrix_returns_zero(self, any_backend):
+        b = any_backend
+        zero = b.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+        b.eval(zero)
+
+        stable_rank = compute_stable_rank(zero, b)
+
+        assert stable_rank == pytest.approx(0.0, abs=1e-7)
+
+    def test_identity_has_stable_rank_equal_to_rank(self, any_backend):
+        b = any_backend
+        ident = b.eye(4)
+        b.eval(ident)
+
+        stable_rank = compute_stable_rank(ident, b)
+
+        assert stable_rank == pytest.approx(4.0, rel=1e-4, abs=1e-4)
+
+    def test_rank_one_matrix_has_stable_rank_one(self, any_backend):
+        b = any_backend
+        matrix = b.array([[3.0, 0.0], [0.0, 0.0]])
+        b.eval(matrix)
+
+        stable_rank = compute_stable_rank(matrix, b)
+
+        assert stable_rank == pytest.approx(1.0, rel=1e-4, abs=1e-4)
 
 
 class TestIsBudgetExhausted:

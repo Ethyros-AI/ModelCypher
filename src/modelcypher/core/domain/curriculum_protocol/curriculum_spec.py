@@ -60,18 +60,30 @@ class GeneratedSkillNode:
     notes: str = ""
 
     def to_skill_node(
-        self, train_files: tuple[str, ...], eval_files: tuple[str, ...]
+        self,
+        train_files: tuple[str, ...],
+        eval_files: tuple[str, ...],
+        in_curriculum_prereqs: tuple[str, ...] | None = None,
     ):
         """Convert to SkillNode for PhaseScheduler compatibility.
+
+        Args:
+            train_files: Resolved paths to training JSONL files.
+            eval_files: Resolved paths to eval JSONL files.
+            in_curriculum_prereqs: If provided, use these instead of
+                self.prerequisites. This allows stripping external mastered
+                prerequisites that aren't in the current DAG.
 
         Imports SkillNode here to avoid circular imports at module level.
         """
         from modelcypher.core.use_cases.curriculum.skill_dag import SkillNode
 
+        prereqs = in_curriculum_prereqs if in_curriculum_prereqs is not None else self.prerequisites
+
         return SkillNode(
             name=self.name,
             formal_statement=self.formal_statement,
-            prerequisites=self.prerequisites,
+            prerequisites=prereqs,
             train_files=train_files,
             eval_files=eval_files,
             branch=self.branch,
@@ -235,12 +247,20 @@ class CurriculumSpec:
             metadata=dict(d.get("metadata", {})),
         )
 
-    def to_skill_dag(self, data_dir: Path):
+    def to_skill_dag(
+        self, data_dir: Path, mastered_skills: set[str] | None = None
+    ):
         """Convert to SkillDAG, resolving file paths relative to data_dir.
+
+        External prerequisites (in mastered_skills but not in this curriculum)
+        are stripped before constructing SkillNodes, since SkillDAG._validate()
+        requires all prerequisite names to reference nodes in the DAG.
 
         Imports SkillDAG here to avoid circular imports at module level.
         """
         from modelcypher.core.use_cases.curriculum.skill_dag import SkillDAG
+
+        curriculum_skill_names = {s.name for s in self.skills}
 
         # Build a mapping: skill_name -> {train_files, eval_files}
         file_map: dict[str, dict[str, list[str]]] = {}
@@ -253,9 +273,14 @@ class CurriculumSpec:
         nodes = []
         for skill in self.skills:
             files = file_map.get(skill.name, {"train": [], "eval": []})
+            # Filter prerequisites to only in-curriculum skills
+            in_curriculum_prereqs = tuple(
+                p for p in skill.prerequisites if p in curriculum_skill_names
+            )
             node = skill.to_skill_node(
                 train_files=tuple(files["train"]),
                 eval_files=tuple(files["eval"]),
+                in_curriculum_prereqs=in_curriculum_prereqs,
             )
             nodes.append(node)
 

@@ -29,6 +29,7 @@ from typing import Any
 from modelcypher.backends.mlx_training_adapter_core import *  # noqa: F403
 from modelcypher.core.domain.training.identity import (
     GEOMETRIC_LORA_CONTROLLER,
+    GEOMETRIC_LORA_INIT_METHOD_CAYLEY,
     GEOMETRIC_LORA_INIT_METHOD,
     GEOMETRIC_LORA_METHOD,
     GEOMETRIC_LORA_OPTIMIZER,
@@ -245,6 +246,7 @@ class _MLXTrainingAdapterAdapterIOMixin:
 
         config = {
             "fine_tune_type": "lora",
+            "type": GEOMETRIC_LORA_METHOD,
             "num_layers": int(self._backend.get_num_layers(model)),
             "lora_parameters": {
                 "rank": int(global_rank),
@@ -255,7 +257,11 @@ class _MLXTrainingAdapterAdapterIOMixin:
             "target_modules": sorted(target_modules),
             "rank": int(global_rank),
             "per_layer_ranks": per_layer_rank_map,
-            "method": "nb_lora_cayley",
+            "method": GEOMETRIC_LORA_METHOD,
+            "init_method": GEOMETRIC_LORA_INIT_METHOD_CAYLEY,
+            "optimizer": GEOMETRIC_LORA_OPTIMIZER,
+            "controller": GEOMETRIC_LORA_CONTROLLER,
+            "stopping": GEOMETRIC_LORA_STOPPING,
         }
         if metadata:
             config["metadata"] = metadata
