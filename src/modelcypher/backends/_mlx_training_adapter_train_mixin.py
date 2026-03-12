@@ -92,23 +92,48 @@ class _MLXTrainingAdapterTrainMixin:
             return None
         return float(sigma_k_min)
 
-    def _advance_remaining_budget(
+    def _reanchor_pissa_budget(
         self,
-        remaining_budget: float | None,
-        *,
-        displacement: float | None,
-        use_pissa_lora: bool,
+        model: Any,
+        sigma_k_min: float,
     ) -> float | None:
-        """Conservatively advance the PiSSA remaining budget after one step.
+        """Re-anchor PiSSA remaining budget via exact spectral measurement.
 
-        The running budget is decremented by the realized step displacement and
-        re-anchored by exact spectral measurement at epoch boundaries.
+        Runs power iteration on the implicit displacement operator
+        ``D = a_curr @ b_curr - a_init @ b_init`` for every PiSSA layer to get
+        the true spectral norm of cumulative displacement.  Returns
+        ``sigma_k_min * (1 - max_ratio)`` clamped to ``[0, sigma_k_min]``.
+
+        This is strictly more accurate than subtracting per-step Frobenius
+        norms (triangle inequality over-counts by 3-4× in practice).
         """
-        if not use_pissa_lora or remaining_budget is None:
-            return remaining_budget
-        if displacement is None or displacement <= 0.0:
-            return remaining_budget
-        return max(0.0, float(remaining_budget) - float(displacement))
+        init_factors = getattr(self, '_pissa_init_factors', {})
+        per_layer_sk = getattr(self, '_pissa_per_layer_sigma_k', {})
+        if not init_factors:
+            return None
+
+        pissa_products: list[tuple[float, Any, Any, Any, Any, float]] = []
+        for name, lora in self._iter_pissa_lora_modules(model):
+            if name not in init_factors or name not in per_layer_sk:
+                continue
+            a_init, b_init = init_factors[name]
+            pissa_products.append((
+                float(lora.scale),
+                lora.lora_a, lora.lora_b,
+                a_init, b_init,
+                per_layer_sk[name],
+            ))
+            mx.eval(lora.lora_a, lora.lora_b)
+
+        if not pissa_products:
+            return None
+
+        ratios = compute_pissa_budget_ratios(pissa_products, self._backend)
+        if not ratios:
+            return None
+
+        max_ratio = max(ratios)
+        return max(0.0, sigma_k_min * (1.0 - max_ratio))
 
     def _measure_pissa_effective_update_norm(
         self,
@@ -1039,10 +1064,16 @@ class _MLXTrainingAdapterTrainMixin:
             use_mass_step_sizing=use_mass_step_sizing,
             sigma_k_min=sigma_k_min,
         )
+        # Sub-epoch re-anchor: run exact spectral measurement every N steps
+        # instead of accumulating per-step Frobenius decrements (which
+        # over-count by ~3-4× due to triangle inequality on spectral norm).
+        # ~10 re-anchors per epoch balances accuracy vs overhead.
+        budget_reanchor_interval: int = max(10, n_batches_per_epoch // 10)
         if remaining_budget is not None:
             logger.info(
-                "PiSSA remaining budget seed: %.4e (exact reconstruction at step 0)",
-                remaining_budget,
+                "PiSSA remaining budget seed: %.4e (exact reconstruction at step 0), "
+                "re-anchor every %d steps",
+                remaining_budget, budget_reanchor_interval,
             )
         max_effective_gain_this_epoch: float = 0.0
         max_disp_to_remaining_this_epoch: float = 0.0
@@ -1330,12 +1361,26 @@ class _MLXTrainingAdapterTrainMixin:
             # PiSSA LoRA: no clamping — MASS step sizing bounds displacement.
             if not use_pissa_lora:
                 self._clamp_all_scales(model)
-            else:
-                remaining_budget = self._advance_remaining_budget(
-                    remaining_budget,
-                    displacement=displacement_val,
-                    use_pissa_lora=use_pissa_lora,
-                )
+            elif use_mass_step_sizing and (it + 1) % budget_reanchor_interval == 0:
+                # Sub-epoch re-anchor: exact spectral measurement via power
+                # iteration on the implicit displacement operator.  Replaces
+                # per-step Frobenius decrement which over-estimates cumulative
+                # spectral displacement by 3-4×.
+                try:
+                    anchored = self._reanchor_pissa_budget(model, sigma_k_min)
+                    if anchored is not None:
+                        remaining_budget = anchored
+                        logger.info(
+                            "PiSSA budget re-anchor at step %d: remaining=%.4e",
+                            it + 1, remaining_budget,
+                        )
+                except Exception:
+                    logger.warning(
+                        "PiSSA sub-epoch re-anchor failed at step %d; "
+                        "keeping previous remaining_budget=%.4e",
+                        it + 1, remaining_budget or 0.0,
+                        exc_info=True,
+                    )
 
             epoch_step_traces.append(
                 ControllerStepTrace(

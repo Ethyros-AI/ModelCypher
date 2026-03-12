@@ -155,44 +155,13 @@ def test_seed_remaining_budget_skips_non_pissa_or_nonpositive_sigma():
     ) is None
 
 
-def test_advance_remaining_budget_decrements_and_clamps():
+def test_reanchor_pissa_budget_returns_none_without_init_factors():
+    """Re-anchor returns None when no PiSSA init factors are stored."""
     adapter = MLXTrainingAdapter(_DummyBackend())
 
-    remaining = adapter._advance_remaining_budget(
-        0.4,
-        displacement=0.1,
-        use_pissa_lora=True,
-    )
-    exhausted = adapter._advance_remaining_budget(
-        0.05,
-        displacement=0.1,
-        use_pissa_lora=True,
-    )
+    result = adapter._reanchor_pissa_budget(_DummyModel(), sigma_k_min=0.4)
 
-    assert remaining == pytest.approx(0.3)
-    assert exhausted == 0.0
-
-
-def test_advance_remaining_budget_ignores_missing_or_non_pissa_updates():
-    adapter = MLXTrainingAdapter(_DummyBackend())
-
-    assert adapter._advance_remaining_budget(
-        None,
-        displacement=0.1,
-        use_pissa_lora=True,
-    ) is None
-    assert adapter._advance_remaining_budget(
-        0.4,
-        displacement=None,
-        use_pissa_lora=True,
-    ) == pytest.approx(0.4)
-    assert adapter._advance_remaining_budget(
-        0.4,
-        displacement=0.1,
-        use_pissa_lora=False,
-    ) == pytest.approx(0.4)
-
-
+    assert result is None
 
 
 

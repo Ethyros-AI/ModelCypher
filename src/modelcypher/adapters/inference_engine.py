@@ -32,6 +32,15 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+GEOMETRIC_ADAPTER_WEIGHT_CANDIDATES = (
+    "adapters.safetensors",
+    "adapter_model.safetensors",
+    "adapter.safetensors",
+    "lora_weights.safetensors",
+    "adapters.bin",
+    "adapter_model.bin",
+    "adapter_model.pt",
+)
 
 
 @dataclass(frozen=True)
@@ -215,17 +224,8 @@ class InferenceEngine(HiddenStateEngine):
 
         # Load adapter weights — search repo-supported filenames, dispatch
         # by extension to the correct backend loader.
-        _candidates = [
-            "adapters.safetensors",
-            "adapter_model.safetensors",
-            "adapter.safetensors",
-            "lora_weights.safetensors",
-            "adapters.bin",
-            "adapter_model.bin",
-            "adapter_model.pt",
-        ]
         weights_path = None
-        for candidate in _candidates:
+        for candidate in GEOMETRIC_ADAPTER_WEIGHT_CANDIDATES:
             p = adapter_path / candidate
             if p.exists():
                 weights_path = p
@@ -234,7 +234,7 @@ class InferenceEngine(HiddenStateEngine):
         if weights_path is None:
             raise FileNotFoundError(
                 f"No adapter weights found in {adapter_path}. "
-                f"Searched: {', '.join(_candidates)}"
+                f"Searched: {', '.join(GEOMETRIC_ADAPTER_WEIGHT_CANDIDATES)}"
             )
 
         if weights_path.suffix == ".safetensors":
