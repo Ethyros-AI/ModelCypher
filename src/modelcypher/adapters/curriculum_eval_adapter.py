@@ -22,6 +22,21 @@ from modelcypher.core.use_cases.curriculum.skill_dag import SkillNode
 logger = logging.getLogger(__name__)
 
 
+def _extract_answer_span(predicted: str) -> str:
+    """Extract the direct-answer span from model output.
+
+    Takes the first line of predicted text. Models consistently place
+    their direct answer on the first line before any explanation,
+    reasoning steps, or follow-up questions.
+
+    The full output may mention the expected answer incidentally in
+    explanation text (e.g., "borrowing becomes cheaper. The reasoning
+    is... borrowing becomes more expensive."). Only the first-line
+    span should be used for the primary correctness metric.
+    """
+    return predicted.split("\n")[0].strip()
+
+
 def _extract_last_int(text: str) -> int | None:
     """Return the last integer appearing in text, or None if no integer found.
 
@@ -47,8 +62,10 @@ def evaluate_skill_mastery(
     to chance_rate.
 
     Correctness check depends on skill.answer_mode:
-      'exact'  (default): expected substring must appear in generated text
-               (case-insensitive). Used for logic skills with string answers.
+      'exact'  (default): expected substring must appear in the answer span
+               (first line of generated output, case-insensitive). Matches in
+               explanation text only are logged as diagnostics but NOT counted
+               as correct. Used for logic skills with string answers.
       'numeric': extract last integer from both expected and generated texts;
                compare as integers. Used for arithmetic skills whose training
                data includes scratchpad steps (the model may generate intermediate
@@ -125,6 +142,7 @@ def evaluate_skill_mastery(
     engine = get_inference_engine()
     n_correct = 0
     n_errors = 0
+    n_explanation_only = 0
 
     for item in problems:
         text = item["text"]
@@ -179,8 +197,15 @@ def evaluate_skill_mastery(
                 if numeric_correct and has_procedure:
                     n_correct += 1
             else:
-                if expected and expected.lower() in predicted.lower():
+                # Exact mode: score on the answer span (first line) only.
+                # Explanation text may incidentally mention the expected answer
+                # (item 70 in modus_ponens audit: model says "cheaper" then
+                # explains "more expensive"). Only the direct answer counts.
+                answer_span = _extract_answer_span(predicted)
+                if expected and expected.lower() in answer_span.lower():
                     n_correct += 1
+                elif expected and expected.lower() in predicted.lower():
+                    n_explanation_only += 1
         except Exception:
             n_errors += 1
             logger.debug(
@@ -203,6 +228,13 @@ def evaluate_skill_mastery(
                     f"skill '{skill.name}'. Error rate too high — infrastructure "
                     f"failure, not model incorrectness."
                 ) from None
+
+    if n_explanation_only > 0:
+        logger.info(
+            "Skill '%s': %d items matched expected in explanation text only "
+            "(not in answer span). These are NOT counted as correct.",
+            skill.name, n_explanation_only,
+        )
 
     accuracy = n_correct / n_total if n_total > 0 else 0.0
     ci_lower, ci_upper = clopper_pearson_interval(

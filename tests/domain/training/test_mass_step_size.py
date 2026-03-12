@@ -595,8 +595,8 @@ class TestClosedLoopLaw:
 
         assert restored == law
 
-    def test_trigger_reasons_detect_negative_online_eval_delta(self):
-        law = DerivedClosedLoopLaw()
+    def test_trigger_reasons_detect_negative_online_eval_delta_when_enabled(self):
+        law = DerivedClosedLoopLaw(arm_on_online_eval_accuracy_drop=True)
         state = BehavioralStateMeasurement(online_eval_accuracy_delta=-0.1)
 
         reasons = compute_closed_loop_trigger_reasons(
@@ -609,6 +609,21 @@ class TestClosedLoopLaw:
         )
 
         assert reasons == ("online_eval_accuracy_drop",)
+
+    def test_trigger_reasons_skip_online_eval_when_disabled_by_default(self):
+        law = DerivedClosedLoopLaw()
+        state = BehavioralStateMeasurement(online_eval_accuracy_delta=-0.1)
+
+        reasons = compute_closed_loop_trigger_reasons(
+            law,
+            behavioral_state=state,
+            margin_history=[],
+            stable_rank_history=[],
+            loss_stability_window_epochs=2,
+            adapter_rank=None,
+        )
+
+        assert reasons == ()
 
     def test_trigger_reasons_detect_stable_rank_concentration(self):
         law = DerivedClosedLoopLaw(

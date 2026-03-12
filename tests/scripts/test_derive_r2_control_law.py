@@ -22,9 +22,11 @@ def test_derive_control_law_passes_retained_artifact_checks() -> None:
     law, state_table, validation = derive_r2.derive_control_law()
 
     assert validation["all_passed"] is True
-    assert law.arm_on_online_eval_accuracy_drop is True
+    assert law.arm_on_online_eval_accuracy_drop is False
     assert law.arm_on_margin_trend_declining is True
     assert law.arm_on_stable_rank_concentration is True
+    assert law.require_ordering_surface is True
+    assert law.schema == "r2_behavioral_freeze_v2"
     assert state_table
 
 
@@ -38,7 +40,7 @@ def test_state_table_contains_expected_arm_epochs_for_counterexamples() -> None:
 
     assert summary_rows["pipeline_validation_safe"]["arm_epoch_candidate"] is None
     assert summary_rows["stage_a_seed42"]["arm_epoch_candidate"] is None
-    assert summary_rows["behavioral_probe_cayley_seed42"]["arm_epoch_candidate"] == 2
+    assert summary_rows["behavioral_probe_cayley_seed42"]["arm_epoch_candidate"] == 9
     assert summary_rows["behavioral_probe_adamw_seed42"]["arm_epoch_candidate"] == 1
 
 

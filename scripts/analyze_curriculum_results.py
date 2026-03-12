@@ -60,9 +60,33 @@ def _split_prompt_expected(item: dict) -> tuple[str, str]:
     return " ".join(tokens[:-1]), tokens[-1].strip()
 
 
+def _extract_answer_span(predicted: str) -> str:
+    """Extract the direct-answer span (first line) from model output."""
+    return predicted.split("\n")[0].strip()
+
+
 def _exact_match(expected: str, predicted: str) -> bool:
-    """Case-insensitive substring match (same as eval adapter 'exact' mode)."""
-    return bool(expected) and expected.lower() in predicted.lower()
+    """Case-insensitive substring match on the answer span (first line only).
+
+    Matches the evaluator in curriculum_eval_adapter.py: only the direct
+    answer counts, not incidental mentions in explanation text.
+    """
+    answer_span = _extract_answer_span(predicted)
+    return bool(expected) and expected.lower() in answer_span.lower()
+
+
+def _explanation_match(expected: str, predicted: str) -> bool:
+    """True if expected appears in full output but NOT in the answer span.
+
+    Diagnostic only — these are not counted as correct by the primary metric.
+    """
+    if not expected:
+        return False
+    answer_span = _extract_answer_span(predicted)
+    return (
+        expected.lower() not in answer_span.lower()
+        and expected.lower() in predicted.lower()
+    )
 
 
 def _content_words(text: str) -> set[str]:
@@ -102,6 +126,7 @@ def _run_all_items(engine, model_path: str, items: list[dict],
                 "expected": expected,
                 "predicted": predicted,
                 "exact_match": _exact_match(expected, predicted),
+                "explanation_match": _explanation_match(expected, predicted),
                 "error": None,
             })
         except Exception as e:
@@ -111,6 +136,7 @@ def _run_all_items(engine, model_path: str, items: list[dict],
                 "expected": expected,
                 "predicted": "",
                 "exact_match": False,
+                "explanation_match": False,
                 "error": str(e),
             })
         if (i + 1) % 10 == 0:
@@ -143,6 +169,8 @@ def _classify_flips(baseline: list[dict], adapter: list[dict]) -> list[dict]:
         if not a_correct:
             if a["error"]:
                 miss_type = "inference_error"
+            elif a.get("explanation_match"):
+                miss_type = "explanation_only"
             elif _semantic_match(a["expected"], a["predicted"]):
                 miss_type = "semantic_correct_exact_miss"
             else:
@@ -154,7 +182,9 @@ def _classify_flips(baseline: list[dict], adapter: list[dict]) -> list[dict]:
             "baseline_predicted": b["predicted"][:300],
             "adapter_predicted": a["predicted"][:300],
             "baseline_correct": b_correct,
+            "baseline_explanation_only": b.get("explanation_match", False),
             "adapter_correct": a_correct,
+            "adapter_explanation_only": a.get("explanation_match", False),
             "flip": flip,
             "miss_type": miss_type,
         })
@@ -164,12 +194,24 @@ def _classify_flips(baseline: list[dict], adapter: list[dict]) -> list[dict]:
 def _compute_summary(analysis: list[dict]) -> dict:
     n = len(analysis)
     flips = {"wrong_to_right": 0, "right_to_wrong": 0, "stayed_right": 0, "stayed_wrong": 0}
-    miss_types = {"semantic_correct_exact_miss": 0, "actually_wrong": 0, "inference_error": 0}
+    miss_types = {
+        "explanation_only": 0,
+        "semantic_correct_exact_miss": 0,
+        "actually_wrong": 0,
+        "inference_error": 0,
+    }
+
+    baseline_explanation_only = 0
+    adapter_explanation_only = 0
 
     for item in analysis:
         flips[item["flip"]] += 1
         if item["miss_type"]:
             miss_types[item["miss_type"]] += 1
+        if item.get("baseline_explanation_only"):
+            baseline_explanation_only += 1
+        if item.get("adapter_explanation_only"):
+            adapter_explanation_only += 1
 
     baseline_correct = flips["stayed_right"] + flips["right_to_wrong"]
     adapter_correct = flips["stayed_right"] + flips["wrong_to_right"]
@@ -184,6 +226,8 @@ def _compute_summary(analysis: list[dict]) -> dict:
         "flips": flips,
         "post_training_misses": n - adapter_correct,
         "miss_classification": miss_types,
+        "baseline_explanation_only": baseline_explanation_only,
+        "adapter_explanation_only": adapter_explanation_only,
         "net_improvement": flips["wrong_to_right"] - flips["right_to_wrong"],
         "mcnemar_b": flips["right_to_wrong"],
         "mcnemar_c": flips["wrong_to_right"],
@@ -210,14 +254,20 @@ def _print_summary(summary: dict, analysis: list[dict]) -> None:
     print(f"  Net improvement: {summary['net_improvement']} items")
     print(f"  McNemar discordant: b={summary['mcnemar_b']}, c={summary['mcnemar_c']}")
 
+    print(f"\n--- Explanation-Only Matches (diagnostic, NOT counted as correct) ---")
+    print(f"  Baseline: {summary['baseline_explanation_only']}")
+    print(f"  Adapter:  {summary['adapter_explanation_only']}")
+
     m = summary["miss_classification"]
     print(f"\n--- Post-Training Miss Classification ---")
-    print(f"  Semantic correct (exact miss): {m['semantic_correct_exact_miss']}")
-    print(f"  Actually wrong:                {m['actually_wrong']}")
-    print(f"  Inference errors:              {m['inference_error']}")
+    print(f"  Explanation only (not correct):  {m['explanation_only']}")
+    print(f"  Semantic correct (exact miss):   {m['semantic_correct_exact_miss']}")
+    print(f"  Actually wrong:                  {m['actually_wrong']}")
+    print(f"  Inference errors:                {m['inference_error']}")
 
     for category, label in [
         ("right_to_wrong", "Right -> Wrong"),
+        ("explanation_only", "Explanation Only (not counted)"),
         ("semantic_correct_exact_miss", "Semantic Correct, Exact Miss"),
     ]:
         items_in_cat = [

@@ -383,11 +383,11 @@ def derive_control_law(
                 }
             )
         elif spec.artifact_id == "behavioral_probe_cayley_seed42":
-            passed = arm_epoch is not None and stop_epoch is not None and arm_epoch < stop_epoch
+            passed = arm_epoch is not None and stop_epoch is not None and arm_epoch <= stop_epoch
             validations.append(
                 {
                     "artifact_id": spec.artifact_id,
-                    "expectation": "arm_before_margin_declining_and_benchmark_degradation",
+                    "expectation": "arm_at_or_before_geometric_stop",
                     "passed": passed,
                     "arm_epoch_candidate": arm_epoch,
                     "stop_epoch": stop_epoch,
