@@ -435,18 +435,39 @@ def train_validate_derived(
         dataset_training_service=get_dataset_training_service(),
         backend=get_backend(),
     )
-    result = validator.validate(
-        model_path=model_path,
-        dataset_path=data,
-        eval_dataset_path=eval_data,
-        trials=trials,
-        base_seed=base_seed,
-        seq_length=seq_length,
-        benchmark_suite=benchmark,
-        controller_mode=controller_mode,
-        optimizer_research_mode=optimizer_research_mode,
-    )
-    payload = result.to_dict()
+    try:
+        result = validator.validate(
+            model_path=model_path,
+            dataset_path=data,
+            eval_dataset_path=eval_data,
+            trials=trials,
+            base_seed=base_seed,
+            seq_length=seq_length,
+            benchmark_suite=benchmark,
+            controller_mode=controller_mode,
+            optimizer_research_mode=optimizer_research_mode,
+        )
+        payload = result.to_dict()
+    except TrainingDerivationError as exc:
+        payload = {
+            "model_path": str(model_path.expanduser().resolve()),
+            "dataset_path": data,
+            "eval_dataset_path": eval_data,
+            "trials_requested": trials,
+            "benchmark_suite": benchmark,
+            "controller_mode": controller_mode,
+            "optimizer_research_mode": optimizer_research_mode,
+            "all_passed": False,
+            **exc.to_dict(),
+        }
+        if report_path is not None:
+            output_file = Path(report_path).expanduser().resolve()
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+            output_file.write_text(
+                json.dumps(payload, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+        _write_training_derivation_error(exc, context)
 
     if report_path is not None:
         output_file = Path(report_path).expanduser().resolve()

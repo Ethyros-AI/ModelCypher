@@ -489,7 +489,9 @@ def validate_margin_declining_stop() -> None:
         model = _TrainModel()
         tokenizer = SimpleNamespace(vocab_size=32000)
         problems = [SimpleNamespace(problem_id="p1")]
-        margin_values = iter([{"p1": 5.0}, {"p1": 5.0}, {"p1": 0.0}, {"p1": 0.0}])
+        # Keep margins above the collapse floor so this test isolates the
+        # windowed trend stop rather than the stronger collapse gate.
+        margin_values = iter([{"p1": 5.0}, {"p1": 5.0}, {"p1": 0.02}, {"p1": 0.02}])
         stable_rank_values = iter(adapter._stable_rank_sequence)
 
         # Patch signal providers
@@ -523,7 +525,7 @@ def validate_margin_declining_stop() -> None:
 
         assert len(losses) == 4
         assert "margin_declining" in stop_reason, f"expected margin_declining, got: {stop_reason}"
-        assert abs(metrics[-1].margin_median) < 1e-6
+        assert abs(metrics[-1].margin_median - 0.02) < 1e-6
 
         # Restore
         online_eval_mod.compute_answer_margin = _orig_margin
