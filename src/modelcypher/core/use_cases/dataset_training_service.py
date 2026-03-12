@@ -454,6 +454,25 @@ class DerivedTrainingPlan:
             int(min(rank_values)) if rank_values else 0,
             int(max(rank_values)) if rank_values else 0,
         ]
+        if self.optimizer_research_mode == OPTIMIZER_MODE_ADAMW_GEOMETRIC:
+            learning_rate_policy = (
+                "Canonical AdamW: fixed lr=2e-4 with cosine decay over 6 "
+                "data-epochs, calibrated from the R1 frozen-tuple winner."
+            )
+            batch_size_policy = (
+                "Logical batch size is derived from gradient noise after LoRA "
+                "injection, then reduced to a memory-safe micro-batch only if "
+                "gradient accumulation is required."
+            )
+        else:
+            learning_rate_policy = (
+                "No fixed scalar LR is derived upfront. MASS chooses eta_step "
+                "= min(eta_ceiling, eta_sps, eta_weyl) online."
+            )
+            batch_size_policy = (
+                "Batch size is derived during training from gradient noise "
+                "scale after LoRA injection."
+            )
         return {
             "inputs": {
                 "model_path": str(self.model_path),
@@ -501,14 +520,8 @@ class DerivedTrainingPlan:
                 "controller_mode": self.controller_mode,
                 "optimizer_research_mode": self.optimizer_research_mode,
                 "closed_loop_control_law": self.controller_law,
-                "learning_rate_policy": (
-                    "No fixed scalar LR is derived upfront. MASS chooses "
-                    "eta_step = min(eta_ceiling, eta_sps, eta_weyl) online."
-                ),
-                "batch_size_policy": (
-                    "Batch size is derived during training from gradient noise "
-                    "scale after LoRA injection."
-                ),
+                "learning_rate_policy": learning_rate_policy,
+                "batch_size_policy": batch_size_policy,
             },
             "derived_now": {
                 "seed": int(self.seed),
@@ -581,6 +594,16 @@ class DerivedTrainingPlan:
         rank_min = min(rank_values) if rank_values else 0
         rank_max = max(rank_values) if rank_values else 0
         split_method = self.validation_split.get("method", "unknown")
+        if self.optimizer_research_mode == OPTIMIZER_MODE_ADAMW_GEOMETRIC:
+            controller_summary = (
+                "Controller: canonical AdamW with fixed lr=2e-4 and cosine "
+                "decay over 6 data-epochs"
+            )
+        else:
+            controller_summary = (
+                "Controller: no fixed scalar LR; MASS will choose "
+                "eta_step = min(eta_ceiling, eta_sps, eta_weyl) online"
+            )
         lines = [
             "Resolved training plan",
             f"Model: {self.model_path}",
@@ -610,10 +633,7 @@ class DerivedTrainingPlan:
                 f"Spectral bounds: sigma_k_min={self.sigma_k_min:.4e} | "
                 f"sigma_max={self.sigma_max:.4e} | ceiling={self.rank_ceiling_source}"
             ),
-            (
-                "Controller: no fixed scalar LR; MASS will choose "
-                "eta_step = min(eta_ceiling, eta_sps, eta_weyl) online"
-            ),
+            controller_summary,
             (
                 "Closed-loop law: "
                 + str(self.controller_law.get("law_id"))
