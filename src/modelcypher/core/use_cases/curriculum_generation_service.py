@@ -195,8 +195,14 @@ class CurriculumGenerationService:
 
         # Write JSONL files
         output_dir.mkdir(parents=True, exist_ok=True)
+        resolved_output = output_dir.resolve()
         for td in spec.training_data:
             filepath = output_dir / td.filename
+            # Defense in depth: validation should catch this, but guard writes
+            if not filepath.resolve().is_relative_to(resolved_output):
+                raise ValueError(
+                    f"Filename '{td.filename}' resolves outside output_dir"
+                )
             with open(filepath, "w") as f:
                 for sample in td.samples:
                     f.write(json.dumps(sample.to_jsonl_dict()) + "\n")

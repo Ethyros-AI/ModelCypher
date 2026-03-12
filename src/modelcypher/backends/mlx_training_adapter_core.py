@@ -15,17 +15,19 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""MLX adapter for geometric LoRA training via NB-LoRA.
+"""MLX adapter for geometric LoRA training.
 
-One training method. Cayley-parameterized LoRA with spectral bounds by construction.
-ScaledGD preconditioning for condition-number-free convergence on the rank-r manifold.
+Canonical path: PiSSA-initialized LoRA on a geometry-derived surface.
+Target modules, per-module ranks, and step sizes all derived from SVD.
+Fisher preconditioning for condition-number-free convergence on the rank-r manifold.
 Weyl adapter-saturation monitoring for per-layer spectral crossing detection.
 MASS (Measured-Adaptive Step Size): spectral ceiling (Weyl 1912) + per-step SPS
 (Loizou et al. 2020) + per-step Weyl displacement bound. Every number from SVD,
 IEEE 754, or per-step measurement.
 
-The Cayley transform maps unconstrained (A_tilde, B_tilde) to semi-orthogonal
-(A, B), guaranteeing ||2 * B^T @ S @ A||_2 <= 2 * max(S) <= sigma_k.
+Legacy path: NBLoRALinear uses the Cayley transform to map unconstrained
+(A_tilde, B_tilde) to semi-orthogonal (A, B). Falsified on 350M — drops
+below baseline on 4/7 benchmarks. Kept for reference, not shipped.
 """
 
 from __future__ import annotations

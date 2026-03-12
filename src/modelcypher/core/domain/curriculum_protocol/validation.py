@@ -6,6 +6,7 @@ data quality (sample counts, diversity, held-out integrity) before ingestion.
 
 from __future__ import annotations
 
+import os
 import re
 from collections import deque
 from dataclasses import dataclass, field
@@ -17,6 +18,11 @@ from modelcypher.core.domain.curriculum_protocol.curriculum_spec import (
 _SNAKE_CASE_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _VALID_ANSWER_MODES = {"exact", "numeric", "procedural"}
 _MIN_EVAL_SAMPLES = 50
+
+
+def _is_absolute(path: str) -> bool:
+    """Check if a path string is absolute (cross-platform)."""
+    return os.path.isabs(path)
 
 
 @dataclass
@@ -148,6 +154,25 @@ def validate_curriculum(
             )
 
     # -- Training data validation --
+
+    # Filename safety: reject path traversal and duplicates
+    seen_filenames: set[str] = set()
+    for td in spec.training_data:
+        fn = td.filename
+        # Path traversal: no slashes, no .., no absolute paths
+        if "/" in fn or "\\" in fn or ".." in fn or _is_absolute(fn):
+            result.errors.append(
+                f"Unsafe filename '{fn}' for skill '{td.skill_name}': "
+                f"filenames must be bare names (no path separators or '..')"
+            )
+        # Duplicate filenames
+        if fn in seen_filenames:
+            result.errors.append(
+                f"Duplicate filename '{fn}': multiple training data entries "
+                f"share the same filename (would overwrite each other)"
+            )
+        seen_filenames.add(fn)
+
     # Build skill -> data mapping
     train_data: dict[str, list] = {s.name: [] for s in spec.skills}
     eval_data: dict[str, list] = {s.name: [] for s in spec.skills}

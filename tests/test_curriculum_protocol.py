@@ -564,6 +564,60 @@ class TestValidation:
         assert result.is_valid
         assert any("very short" in w for w in result.warnings)
 
+    def test_escaped_filename_rejected(self):
+        skills = (
+            GeneratedSkillNode(name="esc", formal_statement="Path traversal test.", prerequisites=(), branch="test"),
+        )
+        spec = CurriculumSpec(
+            curriculum_id="test", goal="test", target_domain="test",
+            skills=skills,
+            training_data=(
+                TrainingDataSpec(skill_name="esc", filename="../escaped_train.jsonl", file_type="train",
+                                 samples=_make_samples(60, prefix="esc_train", skill="esc")),
+                TrainingDataSpec(skill_name="esc", filename="esc_eval.jsonl", file_type="eval",
+                                 samples=_make_samples(55, prefix="esc_eval", skill="esc")),
+            ),
+        )
+        result = validate_curriculum(spec)
+        assert not result.is_valid
+        assert any("Unsafe filename" in e for e in result.errors)
+
+    def test_absolute_filename_rejected(self):
+        skills = (
+            GeneratedSkillNode(name="absf", formal_statement="Absolute path test.", prerequisites=(), branch="test"),
+        )
+        spec = CurriculumSpec(
+            curriculum_id="test", goal="test", target_domain="test",
+            skills=skills,
+            training_data=(
+                TrainingDataSpec(skill_name="absf", filename="/tmp/evil_train.jsonl", file_type="train",
+                                 samples=_make_samples(60, prefix="abs_train", skill="absf")),
+                TrainingDataSpec(skill_name="absf", filename="absf_eval.jsonl", file_type="eval",
+                                 samples=_make_samples(55, prefix="abs_eval", skill="absf")),
+            ),
+        )
+        result = validate_curriculum(spec)
+        assert not result.is_valid
+        assert any("Unsafe filename" in e for e in result.errors)
+
+    def test_duplicate_filename_rejected(self):
+        skills = (
+            GeneratedSkillNode(name="dupf", formal_statement="Duplicate filename test.", prerequisites=(), branch="test"),
+        )
+        spec = CurriculumSpec(
+            curriculum_id="test", goal="test", target_domain="test",
+            skills=skills,
+            training_data=(
+                TrainingDataSpec(skill_name="dupf", filename="shared.jsonl", file_type="train",
+                                 samples=_make_samples(60, prefix="dup_train", skill="dupf")),
+                TrainingDataSpec(skill_name="dupf", filename="shared.jsonl", file_type="eval",
+                                 samples=_make_samples(55, prefix="dup_eval", skill="dupf")),
+            ),
+        )
+        result = validate_curriculum(spec)
+        assert not result.is_valid
+        assert any("Duplicate filename" in e for e in result.errors)
+
 
 # ---------------------------------------------------------------------------
 # Prompt template tests
@@ -745,6 +799,47 @@ class TestCurriculumGenerationService:
         samples = load_jsonl_dataset(tmp_path / "compat" / "skill_a_train.jsonl")
         assert len(samples) == 60
         assert "text" in samples[0]
+
+    def test_ingest_with_external_mastered_prerequisite(self, tmp_path):
+        """Curriculum with prereq in mastered_skills ingests without crash."""
+        skills = (
+            GeneratedSkillNode(
+                name="child_skill",
+                formal_statement="Depends on externally mastered parent.",
+                prerequisites=("already_mastered",),
+                branch="test",
+            ),
+        )
+        spec = CurriculumSpec(
+            curriculum_id="test_ext", goal="test", target_domain="test",
+            skills=skills,
+            training_data=(
+                TrainingDataSpec(
+                    skill_name="child_skill", filename="child_train.jsonl",
+                    file_type="train",
+                    samples=_make_samples(60, prefix="child_train", skill="child_skill"),
+                ),
+                TrainingDataSpec(
+                    skill_name="child_skill", filename="child_eval.jsonl",
+                    file_type="eval",
+                    samples=_make_samples(55, prefix="child_eval", skill="child_skill"),
+                ),
+            ),
+        )
+        svc = CurriculumGenerationService()
+        dag, scheduler, result = svc.ingest_curriculum(
+            curriculum_json=spec.to_dict(),
+            output_dir=tmp_path / "ext_mastered",
+            mastered_skills={"already_mastered"},
+        )
+        assert result.is_valid, f"Errors: {result.errors}"
+        assert len(dag.nodes) == 1
+        # The SkillNode should NOT have 'already_mastered' as prerequisite
+        child = dag.get("child_skill")
+        assert "already_mastered" not in child.prerequisites
+        # DAG should be usable
+        sorted_nodes = dag.topological_sort()
+        assert len(sorted_nodes) == 1
 
 
 # ---------------------------------------------------------------------------
