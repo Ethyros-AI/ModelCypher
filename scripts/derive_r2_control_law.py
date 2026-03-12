@@ -459,16 +459,37 @@ def build_falsifier_manifest(
 
 
 def _active_gpu_processes() -> list[str]:
+    """Return PIDs of Python/MLX processes likely using the GPU.
+
+    Filters out VS Code extensions, uvicorn/web servers, multiprocessing
+    resource trackers, and the current process.
+    """
     result = subprocess.run(
-        ["zsh", "-lc", "pgrep -af 'python|mlx' | grep -v grep || true"],
+        ["zsh", "-lc", "pgrep -lf 'python|mlx' | grep -v grep || true"],
         capture_output=True,
         text=True,
         check=False,
         cwd=REPO_ROOT,
     )
     current_pid = str(os.getpid())
+    _SAFE_PATTERNS = (
+        "vscode",
+        "pylance",
+        "pet server",
+        "Code Helper",
+        "uvicorn",
+        "resource_tracker",
+        "multiprocessing",
+    )
     lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-    return [line for line in lines if not line.startswith(f"{current_pid} ")]
+    filtered = []
+    for line in lines:
+        if line.startswith(f"{current_pid} "):
+            continue
+        if any(pat in line for pat in _SAFE_PATTERNS):
+            continue
+        filtered.append(line)
+    return filtered
 
 
 def _append_ledger_row(
