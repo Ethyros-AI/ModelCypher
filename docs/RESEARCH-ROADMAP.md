@@ -70,6 +70,13 @@ Current state:
   summary, but it is not yet a promotable benchmark bundle.
 - The repo has no mandatory, stable same-model same-data same-eval suite across
   the PEFT baseline set.
+- Immediate execution note (2026-03-12): freeze the next spend to the local
+  LFM2-350M bf16 tuple with
+  `data/training/benchmark_train.jsonl` /
+  `data/training/benchmark_val.jsonl`; run one-seed Stage A on
+  `standard_nb_surface`, `pissa_nb_surface`, `dora_nb_surface`, and
+  canonical `nb_lora`; only expand to additional seeds if `nb_lora` is
+  competitive, otherwise pivot directly to `R2` on the same tuple.
 
 Required controls:
 

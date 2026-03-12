@@ -128,12 +128,13 @@ class _MLXTrainingAdapterTrainMixin:
         # 0.0 = no decay (default). Research variable — isolated for testing.
         weight_decay: float = 0.0,
     ) -> tuple[list[tuple[int, float, float]], str, list[EpochMetrics]]:
-        """Train with Cayley-Stiefel retraction, Weyl adapter-saturation monitoring,
-        and geometric stopping.
+        """Train with geometric stopping and MASS step sizing.
 
-        Optimizer: Cayley-parameterized retraction on the Stiefel manifold.
-        NB-LoRA factors (A_tilde, B_tilde) are Cayley-transformed at each step,
-        guaranteeing orthonormality and spectral bounds by construction.
+        Supports two adapter modes:
+        - PiSSA-LoRA: PiSSA-initialized standard LoRA on geometry-derived surface.
+          No Cayley retraction or scale clamping. MASS bounds displacement.
+        - NB-LoRA (legacy): Cayley-parameterized retraction on the Stiefel manifold.
+          NB-LoRA factors are Cayley-transformed at each step.
 
         MASS (Measured-Adaptive Step Size) — three-layer system:
         1. Spectral ceiling: eta_ceiling = sigma_k_min / sigma_max (Weyl 1912, static)
@@ -409,10 +410,18 @@ class _MLXTrainingAdapterTrainMixin:
             per_layer: dict[str, ControllerLayerMeasurement] = {}
             total_norm_sq = 0.0
             layer_norms: dict[str, float] = {}
-            for layer_key, nb_lora in self._iter_nb_lora_modules(model):
+
+            if use_pissa_lora:
+                lora_iter = self._iter_pissa_lora_modules(model)
+                param_suffixes = (".lora_a", ".lora_b")
+            else:
+                lora_iter = self._iter_nb_lora_modules(model)
+                param_suffixes = (".A_tilde", ".B_tilde", ".S_raw")
+
+            for layer_key, lora_module in lora_iter:
                 prefix = layer_key.removesuffix(".weight")
                 grad_norm_sq_terms = []
-                for suffix in (".A_tilde", ".B_tilde", ".S_raw"):
+                for suffix in param_suffixes:
                     grad_array = grad_map.get(prefix + suffix)
                     if grad_array is None or grad_array.size == 0:
                         continue
@@ -429,11 +438,15 @@ class _MLXTrainingAdapterTrainMixin:
                 decay_scale = None
                 if opt_config is not None and layer_key in opt_config.layer_configs:
                     decay_scale = float(opt_config.layer_configs[layer_key].decay_scale)
+                scale_bound_val = (
+                    None if use_pissa_lora
+                    else float(lora_module._scale_bound)
+                )
                 per_layer[layer_key] = ControllerLayerMeasurement(
                     parameter_update_norm=step_learning_rate * grad_norm,
                     total_step_fraction=None,
                     decay_scale=decay_scale,
-                    scale_bound=float(nb_lora._scale_bound),
+                    scale_bound=scale_bound_val,
                     step_learning_rate=step_learning_rate,
                 )
 
@@ -535,7 +548,11 @@ class _MLXTrainingAdapterTrainMixin:
 
             per_layer_transport: dict[str, float] = {}
             if base_activations:
-                for layer_key, nb_lora in self._iter_nb_lora_modules(model):
+                if use_pissa_lora:
+                    transport_iter = self._iter_pissa_lora_modules(model)
+                else:
+                    transport_iter = self._iter_nb_lora_modules(model)
+                for layer_key, lora_module in transport_iter:
                     try:
                         layer_idx = int(layer_key.split(".")[2])
                     except (IndexError, ValueError):
@@ -544,11 +561,20 @@ class _MLXTrainingAdapterTrainMixin:
                     if not layer_acts:
                         continue
                     layer_stack = mx.stack(layer_acts)
-                    if int(layer_stack.shape[-1]) != int(nb_lora._in_features):
-                        continue
-                    A, B = nb_lora._cayley_transform()
-                    S = mx.clip(nb_lora.S_raw, 0.0, nb_lora._scale_bound)
-                    delta_w_t = 2.0 * mx.matmul((S[:, None] * A).T, B)
+                    if use_pissa_lora:
+                        in_features = int(lora_module.lora_a.shape[0])
+                        if int(layer_stack.shape[-1]) != in_features:
+                            continue
+                        # DeltaW^T = scale * lora_a @ lora_b  [in, out]
+                        delta_w_t = lora_module.scale * mx.matmul(
+                            lora_module.lora_a, lora_module.lora_b,
+                        )
+                    else:
+                        if int(layer_stack.shape[-1]) != int(lora_module._in_features):
+                            continue
+                        A, B = lora_module._cayley_transform()
+                        S = mx.clip(lora_module.S_raw, 0.0, lora_module._scale_bound)
+                        delta_w_t = 2.0 * mx.matmul((S[:, None] * A).T, B)
                     transport = mx.matmul(layer_stack.astype(mx.float32), delta_w_t.astype(mx.float32))
                     transport_norm = mx.norm(transport)
                     mx.eval(transport_norm)
@@ -634,6 +660,7 @@ class _MLXTrainingAdapterTrainMixin:
         last_max_spectral_ratio: float | None = None
         dim_snapshots: list = []  # DimensionalSnapshot history for trend analysis
         stop_reason: str | None = None
+        use_pissa_lora = self._has_pissa_lora(model)
         best_val_loss = float("inf")
         best_weights: dict[str, Any] | None = None
         val_loss_baseline: float | None = None  # First epoch's val loss for certificate condition 5
@@ -777,7 +804,7 @@ class _MLXTrainingAdapterTrainMixin:
         optimizer_name = (
             "AdamW-matched-trace"
             if optimizer_research_mode == OPTIMIZER_MODE_ADAMW_MATCHED_TRACE
-            else "Cayley-Fisher"
+            else ("PiSSA-Fisher" if use_pissa_lora else "Cayley-Fisher")
         )
         logger.info(
             "Training: optimizer=%s, stop=%s, cap=%d, epoch=%d batches, lr=%.2e, mode=%s",
@@ -1016,8 +1043,10 @@ class _MLXTrainingAdapterTrainMixin:
                         constraint_config, alpha_dual,
                     )
 
-            # THE constraint: clamp S_raw after every step
-            self._clamp_all_scales(model)
+            # NB-LoRA: clamp S_raw after every step (Cayley bound enforcement).
+            # PiSSA LoRA: no clamping — MASS step sizing bounds displacement.
+            if not use_pissa_lora:
+                self._clamp_all_scales(model)
 
             epoch_step_traces.append(
                 ControllerStepTrace(
@@ -1132,12 +1161,6 @@ class _MLXTrainingAdapterTrainMixin:
                         break
 
                 # 4. Weyl adapter-saturation monitoring
-                # NB-LoRA is bounded by construction (||BA||₂ ≤ σ_k via Cayley).
-                # Per-layer Weyl crossing thresholds (gap/(2σ_k)) apply to unbounded
-                # LoRA. For NB-LoRA, we monitor capacity usage: ||BA||₂/σ_k → 1.0.
-                # Budget exhaustion means the adapter has consumed its available
-                # spectral capacity — further training cannot improve without
-                # violating bounds.
                 max_ratio = None
                 budget_exhausted_flag = False
                 median_budget_ratio = None
@@ -1148,108 +1171,115 @@ class _MLXTrainingAdapterTrainMixin:
                 n_saturated_experts: int | None = None
                 n_total_target_experts: int | None = None
                 all_target_experts_saturated = False
-                try:
-                    lora_products = []
-                    lora_module_names: list[str] = []
-                    for name, nb_lora in self._iter_nb_lora_modules(model):
-                        A, B = nb_lora._cayley_transform()
-                        S = mx.clip(nb_lora.S_raw, 0.0, nb_lora._scale_bound)
-                        # Product = 2 * A^T @ diag(S) @ B → [in, out]
-                        # compute_budget_ratios: product = scale * lora_a @ lora_b
-                        lora_products.append((
-                            2.0,
-                            (S[:, None] * A).T,  # [in, r]
-                            B,                    # [r, out]
-                            nb_lora._scale_bound,
-                        ))
-                        lora_module_names.append(name)
-                        mx.eval(A, B, S)
 
-                    ratios = compute_budget_ratios(
-                        lora_products, self._backend,
-                    )
-                    if ratios:
-                        # Scalar threshold: capacity exhaustion (ratio → 1.0)
-                        budget_exhausted_flag, median_budget_ratio = is_budget_exhausted(
-                            ratios,
-                            threshold=DTYPE_THRESHOLD_F32,
+                if use_pissa_lora:
+                    # PiSSA LoRA: no hard spectral bound. MASS step sizing
+                    # bounds per-step displacement; val_loss convergence stops.
+                    # Budget monitoring for PiSSA requires tracking displacement
+                    # from initialization — deferred to follow-up.
+                    pass
+                else:
+                    # NB-LoRA: bounded by construction (||BA||₂ ≤ σ_k via Cayley).
+                    # Monitor capacity usage: ||BA||₂/σ_k → 1.0.
+                    try:
+                        lora_products = []
+                        lora_module_names: list[str] = []
+                        for name, nb_lora in self._iter_nb_lora_modules(model):
+                            A, B = nb_lora._cayley_transform()
+                            S = mx.clip(nb_lora.S_raw, 0.0, nb_lora._scale_bound)
+                            lora_products.append((
+                                2.0,
+                                (S[:, None] * A).T,  # [in, r]
+                                B,                    # [r, out]
+                                nb_lora._scale_bound,
+                            ))
+                            lora_module_names.append(name)
+                            mx.eval(A, B, S)
+
+                        ratios = compute_budget_ratios(
+                            lora_products, self._backend,
                         )
-                        max_ratio = max(ratios)
-                        if len(ratios) == len(lora_module_names):
-                            per_layer_budget_ratio = {
-                                module_name: float(ratio)
-                                for module_name, ratio in zip(lora_module_names, ratios)
-                            }
-                            per_layer_remaining_budget = {}
-                            for module_name, ratio in zip(lora_module_names, ratios):
-                                module_ref = next(
-                                    (
-                                        nb
-                                        for name, nb in self._iter_nb_lora_modules(model)
-                                        if name == module_name
-                                    ),
-                                    None,
-                                )
-                                if module_ref is not None:
-                                    per_layer_remaining_budget[module_name] = max(
-                                        0.0,
-                                        float(module_ref._scale_bound) * (1.0 - float(ratio)),
+                        if ratios:
+                            budget_exhausted_flag, median_budget_ratio = is_budget_exhausted(
+                                ratios,
+                                threshold=DTYPE_THRESHOLD_F32,
+                            )
+                            max_ratio = max(ratios)
+                            if len(ratios) == len(lora_module_names):
+                                per_layer_budget_ratio = {
+                                    module_name: float(ratio)
+                                    for module_name, ratio in zip(lora_module_names, ratios)
+                                }
+                                per_layer_remaining_budget = {}
+                                for module_name, ratio in zip(lora_module_names, ratios):
+                                    module_ref = next(
+                                        (
+                                            nb
+                                            for name, nb in self._iter_nb_lora_modules(model)
+                                            if name == module_name
+                                        ),
+                                        None,
+                                    )
+                                    if module_ref is not None:
+                                        per_layer_remaining_budget[module_name] = max(
+                                            0.0,
+                                            float(module_ref._scale_bound) * (1.0 - float(ratio)),
+                                        )
+
+                            if len(ratios) == len(lora_module_names):
+                                per_expert: dict[str, float] = {}
+                                for module_name, ratio in zip(lora_module_names, ratios):
+                                    expert_key = self._expert_key_from_layer_key(module_name)
+                                    if expert_key is None:
+                                        continue
+                                    existing = per_expert.get(expert_key)
+                                    if existing is None or ratio > existing:
+                                        per_expert[expert_key] = float(ratio)
+                                if per_expert:
+                                    expert_saturation_map = dict(sorted(per_expert.items()))
+                                    n_total_target_experts = len(expert_saturation_map)
+                                    n_saturated_experts = sum(
+                                        1
+                                        for ratio in expert_saturation_map.values()
+                                        if ratio >= DTYPE_THRESHOLD_F32
+                                    )
+                                    all_target_experts_saturated = (
+                                        n_total_target_experts > 0
+                                        and n_saturated_experts == n_total_target_experts
+                                    )
+                                    logger.info(
+                                        "Expert capacity: saturated=%d/%d, headroom=%d",
+                                        n_saturated_experts,
+                                        n_total_target_experts,
+                                        n_total_target_experts - n_saturated_experts,
                                     )
 
-                        if len(ratios) == len(lora_module_names):
-                            per_expert: dict[str, float] = {}
-                            for module_name, ratio in zip(lora_module_names, ratios):
-                                expert_key = self._expert_key_from_layer_key(module_name)
-                                if expert_key is None:
-                                    continue
-                                existing = per_expert.get(expert_key)
-                                if existing is None or ratio > existing:
-                                    per_expert[expert_key] = float(ratio)
-                            if per_expert:
-                                expert_saturation_map = dict(sorted(per_expert.items()))
-                                n_total_target_experts = len(expert_saturation_map)
-                                n_saturated_experts = sum(
-                                    1
-                                    for ratio in expert_saturation_map.values()
-                                    if ratio >= DTYPE_THRESHOLD_F32
-                                )
-                                all_target_experts_saturated = (
-                                    n_total_target_experts > 0
-                                    and n_saturated_experts == n_total_target_experts
-                                )
-                                logger.info(
-                                    "Expert capacity: saturated=%d/%d, headroom=%d",
-                                    n_saturated_experts,
-                                    n_total_target_experts,
-                                    n_total_target_experts - n_saturated_experts,
-                                )
+                        # Update conformal margin from fresh spectral measurement
+                        if max_ratio is not None:
+                            remaining_budget = max(
+                                0.0, sigma_k_min * (1.0 - max_ratio),
+                            )
 
-                    # Update conformal margin from fresh spectral measurement
-                    if max_ratio is not None:
-                        remaining_budget = max(
-                            0.0, sigma_k_min * (1.0 - max_ratio),
+                        # Projected residual diagnostic (tighter than spectral norm)
+                        base_u_ks = []
+                        base_v_ks = []
+                        for _name, nb in self._iter_nb_lora_modules(model):
+                            if nb.base_u_k is not None and nb.base_v_k is not None:
+                                base_u_ks.append(nb.base_u_k)
+                                base_v_ks.append(nb.base_v_k)
+                        if base_u_ks and len(base_u_ks) == len(lora_products):
+                            proj_residuals = compute_projected_residuals(
+                                lora_products, base_u_ks, base_v_ks,
+                                self._backend,
+                            )
+                            if proj_residuals:
+                                projected_residual_max = max(proj_residuals)
+                    except Exception:
+                        raise RuntimeError(
+                            "Adapter spectral-budget monitoring failed. "
+                            "Weyl bound exists to prevent spectral damage — "
+                            "cannot continue training without budget verification."
                         )
-
-                    # Projected residual diagnostic (tighter than spectral norm)
-                    base_u_ks = []
-                    base_v_ks = []
-                    for _name, nb in self._iter_nb_lora_modules(model):
-                        if nb.base_u_k is not None and nb.base_v_k is not None:
-                            base_u_ks.append(nb.base_u_k)
-                            base_v_ks.append(nb.base_v_k)
-                    if base_u_ks and len(base_u_ks) == len(lora_products):
-                        proj_residuals = compute_projected_residuals(
-                            lora_products, base_u_ks, base_v_ks,
-                            self._backend,
-                        )
-                        if proj_residuals:
-                            projected_residual_max = max(proj_residuals)
-                except Exception:
-                    raise RuntimeError(
-                        "Adapter spectral-budget monitoring failed. "
-                        "Weyl bound exists to prevent spectral damage — "
-                        "cannot continue training without budget verification."
-                    )
 
                 # 5. Entropy and repetition probe
                 mean_entropy, rep_rate = self._probe_entropy_and_repetition(

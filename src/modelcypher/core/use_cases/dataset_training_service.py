@@ -1521,22 +1521,18 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                         "Pre-training routing collection failed", exc_info=True,
                     )
 
-        # 6. Inject NB-LoRA (bounds by construction)
+        # 6. Inject PiSSA-initialized LoRA on geometry-derived surface
         logger.info(
-            "Injecting NB-LoRA into %d target modules...",
+            "Injecting PiSSA-LoRA into %d target modules...",
             len(target_modules),
         )
-        # Keep logging numerically aligned with adapter injection when caller does
-        # Safety margin derived from IEEE 754: 1 - sqrt(eps).
-        effective_safety_margin = max(0.0, 1.0 - math.sqrt(float(self._backend.finfo().eps)))
-        n_lora_layers = self._adapter.inject_nb_lora(
+        n_lora_layers = self._adapter.inject_pissa_lora(
             model, geometries, target_modules,
-            safety_margin=None,
             rank_overrides=final_ranks,
         )
         if n_lora_layers <= 0:
-            raise ValueError("No NB-LoRA layers were injected")
-        logger.info("NB-LoRA injection complete: %d layers", n_lora_layers)
+            raise ValueError("No PiSSA-LoRA layers were injected")
+        logger.info("PiSSA-LoRA injection complete: %d layers", n_lora_layers)
 
         # 6b. Log per-layer capacity at injection time
         for mod_name in target_modules:
@@ -1546,17 +1542,16 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             actual_rank = final_ranks.get(mod_name, geom.tail_dims)
             logger.info(
                 "Injected %s: rank=%d (tail_dims=%d), shannon_eff_rank=%.1f, "
-                "sigma_k=%.6f, scale_bound=%.6f, capacity_util=%.3f",
+                "sigma_k=%.6f, capacity_util=%.3f",
                 mod_name,
                 actual_rank,
                 geom.tail_dims,
                 geom.shannon_effective_rank,
                 geom.sigma_k,
-                geom.sigma_k / 2.0 * effective_safety_margin,
                 geom.shannon_effective_rank / float(geom.full_rank),
             )
 
-        # Freeze base, unfreeze NB-LoRA params
+        # Freeze base, unfreeze LoRA params
         self._adapter.freeze_and_apply_lora(model)
 
         n_trainable_params = int(
@@ -1860,7 +1855,14 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
 
         # 9. Train — ScaledGD + Weyl adapter saturation + validation loss stopping
         if rp is not None:
-            rp.training_loop_started(max_iters=resolved_max_iters_cap)
+            iters_per_epoch = math.ceil(len(train_dataset) / max(batch_size, 1))
+            rp.training_loop_started(
+                max_iters=resolved_max_iters_cap,
+                iters_per_epoch=iters_per_epoch,
+                precision_floor_epochs=math.ceil(
+                    resolved_max_iters_cap / max(iters_per_epoch, 1),
+                ),
+            )
         train_start = time.time()
         losses, stop_reason, epoch_metrics = self._adapter.train_loop(
             model=model,
@@ -2211,9 +2213,8 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 "stop_reason": stop_reason,
                 "n_lora_layers": str(n_lora_layers),
                 "train_iters": str(train_iters),
-                "method": "nb_lora_cayley",
-                "safety_margin": str(effective_safety_margin),
-                "optimizer": "cayley_stiefel",
+                "method": "pissa_lora",
+                "optimizer": "pissa_fisher",
                 "training_objective": training_objective,
                 "capability_transfer": "true",
             }

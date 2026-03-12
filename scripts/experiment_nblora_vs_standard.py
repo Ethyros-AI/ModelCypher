@@ -33,6 +33,15 @@ Usage:
 
   # Skip eval for pipeline debugging
   poetry run python scripts/experiment_nblora_vs_standard.py --models 350M --skip-eval --skip-inference
+
+  # Frozen local tuple override for R1 Stage A
+  poetry run python scripts/experiment_nblora_vs_standard.py --models 350M \
+      --methods standard_nb_surface pissa_nb_surface dora_nb_surface nb_lora \
+      --seeds 42 \
+      --model-path '350M=/Users/jasonkempf/Local Models/LFM2-350M-MLX-bf16' \
+      --train-data /Users/jasonkempf/ModelCypher/data/training/benchmark_train.jsonl \
+      --val-data /Users/jasonkempf/ModelCypher/data/training/benchmark_val.jsonl \
+      --output-root /Users/jasonkempf/ModelCypher/results/nblora_vs_standard
 """
 
 from __future__ import annotations
@@ -180,6 +189,26 @@ NB_SURFACE_METHODS = {
     "standard_nb_surface", "pissa_nb_surface", "dora_nb_surface",
     "geometric_pissa_nb_surface",
 }
+
+
+def _parse_model_path_overrides(raw_overrides: list[str]) -> dict[str, Path]:
+    """Parse repeatable --model-path overrides of the form MODEL_KEY=/path."""
+    overrides: dict[str, Path] = {}
+    for raw in raw_overrides:
+        model_key, sep, model_path = raw.partition("=")
+        model_key = model_key.strip()
+        model_path = model_path.strip()
+        if sep != "=" or not model_key or not model_path:
+            raise ValueError(
+                "model-path overrides must use MODEL_KEY=/absolute/or/relative/path"
+            )
+        if model_key not in MODEL_SPECS:
+            raise ValueError(
+                f"unknown model key '{model_key}' in --model-path; "
+                f"expected one of {sorted(MODEL_SPECS)}"
+            )
+        overrides[model_key] = Path(model_path).expanduser().resolve()
+    return overrides
 
 
 # ---------------------------------------------------------------------------
@@ -4273,6 +4302,8 @@ def run_diagnostic_experiment(
 # Main
 # ---------------------------------------------------------------------------
 def main():
+    global MODEL_SPECS, TRAIN_DATA, VAL_DATA, INFERENCE_PROMPTS
+
     parser = argparse.ArgumentParser(
         description="NB-LoRA vs PEFT baselines — N-arm head-to-head comparison (R1)",
     )
@@ -4306,10 +4337,43 @@ def main():
         help="Quick mode: 1 seed, fewer iters, limited eval samples",
     )
     parser.add_argument(
+        "--model-path",
+        action="append",
+        default=[],
+        metavar="MODEL_KEY=PATH",
+        help=(
+            "Override a model path for this run family. "
+            "Repeatable, e.g. --model-path '350M=/path/to/model'"
+        ),
+    )
+    parser.add_argument(
+        "--train-data",
+        type=str,
+        default=str(TRAIN_DATA),
+        help="Override train JSONL path (default: benchmark_train.jsonl)",
+    )
+    parser.add_argument(
+        "--val-data",
+        type=str,
+        default=str(VAL_DATA),
+        help="Override validation JSONL path (default: benchmark_val.jsonl)",
+    )
+    parser.add_argument(
+        "--inference-prompts",
+        type=str,
+        default=str(INFERENCE_PROMPTS),
+        help=(
+            "Override inference prompt JSONL path "
+            "(default: data/eval_prompts/nblora_inference_tests.jsonl)"
+        ),
+    )
+    parser.add_argument(
         "--output-dir",
+        "--output-root",
+        dest="output_root",
         type=str,
         default=None,
-        help="Override output directory (default: results/nblora_vs_standard/)",
+        help="Override output root (default: results/nblora_vs_standard/)",
     )
     parser.add_argument(
         "--skip-eval",
@@ -4348,10 +4412,23 @@ def main():
     if args.quick and args.seeds == DEFAULT_SEEDS:
         args.seeds = [42]
 
-    # Validate volume
-    if not VOLUME.exists():
-        logger.error(f"Volume not mounted: {VOLUME}")
+    try:
+        model_path_overrides = _parse_model_path_overrides(args.model_path)
+    except ValueError as exc:
+        logger.error(str(exc))
         sys.exit(1)
+
+    TRAIN_DATA = Path(args.train_data).expanduser().resolve()
+    VAL_DATA = Path(args.val_data).expanduser().resolve()
+    INFERENCE_PROMPTS = Path(args.inference_prompts).expanduser().resolve()
+
+    MODEL_SPECS = {
+        key: {
+            **spec,
+            "path": model_path_overrides.get(key, Path(spec["path"]).expanduser().resolve()),
+        }
+        for key, spec in MODEL_SPECS.items()
+    }
 
     # Validate models
     for model_key in args.models:
@@ -4361,7 +4438,10 @@ def main():
             sys.exit(1)
 
     # Validate data
-    for path in [TRAIN_DATA, VAL_DATA, INFERENCE_PROMPTS]:
+    required_paths = [TRAIN_DATA, VAL_DATA]
+    if not args.skip_inference:
+        required_paths.append(INFERENCE_PROMPTS)
+    for path in required_paths:
         if not path.exists():
             logger.error(f"Data file not found: {path}")
             sys.exit(1)
@@ -4377,11 +4457,11 @@ def main():
 
     # Output directory
     if args.diagnostic:
-        output_dir = Path(args.output_dir) if args.output_dir else (
+        output_dir = Path(args.output_root).expanduser().resolve() if args.output_root else (
             REPO_ROOT / "results" / "nblora_diagnostic"
         )
     else:
-        output_dir = Path(args.output_dir) if args.output_dir else (
+        output_dir = Path(args.output_root).expanduser().resolve() if args.output_root else (
             REPO_ROOT / "results" / "nblora_vs_standard"
         )
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -4411,9 +4491,16 @@ def main():
     logger.info(f"Seeds: {args.seeds}")
     logger.info(f"Quick: {args.quick}")
     logger.info(f"Output: {output_dir}")
+    if model_path_overrides:
+        logger.info(f"Model path overrides: {model_path_overrides}")
     logger.info(f"Standard LoRA config: {STANDARD_LORA_CONFIG}")
     logger.info(f"Train: {TRAIN_DATA} ({sum(1 for _ in open(TRAIN_DATA))} samples)")
     logger.info(f"Val: {VAL_DATA} ({sum(1 for _ in open(VAL_DATA))} samples)")
+    if not args.skip_inference:
+        logger.info(
+            f"Inference prompts: {INFERENCE_PROMPTS} "
+            f"({sum(1 for _ in open(INFERENCE_PROMPTS))} prompts)"
+        )
 
     # Run experiments
     all_results = {}

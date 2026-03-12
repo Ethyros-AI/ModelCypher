@@ -709,8 +709,104 @@ class _MLXTrainingAdapterCoreMixin:
         logger.info("Injected %d NB-LoRA layers (bounds by construction)", injected)
         return injected
 
+    def inject_pissa_lora(
+        self,
+        model,
+        geometries: dict[str, "LayerGeometry"],
+        target_modules: list[str],
+        rank_overrides: dict[str, int] | None = None,
+    ) -> int:
+        """Replace target linear layers with PiSSA-initialized LoRALinear.
+
+        PiSSA (Principal Singular values and Singular vectors Adaptation):
+        decomposes W via truncated SVD, initializes LoRA factors from the
+        top-r singular components, and sets the residual as the base weight.
+        At step 0 with scale=1.0, the fused weight exactly reconstructs W.
+
+        Rank per layer: tail_dims from geometry (null-space capacity).
+
+        Returns number of layers injected.
+        """
+        from mlx_lm.tuner.lora import LoRALinear  # noqa: PLC0415
+
+        injected = 0
+
+        for key in target_modules:
+            geom = geometries.get(key)
+            if geom is None:
+                continue
+
+            if geom.tail_dims > 0:
+                rank = rank_overrides[key] if rank_overrides and key in rank_overrides else geom.tail_dims
+                if rank <= 0:
+                    logger.warning("Skipping %s: rank_override=%d is non-positive", key, rank)
+                    continue
+                if rank > geom.tail_dims:
+                    logger.warning(
+                        "Clamping %s: rank_override=%d exceeds tail_dims=%d",
+                        key, rank, geom.tail_dims,
+                    )
+                    rank = geom.tail_dims
+            elif geom.spectral_gap > 0:
+                rank = 1
+                logger.info(
+                    "Zero-tail module %s: rank=1, spectral_gap=%.6f",
+                    key, geom.spectral_gap,
+                )
+            else:
+                logger.debug("Skipping %s: tail_dims=0 and spectral_gap=0", key)
+                continue
+
+            try:
+                parent, attr_name = self._resolve_parent_and_attr(model, key)
+                linear = getattr(parent, attr_name)
+
+                # Dequantize if needed
+                if isinstance(linear, nn.QuantizedLinear):
+                    W = mx.dequantize(
+                        linear.weight, linear.scales, linear.biases,
+                        linear.group_size, linear.bits,
+                    )
+                else:
+                    W = linear.weight  # [out, in]
+
+                W_f32 = W.astype(mx.float32)
+                U, S, Vt = mx.linalg.svd(W_f32, stream=mx.cpu)
+                mx.eval(U, S, Vt)
+
+                # PiSSA init: top-r singular components → LoRA factors
+                # lora_a: [in, r] = Vt[:r, :].T
+                # lora_b: [r, out] = diag(S[:r]) @ U[:, :r].T
+                # W_residual: W - U[:,:r] @ diag(S[:r]) @ Vt[:r, :]
+                lora_a_init = Vt[:rank, :].T.astype(W.dtype)       # [in, r]
+                lora_b_init = (S[:rank, None] * U[:, :rank].T).astype(W.dtype)  # [r, out]
+                W_residual = (W_f32 - (U[:, :rank] * S[:rank]) @ Vt[:rank, :]).astype(W.dtype)
+
+                lora = LoRALinear.from_base(linear, r=rank, scale=1.0)
+                lora.lora_a = lora_a_init
+                lora.lora_b = lora_b_init
+                lora.linear.weight = W_residual
+                mx.eval(lora.lora_a, lora.lora_b, lora.linear.weight)
+
+                setattr(parent, attr_name, lora)
+                injected += 1
+
+                logger.debug(
+                    "Injected PiSSA-LoRA at %s: rank=%d, sigma_k=%.6f, sigma_r=%.6f",
+                    key, rank, geom.sigma_k, float(S[rank - 1].item()),
+                )
+            except Exception as exc:
+                logger.warning("Failed to inject PiSSA-LoRA at %s: %s", key, exc)
+
+        logger.info("Injected %d PiSSA-LoRA layers", injected)
+        return injected
+
     def freeze_and_apply_lora(self, model) -> None:
-        """Freeze entire model, then unfreeze only NB-LoRA parameters."""
+        """Freeze entire model, then unfreeze only LoRA parameters.
+
+        Supports both NBLoRALinear (A_tilde, B_tilde, S_raw) and
+        standard LoRALinear (lora_a, lora_b).
+        """
         model.freeze()
         # Also freeze visual encoder if present (Qwen3.5-VL).
         # model.freeze() only covers model's own parameters. For VL models loaded
@@ -719,9 +815,19 @@ class _MLXTrainingAdapterCoreMixin:
         visual = getattr(model, "visual", None)
         if visual is not None:
             visual.freeze()
-        # Walk model tree and unfreeze A_tilde, B_tilde, S_raw in each NBLoRALinear
+
+        # Detect which LoRA type is present and unfreeze accordingly
+        has_nb_lora = False
+        has_pissa_lora = False
         for _, nb_lora in self._iter_nb_lora_modules(model):
             nb_lora.unfreeze(keys=["A_tilde", "B_tilde", "S_raw"])
+            has_nb_lora = True
+        for _, lora in self._iter_pissa_lora_modules(model):
+            lora.unfreeze(keys=["lora_a", "lora_b"])
+            has_pissa_lora = True
+
+        if not has_nb_lora and not has_pissa_lora:
+            logger.warning("freeze_and_apply_lora: no LoRA modules found")
         # Qwen3.5 GatedDeltaNet: mlx-lm loads models with training=False (eval
         # mode), so GatedDeltaNet uses use_kernel=True (Metal kernel) — which has
         # no VJP. Fix: (1) set model.train() so use_kernel=False → ops path,

@@ -82,14 +82,115 @@ class _MLXTrainingAdapterAdapterIOMixin:
         output_path: Path,
         metadata: dict[str, Any] | None = None,
     ) -> Path:
-        """Save NB-LoRA adapter in standard LoRA format for compatibility.
+        """Save LoRA adapter weights.
 
-        Converts Cayley-parameterized (A_tilde, B_tilde, S_raw) to standard
-        (lora_a, lora_b) pairs with scale=1.0. The conversion is exact.
+        Supports two adapter modes:
+        - PiSSA-LoRA: saves lora_a, lora_b, and modified base weights directly.
+          PiSSA modifies linear.weight (W_residual), so we must save those too.
+        - NB-LoRA (legacy): converts Cayley-parameterized (A_tilde, B_tilde, S_raw)
+          to standard (lora_a, lora_b) pairs with scale=1.0.
         """
         output_dir = Path(output_path)
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        if self._has_pissa_lora(model):
+            return self._save_pissa_adapter(model, output_dir, metadata)
+        return self._save_nb_lora_adapter(model, output_dir, metadata)
+
+    def _save_pissa_adapter(
+        self,
+        model,
+        output_dir: Path,
+        metadata: dict[str, Any] | None = None,
+    ) -> Path:
+        """Save PiSSA-LoRA adapter: fuse weights and save full model.
+
+        PiSSA modifies both the LoRA factors and the base linear.weight
+        (W_residual). The cleanest output is fused weights — add the trained
+        LoRA product back into the residual base weight.
+        """
+        from mlx_lm.tuner.lora import LoRALinear  # noqa: PLC0415
+
+        adapter_weights: dict[str, Any] = {}
+        target_modules: set[str] = set()
+        discovered_ranks: list[int] = []
+        per_layer_rank_map: dict[str, int] = {}
+
+        for name, lora in self._iter_pissa_lora_modules(model):
+            rank = int(lora.lora_a.shape[1])
+            discovered_ranks.append(rank)
+
+            key_base = name.replace(".weight", "")
+            adapter_weights[f"{key_base}.lora_a"] = lora.lora_a
+            adapter_weights[f"{key_base}.lora_b"] = lora.lora_b
+            # PiSSA residual base weight — needed for correct reconstruction
+            adapter_weights[f"{key_base}.linear.weight"] = lora.linear.weight
+            target_modules.add(self._module_name_from_layer_key(name))
+            per_layer_rank_map[name] = rank
+
+        if not adapter_weights:
+            raise ValueError("No PiSSA-LoRA layers found to export")
+
+        global_rank = max(discovered_ranks)
+        # Pad LoRA factors to global rank for compatibility
+        for key in list(adapter_weights.keys()):
+            arr = adapter_weights[key]
+            if key.endswith(".lora_a"):
+                if int(arr.shape[1]) < global_rank:
+                    pad = mx.zeros((int(arr.shape[0]), global_rank - int(arr.shape[1])), dtype=arr.dtype)
+                    adapter_weights[key] = mx.concatenate([arr, pad], axis=1)
+            elif key.endswith(".lora_b") and ".linear." not in key:
+                if int(arr.shape[0]) < global_rank:
+                    pad = mx.zeros((global_rank - int(arr.shape[0]), int(arr.shape[1])), dtype=arr.dtype)
+                    adapter_weights[key] = mx.concatenate([arr, pad], axis=0)
+
+        mx.eval(*adapter_weights.values())
+
+        metadata_str: dict[str, str] | None = None
+        if metadata:
+            metadata_str = {str(k): str(v) for k, v in metadata.items()}
+
+        weights_path = output_dir / "adapters.safetensors"
+        self._backend.save_safetensors(str(weights_path), adapter_weights, metadata=metadata_str)
+
+        config = {
+            "fine_tune_type": "lora",
+            "num_layers": int(self._backend.get_num_layers(model)),
+            "lora_parameters": {
+                "rank": int(global_rank),
+                "scale": 1.0,
+                "dropout": 0.0,
+                "keys": sorted(target_modules),
+            },
+            "target_modules": sorted(target_modules),
+            "rank": int(global_rank),
+            "per_layer_ranks": per_layer_rank_map,
+            "method": "pissa_lora",
+        }
+        if metadata:
+            config["metadata"] = metadata
+
+        config_path = output_dir / "adapter_config.json"
+        with config_path.open("w", encoding="utf-8") as handle:
+            json.dump(config, handle, indent=2)
+
+        logger.info(
+            "Saved PiSSA-LoRA adapter: %d layers, rank=%d, path=%s",
+            len(discovered_ranks), global_rank, output_dir,
+        )
+        return output_dir
+
+    def _save_nb_lora_adapter(
+        self,
+        model,
+        output_dir: Path,
+        metadata: dict[str, Any] | None = None,
+    ) -> Path:
+        """Save NB-LoRA adapter in standard LoRA format.
+
+        Converts Cayley-parameterized (A_tilde, B_tilde, S_raw) to standard
+        (lora_a, lora_b) pairs with scale=1.0.
+        """
         adapter_weights: dict[str, Any] = {}
         target_modules: set[str] = set()
         discovered_ranks: list[int] = []
@@ -109,17 +210,14 @@ class _MLXTrainingAdapterAdapterIOMixin:
         if not adapter_weights:
             raise ValueError("No NB-LoRA layers found to export")
 
-        # Pad to global rank for compatibility
         global_rank = max(discovered_ranks)
         for key in list(adapter_weights.keys()):
             arr = adapter_weights[key]
             if key.endswith(".lora_a"):
-                # lora_a is [in, r] — pad columns
                 if int(arr.shape[1]) < global_rank:
                     pad = mx.zeros((int(arr.shape[0]), global_rank - int(arr.shape[1])), dtype=arr.dtype)
                     adapter_weights[key] = mx.concatenate([arr, pad], axis=1)
             elif key.endswith(".lora_b"):
-                # lora_b is [r, out] — pad rows
                 if int(arr.shape[0]) < global_rank:
                     pad = mx.zeros((global_rank - int(arr.shape[0]), int(arr.shape[1])), dtype=arr.dtype)
                     adapter_weights[key] = mx.concatenate([arr, pad], axis=0)

@@ -235,6 +235,76 @@ class _MLXTrainingAdapterDiagnosticsMixin:
                         key = f"model.visual.merger.{proj_name}.weight"
                         yield key, proj
 
+    def _iter_pissa_lora_modules(self, model):
+        """Yield (layer_key, LoRALinear) pairs for PiSSA-initialized modules."""
+        from mlx_lm.tuner.lora import LoRALinear  # noqa: PLC0415
+
+        try:
+            base, key_prefix = self._get_model_base(model)
+        except ValueError:
+            return
+
+        for layer_idx, layer in enumerate(base.layers):
+            attn = getattr(layer, "self_attn", None)
+            if attn is not None:
+                for proj_name in ("q_proj", "k_proj", "v_proj", "o_proj"):
+                    proj = getattr(attn, proj_name, None)
+                    if isinstance(proj, LoRALinear):
+                        key = f"{key_prefix}.{layer_idx}.self_attn.{proj_name}.weight"
+                        yield key, proj
+
+            mlp = getattr(layer, "mlp", None)
+            if mlp is not None:
+                for proj_name in ("up_proj", "down_proj", "gate_proj"):
+                    proj = getattr(mlp, proj_name, None)
+                    if isinstance(proj, LoRALinear):
+                        key = f"{key_prefix}.{layer_idx}.mlp.{proj_name}.weight"
+                        yield key, proj
+
+                experts = getattr(mlp, "experts", None)
+                if experts is not None:
+                    if isinstance(experts, dict):
+                        expert_items = list(experts.items())
+                    else:
+                        expert_items = list(enumerate(experts))
+                    for raw_expert_idx, expert in expert_items:
+                        if expert is None:
+                            continue
+                        expert_idx = int(raw_expert_idx)
+                        for proj_name in ("gate_proj", "up_proj", "down_proj"):
+                            proj = getattr(expert, proj_name, None)
+                            if isinstance(proj, LoRALinear):
+                                key = (
+                                    f"{key_prefix}.{layer_idx}.mlp.experts.{expert_idx}."
+                                    f"{proj_name}.weight"
+                                )
+                                yield key, proj
+
+                shared_expert = getattr(mlp, "shared_expert", None)
+                if shared_expert is not None:
+                    for proj_name in ("gate_proj", "up_proj", "down_proj"):
+                        proj = getattr(shared_expert, proj_name, None)
+                        if isinstance(proj, LoRALinear):
+                            key = (
+                                f"{key_prefix}.{layer_idx}.mlp.shared_expert."
+                                f"{proj_name}.weight"
+                            )
+                            yield key, proj
+
+        visual = getattr(model, "visual", None)
+        if visual is not None:
+            merger = getattr(visual, "merger", None)
+            if merger is not None:
+                for proj_name in ("linear_fc1", "linear_fc2"):
+                    proj = getattr(merger, proj_name, None)
+                    if isinstance(proj, LoRALinear):
+                        key = f"model.visual.merger.{proj_name}.weight"
+                        yield key, proj
+
+    def _has_pissa_lora(self, model) -> bool:
+        """Return True if the model has any PiSSA-initialized LoRALinear modules."""
+        return any(True for _ in self._iter_pissa_lora_modules(model))
+
     def _compute_topological_metrics(
         self,
         model,

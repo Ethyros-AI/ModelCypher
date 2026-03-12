@@ -702,8 +702,29 @@ class ProgressReporter:
     # TRAINING: TRAIN LOOP
     # =========================================================================
 
-    def training_loop_started(self, max_iters: int) -> None:
+    def training_loop_started(
+        self,
+        max_iters: int,
+        *,
+        iters_per_epoch: int | None = None,
+        precision_floor_epochs: int | None = None,
+    ) -> None:
         """Report training loop started."""
+        progress: dict[str, Any] = {"max_iters": max_iters}
+        geometry: dict[str, Any] | None = {
+            "explanation": (
+                "max_iters is the precision-derived safety cap, not the expected "
+                "runtime; the geometric stopping certificate can terminate much earlier."
+            ),
+        }
+        if iters_per_epoch is not None:
+            progress["iters_per_epoch"] = iters_per_epoch
+        if precision_floor_epochs is not None:
+            progress["precision_floor_epochs"] = precision_floor_epochs
+            geometry["precision_floor_meaning"] = (
+                "The safety cap spans the number of epochs before loss changes fall "
+                "below the IEEE-754 resolvability floor."
+            )
         self._current_stage = "train"
         self._emit(
             ProgressEvent(
@@ -712,7 +733,8 @@ class ProgressReporter:
                 model=None,
                 what="Starting Cayley-Stiefel training loop",
                 why="Optimizing NB-LoRA adapters on the Stiefel manifold; there is no fixed LR and MASS will choose step sizes online",
-                progress={"max_iters": max_iters},
+                progress=progress,
+                geometry=geometry,
                 event_type="training_progress",
             )
         )

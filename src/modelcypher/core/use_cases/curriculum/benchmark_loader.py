@@ -328,10 +328,10 @@ class BenchmarkLoader:
 
     def _load_boolq(self, split: str, limit: Optional[int]) -> Benchmark:
         """Load BoolQ yes/no questions."""
-        data = self._try_load_huggingface("google/boolq", split)
-
-        if data is None and split == "test":
-            data = self._try_load_huggingface("google/boolq", "validation")
+        # BoolQ does not expose a public "test" split in the current dataset
+        # schema, so canonical evaluation uses validation directly.
+        requested_split = "validation" if split == "test" else split
+        data = self._try_load_huggingface("google/boolq", requested_split)
 
         if data is None:
             return self._fallback_boolq(limit)
