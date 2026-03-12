@@ -1130,6 +1130,9 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         weight_decay: float = 0.0,
         plan: DerivedTrainingPlan | None = None,
         controller_law: DerivedClosedLoopLaw | dict[str, Any] | None = None,
+        # Loop-parity overrides: force baseline regime for R1 falsification.
+        batch_size_override: int | None = None,
+        disable_early_stopping: bool = False,
     ) -> DatasetTrainResult:
         """Train a geometric LoRA adapter from a JSONL dataset.
 
@@ -1669,26 +1672,32 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         )
 
         # 7. Derive batch size from gradient noise: B_crit = 1/SNR
-        batch_size = self._adapter.derive_critical_batch_size(
-            model, train_dataset, seq_length,
-        )
-        # Constrained training: minimum batch size derived from pair group
-        # structure via pigeonhole principle.  A batch of size max(G,T)+1
-        # guarantees at least one invariance pair and one counterfactual pair.
-        if (use_constraints or use_geometric_reshape) and logic_groups and template_groups:
-            n_logic = len(logic_groups)
-            n_template = len(template_groups)
-            # Pigeonhole surplus: max(groups) + 1 guarantees at least one group
-            # has ≥2 representatives, enabling a contrastive pair per group.
-            min_constrained_batch = max(n_logic, n_template) + 1
-            batch_size = max(batch_size, min_constrained_batch)
-        logger.info("Geometry-derived batch size: %d", batch_size)
+        if batch_size_override is not None:
+            batch_size = int(batch_size_override)
+            logger.info("Batch size override (loop parity): %d", batch_size)
+        else:
+            batch_size = self._adapter.derive_critical_batch_size(
+                model, train_dataset, seq_length,
+            )
+            # Constrained training: minimum batch size derived from pair group
+            # structure via pigeonhole principle.  A batch of size max(G,T)+1
+            # guarantees at least one invariance pair and one counterfactual pair.
+            if (use_constraints or use_geometric_reshape) and logic_groups and template_groups:
+                n_logic = len(logic_groups)
+                n_template = len(template_groups)
+                # Pigeonhole surplus: max(groups) + 1 guarantees at least one group
+                # has ≥2 representatives, enabling a contrastive pair per group.
+                min_constrained_batch = max(n_logic, n_template) + 1
+                batch_size = max(batch_size, min_constrained_batch)
+            logger.info("Geometry-derived batch size: %d", batch_size)
 
         # Derive gradient accumulation from measured memory fit.
         # Logical batch remains geometry-derived; only micro-batch is reduced.
+        # Skipped when batch_size is overridden (parity mode uses fixed batch).
         grad_accum_steps = 1
         if (
-            answer_masked_train is None
+            batch_size_override is None
+            and answer_masked_train is None
             and not use_constraints
             and not use_geometric_reshape
             and hasattr(self._adapter, "derive_memory_safe_micro_batch_size")
@@ -2058,6 +2067,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             weight_decay=weight_decay,
             base_token_losses=base_token_losses,
             behavioral_control_law=resolved_controller_law,
+            disable_early_stopping=disable_early_stopping,
         )
         training_time_seconds = time.time() - train_start
 
@@ -2499,7 +2509,11 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             optimizer=(
                 "adamw"
                 if optimizer_research_mode == OPTIMIZER_MODE_ADAMW_MATCHED_TRACE
-                else GEOMETRIC_LORA_OPTIMIZER
+                else (
+                    GEOMETRIC_LORA_OPTIMIZER_FISHER_MASS
+                    if optimizer_research_mode == OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS
+                    else GEOMETRIC_LORA_OPTIMIZER
+                )
             ),
             controller=GEOMETRIC_LORA_CONTROLLER,
             stopping=GEOMETRIC_LORA_STOPPING,

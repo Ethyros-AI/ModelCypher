@@ -75,6 +75,41 @@ if TYPE_CHECKING:
 
 
 class _MLXTrainingAdapterTrainMixin:
+    def _seed_remaining_budget(
+        self,
+        *,
+        use_pissa_lora: bool,
+        use_mass_step_sizing: bool,
+        sigma_k_min: float,
+    ) -> float | None:
+        """Seed conformal remaining budget for PiSSA from step 0.
+
+        PiSSA starts at exact reconstruction, so the initial displacement from
+        the injected state is zero. The full spectral budget is therefore
+        available at training start and equals ``sigma_k_min``.
+        """
+        if not use_pissa_lora or not use_mass_step_sizing or sigma_k_min <= 0.0:
+            return None
+        return float(sigma_k_min)
+
+    def _advance_remaining_budget(
+        self,
+        remaining_budget: float | None,
+        *,
+        displacement: float | None,
+        use_pissa_lora: bool,
+    ) -> float | None:
+        """Conservatively advance the PiSSA remaining budget after one step.
+
+        The running budget is decremented by the realized step displacement and
+        re-anchored by exact spectral measurement at epoch boundaries.
+        """
+        if not use_pissa_lora or remaining_budget is None:
+            return remaining_budget
+        if displacement is None or displacement <= 0.0:
+            return remaining_budget
+        return max(0.0, float(remaining_budget) - float(displacement))
+
     def _measure_pissa_effective_update_norm(
         self,
         model,
@@ -208,6 +243,10 @@ class _MLXTrainingAdapterTrainMixin:
         base_token_losses: list | None = None,
         # R2: Offline-derived closed-loop intervention law.
         behavioral_control_law: DerivedClosedLoopLaw | None = None,
+        # Loop-parity mode: disable ALL early stopping gates.  Only the
+        # iteration cap (max_iters for-loop exhaustion) terminates training.
+        # Used to reproduce the fixed-iteration mlx-lm baseline regime.
+        disable_early_stopping: bool = False,
     ) -> tuple[list[tuple[int, float, float]], str, list[EpochMetrics]]:
         """Train with geometric stopping and MASS step sizing.
 
@@ -995,7 +1034,16 @@ class _MLXTrainingAdapterTrainMixin:
         # Gradient norm history for stochastic stationarity
         grad_norm_history: list[float] = []
         # Conformal margin tracking (Sahraee-Ardakan et al. 2026)
-        remaining_budget: float | None = None
+        remaining_budget: float | None = self._seed_remaining_budget(
+            use_pissa_lora=use_pissa_lora,
+            use_mass_step_sizing=use_mass_step_sizing,
+            sigma_k_min=sigma_k_min,
+        )
+        if remaining_budget is not None:
+            logger.info(
+                "PiSSA remaining budget seed: %.4e (exact reconstruction at step 0)",
+                remaining_budget,
+            )
         max_effective_gain_this_epoch: float = 0.0
         max_disp_to_remaining_this_epoch: float = 0.0
 
@@ -1187,11 +1235,8 @@ class _MLXTrainingAdapterTrainMixin:
                 )
 
             # Track displacement-to-remaining ratio (epoch-level diagnostic).
-            # NOTE: remaining_budget is NOT decremented per step. Weyl per-step
-            # displacement is an upper bound that overestimates cumulative
-            # spectral impact by ~50× (updates spread across singular
-            # directions and partially cancel). The epoch-boundary spectral
-            # measurement is the sole source of truth for remaining budget.
+            # PiSSA now carries a conservative running budget within the epoch
+            # and re-anchors it with exact spectral measurement at boundaries.
             if remaining_budget is not None and remaining_budget > 0:
                 disp_ratio = displacement_val / remaining_budget
                 max_disp_to_remaining_this_epoch = max(
@@ -1285,6 +1330,12 @@ class _MLXTrainingAdapterTrainMixin:
             # PiSSA LoRA: no clamping — MASS step sizing bounds displacement.
             if not use_pissa_lora:
                 self._clamp_all_scales(model)
+            else:
+                remaining_budget = self._advance_remaining_budget(
+                    remaining_budget,
+                    displacement=displacement_val,
+                    use_pissa_lora=use_pissa_lora,
+                )
 
             epoch_step_traces.append(
                 ControllerStepTrace(
@@ -1391,7 +1442,7 @@ class _MLXTrainingAdapterTrainMixin:
                     should_stop_val, val_reason, val_threshold = check_val_loss_converged(
                         val_losses, window=loss_stability_window_epochs,
                     )
-                    if should_stop_val:
+                    if should_stop_val and not disable_early_stopping:
                         stop_reason = (
                             f"{val_reason} (threshold={val_threshold:.4e}, epoch={epoch_num})"
                         )
@@ -2131,7 +2182,7 @@ class _MLXTrainingAdapterTrainMixin:
                 logger.info(" | ".join(log_parts))
 
                 # 7a. Weyl adapter-saturation exhaustion check (any layer crossing)
-                if budget_exhausted_flag:
+                if budget_exhausted_flag and not disable_early_stopping:
                     stop_reason = (
                         f"adapter_saturation_exhausted (Weyl crossing, "
                         f"median_ratio={median_budget_ratio:.4f}, epoch={epoch_num})"
@@ -2141,7 +2192,7 @@ class _MLXTrainingAdapterTrainMixin:
                     )
                     break
 
-                if all_target_experts_saturated:
+                if all_target_experts_saturated and not disable_early_stopping:
                     stop_reason = (
                         "moe_expert_saturation_exhausted "
                         f"(saturated={n_saturated_experts}/{n_total_target_experts}, "
@@ -2154,7 +2205,8 @@ class _MLXTrainingAdapterTrainMixin:
 
                 # 7a'. Budget cap: stop when median ratio exceeds user ceiling
                 if (
-                    budget_cap is not None
+                    not disable_early_stopping
+                    and budget_cap is not None
                     and median_budget_ratio is not None
                     and median_budget_ratio >= budget_cap
                 ):
@@ -2168,7 +2220,7 @@ class _MLXTrainingAdapterTrainMixin:
                     break
 
                 # 7a''. Max epochs: hard cap to prevent stop-signal erosion
-                if max_epochs is not None and epoch_num >= max_epochs:
+                if max_epochs is not None and epoch_num >= max_epochs and not disable_early_stopping:
                     stop_reason = (
                         f"max_epochs (epoch={epoch_num} >= cap={max_epochs})"
                     )
@@ -2179,7 +2231,8 @@ class _MLXTrainingAdapterTrainMixin:
 
                 # 7b. Geometric stopping certificate
                 if (
-                    use_val_stopping
+                    not disable_early_stopping
+                    and use_val_stopping
                     and epoch_num >= 2
                     and grad_last is not None
                 ):
@@ -2252,7 +2305,7 @@ class _MLXTrainingAdapterTrainMixin:
                             val_losses[-1],
                         )
                 # 7c. Online eval degradation stop
-                if online_eval_stop_basis_degraded:
+                if online_eval_stop_basis_degraded and not disable_early_stopping:
                     if closed_loop_intervention_applied:
                         logger.info(
                             "Closed-loop override: online eval degraded at epoch %d; "
@@ -2273,7 +2326,8 @@ class _MLXTrainingAdapterTrainMixin:
 
                 # 7c'. Margin decline stop (P2)
                 if (
-                    tokenizer is not None
+                    not disable_early_stopping
+                    and tokenizer is not None
                     and len(margin_history) >= 2 * loss_stability_window_epochs
                 ):
                     margin_declining, margin_trend_threshold = (
@@ -2301,7 +2355,7 @@ class _MLXTrainingAdapterTrainMixin:
                             break
 
                 # 7c''. Margin collapse stop (P2)
-                if len(margin_history) >= 2 and tokenizer is not None:
+                if not disable_early_stopping and len(margin_history) >= 2 and tokenizer is not None:
                     vocab_size = getattr(tokenizer, "vocab_size", 32000)
                     margin_collapsed, margin_threshold = check_margin_collapse(
                         margin_history, vocab_size,
@@ -2326,7 +2380,8 @@ class _MLXTrainingAdapterTrainMixin:
 
                 # 7c'''. Stable rank concentration stop (P3)
                 if (
-                    stable_rank_history
+                    not disable_early_stopping
+                    and stable_rank_history
                     and adapter_rank_for_stopping is not None
                     and adapter_rank_for_stopping > 1
                 ):
@@ -2352,7 +2407,7 @@ class _MLXTrainingAdapterTrainMixin:
                             break
 
                 # 7c''''. Effective rank declining stop (P5)
-                if len(effective_rank_history) >= 4:
+                if not disable_early_stopping and len(effective_rank_history) >= 4:
                     rank_declining, n_declining = check_effective_rank_declining(
                         effective_rank_history, window=3,
                     )
@@ -2376,7 +2431,8 @@ class _MLXTrainingAdapterTrainMixin:
                             break
 
                 # 7d. Degeneration gate: n-gram repetition on few-shot prompts
-                if (degen_prompts
+                if (not disable_early_stopping
+                        and degen_prompts
                         and degen_baseline_max is not None
                         and degen_ngram_order is not None
                         and tokenizer is not None):
@@ -2421,7 +2477,7 @@ class _MLXTrainingAdapterTrainMixin:
                             break
 
                 # 7e. Loss stability stop (fallback when no val dataset)
-                if not use_val_stopping and it >= (
+                if not disable_early_stopping and not use_val_stopping and it >= (
                     2 * loss_stability_window_epochs * n_batches_per_epoch
                 ):
                     stable, threshold = check_loss_stable(
@@ -2434,12 +2490,19 @@ class _MLXTrainingAdapterTrainMixin:
                         )
                         break
         else:
-            stop_reason = f"safety_cap ({max_iters} iters)"
-            logger.error(
-                "Hit safety cap at %d iters — geometric stopping certificate "
-                "failed to fire. This indicates a convergence failure.",
-                max_iters,
-            )
+            if disable_early_stopping:
+                stop_reason = f"iteration_cap ({max_iters} iters, early_stopping=disabled)"
+                logger.info(
+                    "Fixed-iteration training complete at %d iters (early stopping disabled).",
+                    max_iters,
+                )
+            else:
+                stop_reason = f"safety_cap ({max_iters} iters)"
+                logger.error(
+                    "Hit safety cap at %d iters — geometric stopping certificate "
+                    "failed to fire. This indicates a convergence failure.",
+                    max_iters,
+                )
 
         if val_losses:
             logger.info(

@@ -17,7 +17,10 @@ from modelcypher.cli.app import app
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 from modelcypher.core.domain.training.geometric_lora import LayerGeometry
-from modelcypher.core.domain.training.mass_step_size import DerivedClosedLoopLaw
+from modelcypher.core.domain.training.mass_step_size import (
+    DerivedClosedLoopLaw,
+    OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+)
 from modelcypher.core.domain.star.problem_generator import StarProblemGenerator
 from modelcypher.core.use_cases.dataset_training_service import (
     DatasetTrainResult,
@@ -1717,11 +1720,9 @@ def test_build_training_plan_exposes_resolved_surface(monkeypatch, tmp_path: Pat
     assert payload["controller_plan"]["controller"] == "mass"
     assert payload["controller_plan"]["stopping"] == "geometric_certificate"
     assert payload["controller_plan"]["learning_rate_policy"].startswith(
-        "No fixed scalar LR",
+        "Canonical AdamW",
     )
-    assert payload["controller_plan"]["batch_size_policy"].endswith(
-        "after LoRA injection.",
-    )
+    assert "gradient noise" in payload["controller_plan"]["batch_size_policy"]
     assert not (model_dir.parent / "adapters" / "model-nblora-123").exists()
 
 
@@ -1969,3 +1970,31 @@ def test_train_from_dataset_persists_failure_artifacts_before_pipeline_gate(
     assert "spectral_bounds_violation" in saved_result["pipeline_gate_failure_modes"]
     assert saved_result["benchmark_baseline"]["gsm8k"] == pytest.approx(0.5)
     assert saved_result["benchmark_post"]["gsm8k"] == pytest.approx(0.1)
+
+
+def test_train_from_dataset_reports_fisher_mass_optimizer_for_mass_path(
+    monkeypatch,
+    tmp_path: Path,
+):
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    adapter_dir = tmp_path / "adapter"
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(train_path, [{"text": "train sample"}])
+    _write_jsonl(eval_path, [{"text": "eval sample"}])
+
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
+    _patch_lightweight_training(monkeypatch, service)
+
+    result = service.train_from_dataset(
+        model_path=model_dir,
+        dataset_path=train_path,
+        output_path=adapter_dir,
+        eval_dataset_path=eval_path,
+        optimizer_research_mode=OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+    )
+
+    assert result.optimizer == "fisher_mass"
+    saved_result = json.loads((adapter_dir / "train_result.json").read_text(encoding="utf-8"))
+    assert saved_result["optimizer"] == "fisher_mass"

@@ -123,6 +123,75 @@ def test_entropy_baseline_derives_floor():
     assert floor == pytest.approx(expected_floor, rel=1e-6)
 
 
+def test_seed_remaining_budget_uses_sigma_k_for_pissa_mass():
+    adapter = MLXTrainingAdapter(_DummyBackend())
+
+    seeded = adapter._seed_remaining_budget(
+        use_pissa_lora=True,
+        use_mass_step_sizing=True,
+        sigma_k_min=0.4,
+    )
+
+    assert seeded == pytest.approx(0.4)
+
+
+def test_seed_remaining_budget_skips_non_pissa_or_nonpositive_sigma():
+    adapter = MLXTrainingAdapter(_DummyBackend())
+
+    assert adapter._seed_remaining_budget(
+        use_pissa_lora=False,
+        use_mass_step_sizing=True,
+        sigma_k_min=0.4,
+    ) is None
+    assert adapter._seed_remaining_budget(
+        use_pissa_lora=True,
+        use_mass_step_sizing=False,
+        sigma_k_min=0.4,
+    ) is None
+    assert adapter._seed_remaining_budget(
+        use_pissa_lora=True,
+        use_mass_step_sizing=True,
+        sigma_k_min=0.0,
+    ) is None
+
+
+def test_advance_remaining_budget_decrements_and_clamps():
+    adapter = MLXTrainingAdapter(_DummyBackend())
+
+    remaining = adapter._advance_remaining_budget(
+        0.4,
+        displacement=0.1,
+        use_pissa_lora=True,
+    )
+    exhausted = adapter._advance_remaining_budget(
+        0.05,
+        displacement=0.1,
+        use_pissa_lora=True,
+    )
+
+    assert remaining == pytest.approx(0.3)
+    assert exhausted == 0.0
+
+
+def test_advance_remaining_budget_ignores_missing_or_non_pissa_updates():
+    adapter = MLXTrainingAdapter(_DummyBackend())
+
+    assert adapter._advance_remaining_budget(
+        None,
+        displacement=0.1,
+        use_pissa_lora=True,
+    ) is None
+    assert adapter._advance_remaining_budget(
+        0.4,
+        displacement=None,
+        use_pissa_lora=True,
+    ) == pytest.approx(0.4)
+    assert adapter._advance_remaining_budget(
+        0.4,
+        displacement=0.1,
+        use_pissa_lora=False,
+    ) == pytest.approx(0.4)
+
 
 
 

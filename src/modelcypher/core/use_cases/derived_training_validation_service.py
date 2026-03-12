@@ -393,6 +393,10 @@ class DerivedTrainingValidationService:
         phase5_probe_count: int | None = None,
         phase5_probe_seed: int | None = None,
         artifact_root: str | Path | None = None,
+        # Loop-parity overrides for R1 falsification
+        batch_size_override: int | None = None,
+        max_iters_cap: int | None = None,
+        disable_early_stopping: bool = False,
     ) -> DerivedTrainingValidationResult:
         if trials <= 0:
             raise ValueError("trials must be positive")
@@ -472,6 +476,9 @@ class DerivedTrainingValidationService:
                 optimizer_research_mode=optimizer_research_mode,
                 plan=plan,
                 controller_law=controller_law,
+                batch_size_override=batch_size_override,
+                max_iters_cap=max_iters_cap,
+                disable_early_stopping=disable_early_stopping,
             )
 
             loss_delta = float(result.baseline_loss - result.post_loss)

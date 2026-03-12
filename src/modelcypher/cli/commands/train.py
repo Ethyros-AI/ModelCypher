@@ -392,6 +392,21 @@ def train_validate_derived(
             "(adamw_geometric, cayley_stiefel_mass, adamw_matched_trace)"
         ),
     ),
+    batch_size: int = typer.Option(
+        None,
+        "--batch-size",
+        help="Override geometry-derived batch size (loop parity testing)",
+    ),
+    iteration_cap: int = typer.Option(
+        None,
+        "--iteration-cap",
+        help="Override derived iteration cap (loop parity testing)",
+    ),
+    disable_early_stopping: bool = typer.Option(
+        False,
+        "--disable-early-stopping",
+        help="Disable all early-stop gates; only iteration cap terminates training",
+    ),
     report_path: str = typer.Option(
         None,
         "--report-path",
@@ -446,6 +461,9 @@ def train_validate_derived(
             benchmark_suite=benchmark,
             controller_mode=controller_mode,
             optimizer_research_mode=optimizer_research_mode,
+            batch_size_override=batch_size,
+            max_iters_cap=iteration_cap,
+            disable_early_stopping=disable_early_stopping,
         )
         payload = result.to_dict()
     except TrainingDerivationError as exc:
