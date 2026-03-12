@@ -13,19 +13,19 @@ falsifier and exact command live in REPORT.md.
 
 ---
 
-## Current State (2026-03-12)
+## State When This Thread Was Parked (2026-03-12)
 
-**V2 law is implemented, tested, and falsified. Saturation sensor investigation is complete and inconclusive. The next step is actuator redesign.**
+V2 law is implemented, tested, and falsified. Saturation sensor investigation
+is complete and inconclusive. The options below were live when this thread was
+parked; the actual next action is now owned by REPORT.md.
 
-### Decision point for next session
-
-The freeze actuator is the likely problem, not the sensor set. Two options:
+### Options considered (historical, not active directives)
 
 1. **New experiment**: Run the frozen tuple with PiSSA-LoRA at higher per-layer ranks (not rank-1) to get temporal resolution on saturation vs behavioral degradation timing. This tests whether saturation is a viable precursor signal when the budget isn't immediately exhausted.
 
 2. **Actuator redesign**: Accept that layer-local freeze cannot prevent budget exhaustion (freezing a saturated layer doesn't undo damage). Design an actuator that prevents budget exhaustion (e.g., step-size reduction, rank projection, early stopping) rather than reacting to it.
 
-The user's directive: "If that rerun still fails after a genuinely early arm on a real targetable surface, then the layer-local freeze actuator is the problem."
+User's directive at the time: "If that rerun still fails after a genuinely early arm on a real targetable surface, then the layer-local freeze actuator is the problem."
 
 ---
 
