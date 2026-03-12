@@ -256,7 +256,7 @@ def test_save_adapter_per_layer_ranks(backend_name, tmp_path) -> None:
     assert config["type"] == "geometric_lora"
     assert config["method"] == "geometric_lora"
     assert config["init_method"] == "cayley"
-    assert config["optimizer"] == "fisher_mass"
+    assert config["optimizer"] == "adamw_cosine"
     assert config["controller"] == "mass"
     assert config["stopping"] == "geometric_certificate"
     assert "per_layer_ranks" in config
@@ -297,7 +297,7 @@ def test_save_pissa_adapter_writes_geometric_lora_identity(backend_name, tmp_pat
     assert config["type"] == "geometric_lora"
     assert config["method"] == "geometric_lora"
     assert config["init_method"] == "pissa"
-    assert config["optimizer"] == "fisher_mass"
+    assert config["optimizer"] == "adamw_cosine"
     assert config["controller"] == "mass"
     assert config["stopping"] == "geometric_certificate"
 

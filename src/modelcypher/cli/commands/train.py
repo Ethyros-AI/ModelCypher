@@ -385,11 +385,11 @@ def train_validate_derived(
         ),
     ),
     optimizer_research_mode: str = typer.Option(
-        "cayley_stiefel_mass",
+        "adamw_geometric",
         "--optimizer-research-mode",
         help=(
             "Research optimizer mode "
-            "(cayley_stiefel_mass, adamw_matched_trace)"
+            "(adamw_geometric, cayley_stiefel_mass, adamw_matched_trace)"
         ),
     ),
     report_path: str = typer.Option(

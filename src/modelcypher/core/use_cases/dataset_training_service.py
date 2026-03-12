@@ -70,6 +70,7 @@ from modelcypher.core.domain.training.identity import (
     GEOMETRIC_LORA_INIT_METHOD,
     GEOMETRIC_LORA_METHOD,
     GEOMETRIC_LORA_OPTIMIZER,
+    GEOMETRIC_LORA_OPTIMIZER_FISHER_MASS,
     GEOMETRIC_LORA_STOPPING,
 )
 from modelcypher.core.domain.training.pipeline_gate import (
@@ -491,9 +492,9 @@ class DerivedTrainingPlan:
                 "method": GEOMETRIC_LORA_METHOD,
                 "init_method": GEOMETRIC_LORA_INIT_METHOD,
                 "optimizer": (
-                    "adamw"
+                    GEOMETRIC_LORA_OPTIMIZER
                     if self.optimizer_research_mode != OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS
-                    else GEOMETRIC_LORA_OPTIMIZER
+                    else GEOMETRIC_LORA_OPTIMIZER_FISHER_MASS
                 ),
                 "controller": GEOMETRIC_LORA_CONTROLLER,
                 "stopping": GEOMETRIC_LORA_STOPPING,
@@ -700,7 +701,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         no_save: bool = False,
         target_experts: list[str] | str | None = None,
         controller_mode: str = CONTROLLER_MODE_STRUCTURAL_OBSERVE,
-        optimizer_research_mode: str = OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+        optimizer_research_mode: str = OPTIMIZER_MODE_ADAMW_GEOMETRIC,
         controller_law: DerivedClosedLoopLaw | dict[str, Any] | None = None,
     ) -> DerivedTrainingPlan:
         """Resolve the exact canonical training plan without mutating model state."""
@@ -1101,7 +1102,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         benchmark_suite: str | None = None,
         target_experts: list[str] | str | None = None,
         controller_mode: str = CONTROLLER_MODE_STRUCTURAL_OBSERVE,
-        optimizer_research_mode: str = OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+        optimizer_research_mode: str = OPTIMIZER_MODE_ADAMW_GEOMETRIC,
         enable_offline_replay: bool = True,
         # External gradient hook — composed with any internal format-projection hook
         gradient_hook: "Callable | None" = None,
@@ -2335,9 +2336,9 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 "method": GEOMETRIC_LORA_METHOD,
                 "init_method": GEOMETRIC_LORA_INIT_METHOD,
                 "optimizer": (
-                    "adamw"
-                    if optimizer_research_mode == OPTIMIZER_MODE_ADAMW_MATCHED_TRACE
-                    else GEOMETRIC_LORA_OPTIMIZER
+                    GEOMETRIC_LORA_OPTIMIZER
+                    if optimizer_research_mode != OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS
+                    else GEOMETRIC_LORA_OPTIMIZER_FISHER_MASS
                 ),
                 "controller": GEOMETRIC_LORA_CONTROLLER,
                 "stopping": GEOMETRIC_LORA_STOPPING,

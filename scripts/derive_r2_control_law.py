@@ -560,6 +560,7 @@ def run_falsifier(
             optimizer_research_mode=OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
             controller_law=law,
             enable_phase5_inference=True,
+            phase5_probe_count=20,
             artifact_root=artifact_root,
         )
         payload = result.to_dict()

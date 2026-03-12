@@ -284,11 +284,11 @@ class _CaptureDatasetService:
                 "controller_plan": {
                     "method": "geometric_lora",
                     "init_method": "pissa",
-                    "optimizer": "fisher_mass",
+                    "optimizer": "adamw_cosine",
                     "controller": "mass",
                     "stopping": "geometric_certificate",
                     "controller_mode": "structural_observe",
-                    "optimizer_research_mode": "cayley_stiefel_mass",
+                    "optimizer_research_mode": "adamw_geometric",
                     "learning_rate_policy": "No fixed scalar LR.",
                     "batch_size_policy": "Derived online.",
                 },

@@ -1557,7 +1557,7 @@ def test_dataset_train_result_to_dict_includes_null_space_diagnostics():
     assert payload["resolved_batch_size"] == 3
     assert payload["method"] == "geometric_lora"
     assert payload["init_method"] == "pissa"
-    assert payload["optimizer"] == "fisher_mass"
+    assert payload["optimizer"] == "adamw_cosine"
     assert payload["controller"] == "mass"
     assert payload["stopping"] == "geometric_certificate"
     assert payload["per_layer_null_observability"][0]["condition_number"] == pytest.approx(10.0)
@@ -1713,7 +1713,7 @@ def test_build_training_plan_exposes_resolved_surface(monkeypatch, tmp_path: Pat
     assert payload["adaptation_surface"]["rank_ceiling_source"] == "spectral-knee×slack + data-rank"
     assert payload["controller_plan"]["method"] == "geometric_lora"
     assert payload["controller_plan"]["init_method"] == "pissa"
-    assert payload["controller_plan"]["optimizer"] == "fisher_mass"
+    assert payload["controller_plan"]["optimizer"] == "adamw_cosine"
     assert payload["controller_plan"]["controller"] == "mass"
     assert payload["controller_plan"]["stopping"] == "geometric_certificate"
     assert payload["controller_plan"]["learning_rate_policy"].startswith(
