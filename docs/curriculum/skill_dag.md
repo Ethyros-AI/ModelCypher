@@ -416,6 +416,9 @@ measures baseline accuracy on this eval set to determine Zone 1/2/3.
    - Experiment: Train LFM2-350M two ways: (a) logic phases → arithmetic → word problems;
      (b) arithmetic → word problems only. Compare samples-to-mastery on word_problem_multi.
    - Status: Not yet run.
+   - Current preparatory status: the single-skill `modus_ponens` end-to-end experiment,
+     evaluator cleanup, and rerun command are summarized in
+     `docs/curriculum/modus_ponens_curriculum_experiment_status.md`.
 
 4. **Does geometry-aligned training (Cayley-Stiefel + MASS) allow training on raw
    NuminaMath without filtering?**

@@ -64,25 +64,30 @@ new canonical result families, or repeated agent-driven run families.
 This is the first active blocker because "better than standard practice" is the
 mission claim, not an optional benchmark.
 
-Current state:
+Current state (2026-03-12):
 
-- `results/nblora_vs_standard/` retains standardized slices and a grid-search
-  summary, but it is not yet a promotable benchmark bundle.
+- **Stage A frozen tuple remains a no-go.** Canonical `nb_lora` won 0/7 tasks
+  against every surface-matched baseline on the old benchmark pair, so seed
+  expansion remains deferred.
+- Fresh-session handoff for the active local 350M R1 thread lives at
+  [results/nblora_vs_standard/REPORT.md](/Users/jasonkempf/ModelCypher/results/nblora_vs_standard/REPORT.md).
+  Use that file as the single re-entry point before starting new work on this
+  blocker.
+- The old benchmark pair
+  (`data/training/benchmark_train.jsonl` /
+  `data/training/benchmark_val.jsonl`) now serves as a retained mechanical
+  proof substrate, not the active R1 closure corpus.
+- The live local spend is the quick-aligned tuple:
+  `data/training/r1_quick_aligned_train.jsonl` /
+  `data/training/r1_quick_aligned_val.jsonl` on the local LFM2-350M bf16 model
+  copy.
+- The default canonical controller is safer than the MASS matched-trace branch
+  on that tuple, but neither clears R1. The next spend is the fixed 96-step
+  matched-trace MASS diagnostic recorded in the handoff note, not seed
+  expansion or benchmark widening.
 - The family name `results/nblora_vs_standard/` is historical. The doctrine
   question is whether the canonical `geometric_lora` path beats standard
   practice, not whether the old NB-LoRA label survives.
-- The repo has no mandatory, stable same-model same-data same-eval suite across
-  the PEFT baseline set.
-- Immediate execution note (2026-03-12): freeze the next spend to the local
-  LFM2-350M bf16 tuple with
-  `data/training/benchmark_train.jsonl` /
-  `data/training/benchmark_val.jsonl`; use canonical `mc train run`
-  (`method=geometric_lora`, current `init_method=pissa`) as the primary arm on
-  that tuple. Matched-surface controls may still use the historical harness arm
-  names `standard_nb_surface`, `pissa_nb_surface`, and `dora_nb_surface`, but
-  those are experiment labels, not doctrine. Only expand to additional seeds if
-  the canonical geometry-derived LoRA path is competitive; otherwise pivot
-  directly to `R2` on the same tuple.
 
 Required controls:
 
@@ -96,17 +101,31 @@ Required controls:
 
 ### R2. Behavioral Preservation Operator
 
-`results/pipeline_validation/verdict.json` still reports:
-
-- `all_pass = false`
-- `all_structural_pass = true`
-- `all_inference_pass = false`
-
 This is the shortest path from "interesting geometry" to "the canonical
 training path really preserves behavior."
 
-The active work is not "collect more failures." It is to derive the operator
-that links null-space access, CKA blindness, and answer degradation.
+Current state (2026-03-12):
+
+All surface-level explanations for the canonical path's benchmark degradation
+have been eliminated. The R2 falsifier chain:
+
+| Falsifier | Status | Ledger row |
+|-----------|--------|------------|
+| Optimizer (Cayley vs AdamW) | closed | r2 behavioral probe / V3 structural |
+| MASS matched-trace step sizing | closed | r2 behavioral probe adamw |
+| Closed-loop layer freeze | closed | r2 closed loop cayley |
+| Loop mechanics (seq_len, batch, iter cap, early stops) | closed | r2 loop parity |
+| Cosine LR schedule drift | closed | r2 adamw cosine schedule audit |
+| **Inference-representation collapse** | **ACTIVE** | — |
+
+The surviving mechanism: train-space CKA stays healthy (0.94) while
+inference-manifold CKA collapses (min 0.13). The adapter memorizes training
+format while destroying inference geometry. This persists across all optimizer,
+loop, and schedule configurations tested.
+
+Next falsifier and exact command: see `results/nblora_vs_standard/REPORT.md`
+§ Exact Next Falsifier. That file is the single canonical handoff for all
+R1/R2 work.
 
 ### R3. 8B Non-Ceiling Closure
 
