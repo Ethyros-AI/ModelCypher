@@ -14,6 +14,7 @@ import pytest
 from modelcypher.core.domain.training.spectral_budget import (
     compute_budget_ratios,
     compute_initialization_vectors,
+    compute_pissa_budget_ratios,
     compute_projected_residuals,
     compute_stable_rank,
     is_budget_exhausted,
@@ -385,3 +386,82 @@ class TestComputeProjectedResiduals:
         residuals = compute_projected_residuals(products, u_ks, v_ks, b)
         # Only first product has matching vectors
         assert len(residuals) == 1
+
+
+class TestComputePissaBudgetRatios:
+    """Tests for compute_pissa_budget_ratios() — PiSSA displacement tracking."""
+
+    def test_zero_displacement_gives_zero_ratio(self, any_backend):
+        """a_curr == a_init, b_curr == b_init → ratio ≈ 0."""
+        b = any_backend
+        a = b.array([[1.0, 0.0], [0.0, 1.0], [0.0, 0.0]])  # [3, 2]
+        b_mat = b.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])  # [2, 3]
+        b.eval(a, b_mat)
+
+        ratios = compute_pissa_budget_ratios(
+            [(1.0, a, b_mat, a, b_mat, 1.0)], b,
+        )
+
+        assert len(ratios) == 1
+        assert ratios[0] == pytest.approx(0.0, abs=1e-5)
+
+    def test_known_displacement(self, any_backend):
+        """Displacement with known spectral norm gives correct ratio."""
+        b = any_backend
+        # Init: a_init = I_2, b_init = I_2 → product = I_2
+        a_init = b.eye(2)
+        b_init = b.eye(2)
+        # Current: a_curr = I_2, b_curr = 2*I_2 → product = 2*I_2
+        # Delta = 2*I - I = I → spectral norm = 1.0
+        a_curr = b.eye(2)
+        b_curr = b.array([[2.0, 0.0], [0.0, 2.0]])
+        b.eval(a_init, b_init, a_curr, b_curr)
+
+        sigma_k = 2.0
+        ratios = compute_pissa_budget_ratios(
+            [(1.0, a_curr, b_curr, a_init, b_init, sigma_k)], b,
+        )
+
+        assert len(ratios) == 1
+        # ||I||_2 / 2.0 = 0.5
+        assert ratios[0] == pytest.approx(0.5, abs=1e-4)
+
+    def test_scale_factor_applied(self, any_backend):
+        """scale=2 doubles the displacement spectral norm → doubles ratio."""
+        b = any_backend
+        a_init = b.eye(2)
+        b_init = b.eye(2)
+        a_curr = b.eye(2)
+        b_curr = b.array([[2.0, 0.0], [0.0, 2.0]])
+        b.eval(a_init, b_init, a_curr, b_curr)
+
+        sigma_k = 1.0
+        ratios_s1 = compute_pissa_budget_ratios(
+            [(1.0, a_curr, b_curr, a_init, b_init, sigma_k)], b,
+        )
+        ratios_s2 = compute_pissa_budget_ratios(
+            [(2.0, a_curr, b_curr, a_init, b_init, sigma_k)], b,
+        )
+
+        assert ratios_s2[0] == pytest.approx(2.0 * ratios_s1[0], abs=1e-4)
+
+    def test_sigma_k_zero_skipped(self, any_backend):
+        """Entries with sigma_k <= 0 are silently skipped."""
+        b = any_backend
+        a = b.eye(2)
+        b_mat = b.eye(2)
+        b.eval(a, b_mat)
+
+        ratios = compute_pissa_budget_ratios(
+            [
+                (1.0, a, b_mat, a, b_mat, 0.0),
+                (1.0, a, b_mat, a, b_mat, -1.0),
+            ],
+            b,
+        )
+        assert ratios == []
+
+    def test_empty_input_returns_empty(self, any_backend):
+        """Empty input → empty ratios."""
+        ratios = compute_pissa_budget_ratios([], any_backend)
+        assert ratios == []

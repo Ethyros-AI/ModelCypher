@@ -38,6 +38,7 @@ from modelcypher.core.domain.training.geometric_early_stopping import (  # noqa:
 from modelcypher.core.domain.training.spectral_budget import (  # noqa: F401
     DTYPE_THRESHOLD_F32,
     compute_budget_ratios,
+    compute_pissa_budget_ratios,
     compute_projected_residuals,
     compute_stable_rank,
     is_budget_exhausted,
@@ -886,8 +887,12 @@ class _MLXTrainingAdapterTrainMixin:
             # LR calibrated from R1 frozen-tuple winner (geometric_pissa_nb_surface,
             # seed 42, 350M). Surface derivation is geometric; LR is empirical.
             _CALIBRATED_LR = 2e-4
+            # Cosine horizon: 6 data-epochs.
+            # R1 baselines: 1000 iters × batch_size 4 / 724 samples ≈ 5.5 epochs.
+            _CALIBRATED_COSINE_EPOCHS = 6
+            cosine_steps = _CALIBRATED_COSINE_EPOCHS * n_batches_per_epoch
             cosine_lr = opt.cosine_decay(
-                init=_CALIBRATED_LR, decay_steps=max_iters,
+                init=_CALIBRATED_LR, decay_steps=cosine_steps,
             )
             optimizer = opt.AdamW(
                 learning_rate=cosine_lr,
@@ -899,8 +904,8 @@ class _MLXTrainingAdapterTrainMixin:
             optimizer.init(model.trainable_parameters())
             current_eta = _CALIBRATED_LR
             logger.info(
-                "Canonical AdamW: lr=%.2e cosine→0 over %d steps",
-                _CALIBRATED_LR, max_iters,
+                "Canonical AdamW: lr=%.2e cosine→0 over %d steps (%d epochs × %d batches)",
+                _CALIBRATED_LR, cosine_steps, _CALIBRATED_COSINE_EPOCHS, n_batches_per_epoch,
             )
 
         # MASS √N epoch budget correction (Brownian scaling).
@@ -1406,11 +1411,55 @@ class _MLXTrainingAdapterTrainMixin:
                 all_target_experts_saturated = False
 
                 if use_pissa_lora:
-                    # PiSSA LoRA: no hard spectral bound. MASS step sizing
-                    # bounds per-step displacement; val_loss convergence stops.
-                    # Budget monitoring for PiSSA requires tracking displacement
-                    # from initialization — deferred to follow-up.
-                    pass
+                    # PiSSA displacement budget: ||scale*(a_curr@b_curr - a_init@b_init)||_2 / sigma_k
+                    # Feeds remaining_budget into MASS as eta_margin for conformal deceleration.
+                    try:
+                        pissa_products = []
+                        pissa_module_names: list[str] = []
+                        init_factors = getattr(self, '_pissa_init_factors', {})
+                        per_layer_sk = getattr(self, '_pissa_per_layer_sigma_k', {})
+
+                        for name, lora in self._iter_pissa_lora_modules(model):
+                            if name not in init_factors or name not in per_layer_sk:
+                                continue
+                            a_init, b_init = init_factors[name]
+                            pissa_products.append((
+                                float(lora.scale),
+                                lora.lora_a, lora.lora_b,
+                                a_init, b_init,
+                                per_layer_sk[name],
+                            ))
+                            pissa_module_names.append(name)
+                            mx.eval(lora.lora_a, lora.lora_b)
+
+                        ratios = compute_pissa_budget_ratios(
+                            pissa_products, self._backend,
+                        )
+                        if ratios:
+                            budget_exhausted_flag, median_budget_ratio = is_budget_exhausted(
+                                ratios, threshold=DTYPE_THRESHOLD_F32,
+                            )
+                            max_ratio = max(ratios)
+                            if len(ratios) == len(pissa_module_names):
+                                per_layer_budget_ratio = {
+                                    module_name: float(ratio)
+                                    for module_name, ratio in zip(pissa_module_names, ratios)
+                                }
+                                per_layer_remaining_budget = {
+                                    name: max(0.0, per_layer_sk.get(name, sigma_k_min) * (1.0 - float(ratio)))
+                                    for name, ratio in zip(pissa_module_names, ratios)
+                                }
+
+                            # Update conformal margin from fresh spectral measurement
+                            if max_ratio is not None:
+                                remaining_budget = max(
+                                    0.0, sigma_k_min * (1.0 - max_ratio),
+                                )
+                    except Exception:
+                        logger.warning(
+                            "PiSSA budget monitoring failed; continuing without margin",
+                            exc_info=True,
+                        )
                 else:
                     # NB-LoRA: bounded by construction (||BA||₂ ≤ σ_k via Cayley).
                     # Monitor capacity usage: ||BA||₂/σ_k → 1.0.

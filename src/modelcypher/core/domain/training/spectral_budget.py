@@ -136,6 +136,123 @@ def _spectral_norm_power_iter(
     return abs(scale) * sigma
 
 
+def _pissa_delta_spectral_norm_power_iter(
+    a_curr: Any,
+    b_curr: Any,
+    a_init: Any,
+    b_init: Any,
+    scale: float,
+    backend: "Backend",
+    n_iters: int = 10,
+) -> float:
+    """Estimate ||scale * (a_curr @ b_curr - a_init @ b_init)||_2 via power iteration.
+
+    Computes the top singular value of the PiSSA displacement operator
+    D = a_curr @ b_curr - a_init @ b_init without forming the full [in, out]
+    matrix. Each power iteration step uses implicit matrix-vector products:
+
+        D @ v  = a_curr @ (b_curr @ v) - a_init @ (b_init @ v)
+        D^T @ u = b_curr^T @ (a_curr^T @ u) - b_init^T @ (a_init^T @ u)
+
+    This costs 4 matmuls per direction per iteration (8 total), all through
+    rank-r intermediates.
+
+    Args:
+        a_curr: Current A factor [in, r].
+        b_curr: Current B factor [r, out].
+        a_init: Initial A factor [in, r] (frozen at PiSSA injection).
+        b_init: Initial B factor [r, out] (frozen at PiSSA injection).
+        scale: LoRA scale factor (1.0 for PiSSA).
+        backend: Backend for matmul/norm.
+        n_iters: Power iteration steps.
+
+    Returns:
+        Estimated spectral norm of the displacement (float).
+    """
+    out_dim = b_curr.shape[1] if len(b_curr.shape) > 1 else b_curr.shape[0]
+    v = backend.random_normal((out_dim, 1))
+    v = backend.astype(v, "float32")
+    backend.eval(v)
+
+    ac_f32 = backend.astype(a_curr, "float32")
+    bc_f32 = backend.astype(b_curr, "float32")
+    ai_f32 = backend.astype(a_init, "float32")
+    bi_f32 = backend.astype(b_init, "float32")
+    backend.eval(ac_f32, bc_f32, ai_f32, bi_f32)
+
+    sigma = 0.0
+    _norm_floor = float(backend.finfo().tiny)
+    for _ in range(n_iters):
+        # u = D @ v = a_curr @ (b_curr @ v) - a_init @ (b_init @ v)
+        u = backend.matmul(ac_f32, backend.matmul(bc_f32, v))
+        u_init = backend.matmul(ai_f32, backend.matmul(bi_f32, v))
+        u = u - u_init
+        backend.eval(u)
+
+        u_norm = float(backend.to_scalar(backend.norm(u)))
+        if u_norm < _norm_floor:
+            break
+        u = u * (1.0 / u_norm)
+
+        # v = D^T @ u = b_curr^T @ (a_curr^T @ u) - b_init^T @ (a_init^T @ u)
+        v = backend.matmul(
+            backend.transpose(bc_f32),
+            backend.matmul(backend.transpose(ac_f32), u),
+        )
+        v_init = backend.matmul(
+            backend.transpose(bi_f32),
+            backend.matmul(backend.transpose(ai_f32), u),
+        )
+        v = v - v_init
+        backend.eval(v)
+
+        sigma = float(backend.to_scalar(backend.norm(v)))
+        if sigma < _norm_floor:
+            break
+        v = v * (1.0 / sigma)
+        backend.eval(v)
+
+    return abs(scale) * sigma
+
+
+def compute_pissa_budget_ratios(
+    pissa_layers: list[tuple[float, Any, Any, Any, Any, float]],
+    backend: "Backend",
+) -> list[float]:
+    """Compute spectral budget ratios for PiSSA displacement from initialization.
+
+    Each entry in ``pissa_layers`` is
+    (scale, a_curr, b_curr, a_init, b_init, sigma_k) where the displacement
+    is ``scale * (a_curr @ b_curr - a_init @ b_init)`` and the ratio is
+    ``||displacement||_spectral / sigma_k``.
+
+    Uses implicit power iteration on the delta operator to avoid forming
+    the full [in, out] displacement matrix.
+
+    Args:
+        pissa_layers: List of (scale, a_curr, b_curr, a_init, b_init, sigma_k).
+        backend: Backend for computation.
+
+    Returns:
+        List of displacement ratios (one per valid entry).
+    """
+    ratios: list[float] = []
+
+    for scale, a_curr, b_curr, a_init, b_init, sigma_k in pissa_layers:
+        if sigma_k <= 0:
+            continue
+
+        try:
+            spectral_norm = _pissa_delta_spectral_norm_power_iter(
+                a_curr, b_curr, a_init, b_init, scale, backend,
+            )
+            ratios.append(spectral_norm / sigma_k)
+        except Exception:
+            continue
+
+    return ratios
+
+
 def compute_budget_ratios(
     lora_products: list[tuple[float, Any, Any, float]],
     backend: "Backend",
@@ -501,6 +618,7 @@ __all__ = [
     "DTYPE_THRESHOLD_F32",
     "compute_budget_ratios",
     "compute_initialization_vectors",
+    "compute_pissa_budget_ratios",
     "compute_projected_residuals",
     "compute_stable_rank",
     "is_budget_exhausted",

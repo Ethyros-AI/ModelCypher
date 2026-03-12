@@ -177,7 +177,7 @@ def test_main_uses_merged_eval_path_and_saves_full_envelope(tmp_path, monkeypatc
     calls: list[tuple[str, str | None]] = []
     train_cmd: list[str] = []
 
-    monkeypatch.setattr(argparse.ArgumentParser, "parse_args", lambda self: args)
+    monkeypatch.setattr(script.argparse.ArgumentParser, "parse_args", lambda self: args)
     monkeypatch.setattr(script, "_find_skill_node", lambda skill_name: skill if skill_name == args.skill else None)
     monkeypatch.setattr(script, "_prepare_training_data", lambda _: prepared_train)
     monkeypatch.setattr(script, "_merge_eval_files", lambda _: merged_eval)

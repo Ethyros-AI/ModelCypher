@@ -730,6 +730,8 @@ class _MLXTrainingAdapterCoreMixin:
         from mlx_lm.tuner.lora import LoRALinear  # noqa: PLC0415
 
         injected = 0
+        self._pissa_init_factors: dict[str, tuple] = {}
+        self._pissa_per_layer_sigma_k: dict[str, float] = {}
 
         for key in target_modules:
             geom = geometries.get(key)
@@ -790,6 +792,15 @@ class _MLXTrainingAdapterCoreMixin:
 
                 setattr(parent, attr_name, lora)
                 injected += 1
+
+                # Store frozen init factors for displacement budget tracking.
+                # On self (not on LoRALinear) — excluded from model.parameters(),
+                # won't be serialized, no gradient participation.
+                self._pissa_init_factors[key] = (
+                    mx.array(lora_a_init),
+                    mx.array(lora_b_init),
+                )
+                self._pissa_per_layer_sigma_k[key] = float(geom.sigma_k)
 
                 logger.debug(
                     "Injected PiSSA-LoRA at %s: rank=%d, sigma_k=%.6f, sigma_r=%.6f",
