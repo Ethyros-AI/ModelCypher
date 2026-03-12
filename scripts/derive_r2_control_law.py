@@ -306,10 +306,11 @@ def _build_law(specs: list[ArtifactSpec]) -> DerivedClosedLoopLaw:
         counterexample_artifacts=tuple(
             str(spec.report_path) for spec in specs if not spec.safe_reference
         ),
-        arm_on_online_eval_accuracy_drop=True,
+        arm_on_online_eval_accuracy_drop=False,
         arm_on_margin_trend_declining=True,
         arm_on_stable_rank_concentration=True,
         max_interventions=1,
+        require_ordering_surface=True,
     )
 
 

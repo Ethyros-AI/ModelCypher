@@ -27,7 +27,7 @@ def _load_script_module() -> ModuleType:
 
 def test_extract_prompt_and_expected_prefers_answer_start():
     script = _load_script_module()
-    item = {"text": "What is 2 + 2?\n4", "answer_start": 14}
+    item = {"text": "What is 2 + 2?\n4", "answer_start": 15}
 
     prompt, expected = script._extract_prompt_and_expected(item)
 

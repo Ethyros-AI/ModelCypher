@@ -182,12 +182,12 @@ class ControllerStepTrace:
 class DerivedClosedLoopLaw:
     """Offline-derived layer-local intervention law for research-only control."""
 
-    schema: str = "r2_behavioral_freeze_v1"
+    schema: str = "r2_behavioral_freeze_v2"
     law_id: str = "r2_closed_loop"
     source_artifacts: tuple[str, ...] = ()
     safe_artifacts: tuple[str, ...] = ()
     counterexample_artifacts: tuple[str, ...] = ()
-    arm_on_online_eval_accuracy_drop: bool = True
+    arm_on_online_eval_accuracy_drop: bool = False
     arm_on_margin_trend_declining: bool = True
     arm_on_stable_rank_concentration: bool = True
     max_interventions: int = 1
@@ -196,6 +196,8 @@ class DerivedClosedLoopLaw:
         "spectral_budget_ratio",
         "stable_rank_concentration",
     )
+    require_ordering_surface: bool = True
+    adaptation_surface_layers: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -209,12 +211,14 @@ class DerivedClosedLoopLaw:
             "arm_on_stable_rank_concentration": self.arm_on_stable_rank_concentration,
             "max_interventions": int(self.max_interventions),
             "target_ordering": list(self.target_ordering),
+            "require_ordering_surface": self.require_ordering_surface,
+            "adaptation_surface_layers": list(self.adaptation_surface_layers),
         }
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "DerivedClosedLoopLaw":
         return cls(
-            schema=str(payload.get("schema", "r2_behavioral_freeze_v1")),
+            schema=str(payload.get("schema", "r2_behavioral_freeze_v2")),
             law_id=str(payload.get("law_id", "r2_closed_loop")),
             source_artifacts=tuple(str(item) for item in payload.get("source_artifacts", ()) or ()),
             safe_artifacts=tuple(str(item) for item in payload.get("safe_artifacts", ()) or ()),
@@ -222,7 +226,7 @@ class DerivedClosedLoopLaw:
                 str(item) for item in payload.get("counterexample_artifacts", ()) or ()
             ),
             arm_on_online_eval_accuracy_drop=bool(
-                payload.get("arm_on_online_eval_accuracy_drop", True),
+                payload.get("arm_on_online_eval_accuracy_drop", False),
             ),
             arm_on_margin_trend_declining=bool(
                 payload.get("arm_on_margin_trend_declining", True),
@@ -242,6 +246,12 @@ class DerivedClosedLoopLaw:
                     ),
                 )
             ),
+            require_ordering_surface=bool(
+                payload.get("require_ordering_surface", True),
+            ),
+            adaptation_surface_layers=tuple(
+                str(item) for item in payload.get("adaptation_surface_layers", ()) or ()
+            ),
         )
 
 
@@ -256,6 +266,7 @@ class ClosedLoopControlDecision:
     target_layer: str | None
     ordering_metrics: dict[str, dict[str, float | None]] | None = None
     interventions_used: int = 0
+    refusal_reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -266,6 +277,7 @@ class ClosedLoopControlDecision:
             "target_layer": self.target_layer,
             "ordering_metrics": self.ordering_metrics,
             "interventions_used": int(self.interventions_used),
+            "refusal_reason": self.refusal_reason,
         }
 
 
@@ -360,8 +372,14 @@ def select_closed_loop_target_layer(
     behavioral_state: BehavioralStateMeasurement | None,
     *,
     already_frozen_layers: Sequence[str] = (),
+    require_ordering_surface: bool = True,
 ) -> tuple[str | None, dict[str, dict[str, float | None]] | None]:
-    """Select the next layer to freeze using the pre-registered ordering."""
+    """Select the next layer to freeze using the pre-registered ordering.
+
+    When ``require_ordering_surface`` is True, returns ``(None, metrics)``
+    if all three primary ordering metrics are None for every candidate.
+    This prevents arbitrary tie-break selection when no real data exists.
+    """
     if behavioral_state is None:
         return None, None
 
@@ -385,6 +403,19 @@ def select_closed_loop_target_layer(
         )
         for layer_key in sorted(candidate_layers)
     }
+
+    if require_ordering_surface:
+        _PRIMARY_KEYS = (
+            "behavioral_transport_over_remaining_budget",
+            "spectral_budget_ratio",
+            "stable_rank_concentration",
+        )
+        all_null = all(
+            all(m.get(k) is None for k in _PRIMARY_KEYS)
+            for m in metrics_by_layer.values()
+        )
+        if all_null:
+            return None, metrics_by_layer
 
     def _risk_tuple(layer_key: str) -> tuple[float, float, float, str]:
         metrics = metrics_by_layer[layer_key]
@@ -505,6 +536,7 @@ def evaluate_closed_loop_law(
     target_layer, ordering_metrics = select_closed_loop_target_layer(
         behavioral_state,
         already_frozen_layers=already_frozen_layers,
+        require_ordering_surface=law.require_ordering_surface,
     )
     if target_layer is None:
         return ClosedLoopControlDecision(
@@ -515,6 +547,22 @@ def evaluate_closed_loop_law(
             target_layer=None,
             ordering_metrics=ordering_metrics,
             interventions_used=interventions_used,
+            refusal_reason="measurement_unavailable",
+        )
+
+    if (
+        law.adaptation_surface_layers
+        and target_layer not in law.adaptation_surface_layers
+    ):
+        return ClosedLoopControlDecision(
+            armed=False,
+            epoch=epoch,
+            trigger_reasons=tuple(trigger_reasons),
+            freeze_layers=(),
+            target_layer=target_layer,
+            ordering_metrics=ordering_metrics,
+            interventions_used=interventions_used,
+            refusal_reason="off_surface_failure_source",
         )
 
     return ClosedLoopControlDecision(

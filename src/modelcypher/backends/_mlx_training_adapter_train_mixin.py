@@ -2164,7 +2164,14 @@ class _MLXTrainingAdapterTrainMixin:
                         em.controller_trace["closed_loop_decision"] = (
                             closed_loop_decision.to_dict()
                         )
-                    if closed_loop_decision.armed:
+                    if closed_loop_decision.refusal_reason:
+                        logger.info(
+                            "Closed-loop refused: reason=%s triggers=%s epoch=%d",
+                            closed_loop_decision.refusal_reason,
+                            ",".join(closed_loop_decision.trigger_reasons),
+                            epoch_num,
+                        )
+                    elif closed_loop_decision.armed:
                         new_layers = [
                             layer
                             for layer in closed_loop_decision.freeze_layers
