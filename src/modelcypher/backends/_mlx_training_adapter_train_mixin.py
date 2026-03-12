@@ -27,7 +27,11 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.backends.mlx_training_adapter_core import *  # noqa: F403
 from modelcypher.core.domain.training.geometric_early_stopping import (  # noqa: F401
+    check_effective_rank_declining,
     check_loss_stable,
+    check_margin_collapse,
+    check_margin_trend_declining,
+    check_stable_rank_concentration,
     check_val_loss_converged,
     should_certificate_stop,
 )
@@ -35,6 +39,7 @@ from modelcypher.core.domain.training.spectral_budget import (  # noqa: F401
     DTYPE_THRESHOLD_F32,
     compute_budget_ratios,
     compute_projected_residuals,
+    compute_stable_rank,
     is_budget_exhausted,
 )
 from modelcypher.core.domain.training.mass_step_size import (
@@ -127,6 +132,8 @@ class _MLXTrainingAdapterTrainMixin:
         # AdamW-decoupled weight decay: θ -= lr * λ * θ per step.
         # 0.0 = no decay (default). Research variable — isolated for testing.
         weight_decay: float = 0.0,
+        # P4: Pre-computed base-model per-token CE for token-weighted val loss.
+        base_token_losses: list | None = None,
     ) -> tuple[list[tuple[int, float, float]], str, list[EpochMetrics]]:
         """Train with geometric stopping and MASS step sizing.
 
@@ -664,6 +671,13 @@ class _MLXTrainingAdapterTrainMixin:
         best_val_loss = float("inf")
         best_weights: dict[str, Any] | None = None
         val_loss_baseline: float | None = None  # First epoch's val loss for certificate condition 5
+        # P2: Answer margin time series
+        margin_history: list[float] = []  # Per-epoch median margins
+        # P3: Adapter stable rank time series
+        stable_rank_history: list[float] = []  # Per-epoch median stable ranks
+        adapter_rank_for_stopping: int | None = None  # Set once from first NB-LoRA module
+        # P5: Effective rank time series
+        effective_rank_history: list[float] = []  # Per-epoch effective ranks
 
         if geometric_reshape and paired_dataset is not None:
             batch_iter = iterate_structured_batches(
@@ -1621,6 +1635,126 @@ class _MLXTrainingAdapterTrainMixin:
                             rss_result.top1_agreement,
                         )
 
+                # 6g. Answer margin time series (P2)
+                epoch_margin_median = None
+                epoch_margin_mean = None
+                epoch_margin_min = None
+                epoch_margin_n_near_zero = None
+                epoch_margin_n_flipped = None
+                if online_eval_problems and tokenizer is not None:
+                    try:
+                        from modelcypher.core.domain.training.online_eval import compute_answer_margin
+
+                        def _collect_logits_for_margin(prompt: str):
+                            return self._backend.collect_logits(model, tokenizer, prompt)
+
+                        current_margins = compute_answer_margin(
+                            online_eval_problems,
+                            _collect_logits_for_margin,
+                            self._backend,
+                        )
+                        if current_margins:
+                            margin_vals = list(current_margins.values())
+                            sorted_margins = sorted(margin_vals)
+                            epoch_margin_median = sorted_margins[len(sorted_margins) // 2]
+                            epoch_margin_mean = sum(margin_vals) / len(margin_vals)
+                            epoch_margin_min = sorted_margins[0]
+                            epoch_margin_n_near_zero = sum(
+                                1 for v in margin_vals if abs(v) < _SQRT_EPS_F32
+                            )
+                            margin_history.append(epoch_margin_median)
+                            # Track sign flips vs baseline
+                            if baseline_margins is not None:
+                                shared = set(baseline_margins.keys()) & set(current_margins.keys())
+                                epoch_margin_n_flipped = sum(
+                                    1 for pid in shared
+                                    if (baseline_margins[pid] > 0 and current_margins[pid] <= 0)
+                                    or (baseline_margins[pid] <= 0 and current_margins[pid] > 0)
+                                )
+                            logger.info(
+                                "Margin: median=%.2f mean=%.2f min=%.2f near_zero=%d",
+                                epoch_margin_median, epoch_margin_mean,
+                                epoch_margin_min, epoch_margin_n_near_zero,
+                            )
+                    except Exception:
+                        logger.debug("Margin computation failed", exc_info=True)
+
+                # 6h. Adapter stable rank (P3)
+                epoch_stable_rank_median = None
+                epoch_stable_rank_min = None
+                epoch_per_layer_stable_rank: dict[str, float] | None = None
+                if not use_pissa_lora:
+                    try:
+                        layer_stable_ranks: dict[str, float] = {}
+                        for name, nb_lora in self._iter_nb_lora_modules(model):
+                            A, B = nb_lora._cayley_transform()
+                            S = mx.clip(nb_lora.S_raw, 0.0, nb_lora._scale_bound)
+                            # Compute effective LoRA product: scale * B^T @ S @ A
+                            product = 2.0 * mx.matmul((S[:, None] * A).T, B)
+                            mx.eval(product)
+                            sr = compute_stable_rank(product, self._backend)
+                            layer_stable_ranks[name] = sr
+                            if adapter_rank_for_stopping is None:
+                                adapter_rank_for_stopping = int(nb_lora.A_tilde.shape[0])
+                        if layer_stable_ranks:
+                            sr_vals = sorted(layer_stable_ranks.values())
+                            epoch_stable_rank_median = sr_vals[len(sr_vals) // 2]
+                            epoch_stable_rank_min = sr_vals[0]
+                            epoch_per_layer_stable_rank = layer_stable_ranks
+                            stable_rank_history.append(epoch_stable_rank_median)
+                            logger.info(
+                                "Stable rank: median=%.2f min=%.2f (rank=%s)",
+                                epoch_stable_rank_median, epoch_stable_rank_min,
+                                adapter_rank_for_stopping,
+                            )
+                    except Exception:
+                        logger.debug("Stable rank computation failed", exc_info=True)
+
+                # 6i. Effective rank for trend detection (P5)
+                # Use dim_monitor's final_dim when available, else derive from
+                # the adapter's spectral structure
+                epoch_effective_rank = None
+                epoch_rank_declining_streak = 0
+                if dim_monitor and dim_snapshots:
+                    latest = dim_snapshots[-1]
+                    epoch_effective_rank = latest.final_dim
+                    if epoch_effective_rank is not None:
+                        effective_rank_history.append(epoch_effective_rank)
+                        _, epoch_rank_declining_streak = check_effective_rank_declining(
+                            effective_rank_history, window=3,
+                        )
+
+                # 6j. Token-weighted validation loss (P4)
+                epoch_token_weighted_val_loss = None
+                if base_token_losses and eval_dataset:
+                    try:
+                        epoch_token_weighted_val_loss = compute_token_weighted_val_loss(
+                            model, eval_dataset, batch_size, seq_length,
+                            base_token_losses,
+                        )
+                        if epoch_token_weighted_val_loss is not None:
+                            logger.info(
+                                "Token-weighted val loss: %.4f (standard val: %.4f)",
+                                epoch_token_weighted_val_loss,
+                                v_loss if v_loss is not None else float('nan'),
+                            )
+                    except Exception:
+                        logger.debug("Token-weighted val loss failed", exc_info=True)
+
+                # Update EpochMetrics with P2/P3/P4/P5 fields
+                em = epoch_metrics_list[-1]
+                em.margin_median = epoch_margin_median
+                em.margin_mean = epoch_margin_mean
+                em.margin_min = epoch_margin_min
+                em.margin_n_near_zero = epoch_margin_n_near_zero
+                em.margin_n_flipped = epoch_margin_n_flipped
+                em.stable_rank_median = epoch_stable_rank_median
+                em.stable_rank_min = epoch_stable_rank_min
+                em.per_layer_stable_rank = epoch_per_layer_stable_rank
+                em.token_weighted_val_loss = epoch_token_weighted_val_loss
+                em.effective_rank = epoch_effective_rank
+                em.effective_rank_declining_streak = epoch_rank_declining_streak
+
                 # Log
                 log_parts = [
                     f"Epoch {epoch_num} | train_loss={loss_val:.4f}",
@@ -1789,6 +1923,60 @@ class _MLXTrainingAdapterTrainMixin:
                         "Online eval stop at iter %d: %s", it + 1, stop_reason,
                     )
                     break
+
+                # 7c'. Margin collapse stop (P2)
+                if len(margin_history) >= 2 and tokenizer is not None:
+                    vocab_size = getattr(tokenizer, "vocab_size", 32000)
+                    margin_collapsed, margin_threshold = check_margin_collapse(
+                        margin_history, vocab_size,
+                    )
+                    if margin_collapsed:
+                        stop_reason = (
+                            f"margin_collapse (median={margin_history[-1]:.4f} "
+                            f"< threshold={margin_threshold:.4e}, epoch={epoch_num})"
+                        )
+                        logger.info(
+                            "Margin collapse stop at iter %d: %s",
+                            it + 1, stop_reason,
+                        )
+                        break
+
+                # 7c''. Stable rank concentration stop (P3)
+                if (
+                    stable_rank_history
+                    and adapter_rank_for_stopping is not None
+                    and adapter_rank_for_stopping > 1
+                ):
+                    sr_concentrated, sr_threshold = check_stable_rank_concentration(
+                        stable_rank_history, adapter_rank_for_stopping,
+                    )
+                    if sr_concentrated:
+                        stop_reason = (
+                            f"stable_rank_concentration (sr={stable_rank_history[-1]:.2f} "
+                            f"< sqrt(rank)={sr_threshold:.2f}, epoch={epoch_num})"
+                        )
+                        logger.info(
+                            "Stable rank stop at iter %d: %s",
+                            it + 1, stop_reason,
+                        )
+                        break
+
+                # 7c'''. Effective rank declining stop (P5)
+                if len(effective_rank_history) >= 4:
+                    rank_declining, n_declining = check_effective_rank_declining(
+                        effective_rank_history, window=3,
+                    )
+                    if rank_declining:
+                        stop_reason = (
+                            f"effective_rank_declining ({n_declining} consecutive "
+                            f"epochs declining, current={effective_rank_history[-1]:.2f}, "
+                            f"epoch={epoch_num})"
+                        )
+                        logger.info(
+                            "Effective rank stop at iter %d: %s",
+                            it + 1, stop_reason,
+                        )
+                        break
 
                 # 7d. Degeneration gate: n-gram repetition on few-shot prompts
                 if (degen_prompts

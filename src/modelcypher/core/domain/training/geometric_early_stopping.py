@@ -457,6 +457,147 @@ def check_stopping_certificate(
     )
 
 
+def check_margin_collapse(
+    margin_history: list[float],
+    vocab_size: int,
+    numeric_floor: float = _SQRT_EPS,
+) -> tuple[bool, float]:
+    """Check if answer margins have collapsed below distinguishability.
+
+    The margin is the logit gap (top-1 minus top-2) at the decision boundary.
+    When median margin drops below a derived floor, the model's predictions
+    are fragile — one more training step can flip them.
+
+    Threshold derivation: log(vocab_size) * sqrt(eps_f32).
+    - log(vocab_size) scales the floor to the output space size: larger vocab
+      means logit differences must be larger to be meaningful.
+    - sqrt(eps_f32) is the accumulated forward-error bound for float32 matmul
+      (Higham 2002, Ch. 3). A margin below this is indistinguishable from
+      numerical noise in the logit computation.
+
+    Args:
+        margin_history: Per-epoch median margin values (most recent last).
+        vocab_size: Model vocabulary size (for threshold derivation).
+        numeric_floor: IEEE 754 derived floor (default: sqrt(eps_f32)).
+
+    Returns:
+        (is_collapsed, threshold) — True when the model's decision boundary
+        confidence has degraded below the distinguishability floor.
+    """
+    if len(margin_history) < 2:
+        return False, 0.0
+
+    threshold = math.log(max(vocab_size, 2)) * numeric_floor
+    current_median = margin_history[-1]
+
+    return current_median < threshold, threshold
+
+
+def check_margin_trend_declining(
+    margin_history: list[float],
+    window: int | None = None,
+    numeric_floor: float = _SQRT_EPS,
+) -> tuple[bool, float]:
+    """Check if answer margins are declining (decision boundary erosion).
+
+    Same windowed-SE test as ``check_val_loss_converged()``, applied to
+    median margins. Detects sustained decline in decision confidence before
+    it reaches the collapse floor.
+
+    Args:
+        margin_history: Per-epoch median margin values (most recent last).
+        window: Number of recent epochs to compare.
+        numeric_floor: Numerical lower bound for distinguishability.
+
+    Returns:
+        (is_declining, threshold) — True when margins are trending down.
+    """
+    resolved_window = window if window is not None else len(margin_history) // 2
+    if resolved_window < 2 or len(margin_history) < 2 * resolved_window:
+        return False, 0.0
+
+    recent = margin_history[-resolved_window:]
+    earlier = margin_history[-2 * resolved_window : -resolved_window]
+
+    n = len(recent)
+    mean_recent = sum(recent) / n
+    mean_earlier = sum(earlier) / n
+
+    var_recent = sum((x - mean_recent) ** 2 for x in recent) / n
+    var_earlier = sum((x - mean_earlier) ** 2 for x in earlier) / n
+
+    se_diff = math.sqrt((var_recent + var_earlier) / n)
+    threshold = max(se_diff, numeric_floor)
+
+    delta = mean_recent - mean_earlier
+    # Margins decreasing → decision boundary erosion
+    return delta < -threshold, threshold
+
+
+def check_effective_rank_declining(
+    rank_history: list[float],
+    window: int = 3,
+) -> tuple[bool, int]:
+    """Check if effective rank is declining (plasticity loss precursor).
+
+    Effective rank decline is the earliest geometric signal of plasticity
+    loss — it precedes loss plateau by multiple epochs (Nature 2024,
+    NeurIPS 2025). This function detects sustained decline: ``window``
+    consecutive epochs of decreasing effective rank.
+
+    Args:
+        rank_history: Per-epoch effective rank values (most recent last).
+        window: Number of consecutive declining epochs required (default: 3).
+
+    Returns:
+        (is_declining, n_consecutive) — True when effective rank has declined
+        for ``window`` or more consecutive epochs. ``n_consecutive`` is the
+        actual streak length.
+    """
+    if len(rank_history) < window + 1:
+        return False, 0
+
+    consecutive = 0
+    for i in range(len(rank_history) - 1, 0, -1):
+        if rank_history[i] < rank_history[i - 1]:
+            consecutive += 1
+        else:
+            break
+
+    return consecutive >= window, consecutive
+
+
+def check_stable_rank_concentration(
+    stable_rank_history: list[float],
+    adapter_rank: int,
+) -> tuple[bool, float]:
+    """Check if adapter stable rank indicates energy concentration (memorization).
+
+    Stable rank = ||A||²_F / ||A||²_2. For an isotropic matrix, stable_rank = rank.
+    When the adapter concentrates energy in few directions, stable rank drops.
+
+    Threshold: sqrt(rank). Derived from the geometric mean between the
+    minimum possible stable rank (1.0, single dominant direction) and the
+    maximum (rank, isotropic). Below sqrt(rank), more than half the adapter's
+    energy is in fewer than sqrt(rank) directions — memorization signature.
+
+    Args:
+        stable_rank_history: Per-epoch stable rank values (most recent last).
+        adapter_rank: The LoRA rank (maximum possible stable rank).
+
+    Returns:
+        (is_concentrated, threshold) — True when stable rank indicates
+        the adapter is memorizing rather than generalizing.
+    """
+    if not stable_rank_history or adapter_rank < 1:
+        return False, 0.0
+
+    threshold = math.sqrt(float(adapter_rank))
+    current = stable_rank_history[-1]
+
+    return current < threshold, threshold
+
+
 def should_certificate_stop(
     all_conditions_met: bool,
     val_losses: list[float],
@@ -492,8 +633,12 @@ def should_certificate_stop(
 __all__ = [
     "_SQRT_EPS",
     "StoppingCertificate",
+    "check_effective_rank_declining",
     "check_grad_norm_stable",
     "check_loss_stable",
+    "check_margin_collapse",
+    "check_margin_trend_declining",
+    "check_stable_rank_concentration",
     "check_stopping_certificate",
     "check_val_loss_converged",
     "should_certificate_stop",

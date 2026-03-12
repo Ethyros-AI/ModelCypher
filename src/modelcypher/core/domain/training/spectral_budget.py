@@ -236,6 +236,66 @@ def is_budget_exhausted(
     return median_ratio > threshold, median_ratio
 
 
+def compute_stable_rank(
+    matrix: Any,
+    backend: "Backend",
+) -> float:
+    """Compute stable rank of a matrix: ||A||²_F / ||A||²_2.
+
+    Stable rank measures how distributed vs concentrated the matrix's energy
+    is across its singular values. For an isotropic matrix (all singular
+    values equal), stable_rank = rank. When energy concentrates in few
+    directions, stable_rank approaches 1.0.
+
+    Uses Frobenius norm (exact, O(mn)) and power iteration for spectral
+    norm (O(mn * n_iters)), avoiding SVD crashes on ill-conditioned matrices.
+
+    Args:
+        matrix: Input matrix (any shape with 2 dimensions).
+        backend: Backend for computation.
+
+    Returns:
+        Stable rank (float). Returns 0.0 if the matrix is zero.
+    """
+    b = backend
+    M = b.astype(matrix, "float32")
+    b.eval(M)
+
+    # Frobenius norm: sqrt(sum of squared elements)
+    frob_sq = float(b.to_scalar(b.sum(M * M)))
+    if frob_sq <= 0.0:
+        return 0.0
+
+    # Spectral norm via power iteration
+    m, n = int(M.shape[0]), int(M.shape[1])
+    v = b.random_normal((n, 1))
+    v = b.astype(v, "float32")
+    b.eval(v)
+
+    _norm_floor = float(b.finfo().tiny)
+    sigma = 0.0
+    for _ in range(10):
+        u = b.matmul(M, v)
+        b.eval(u)
+        u_norm = float(b.to_scalar(b.norm(u)))
+        if u_norm < _norm_floor:
+            break
+        u = u * (1.0 / u_norm)
+        v = b.matmul(b.transpose(M), u)
+        b.eval(v)
+        sigma = float(b.to_scalar(b.norm(v)))
+        if sigma < _norm_floor:
+            break
+        v = v * (1.0 / sigma)
+        b.eval(v)
+
+    spectral_sq = sigma * sigma
+    if spectral_sq <= 0.0:
+        return 0.0
+
+    return frob_sq / spectral_sq
+
+
 def compute_initialization_vectors(
     weight: Any,
     structural_rank: int,
@@ -442,5 +502,6 @@ __all__ = [
     "compute_budget_ratios",
     "compute_initialization_vectors",
     "compute_projected_residuals",
+    "compute_stable_rank",
     "is_budget_exhausted",
 ]

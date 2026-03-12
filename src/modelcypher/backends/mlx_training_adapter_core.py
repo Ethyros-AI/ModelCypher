@@ -192,6 +192,21 @@ class EpochMetrics:
     rss_top1_agreement: float | None = None
     # Projected residual diagnostic (tighter than spectral norm ratio)
     projected_residual_max: float | None = None
+    # Answer margin time series (P2: decision boundary confidence)
+    margin_median: float | None = None
+    margin_mean: float | None = None
+    margin_min: float | None = None
+    margin_n_near_zero: int | None = None
+    margin_n_flipped: int | None = None
+    # Adapter stable rank per layer (P3: memorization detection)
+    stable_rank_median: float | None = None
+    stable_rank_min: float | None = None
+    per_layer_stable_rank: dict[str, float] | None = None
+    # Token-weighted loss (P4: LongPPL-style capability-weighted observation)
+    token_weighted_val_loss: float | None = None
+    # Effective rank trend (P5: plasticity loss detection)
+    effective_rank: float | None = None
+    effective_rank_declining_streak: int | None = None
     # Research-only controller tracing (raw measurements, no interpretation)
     controller_mode: str | None = None
     optimizer_research_mode: str | None = None
@@ -1125,6 +1140,139 @@ def calibrate_geometric_weights(
         "ratio_expand": ce_gnorm / max(expand_gnorm, _EPS_F32),
         "ratio_contrast": ce_gnorm / max(contrast_gnorm, _EPS_F32),
     }
+
+
+# =============================================================================
+# Token-Weighted Validation Loss (P4: LongPPL-style observation metric)
+# =============================================================================
+
+
+def compute_token_weighted_val_loss(
+    model,
+    eval_dataset: list,
+    batch_size: int,
+    seq_length: int,
+    base_token_losses: list[Any],
+    tokenizer=None,
+) -> float | None:
+    """Compute token-weighted validation loss (LongPPL-style).
+
+    Standard CE averages over all tokens equally. Most tokens are locally
+    predictable (articles, prepositions, formatting) and contribute noise
+    to the loss signal. LongPPL (2024) showed that weighting tokens by
+    their information content (self-information from the base model)
+    achieves Pearson r=-0.96 with downstream benchmarks vs standard PPL's
+    weak correlation.
+
+    This function weights each token's CE loss by its base-model
+    self-information: ``w_i = -log P_base(token_i | context)``. Tokens
+    that were surprising to the base model carry more capability signal.
+
+    This is an OBSERVATION metric only — it does not change the training
+    objective. It reports whether the tokens that matter for capability
+    are improving, not just the average.
+
+    Args:
+        model: Current (adapted) model.
+        eval_dataset: Evaluation batches.
+        batch_size: Batch size for evaluation.
+        seq_length: Sequence length.
+        base_token_losses: Pre-computed per-token CE losses from the base
+            model (before training). List of mx arrays, one per eval batch.
+
+    Returns:
+        Token-weighted validation loss (float), or None if computation fails.
+    """
+    if not eval_dataset or not base_token_losses:
+        return None
+
+    try:
+        total_weighted_loss = mx.array(0.0, dtype=mx.float32)
+        total_weight = mx.array(0.0, dtype=mx.float32)
+
+        for batch_idx, batch_data in enumerate(eval_dataset):
+            if batch_idx >= len(base_token_losses):
+                break
+
+            batch = batch_data[0] if isinstance(batch_data, (tuple, list)) else batch_data
+            if not hasattr(batch, 'shape') or len(batch.shape) < 2:
+                continue
+
+            inputs = batch[:, :-1]
+            targets = batch[:, 1:]
+
+            logits = model(inputs)
+            per_token_ce = nn.losses.cross_entropy(logits, targets)
+
+            # Base model self-information as weights
+            base_losses = base_token_losses[batch_idx]
+            # Clamp weights to avoid extreme values; use sqrt to moderate
+            weights = mx.sqrt(mx.maximum(base_losses, mx.array(0.0)))
+
+            # Apply length mask if available
+            if isinstance(batch_data, (tuple, list)) and len(batch_data) > 1:
+                lengths = batch_data[1]
+                steps = mx.arange(1, targets.shape[1] + 1)
+                mask = mx.logical_and(
+                    steps >= lengths[:, 0:1], steps <= lengths[:, 1:],
+                ).astype(mx.float32)
+                weights = weights * mask
+
+            # Weighted sum
+            weighted = (per_token_ce * weights).sum()
+            w_sum = weights.sum()
+            total_weighted_loss = total_weighted_loss + weighted
+            total_weight = total_weight + w_sum
+
+        mx.eval(total_weighted_loss, total_weight)
+        tw = float(total_weight.item())
+        if tw <= 0.0:
+            return None
+        return float(total_weighted_loss.item()) / tw
+    except Exception:
+        logger.debug("Token-weighted val loss computation failed", exc_info=True)
+        return None
+
+
+def collect_base_token_losses(
+    model,
+    eval_dataset: list,
+) -> list[Any]:
+    """Collect per-token CE losses from the base model before training.
+
+    These serve as token importance weights for the token-weighted
+    validation loss (P4). Tokens with high base-model loss are
+    surprising/informative — they carry more capability signal.
+
+    Must be called BEFORE training modifies the model's weights.
+
+    Args:
+        model: Base model (before NB-LoRA injection or with identity adapter).
+        eval_dataset: Evaluation batches (same format as training batches).
+
+    Returns:
+        List of per-token loss arrays (one per batch), detached from graph.
+    """
+    base_losses: list[Any] = []
+    for batch_data in eval_dataset:
+        try:
+            batch = batch_data[0] if isinstance(batch_data, (tuple, list)) else batch_data
+            if not hasattr(batch, 'shape') or len(batch.shape) < 2:
+                base_losses.append(None)
+                continue
+
+            inputs = batch[:, :-1]
+            targets = batch[:, 1:]
+
+            logits = model(inputs)
+            per_token_ce = nn.losses.cross_entropy(logits, targets)
+            mx.eval(per_token_ce)
+            # Detach from computation graph
+            base_losses.append(mx.stop_gradient(per_token_ce))
+        except Exception:
+            base_losses.append(None)
+
+    return base_losses
 
 
 # =============================================================================

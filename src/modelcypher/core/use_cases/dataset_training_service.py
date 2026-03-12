@@ -94,6 +94,14 @@ _MLX_SIMD_WIDTH = 32
 # Values are arbitrary-but-fixed for reproducibility (Knuth TAOCP §3.2.1).
 _EVAL_SEED_OFFSET = 1
 
+# Default number of online eval problems when online_eval is enabled.
+# 20 problems: Clopper-Pearson CI at alpha=1/20 can detect a 50% accuracy
+# drop (baseline=0.5 → degraded=0.25) with non-overlapping 95% intervals.
+# This is a compute budget choice, not a derived threshold. N greedy
+# generations per epoch — negligible relative to training step cost for
+# models up to ~4B. Larger models may override via --online-eval-n.
+_DEFAULT_ONLINE_EVAL_N = 20
+
 
 @dataclass
 class DatasetTrainResult:
@@ -1011,7 +1019,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         format_projection: bool = False,
         narrow_dataset_path: str | Path | None = None,
         augmented_dataset_path: str | Path | None = None,
-        online_eval: bool = False,
+        online_eval: bool = True,
         online_eval_n_problems: int | None = None,
         entropy_regularization: bool = False,
         # Answer-span masked CE training
@@ -1721,9 +1729,11 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 )
             else:
                 if online_eval_n_problems is None:
-                    raise ValueError(
-                        "--online-eval requires --online-eval-n <N> "
-                        "(number of eval problems is a compute budget choice, not derivable)"
+                    online_eval_n_problems = _DEFAULT_ONLINE_EVAL_N
+                    logger.info(
+                        "Online eval: using default n_problems=%d "
+                        "(override with --online-eval-n)",
+                        online_eval_n_problems,
                     )
                 eval_seed = seed + _EVAL_SEED_OFFSET
                 eval_problems = create_eval_problem_set(
@@ -1853,6 +1863,23 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 model, tokenizer, eval_problems,
             )
 
+        # 8.10.3. Collect base token losses for token-weighted val loss (P4)
+        # NB-LoRA starts at identity, so model output == base model output.
+        base_token_losses = None
+        if eval_dataset:
+            try:
+                from modelcypher.backends.mlx_training_adapter_core import (
+                    collect_base_token_losses,
+                )
+                base_token_losses = collect_base_token_losses(model, eval_dataset)
+                n_valid = sum(1 for b in base_token_losses if b is not None)
+                logger.info(
+                    "Collected base token losses for %d/%d eval batches (P4 token-weighted loss)",
+                    n_valid, len(base_token_losses),
+                )
+            except Exception:
+                logger.debug("Base token loss collection failed (P4)", exc_info=True)
+
         # 9. Train — ScaledGD + Weyl adapter saturation + validation loss stopping
         if rp is not None:
             iters_per_epoch = math.ceil(len(train_dataset) / max(batch_size, 1))
@@ -1913,6 +1940,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             optimizer_research_mode=optimizer_research_mode,
             baseline_margins=baseline_margins,
             weight_decay=weight_decay,
+            base_token_losses=base_token_losses,
         )
         training_time_seconds = time.time() - train_start
 
