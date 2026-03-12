@@ -1226,11 +1226,15 @@ class _MLXTrainingAdapterTrainMixin:
                             )
                 g_dot_d_float = float(g_dot_d_arr.item()) if hasattr(g_dot_d_arr, 'item') else float(g_dot_d_arr)
 
+                # PiSSA: amortize budget over remaining steps (sqrt model).
+                # NB-LoRA: amortization_steps=1 (budget enforced by Cayley).
+                _amort = max(1, max_iters - it) if use_pissa_lora else 1
                 eta_step, eta_sps_val, eta_weyl_val, displacement_val, eta_margin_val = (
                     compute_per_step_rates(
                         loss_float, d_norm_val, sigma_k_min, eta_ceiling,
                         remaining_budget=remaining_budget,
                         g_dot_d=g_dot_d_float,
+                        amortization_steps=_amort,
                     )
                 )
 

@@ -1028,6 +1028,60 @@ class TestConformalMarginIntegration:
 
 
 # ===================================================================
+# Class 10b: Amortized Conformal Margin (PiSSA)
+# ===================================================================
+class TestAmortizedConformalMargin:
+    """Tests for sqrt-amortized eta_margin used by PiSSA budget tracking."""
+
+    def test_amortization_reduces_margin_by_sqrt_n(self):
+        """amortization_steps=N divides margin by sqrt(N)."""
+        base = compute_conformal_margin_rate(0.4, 1.0, amortization_steps=1)
+        amort = compute_conformal_margin_rate(0.4, 1.0, amortization_steps=100)
+        assert base == pytest.approx(0.4)
+        assert amort == pytest.approx(0.4 / math.sqrt(100))
+        assert amort == pytest.approx(0.04)
+
+    def test_amortization_steps_one_is_original(self):
+        """amortization_steps=1 gives identical result to original formula."""
+        for remaining in [0.01, 0.1, 0.5]:
+            for d_norm in [0.5, 1.0, 10.0]:
+                original = remaining / d_norm
+                amort = compute_conformal_margin_rate(remaining, d_norm, amortization_steps=1)
+                assert amort == pytest.approx(original)
+
+    def test_budget_spreads_across_epoch(self):
+        """With sqrt amortization, cumulative random-walk displacement stays within budget.
+
+        For N steps at rate eta_margin, cumulative spectral displacement
+        under random-walk model is ~ sqrt(N) * eta_margin * d_norm.
+        This should equal remaining_budget.
+        """
+        sigma_k = 0.4
+        d_norm = 11.0
+        n_steps = 964
+        eta = compute_conformal_margin_rate(sigma_k, d_norm, amortization_steps=n_steps)
+        cumulative_rw = math.sqrt(n_steps) * eta * d_norm
+        assert cumulative_rw == pytest.approx(sigma_k, rel=1e-10)
+
+    def test_amortized_margin_in_per_step_rates(self):
+        """compute_per_step_rates with amortization_steps reduces eta_margin."""
+        sigma_k = 0.4
+        d_norm = 11.0
+        n_steps = 964
+
+        _, _, _, _, margin_no_amort = compute_per_step_rates(
+            loss=3.0, d_norm=d_norm, sigma_k_min=sigma_k, eta_ceiling=0.1,
+            remaining_budget=sigma_k, amortization_steps=1,
+        )
+        _, _, _, _, margin_amort = compute_per_step_rates(
+            loss=3.0, d_norm=d_norm, sigma_k_min=sigma_k, eta_ceiling=0.1,
+            remaining_budget=sigma_k, amortization_steps=n_steps,
+        )
+        assert margin_amort < margin_no_amort
+        assert margin_amort == pytest.approx(margin_no_amort / math.sqrt(n_steps))
+
+
+# ===================================================================
 # Class 11: Bounded-Gain Stability Certificate
 # ===================================================================
 class TestBoundedGainCertificate:
