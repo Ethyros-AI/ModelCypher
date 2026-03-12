@@ -613,6 +613,12 @@ class DerivedTrainingPlan:
                 "eta_step = min(eta_ceiling, eta_sps, eta_weyl) online"
             ),
             (
+                "Closed-loop law: "
+                + str(self.controller_law.get("law_id"))
+                if self.controller_law is not None
+                else "Closed-loop law: none"
+            ),
+            (
                 "Measured during training: eta_sps, eta_weyl, eta_step, "
                 "gradient-noise batch size, stopping certificate, preservation telemetry"
             ),
@@ -2012,7 +2018,10 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             rss_monitor=rss_monitor,
             base_activations=(
                 base_activations
-                if rss_monitor or controller_mode == CONTROLLER_MODE_BEHAVIORAL_PROBE
+                if rss_monitor or controller_mode in {
+                    CONTROLLER_MODE_BEHAVIORAL_PROBE,
+                    CONTROLLER_MODE_BEHAVIORAL_CLOSED_LOOP,
+                }
                 else None
             ),
             entropy_floor_fraction=entropy_floor_fraction,

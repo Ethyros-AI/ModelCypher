@@ -26,6 +26,7 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.training.online_eval import OnlineEvalResult
+from modelcypher.core.domain.training.mass_step_size import DerivedClosedLoopLaw
 from modelcypher.core.use_cases.derived_training_validation_service import (
     DerivedTrainingValidationService,
     _Phase5Context,
@@ -202,6 +203,41 @@ def test_validate_records_counterexamples(tmp_path):
     failure = result.counterexamples[0]
     assert "loss_not_improved" in failure.failure_modes
     assert "perplexity_not_improved" in failure.failure_modes
+
+
+def test_validate_forwards_closed_loop_law_to_plan_and_train_calls(tmp_path):
+    fake = _FakeDatasetTrainingService(
+        results=[
+            _FakeTrainResult(
+                baseline_loss=2.0,
+                post_loss=1.5,
+                baseline_perplexity=7.0,
+                post_perplexity=5.0,
+            ),
+        ]
+    )
+    service = DerivedTrainingValidationService(
+        dataset_training_service=fake,
+        backend=get_default_backend(),
+    )
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    data_file = tmp_path / "train.jsonl"
+    data_file.write_text('{"text":"hello"}\n', encoding="utf-8")
+    law = DerivedClosedLoopLaw(law_id="unit_test_law")
+
+    service.validate(
+        model_path=model_dir,
+        dataset_path=data_file,
+        eval_dataset_path=None,
+        trials=1,
+        base_seed=9,
+        controller_mode="mass_behavioral_closed_loop",
+        controller_law=law,
+    )
+
+    assert fake.plan_calls[0]["controller_law"] == law
+    assert fake.calls[0]["controller_law"] == law
 
 
 def test_validate_requires_positive_trial_count(tmp_path):

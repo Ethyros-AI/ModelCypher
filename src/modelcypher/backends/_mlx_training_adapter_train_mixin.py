@@ -1935,6 +1935,8 @@ class _MLXTrainingAdapterTrainMixin:
                     log_parts.append(f"entropy={mean_entropy:.2f}")
                 if rep_rate is not None:
                     log_parts.append(f"rep={rep_rate:.3f}")
+                if closed_loop_frozen_layers:
+                    log_parts.append(f"frozen_layers={len(closed_loop_frozen_layers)}")
                 if mass_metrics:
                     es = mass_metrics.get("eta_step", 0)
                     disp = mass_metrics.get("displacement", 0)
@@ -2071,16 +2073,23 @@ class _MLXTrainingAdapterTrainMixin:
                         )
                 # 7c. Online eval degradation stop
                 if online_eval_stop_basis_degraded:
-                    stop_reason = (
-                        f"online_eval_degraded_significant ("
-                        f"stage={online_eval_stop_basis_stage}, "
-                        f"{online_eval_stop_basis_n_correct}/{online_eval_stop_basis_n_total} correct, "
-                        f"epoch={epoch_num})"
-                    )
-                    logger.info(
-                        "Online eval stop at iter %d: %s", it + 1, stop_reason,
-                    )
-                    break
+                    if closed_loop_intervention_applied:
+                        logger.info(
+                            "Closed-loop override: online eval degraded at epoch %d; "
+                            "continuing after intervention",
+                            epoch_num,
+                        )
+                    else:
+                        stop_reason = (
+                            f"online_eval_degraded_significant ("
+                            f"stage={online_eval_stop_basis_stage}, "
+                            f"{online_eval_stop_basis_n_correct}/{online_eval_stop_basis_n_total} correct, "
+                            f"epoch={epoch_num})"
+                        )
+                        logger.info(
+                            "Online eval stop at iter %d: %s", it + 1, stop_reason,
+                        )
+                        break
 
                 # 7c'. Margin decline stop (P2)
                 if (
@@ -2094,15 +2103,22 @@ class _MLXTrainingAdapterTrainMixin:
                         )
                     )
                     if margin_declining:
-                        stop_reason = (
-                            f"margin_declining (threshold={margin_trend_threshold:.4e}, "
-                            f"epoch={epoch_num})"
-                        )
-                        logger.info(
-                            "Margin trend stop at iter %d: %s",
-                            it + 1, stop_reason,
-                        )
-                        break
+                        if closed_loop_intervention_applied:
+                            logger.info(
+                                "Closed-loop override: margin declining at epoch %d; "
+                                "continuing after intervention",
+                                epoch_num,
+                            )
+                        else:
+                            stop_reason = (
+                                f"margin_declining (threshold={margin_trend_threshold:.4e}, "
+                                f"epoch={epoch_num})"
+                            )
+                            logger.info(
+                                "Margin trend stop at iter %d: %s",
+                                it + 1, stop_reason,
+                            )
+                            break
 
                 # 7c''. Margin collapse stop (P2)
                 if len(margin_history) >= 2 and tokenizer is not None:
@@ -2111,15 +2127,22 @@ class _MLXTrainingAdapterTrainMixin:
                         margin_history, vocab_size,
                     )
                     if margin_collapsed:
-                        stop_reason = (
-                            f"margin_collapse (median={margin_history[-1]:.4f} "
-                            f"< threshold={margin_threshold:.4e}, epoch={epoch_num})"
-                        )
-                        logger.info(
-                            "Margin collapse stop at iter %d: %s",
-                            it + 1, stop_reason,
-                        )
-                        break
+                        if closed_loop_intervention_applied:
+                            logger.info(
+                                "Closed-loop override: margin collapsed at epoch %d; "
+                                "continuing after intervention",
+                                epoch_num,
+                            )
+                        else:
+                            stop_reason = (
+                                f"margin_collapse (median={margin_history[-1]:.4f} "
+                                f"< threshold={margin_threshold:.4e}, epoch={epoch_num})"
+                            )
+                            logger.info(
+                                "Margin collapse stop at iter %d: %s",
+                                it + 1, stop_reason,
+                            )
+                            break
 
                 # 7c'''. Stable rank concentration stop (P3)
                 if (
@@ -2131,15 +2154,22 @@ class _MLXTrainingAdapterTrainMixin:
                         stable_rank_history, adapter_rank_for_stopping,
                     )
                     if sr_concentrated:
-                        stop_reason = (
-                            f"stable_rank_concentration (sr={stable_rank_history[-1]:.2f} "
-                            f"< sqrt(rank)={sr_threshold:.2f}, epoch={epoch_num})"
-                        )
-                        logger.info(
-                            "Stable rank stop at iter %d: %s",
-                            it + 1, stop_reason,
-                        )
-                        break
+                        if closed_loop_intervention_applied:
+                            logger.info(
+                                "Closed-loop override: stable rank concentrated at epoch %d; "
+                                "continuing after intervention",
+                                epoch_num,
+                            )
+                        else:
+                            stop_reason = (
+                                f"stable_rank_concentration (sr={stable_rank_history[-1]:.2f} "
+                                f"< sqrt(rank)={sr_threshold:.2f}, epoch={epoch_num})"
+                            )
+                            logger.info(
+                                "Stable rank stop at iter %d: %s",
+                                it + 1, stop_reason,
+                            )
+                            break
 
                 # 7c''''. Effective rank declining stop (P5)
                 if len(effective_rank_history) >= 4:
@@ -2147,16 +2177,23 @@ class _MLXTrainingAdapterTrainMixin:
                         effective_rank_history, window=3,
                     )
                     if rank_declining:
-                        stop_reason = (
-                            f"effective_rank_declining ({n_declining} consecutive "
-                            f"epochs declining, current={effective_rank_history[-1]:.2f}, "
-                            f"epoch={epoch_num})"
-                        )
-                        logger.info(
-                            "Effective rank stop at iter %d: %s",
-                            it + 1, stop_reason,
-                        )
-                        break
+                        if closed_loop_intervention_applied:
+                            logger.info(
+                                "Closed-loop override: effective rank declining at epoch %d; "
+                                "continuing after intervention",
+                                epoch_num,
+                            )
+                        else:
+                            stop_reason = (
+                                f"effective_rank_declining ({n_declining} consecutive "
+                                f"epochs declining, current={effective_rank_history[-1]:.2f}, "
+                                f"epoch={epoch_num})"
+                            )
+                            logger.info(
+                                "Effective rank stop at iter %d: %s",
+                                it + 1, stop_reason,
+                            )
+                            break
 
                 # 7d. Degeneration gate: n-gram repetition on few-shot prompts
                 if (degen_prompts

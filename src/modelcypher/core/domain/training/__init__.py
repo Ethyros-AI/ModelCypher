@@ -56,6 +56,7 @@ from .mass_step_size import (
     apply_sqrt_n_epoch_correction,
     apply_validation_backoff,
     controller_precision_floor,
+    compute_closed_loop_trigger_reasons,
     compute_conformal_margin_rate,
     compute_per_step_rates,
     compute_reinforce_budget,

@@ -400,30 +400,16 @@ def select_closed_loop_target_layer(
     return target_layer, metrics_by_layer
 
 
-def evaluate_closed_loop_law(
+def compute_closed_loop_trigger_reasons(
     law: DerivedClosedLoopLaw,
     *,
-    epoch: int,
     behavioral_state: BehavioralStateMeasurement | None,
     margin_history: Sequence[float],
     stable_rank_history: Sequence[float],
     loss_stability_window_epochs: int,
     adapter_rank: int | None,
-    interventions_used: int = 0,
-    already_frozen_layers: Sequence[str] = (),
-) -> ClosedLoopControlDecision:
-    """Evaluate the offline-derived law against current behavioral state."""
-    if interventions_used >= law.max_interventions:
-        return ClosedLoopControlDecision(
-            armed=False,
-            epoch=epoch,
-            trigger_reasons=(),
-            freeze_layers=(),
-            target_layer=None,
-            ordering_metrics=None,
-            interventions_used=interventions_used,
-        )
-
+) -> tuple[str, ...]:
+    """Compute trigger reasons without selecting or applying an intervention."""
     trigger_reasons: list[str] = []
     if (
         law.arm_on_online_eval_accuracy_drop
@@ -466,6 +452,43 @@ def evaluate_closed_loop_law(
         if rank_concentrated:
             trigger_reasons.append("stable_rank_concentration")
 
+    return tuple(trigger_reasons)
+
+
+def evaluate_closed_loop_law(
+    law: DerivedClosedLoopLaw,
+    *,
+    epoch: int,
+    behavioral_state: BehavioralStateMeasurement | None,
+    margin_history: Sequence[float],
+    stable_rank_history: Sequence[float],
+    loss_stability_window_epochs: int,
+    adapter_rank: int | None,
+    interventions_used: int = 0,
+    already_frozen_layers: Sequence[str] = (),
+) -> ClosedLoopControlDecision:
+    """Evaluate the offline-derived law against current behavioral state."""
+    if interventions_used >= law.max_interventions:
+        return ClosedLoopControlDecision(
+            armed=False,
+            epoch=epoch,
+            trigger_reasons=(),
+            freeze_layers=(),
+            target_layer=None,
+            ordering_metrics=None,
+            interventions_used=interventions_used,
+        )
+
+    trigger_reasons = list(
+        compute_closed_loop_trigger_reasons(
+            law,
+            behavioral_state=behavioral_state,
+            margin_history=margin_history,
+            stable_rank_history=stable_rank_history,
+            loss_stability_window_epochs=loss_stability_window_epochs,
+            adapter_rank=adapter_rank,
+        )
+    )
     if not trigger_reasons:
         return ClosedLoopControlDecision(
             armed=False,
@@ -588,7 +611,7 @@ def replay_controller_trace(
             )
             decisions.append(decision.to_dict())
 
-    if not decisions:
+    if not decisions and not closed_loop_decisions:
         return None
 
     return {

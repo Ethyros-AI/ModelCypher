@@ -17,6 +17,7 @@ from modelcypher.cli.app import app
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 from modelcypher.core.domain.training.geometric_lora import LayerGeometry
+from modelcypher.core.domain.training.mass_step_size import DerivedClosedLoopLaw
 from modelcypher.core.domain.star.problem_generator import StarProblemGenerator
 from modelcypher.core.use_cases.dataset_training_service import (
     DatasetTrainResult,
@@ -1182,6 +1183,96 @@ def test_online_eval_defaults_to_twenty_problems_when_omitted(
     assert captured_create["n_problems"] == 20
     assert len(captured_train_loop_kwargs["online_eval_problems"]) == 20
     assert len(captured_train_loop_kwargs["online_eval_baseline_ids"]) == 20
+
+
+def test_train_from_dataset_requires_controller_law_for_closed_loop(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(train_path, [{"text": "train 1"}])
+    _write_jsonl(eval_path, [{"text": "eval 1"}])
+
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
+    _patch_lightweight_training(monkeypatch, service)
+
+    with pytest.raises(ValueError, match="controller_law"):
+        service.train_from_dataset(
+            model_path=model_dir,
+            dataset_path=train_path,
+            eval_dataset_path=eval_path,
+            controller_mode="mass_behavioral_closed_loop",
+            no_save=True,
+        )
+
+
+def test_train_from_dataset_forwards_closed_loop_law_to_train_loop(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from modelcypher.core.domain.training.online_eval import OnlineEvalResult
+
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(train_path, [{"text": "train 1"}])
+    _write_jsonl(eval_path, [{"text": "eval 1"}])
+
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
+    _patch_lightweight_training(monkeypatch, service)
+    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(
+        "modelcypher.backends.mlx_training_adapter_core.collect_base_token_losses",
+        lambda *_args, **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        "modelcypher.core.domain.training.online_eval.create_eval_problem_set",
+        lambda *, n_problems, seed: StarProblemGenerator(seed=seed).generate(n_problems),
+    )
+    monkeypatch.setattr(
+        "modelcypher.core.domain.training.online_eval.evaluate_correctness",
+        lambda **kwargs: OnlineEvalResult(
+            epoch=kwargs["epoch"],
+            accuracy=1.0,
+            n_correct=len(kwargs["problems"]),
+            n_total=len(kwargs["problems"]),
+            correct_ids=frozenset(problem.problem_id for problem in kwargs["problems"]),
+            baseline_n_correct=len(kwargs["problems"]),
+            baseline_accuracy=1.0,
+            n_lost=0,
+            n_gained=0,
+            degraded=False,
+            degraded_raw=False,
+            degraded_significant=False,
+            per_type_accuracy={},
+            per_type_correct={},
+            per_type_total={},
+        ),
+    )
+
+    captured_train_loop_kwargs: dict[str, object] = {}
+
+    def _capture_train_loop(**kwargs):
+        captured_train_loop_kwargs.update(kwargs)
+        return [(1, 1.0, 1.0)], "max_iters", []
+
+    monkeypatch.setattr(service._adapter, "train_loop", _capture_train_loop)
+    law = DerivedClosedLoopLaw(law_id="strict_test_law")
+
+    service.train_from_dataset(
+        model_path=model_dir,
+        dataset_path=train_path,
+        eval_dataset_path=eval_path,
+        controller_mode="mass_behavioral_closed_loop",
+        controller_law=law,
+        no_save=True,
+    )
+
+    assert captured_train_loop_kwargs["behavioral_control_law"] == law
 
 
 

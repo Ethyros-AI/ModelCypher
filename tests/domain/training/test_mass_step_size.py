@@ -33,19 +33,25 @@ import pytest
 
 from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 from modelcypher.core.domain.training.mass_step_size import (
+    CONTROLLER_MODE_BEHAVIORAL_CLOSED_LOOP,
     CONTROLLER_MODE_BEHAVIORAL_PROBE,
     CONTROLLER_MODE_STRUCTURAL_OBSERVE,
     OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
     _EPS_F32,
     _SQRT_EPS_F32,
+    BehavioralStateMeasurement,
+    DerivedClosedLoopLaw,
     apply_sqrt_n_epoch_correction,
     apply_validation_backoff,
     controller_precision_floor,
+    compute_closed_loop_trigger_reasons,
     compute_conformal_margin_rate,
     compute_per_step_rates,
     compute_reinforce_budget,
     derive_spectral_ceiling,
+    evaluate_closed_loop_law,
     replay_controller_trace,
+    select_closed_loop_target_layer,
     validate_controller_mode,
     validate_optimizer_research_mode,
     verify_bounded_gain,
@@ -480,6 +486,9 @@ class TestControllerTraceReplay:
         assert validate_controller_mode(CONTROLLER_MODE_BEHAVIORAL_PROBE) == (
             CONTROLLER_MODE_BEHAVIORAL_PROBE
         )
+        assert validate_controller_mode(CONTROLLER_MODE_BEHAVIORAL_CLOSED_LOOP) == (
+            CONTROLLER_MODE_BEHAVIORAL_CLOSED_LOOP
+        )
 
     def test_validate_optimizer_mode_rejects_unknown_name(self):
         with pytest.raises(ValueError):
@@ -533,6 +542,147 @@ class TestControllerTraceReplay:
         assert decision["learning_rates"]["model.layers.0.self_attn.q_proj.weight"] == pytest.approx(0.02)
         assert decision["weight_decay_scales"]["model.layers.0.self_attn.k_proj.weight"] == pytest.approx(0.5)
         assert decision["freeze_layers"] == ["model.layers.0.self_attn.q_proj.weight"]
+
+    def test_replay_controller_trace_preserves_closed_loop_decision_payload(self):
+        epoch_metrics = [
+            {
+                "epoch": 2,
+                "controller_trace": {
+                    "step_traces": [],
+                    "closed_loop_decision": {
+                        "armed": True,
+                        "epoch": 2,
+                        "trigger_reasons": ["online_eval_accuracy_drop"],
+                        "freeze_layers": ["model.layers.3.self_attn.q_proj.weight"],
+                        "target_layer": "model.layers.3.self_attn.q_proj.weight",
+                        "ordering_metrics": None,
+                        "interventions_used": 1,
+                    },
+                },
+            },
+        ]
+
+        replay = replay_controller_trace(epoch_metrics, eps=_EPS_F32)
+
+        assert replay is not None
+        assert replay["n_replayed_steps"] == 0
+        assert replay["closed_loop_decisions"] == [
+            {
+                "armed": True,
+                "epoch": 2,
+                "trigger_reasons": ["online_eval_accuracy_drop"],
+                "freeze_layers": ["model.layers.3.self_attn.q_proj.weight"],
+                "target_layer": "model.layers.3.self_attn.q_proj.weight",
+                "ordering_metrics": None,
+                "interventions_used": 1,
+            }
+        ]
+
+
+class TestClosedLoopLaw:
+    """Tests for the offline-derived R2 closed-loop intervention law."""
+
+    def test_law_roundtrip_preserves_artifact_paths(self):
+        law = DerivedClosedLoopLaw(
+            source_artifacts=("a.json", "b.json"),
+            safe_artifacts=("safe.json",),
+            counterexample_artifacts=("cx.json",),
+            max_interventions=1,
+        )
+
+        payload = law.to_dict()
+        restored = DerivedClosedLoopLaw.from_dict(payload)
+
+        assert restored == law
+
+    def test_trigger_reasons_detect_negative_online_eval_delta(self):
+        law = DerivedClosedLoopLaw()
+        state = BehavioralStateMeasurement(online_eval_accuracy_delta=-0.1)
+
+        reasons = compute_closed_loop_trigger_reasons(
+            law,
+            behavioral_state=state,
+            margin_history=[],
+            stable_rank_history=[],
+            loss_stability_window_epochs=2,
+            adapter_rank=None,
+        )
+
+        assert reasons == ("online_eval_accuracy_drop",)
+
+    def test_trigger_reasons_detect_stable_rank_concentration(self):
+        law = DerivedClosedLoopLaw(
+            arm_on_online_eval_accuracy_drop=False,
+            arm_on_margin_trend_declining=False,
+            arm_on_stable_rank_concentration=True,
+        )
+
+        reasons = compute_closed_loop_trigger_reasons(
+            law,
+            behavioral_state=None,
+            margin_history=[],
+            stable_rank_history=[12.0, 9.0, 6.0],
+            loss_stability_window_epochs=2,
+            adapter_rank=25,
+        )
+
+        assert reasons == ("stable_rank_concentration",)
+
+    def test_target_layer_prefers_transport_over_remaining_budget(self):
+        state = BehavioralStateMeasurement(
+            per_layer_behavioral_transport_norm={
+                "layer_a": 4.0,
+                "layer_b": 2.0,
+            },
+            per_layer_remaining_budget={
+                "layer_a": 1.0,
+                "layer_b": 0.25,
+            },
+            per_layer_spectral_budget_ratio={
+                "layer_a": 0.3,
+                "layer_b": 0.2,
+            },
+            per_layer_stable_rank={
+                "layer_a": 8.0,
+                "layer_b": 2.0,
+            },
+            adapter_rank=16,
+        )
+
+        target, metrics = select_closed_loop_target_layer(state)
+
+        assert target == "layer_b"
+        assert metrics is not None
+        assert metrics["layer_b"]["behavioral_transport_over_remaining_budget"] == pytest.approx(8.0)
+
+    def test_evaluate_closed_loop_law_returns_layer_freeze_decision(self):
+        law = DerivedClosedLoopLaw(
+            arm_on_online_eval_accuracy_drop=True,
+            arm_on_margin_trend_declining=False,
+            arm_on_stable_rank_concentration=False,
+        )
+        state = BehavioralStateMeasurement(
+            online_eval_accuracy_delta=-0.05,
+            per_layer_behavioral_transport_norm={"layer_a": 1.0},
+            per_layer_remaining_budget={"layer_a": 0.5},
+            per_layer_spectral_budget_ratio={"layer_a": 0.1},
+            per_layer_stable_rank={"layer_a": 4.0},
+            adapter_rank=16,
+        )
+
+        decision = evaluate_closed_loop_law(
+            law,
+            epoch=2,
+            behavioral_state=state,
+            margin_history=[],
+            stable_rank_history=[],
+            loss_stability_window_epochs=2,
+            adapter_rank=16,
+        )
+
+        assert decision.armed is True
+        assert decision.freeze_layers == ("layer_a",)
+        assert decision.trigger_reasons == ("online_eval_accuracy_drop",)
 
 
 # ===================================================================
