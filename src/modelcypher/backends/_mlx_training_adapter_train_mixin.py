@@ -593,7 +593,10 @@ class _MLXTrainingAdapterTrainMixin:
             online_eval_n_lost: int | None,
             online_eval_n_gained: int | None,
         ) -> BehavioralStateMeasurement | None:
-            if controller_mode != CONTROLLER_MODE_BEHAVIORAL_PROBE:
+            if controller_mode not in {
+                CONTROLLER_MODE_BEHAVIORAL_PROBE,
+                CONTROLLER_MODE_BEHAVIORAL_CLOSED_LOOP,
+            }:
                 return None
 
             per_layer_transport: dict[str, float] = {}
@@ -724,6 +727,9 @@ class _MLXTrainingAdapterTrainMixin:
         adapter_rank_for_stopping: int | None = None  # Set once from first adapter module
         # P5: Effective rank time series
         effective_rank_history: list[float] = []  # Per-epoch effective ranks
+        # R2: Closed-loop intervention state
+        closed_loop_frozen_layers: set[str] = set()
+        closed_loop_interventions_used = 0
 
         if geometric_reshape and paired_dataset is not None:
             batch_iter = iterate_structured_batches(
@@ -963,8 +969,17 @@ class _MLXTrainingAdapterTrainMixin:
                     ntoks = accum_ntoks
 
             # Save gradient for stopping certificate (overwritten each step;
-            # at epoch boundary, holds the last step's gradient).
+            # at epoch boundary, holds the last realized update direction).
             grad_last = grad
+            masked_frozen_params: tuple[str, ...] = ()
+            if closed_loop_frozen_layers:
+                grad, grad_flat, masked_frozen_params = _mask_frozen_gradients(
+                    grad,
+                    frozen_layers=closed_loop_frozen_layers,
+                )
+                grad_last = grad
+            else:
+                grad_flat = dict(mlx_flatten(grad))
 
             # MASS Layer 2: Per-step measured rates on the active update
             # direction. Cayley-Fisher uses the diagonal-Fisher preconditioned
@@ -974,9 +989,10 @@ class _MLXTrainingAdapterTrainMixin:
                 compute_per_step_rates,
             )
 
-            grad_flat = dict(mlx_flatten(grad))
             ce_grad_norm = None
             objective_components = _objective_components()
+            if masked_frozen_params:
+                objective_components.append("closed_loop_freeze")
             if len(objective_components) == 1 and objective_components[0] in {
                 "ce",
                 "ce_answer_masked",
@@ -1059,7 +1075,13 @@ class _MLXTrainingAdapterTrainMixin:
             # its measured direction from the hooked gradient.
             if gradient_hook is not None:
                 grad = gradient_hook(grad)
-                grad_flat = dict(mlx_flatten(grad))
+                if closed_loop_frozen_layers:
+                    grad, grad_flat, _ = _mask_frozen_gradients(
+                        grad,
+                        frozen_layers=closed_loop_frozen_layers,
+                    )
+                else:
+                    grad_flat = dict(mlx_flatten(grad))
                 if optimizer_research_mode == OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS:
                     update_direction = fisher_precondition(
                         grad_flat, fisher_state, self._backend,
@@ -1832,6 +1854,64 @@ class _MLXTrainingAdapterTrainMixin:
                 em.token_weighted_val_loss = epoch_token_weighted_val_loss
                 em.effective_rank = epoch_effective_rank
                 em.effective_rank_declining_streak = epoch_rank_declining_streak
+                if behavioral_state is not None:
+                    behavioral_state = BehavioralStateMeasurement(
+                        **{
+                            **behavioral_state.to_dict(),
+                            "per_layer_stable_rank": epoch_per_layer_stable_rank,
+                            "adapter_rank": adapter_rank_for_stopping,
+                        }
+                    )
+                    if isinstance(em.controller_trace, dict):
+                        em.controller_trace["behavioral_state"] = behavioral_state.to_dict()
+
+                closed_loop_decision = ClosedLoopControlDecision(
+                    armed=False,
+                    epoch=epoch_num,
+                    trigger_reasons=(),
+                    freeze_layers=(),
+                    target_layer=None,
+                    ordering_metrics=None,
+                    interventions_used=closed_loop_interventions_used,
+                )
+                closed_loop_intervention_applied = False
+                if (
+                    controller_mode == CONTROLLER_MODE_BEHAVIORAL_CLOSED_LOOP
+                    and behavioral_control_law is not None
+                ):
+                    closed_loop_decision = evaluate_closed_loop_law(
+                        behavioral_control_law,
+                        epoch=epoch_num,
+                        behavioral_state=behavioral_state,
+                        margin_history=margin_history,
+                        stable_rank_history=stable_rank_history,
+                        loss_stability_window_epochs=loss_stability_window_epochs,
+                        adapter_rank=adapter_rank_for_stopping,
+                        interventions_used=closed_loop_interventions_used,
+                        already_frozen_layers=sorted(closed_loop_frozen_layers),
+                    )
+                    if isinstance(em.controller_trace, dict):
+                        em.controller_trace["closed_loop_decision"] = (
+                            closed_loop_decision.to_dict()
+                        )
+                    if closed_loop_decision.armed:
+                        new_layers = [
+                            layer
+                            for layer in closed_loop_decision.freeze_layers
+                            if layer not in closed_loop_frozen_layers
+                        ]
+                        if new_layers:
+                            closed_loop_frozen_layers.update(new_layers)
+                            closed_loop_interventions_used = (
+                                closed_loop_decision.interventions_used
+                            )
+                            closed_loop_intervention_applied = True
+                            logger.warning(
+                                "Closed-loop intervention: freeze=%s reasons=%s epoch=%d",
+                                ",".join(sorted(new_layers)),
+                                ",".join(closed_loop_decision.trigger_reasons),
+                                epoch_num,
+                            )
 
                 # Log
                 log_parts = [

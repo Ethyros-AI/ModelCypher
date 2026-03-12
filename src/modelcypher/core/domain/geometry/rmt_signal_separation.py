@@ -755,8 +755,9 @@ def compute_signal_rank_from_singular_values(
     else:
         signal_variance_fraction = 0.0
 
-    if total_var_val > eps:
-        eig_list = b.tolist(eigenvalues)
+    if signal_rank > 0 and total_var_val > eps:
+        signal_total_var = float(b.to_scalar(signal_variance))
+        eig_list = b.tolist(signal_eigenvalues)
         if isinstance(eig_list, (int, float)):
             eig_values = [float(eig_list)]
         else:
@@ -765,7 +766,7 @@ def compute_signal_rank_from_singular_values(
         for eig in eig_values:
             if eig <= 0.0:
                 continue
-            prob = eig / total_var_val
+            prob = eig / max(signal_total_var, eps)
             entropy -= prob * math.log(prob)
         effective_rank = math.exp(entropy) if entropy > 0.0 else float(bool(eig_values))
     else:
