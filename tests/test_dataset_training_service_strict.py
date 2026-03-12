@@ -153,6 +153,9 @@ class _FlowAdapter:
     def inject_nb_lora(self, *_args, **_kwargs) -> int:
         return 1
 
+    def inject_pissa_lora(self, *_args, **_kwargs) -> int:
+        return 1
+
     def freeze_and_apply_lora(self, _model) -> None:
         return None
 
@@ -181,6 +184,7 @@ class _FlowAdapterFailingSpectral(_FlowAdapter):
 class _CliResult:
     def __init__(self, payload: dict[str, object] | None = None) -> None:
         self._payload = payload or {"ok": True}
+        self.adapter_path = None
 
     def to_dict(self) -> dict[str, object]:
         return dict(self._payload)
