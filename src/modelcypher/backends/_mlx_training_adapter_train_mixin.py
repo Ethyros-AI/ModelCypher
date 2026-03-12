@@ -49,6 +49,7 @@ from modelcypher.core.domain.training.mass_step_size import (
     CONTROLLER_MODE_BEHAVIORAL_PROBE,
     CONTROLLER_MODE_STRUCTURAL_OBSERVE,
     DerivedClosedLoopLaw,
+    OPTIMIZER_MODE_ADAMW_GEOMETRIC,
     OPTIMIZER_MODE_ADAMW_MATCHED_TRACE,
     OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
     BehavioralStateMeasurement,
@@ -64,6 +65,7 @@ from modelcypher.core.domain.training.identity import (
     GEOMETRIC_LORA_INIT_METHOD,
     GEOMETRIC_LORA_METHOD,
     GEOMETRIC_LORA_OPTIMIZER,
+    GEOMETRIC_LORA_OPTIMIZER_FISHER_MASS,
     GEOMETRIC_LORA_STOPPING,
 )
 
@@ -180,7 +182,7 @@ class _MLXTrainingAdapterTrainMixin:
         rss_monitor: bool = False,
         base_activations: dict | None = None,
         controller_mode: str = CONTROLLER_MODE_STRUCTURAL_OBSERVE,
-        optimizer_research_mode: str = OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+        optimizer_research_mode: str = OPTIMIZER_MODE_ADAMW_GEOMETRIC,
         baseline_margins: dict[str, float] | None = None,
         # Ablation experiment params (research only, not CLI-exposed)
         entropy_floor_fraction: float | None = None,
@@ -879,22 +881,45 @@ class _MLXTrainingAdapterTrainMixin:
                 bias_correction=True,
             )
             optimizer.init(model.trainable_parameters())
+        elif optimizer_research_mode == OPTIMIZER_MODE_ADAMW_GEOMETRIC:
+            # Canonical path: AdamW with cosine LR.
+            # LR calibrated from R1 frozen-tuple winner (geometric_pissa_nb_surface,
+            # seed 42, 350M). Surface derivation is geometric; LR is empirical.
+            _CALIBRATED_LR = 2e-4
+            cosine_lr = opt.cosine_decay(
+                init=_CALIBRATED_LR, decay_steps=max_iters,
+            )
+            optimizer = opt.AdamW(
+                learning_rate=cosine_lr,
+                betas=[0.9, 0.999],
+                eps=_SQRT_EPS_F32,
+                weight_decay=weight_decay,
+                bias_correction=True,
+            )
+            optimizer.init(model.trainable_parameters())
+            current_eta = _CALIBRATED_LR
+            logger.info(
+                "Canonical AdamW: lr=%.2e cosine→0 over %d steps",
+                _CALIBRATED_LR, max_iters,
+            )
 
         # MASS √N epoch budget correction (Brownian scaling).
+        # Skipped for adamw_geometric — cosine schedule handles decay.
         from modelcypher.core.domain.training.mass_step_size import (
             apply_sqrt_n_epoch_correction,
         )
 
-        eta_ceiling_before = eta_ceiling
-        eta_ceiling = apply_sqrt_n_epoch_correction(
-            eta_ceiling, n_batches_per_epoch,
-        )
-        if eta_ceiling != eta_ceiling_before:
-            current_eta = eta_ceiling
-            logger.info(
-                "MASS √N budget: ceiling %.4e / √%d = %.4e",
-                eta_ceiling_before, n_batches_per_epoch, eta_ceiling,
+        if optimizer_research_mode != OPTIMIZER_MODE_ADAMW_GEOMETRIC:
+            eta_ceiling_before = eta_ceiling
+            eta_ceiling = apply_sqrt_n_epoch_correction(
+                eta_ceiling, n_batches_per_epoch,
             )
+            if eta_ceiling != eta_ceiling_before:
+                current_eta = eta_ceiling
+                logger.info(
+                    "MASS √N budget: ceiling %.4e / √%d = %.4e",
+                    eta_ceiling_before, n_batches_per_epoch, eta_ceiling,
+                )
 
         use_val_stopping = (
             (eval_dataset is not None and len(eval_dataset) > 0)
@@ -924,9 +949,14 @@ class _MLXTrainingAdapterTrainMixin:
         lr_mode = "constant"
         if adaptive_lr:
             lr_mode = "adaptive-monotonic" if lr_monotonic else "adaptive"
+        use_adamw_optimizer = optimizer_research_mode in {
+            OPTIMIZER_MODE_ADAMW_MATCHED_TRACE,
+            OPTIMIZER_MODE_ADAMW_GEOMETRIC,
+        }
+        use_mass_step_sizing = optimizer_research_mode != OPTIMIZER_MODE_ADAMW_GEOMETRIC
         optimizer_name = (
-            "adamw"
-            if optimizer_research_mode == OPTIMIZER_MODE_ADAMW_MATCHED_TRACE
+            GEOMETRIC_LORA_OPTIMIZER_FISHER_MASS
+            if optimizer_research_mode == OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS
             else GEOMETRIC_LORA_OPTIMIZER
         )
         method_name = GEOMETRIC_LORA_METHOD
@@ -1077,52 +1107,72 @@ class _MLXTrainingAdapterTrainMixin:
                 update_direction = grad_flat
 
             mass_metrics: dict[str, float] = {}
+            # Compute gradient/direction norms for diagnostics (all modes).
             d_flat = [p.reshape(-1) for p in update_direction.values() if p.size > 0]
             d_norm_sq = sum(mx.sum(p * p) for p in d_flat)
-            mx.eval(d_norm_sq)
+            mx.eval(d_norm_sq, loss)
             parameter_d_norm_val = float(mx.sqrt(d_norm_sq).item())
-            # g·d: raw gradient dot preconditioned direction for correct SPS.
-            # For d=P*g, first-order loss decrease is η*g^Td (not η*||d||²).
-            g_dot_d_arr = sum(
-                mx.sum(grad_flat[k] * update_direction[k])
-                for k in update_direction
-                if k in grad_flat
-            )
-            mx.eval(g_dot_d_arr, loss)
-            d_norm_val = parameter_d_norm_val
-            if use_pissa_lora:
-                effective_d_norm = self._measure_pissa_effective_update_norm(
-                    model,
-                    update_direction,
-                )
-                if effective_d_norm is not None:
-                    d_norm_val = effective_d_norm
-                    mass_metrics["parameter_d_norm"] = parameter_d_norm_val
-                    if it == 0:
-                        logger.info(
-                            "PiSSA induced update norm: ||d_param||=%.4f -> ||D_eff||_F=%.4f",
-                            parameter_d_norm_val,
-                            effective_d_norm,
-                        )
-            g_dot_d_float = float(g_dot_d_arr.item()) if hasattr(g_dot_d_arr, 'item') else float(g_dot_d_arr)
             loss_float = float(loss)
 
-            eta_step, eta_sps_val, eta_weyl_val, displacement_val, eta_margin_val = (
-                compute_per_step_rates(
-                    loss_float, d_norm_val, sigma_k_min, eta_ceiling,
-                    remaining_budget=remaining_budget,
-                    g_dot_d=g_dot_d_float,
+            if use_mass_step_sizing:
+                # MASS per-step: SPS + Weyl + ceiling → eta_step.
+                # g·d: raw gradient dot preconditioned direction for correct SPS.
+                # For d=P*g, first-order loss decrease is η*g^Td (not η*||d||²).
+                g_dot_d_arr = sum(
+                    mx.sum(grad_flat[k] * update_direction[k])
+                    for k in update_direction
+                    if k in grad_flat
                 )
-            )
+                mx.eval(g_dot_d_arr)
+                d_norm_val = parameter_d_norm_val
+                if use_pissa_lora:
+                    effective_d_norm = self._measure_pissa_effective_update_norm(
+                        model,
+                        update_direction,
+                    )
+                    if effective_d_norm is not None:
+                        d_norm_val = effective_d_norm
+                        mass_metrics["parameter_d_norm"] = parameter_d_norm_val
+                        if it == 0:
+                            logger.info(
+                                "PiSSA induced update norm: ||d_param||=%.4f -> ||D_eff||_F=%.4f",
+                                parameter_d_norm_val,
+                                effective_d_norm,
+                            )
+                g_dot_d_float = float(g_dot_d_arr.item()) if hasattr(g_dot_d_arr, 'item') else float(g_dot_d_arr)
 
-            mass_metrics["eta_step"] = eta_step
-            mass_metrics["eta_sps"] = eta_sps_val
-            mass_metrics["eta_weyl"] = eta_weyl_val
-            mass_metrics["displacement"] = displacement_val
-            mass_metrics["d_norm"] = d_norm_val
-            mass_metrics["g_dot_d"] = g_dot_d_float
-            if eta_margin_val is not None:
-                mass_metrics["eta_margin"] = eta_margin_val
+                eta_step, eta_sps_val, eta_weyl_val, displacement_val, eta_margin_val = (
+                    compute_per_step_rates(
+                        loss_float, d_norm_val, sigma_k_min, eta_ceiling,
+                        remaining_budget=remaining_budget,
+                        g_dot_d=g_dot_d_float,
+                    )
+                )
+
+                mass_metrics["eta_step"] = eta_step
+                mass_metrics["eta_sps"] = eta_sps_val
+                mass_metrics["eta_weyl"] = eta_weyl_val
+                mass_metrics["displacement"] = displacement_val
+                mass_metrics["d_norm"] = d_norm_val
+                mass_metrics["g_dot_d"] = g_dot_d_float
+                if eta_margin_val is not None:
+                    mass_metrics["eta_margin"] = eta_margin_val
+            else:
+                # Canonical AdamW path: cosine schedule controls LR directly.
+                # Read current LR from optimizer for logging/diagnostics.
+                _lr_val = optimizer.learning_rate
+                if hasattr(_lr_val, 'item'):
+                    eta_step = float(_lr_val.item())
+                else:
+                    eta_step = float(_lr_val)
+                d_norm_val = parameter_d_norm_val
+                displacement_val = eta_step * d_norm_val
+                eta_sps_val = 0.0
+                eta_weyl_val = 0.0
+                eta_margin_val = None
+                mass_metrics["eta_step"] = eta_step
+                mass_metrics["displacement"] = displacement_val
+                mass_metrics["d_norm"] = d_norm_val
 
             # Track effective gain ratio for stability certificate
             if eta_ceiling > 0:
@@ -1167,10 +1217,12 @@ class _MLXTrainingAdapterTrainMixin:
                 step_learning_rate=eta_step,
             )
 
-            # Apply the optimizer-specific update with the same MASS-derived
-            # global step size.
-            if optimizer_research_mode == OPTIMIZER_MODE_ADAMW_MATCHED_TRACE:
-                optimizer.learning_rate = mx.array(eta_step)
+            # Apply the optimizer-specific update.
+            if use_adamw_optimizer:
+                if optimizer_research_mode == OPTIMIZER_MODE_ADAMW_MATCHED_TRACE:
+                    # Matched-trace: override LR with MASS-derived eta_step.
+                    optimizer.learning_rate = mx.array(eta_step)
+                # adamw_geometric: cosine schedule controls LR — no override.
                 optimizer.update(model, grad)
                 mx.eval(model.trainable_parameters(), optimizer.state)
                 (

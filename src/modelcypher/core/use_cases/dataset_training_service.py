@@ -81,6 +81,7 @@ from modelcypher.core.domain.training.mass_step_size import (
     CONTROLLER_MODE_BEHAVIORAL_PROBE,
     CONTROLLER_MODE_STRUCTURAL_OBSERVE,
     DerivedClosedLoopLaw,
+    OPTIMIZER_MODE_ADAMW_GEOMETRIC,
     OPTIMIZER_MODE_ADAMW_MATCHED_TRACE,
     OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
     replay_controller_trace,
@@ -491,7 +492,7 @@ class DerivedTrainingPlan:
                 "init_method": GEOMETRIC_LORA_INIT_METHOD,
                 "optimizer": (
                     "adamw"
-                    if self.optimizer_research_mode == OPTIMIZER_MODE_ADAMW_MATCHED_TRACE
+                    if self.optimizer_research_mode != OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS
                     else GEOMETRIC_LORA_OPTIMIZER
                 ),
                 "controller": GEOMETRIC_LORA_CONTROLLER,
@@ -2311,16 +2312,6 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             strict_fail_closed_core=True,
         )
         pipeline_gate_verdict = evaluate_pipeline_gate(gate_input, eps=gate_eps)
-        if not pipeline_gate_verdict.passed:
-            verdict_dict = pipeline_gate_verdict.to_dict()
-            raise TrainingDerivationError(
-                failure_class="pipeline_gate_failed",
-                detail=(
-                    "Pipeline gate failed: "
-                    + ", ".join(pipeline_gate_verdict.failure_modes)
-                ),
-                diagnostics=verdict_dict,
-            )
 
         # Detect training objective from data format flags
         training_objective = "ce"
@@ -2332,7 +2323,8 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         # 12. Save if requested
         saved_adapter_path: str | None = None
         saved_path_obj: Path | None = None
-        if output_dir is not None:
+        artifact_path_obj: Path | None = None
+        if output_dir is not None and pipeline_gate_verdict.passed:
             logger.info("Saving adapter to %s...", output_dir)
             metadata = {
                 "base_model_path": str(model_path),
@@ -2375,6 +2367,22 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 derived_plan=plan.to_dict(),
             )
             saved_adapter_path = str(saved_path_obj)
+            artifact_path_obj = saved_path_obj
+        elif output_dir is not None:
+            artifact_path_obj = output_dir
+            artifact_path_obj.mkdir(parents=True, exist_ok=True)
+            self._write_geometry_manifest(
+                adapter_dir=artifact_path_obj,
+                model_path=model_path,
+                target_modules=target_modules,
+                geometries=geometries,
+                rank_overrides=final_ranks,
+                rank_ceiling_source=ceiling_label,
+            )
+            self._write_training_plan(
+                adapter_dir=artifact_path_obj,
+                derived_plan=plan.to_dict(),
+            )
 
         moe_saturated_during_training: list[str] | None = None
         moe_saturation_threshold = max(
@@ -2525,8 +2533,8 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             ),
             derived_plan=plan.to_dict(),
         )
-        if saved_path_obj is not None:
-            self._write_json(saved_path_obj / "train_result.json", result.to_dict())
+        if artifact_path_obj is not None:
+            self._write_json(artifact_path_obj / "train_result.json", result.to_dict())
             if (
                 benchmark_suite is not None
                 and _benchmark_service is not None
@@ -2534,7 +2542,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             ):
                 _benchmark_service.save_results(
                     benchmark_baseline_suite,
-                    saved_path_obj / f"benchmark_{benchmark_suite}_baseline.json",
+                    artifact_path_obj / f"benchmark_{benchmark_suite}_baseline.json",
                 )
             if (
                 benchmark_suite is not None
@@ -2543,8 +2551,18 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             ):
                 _benchmark_service.save_results(
                     benchmark_post_suite,
-                    saved_path_obj / f"benchmark_{benchmark_suite}_post.json",
+                    artifact_path_obj / f"benchmark_{benchmark_suite}_post.json",
                 )
+        if not pipeline_gate_verdict.passed:
+            verdict_dict = pipeline_gate_verdict.to_dict()
+            raise TrainingDerivationError(
+                failure_class="pipeline_gate_failed",
+                detail=(
+                    "Pipeline gate failed: "
+                    + ", ".join(pipeline_gate_verdict.failure_modes)
+                ),
+                diagnostics=verdict_dict,
+            )
         return result
 
 __all__ = ["DatasetTrainResult", "DatasetTrainingService", "DerivedTrainingPlan"]

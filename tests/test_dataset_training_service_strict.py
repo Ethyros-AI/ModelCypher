@@ -1880,3 +1880,92 @@ def test_train_from_dataset_persists_benchmark_and_result_artifacts(
     assert saved_post["suite"] == "quick"
     assert saved_baseline["benchmarks"][0]["benchmark"] == "gsm8k"
     assert saved_post["benchmarks"][0]["accuracy"] == pytest.approx(0.1)
+
+
+def test_train_from_dataset_persists_failure_artifacts_before_pipeline_gate(
+    monkeypatch,
+    tmp_path: Path,
+):
+    from modelcypher.core.use_cases.benchmark_service import (
+        EvalBenchmarkResult,
+        SuiteResult,
+    )
+
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    artifact_dir = tmp_path / "failed_adapter"
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(train_path, [{"text": "train sample"}])
+    _write_jsonl(eval_path, [{"text": "eval sample"}])
+
+    service = DatasetTrainingService(
+        adapter=_FlowAdapterFailingSpectral(),
+        backend=_FlowBackend(),
+    )
+    _patch_lightweight_training(monkeypatch, service)
+    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
+
+    class _FakeBenchmarkService:
+        def __init__(self) -> None:
+            self._runs = 0
+
+        def run_suite(self, *args, **kwargs):
+            del args
+            self._runs += 1
+            accuracy = 0.5 if self._runs == 1 else 0.1
+            return SuiteResult(
+                suite=str(kwargs["suite_name"]),
+                benchmarks=[
+                    EvalBenchmarkResult(
+                        benchmark="gsm8k",
+                        accuracy=accuracy,
+                        correct=int(accuracy * 10),
+                        total=10,
+                    ),
+                ],
+                overall_accuracy=accuracy,
+            )
+
+        def save_results(self, result: SuiteResult, output_path: Path) -> None:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(
+                json.dumps(result.to_dict(), indent=2),
+                encoding="utf-8",
+            )
+
+    monkeypatch.setattr(
+        "modelcypher.core.use_cases.benchmark_service.BenchmarkService",
+        _FakeBenchmarkService,
+    )
+
+    with pytest.raises(TrainingDerivationError) as excinfo:
+        service.train_from_dataset(
+            model_path=model_dir,
+            dataset_path=train_path,
+            output_path=artifact_dir,
+            eval_dataset_path=eval_path,
+            benchmark_suite="quick",
+        )
+
+    err = excinfo.value
+    assert err.failure_class == "pipeline_gate_failed"
+
+    train_result_path = artifact_dir / "train_result.json"
+    baseline_path = artifact_dir / "benchmark_quick_baseline.json"
+    post_path = artifact_dir / "benchmark_quick_post.json"
+    plan_path = artifact_dir / "training_plan.json"
+    manifest_path = artifact_dir / "geometry_manifest.json"
+
+    assert train_result_path.exists()
+    assert baseline_path.exists()
+    assert post_path.exists()
+    assert plan_path.exists()
+    assert manifest_path.exists()
+
+    saved_result = json.loads(train_result_path.read_text(encoding="utf-8"))
+    assert saved_result["adapter_path"] is None
+    assert saved_result["pipeline_gate_passed"] is False
+    assert "spectral_bounds_violation" in saved_result["pipeline_gate_failure_modes"]
+    assert saved_result["benchmark_baseline"]["gsm8k"] == pytest.approx(0.5)
+    assert saved_result["benchmark_post"]["gsm8k"] == pytest.approx(0.1)

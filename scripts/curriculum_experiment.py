@@ -128,6 +128,52 @@ def _merge_eval_files(skill) -> Path:
     return tmp
 
 
+def _extract_prompt_and_expected(item: dict) -> tuple[str, str]:
+    """Extract the prompt and expected answer from an eval item."""
+    text = item["text"]
+    answer_start = item.get("answer_start")
+
+    if answer_start is not None:
+        return text[:answer_start], text[answer_start:].strip()
+    if "Answer:" in text:
+        parts = text.rsplit("Answer:", 1)
+        return parts[0] + "Answer:", parts[1].strip()
+
+    tokens = text.split()
+    return " ".join(tokens[:-1]), tokens[-1].strip()
+
+
+def _parse_training_envelope(stdout: str) -> tuple[dict | None, dict | None]:
+    """Parse mc train run JSON output into (envelope, training_result)."""
+    try:
+        envelope = json.loads(stdout)
+    except json.JSONDecodeError:
+        return None, None
+
+    if not isinstance(envelope, dict):
+        return None, None
+
+    training_result = envelope.get("result", envelope)
+    if not isinstance(training_result, dict):
+        return envelope, None
+    return envelope, training_result
+
+
+def _resolve_adapter_path(
+    training_result: dict | None,
+    envelope: dict | None,
+    default_path: str | Path,
+) -> str:
+    """Resolve the adapter path from training output with stable fallback order."""
+    if training_result and training_result.get("adapter_path"):
+        return str(training_result["adapter_path"])
+    if envelope:
+        metadata = envelope.get("metadata", {})
+        if isinstance(metadata, dict) and metadata.get("adapter_path"):
+            return str(metadata["adapter_path"])
+    return str(default_path)
+
+
 def _run_mastery_eval(model_path: str, skill, adapter_path: str | None = None):
     """Run mastery evaluation on a skill's held-out eval set.
 
@@ -175,21 +221,7 @@ def _run_sample_inference(model_path: str, skill, n_samples: int = 5, adapter_pa
 
     print(f"\n  === Sample Outputs ({n_samples} examples) ===")
     for i, item in enumerate(items):
-        text = item["text"]
-        answer_start = item.get("answer_start")
-
-        # Match the prompt/expected extraction logic in evaluate_skill_mastery
-        if answer_start is not None:
-            prompt = text[:answer_start]
-            expected = text[answer_start:].strip()
-        elif "Answer:" in text:
-            parts = text.rsplit("Answer:", 1)
-            prompt = parts[0] + "Answer:"
-            expected = parts[1].strip()
-        else:
-            tokens = text.split()
-            prompt = " ".join(tokens[:-1])
-            expected = tokens[-1].strip()
+        prompt, expected = _extract_prompt_and_expected(item)
 
         result = engine.run(model=model_path, prompt=prompt, adapter=adapter_path, max_tokens=256)
         predicted = result.response.strip()
@@ -280,18 +312,12 @@ def main() -> None:
 
     # Parse training result — mc train run --json emits an AgentEnvelope
     # with the training dict under envelope["result"].
-    envelope = None
-    training_result = None
-    try:
-        envelope = json.loads(result.stdout)
-    except json.JSONDecodeError:
+    envelope, training_result = _parse_training_envelope(result.stdout)
+    if envelope is None:
         print("  WARNING: Could not parse training JSON output")
         print(f"  stdout: {result.stdout[:2000]}")
 
-    if envelope is not None:
-        # Extract the training result from the AgentEnvelope
-        training_result = envelope.get("result", envelope)
-
+    if envelope is not None and training_result is not None:
         print(f"  Training completed (status: {envelope.get('status', '?')}):")
         print(f"    Iterations: {training_result.get('train_iters', '?')}")
         print(f"    Baseline loss: {training_result.get('baseline_loss', '?')}")
@@ -314,12 +340,9 @@ def main() -> None:
 
     # Step 4: Post-training eval
     print("\n--- Step 4: Post-Training Evaluation ---")
-    # Adapter path: check training result first, then envelope metadata, then default
-    resolved_adapter = str(adapter_path)
-    if training_result and training_result.get("adapter_path"):
-        resolved_adapter = training_result["adapter_path"]
-    elif envelope and envelope.get("metadata", {}).get("adapter_path"):
-        resolved_adapter = envelope["metadata"]["adapter_path"]
+    resolved_adapter = _resolve_adapter_path(
+        training_result, envelope, adapter_path,
+    )
 
     if not Path(resolved_adapter).exists():
         print(f"  ERROR: Adapter not found at {resolved_adapter}")
