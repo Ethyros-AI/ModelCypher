@@ -65,9 +65,8 @@ from modelcypher.core.domain.training.identity import (
     GEOMETRIC_LORA_INIT_METHOD_CAYLEY,
     GEOMETRIC_LORA_INIT_METHOD,
     GEOMETRIC_LORA_METHOD,
-    GEOMETRIC_LORA_OPTIMIZER,
-    GEOMETRIC_LORA_OPTIMIZER_FISHER_MASS,
     GEOMETRIC_LORA_STOPPING,
+    resolve_geometric_lora_optimizer_name,
 )
 
 if TYPE_CHECKING:
@@ -1023,10 +1022,8 @@ class _MLXTrainingAdapterTrainMixin:
             OPTIMIZER_MODE_ADAMW_GEOMETRIC,
         }
         use_mass_step_sizing = optimizer_research_mode != OPTIMIZER_MODE_ADAMW_GEOMETRIC
-        optimizer_name = (
-            GEOMETRIC_LORA_OPTIMIZER_FISHER_MASS
-            if optimizer_research_mode == OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS
-            else GEOMETRIC_LORA_OPTIMIZER
+        optimizer_name = resolve_geometric_lora_optimizer_name(
+            optimizer_research_mode,
         )
         method_name = GEOMETRIC_LORA_METHOD
         init_name = (
@@ -1257,6 +1254,9 @@ class _MLXTrainingAdapterTrainMixin:
                 mass_metrics["eta_step"] = eta_step
                 mass_metrics["displacement"] = displacement_val
                 mass_metrics["d_norm"] = d_norm_val
+                # Keep current_eta in sync so epoch log and EpochMetrics.eta
+                # reflect the actual cosine-scheduled LR, not the static init.
+                current_eta = eta_step
 
             # Track effective gain ratio for stability certificate
             if eta_ceiling > 0:

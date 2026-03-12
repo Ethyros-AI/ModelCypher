@@ -70,8 +70,8 @@ from modelcypher.core.domain.training.identity import (
     GEOMETRIC_LORA_INIT_METHOD,
     GEOMETRIC_LORA_METHOD,
     GEOMETRIC_LORA_OPTIMIZER,
-    GEOMETRIC_LORA_OPTIMIZER_FISHER_MASS,
     GEOMETRIC_LORA_STOPPING,
+    resolve_geometric_lora_optimizer_name,
 )
 from modelcypher.core.domain.training.pipeline_gate import (
     PipelineGateInput,
@@ -511,9 +511,9 @@ class DerivedTrainingPlan:
                 "method": GEOMETRIC_LORA_METHOD,
                 "init_method": GEOMETRIC_LORA_INIT_METHOD,
                 "optimizer": (
-                    GEOMETRIC_LORA_OPTIMIZER
-                    if self.optimizer_research_mode != OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS
-                    else GEOMETRIC_LORA_OPTIMIZER_FISHER_MASS
+                    resolve_geometric_lora_optimizer_name(
+                        self.optimizer_research_mode,
+                    )
                 ),
                 "controller": GEOMETRIC_LORA_CONTROLLER,
                 "stopping": GEOMETRIC_LORA_STOPPING,
@@ -2366,9 +2366,9 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 "method": GEOMETRIC_LORA_METHOD,
                 "init_method": GEOMETRIC_LORA_INIT_METHOD,
                 "optimizer": (
-                    GEOMETRIC_LORA_OPTIMIZER
-                    if optimizer_research_mode != OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS
-                    else GEOMETRIC_LORA_OPTIMIZER_FISHER_MASS
+                    resolve_geometric_lora_optimizer_name(
+                        optimizer_research_mode,
+                    )
                 ),
                 "controller": GEOMETRIC_LORA_CONTROLLER,
                 "stopping": GEOMETRIC_LORA_STOPPING,
@@ -2507,12 +2507,8 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             method=GEOMETRIC_LORA_METHOD,
             init_method=GEOMETRIC_LORA_INIT_METHOD,
             optimizer=(
-                "adamw"
-                if optimizer_research_mode == OPTIMIZER_MODE_ADAMW_MATCHED_TRACE
-                else (
-                    GEOMETRIC_LORA_OPTIMIZER_FISHER_MASS
-                    if optimizer_research_mode == OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS
-                    else GEOMETRIC_LORA_OPTIMIZER
+                resolve_geometric_lora_optimizer_name(
+                    optimizer_research_mode,
                 )
             ),
             controller=GEOMETRIC_LORA_CONTROLLER,
