@@ -72,6 +72,63 @@ if TYPE_CHECKING:
 
 
 class _MLXTrainingAdapterTrainMixin:
+    def _measure_pissa_effective_update_norm(
+        self,
+        model,
+        update_direction: dict[str, Any],
+    ) -> float | None:
+        """Measure first-order PiSSA update norm in weight space.
+
+        MASS uses ``eta_weyl = sigma_k / ||D||`` to bound spectral displacement.
+        For PiSSA, the trainable coordinates are factor matrices ``(A, B)``, but
+        Weyl applies to the induced weight update:
+
+            D_W = scale * (dA @ B + A @ dB)
+
+        The factor-space norm can dramatically understate the real displacement
+        when ``A`` and ``B`` already encode the model's principal directions.
+        This helper returns a conservative Frobenius norm of the induced update
+        across all active PiSSA layers.
+        """
+        total_norm_sq_terms: list[Any] = []
+
+        for layer_key, lora_module in self._iter_pissa_lora_modules(model):
+            prefix = layer_key.removesuffix(".weight")
+            d_a = update_direction.get(prefix + ".lora_a")
+            d_b = update_direction.get(prefix + ".lora_b")
+            if d_a is None and d_b is None:
+                continue
+
+            induced = None
+            if d_a is not None:
+                induced = mx.matmul(
+                    d_a.astype(mx.float32),
+                    lora_module.lora_b.astype(mx.float32),
+                )
+            if d_b is not None:
+                a_db = mx.matmul(
+                    lora_module.lora_a.astype(mx.float32),
+                    d_b.astype(mx.float32),
+                )
+                induced = a_db if induced is None else induced + a_db
+            if induced is None:
+                continue
+
+            induced = float(lora_module.scale) * induced
+            total_norm_sq_terms.append(mx.sum(induced * induced))
+
+        if not total_norm_sq_terms:
+            return None
+
+        total_norm_sq = total_norm_sq_terms[0]
+        for term in total_norm_sq_terms[1:]:
+            total_norm_sq = total_norm_sq + term
+        mx.eval(total_norm_sq)
+        total_norm = float(mx.sqrt(total_norm_sq).item())
+        if not math.isfinite(total_norm) or total_norm <= 0.0:
+            return None
+        return total_norm
+
     def train_loop(
         self,
         model,
@@ -1022,6 +1079,8 @@ class _MLXTrainingAdapterTrainMixin:
             mass_metrics: dict[str, float] = {}
             d_flat = [p.reshape(-1) for p in update_direction.values() if p.size > 0]
             d_norm_sq = sum(mx.sum(p * p) for p in d_flat)
+            mx.eval(d_norm_sq)
+            parameter_d_norm_val = float(mx.sqrt(d_norm_sq).item())
             # g·d: raw gradient dot preconditioned direction for correct SPS.
             # For d=P*g, first-order loss decrease is η*g^Td (not η*||d||²).
             g_dot_d_arr = sum(
@@ -1029,8 +1088,22 @@ class _MLXTrainingAdapterTrainMixin:
                 for k in update_direction
                 if k in grad_flat
             )
-            mx.eval(d_norm_sq, g_dot_d_arr, loss)
-            d_norm_val = float(mx.sqrt(d_norm_sq).item())
+            mx.eval(g_dot_d_arr, loss)
+            d_norm_val = parameter_d_norm_val
+            if use_pissa_lora:
+                effective_d_norm = self._measure_pissa_effective_update_norm(
+                    model,
+                    update_direction,
+                )
+                if effective_d_norm is not None:
+                    d_norm_val = effective_d_norm
+                    mass_metrics["parameter_d_norm"] = parameter_d_norm_val
+                    if it == 0:
+                        logger.info(
+                            "PiSSA induced update norm: ||d_param||=%.4f -> ||D_eff||_F=%.4f",
+                            parameter_d_norm_val,
+                            effective_d_norm,
+                        )
             g_dot_d_float = float(g_dot_d_arr.item()) if hasattr(g_dot_d_arr, 'item') else float(g_dot_d_arr)
             loss_float = float(loss)
 
@@ -1946,7 +2019,13 @@ class _MLXTrainingAdapterTrainMixin:
                     log_parts.append(f"η_eff={es:.2e}")
                     log_parts.append(f"η_sps={e_sps:.2e}")
                     log_parts.append(f"η_weyl={e_weyl:.2e}")
-                    log_parts.append(f"‖g‖={dn:.4f}")
+                    if use_pissa_lora and mass_metrics.get("parameter_d_norm") is not None:
+                        log_parts.append(
+                            f"‖d_param‖={mass_metrics['parameter_d_norm']:.4f}"
+                        )
+                        log_parts.append(f"‖D_eff‖={dn:.4f}")
+                    else:
+                        log_parts.append(f"‖d‖={dn:.4f}")
                     log_parts.append(f"disp={disp:.4e}")
                 logger.info(" | ".join(log_parts))
 

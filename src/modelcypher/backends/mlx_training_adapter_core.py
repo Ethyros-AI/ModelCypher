@@ -89,7 +89,7 @@ class EpochMetrics:
     eta_sps: float | None = None       # Stochastic Polyak step-size (Loizou et al. 2020)
     eta_weyl: float | None = None      # Per-step Weyl displacement bound
     eta_step: float | None = None      # Actual per-step η = min(SPS, Weyl, ceiling)
-    d_norm: float | None = None        # Gradient direction norm ||g_t||
+    d_norm: float | None = None        # Active update norm for eta_weyl
     # Conformal margin rate (Sahraee-Ardakan, Delbracio & Milanfar 2026)
     eta_margin: float | None = None               # remaining_budget / ||g||
     remaining_budget: float | None = None          # sigma_k_min - ||DeltaW||_2

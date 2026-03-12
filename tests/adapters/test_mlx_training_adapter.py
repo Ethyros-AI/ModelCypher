@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import mlx.core as mx
 import mlx.nn as nn
 import pytest
 
@@ -299,6 +300,39 @@ def test_save_pissa_adapter_writes_geometric_lora_identity(backend_name, tmp_pat
     assert config["optimizer"] == "fisher_mass"
     assert config["controller"] == "mass"
     assert config["stopping"] == "geometric_certificate"
+
+
+@pytest.mark.parametrize("backend_name", ["mlx"])
+@pytest.mark.mlx
+def test_pissa_effective_update_norm_uses_induced_weight_step(backend_name) -> None:
+    """PiSSA eta_weyl must see the induced weight update, not factor norm alone."""
+    backend, model, _ = _load_model_and_tokenizer(backend_name)
+    adapter = MLXTrainingAdapter(backend)
+
+    weights = adapter.extract_weight_matrices(model)
+    geometries = analyze_weight_geometries(weights, backend)
+    targets = select_target_modules(geometries)
+    assert targets, "Expected targetable layers in toy model"
+
+    injected = adapter.inject_pissa_lora(model, geometries, targets[:1])
+    assert injected == 1
+
+    layer_key, lora = next(adapter._iter_pissa_lora_modules(model))
+    prefix = layer_key.removesuffix(".weight")
+    d_a = mx.ones_like(lora.lora_a)
+    d_b = mx.ones_like(lora.lora_b) * 0.5
+    update_direction = {
+        prefix + ".lora_a": d_a,
+        prefix + ".lora_b": d_b,
+    }
+
+    measured = adapter._measure_pissa_effective_update_norm(model, update_direction)
+    induced = lora.scale * (mx.matmul(d_a, lora.lora_b) + mx.matmul(lora.lora_a, d_b))
+    induced_norm_sq = mx.sum(induced.astype(mx.float32) * induced.astype(mx.float32))
+    mx.eval(induced_norm_sq)
+    expected = float(mx.sqrt(induced_norm_sq).item())
+
+    assert measured == pytest.approx(expected, rel=1e-6)
 
 
 # ── Qwen3.5-style layout: root.language_model.layers ──────────────────────────

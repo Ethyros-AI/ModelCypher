@@ -621,7 +621,7 @@ class TestClosedLoopLaw:
             law,
             behavioral_state=None,
             margin_history=[],
-            stable_rank_history=[12.0, 9.0, 6.0],
+            stable_rank_history=[12.0, 9.0, 4.0],
             loss_stability_window_epochs=2,
             adapter_rank=25,
         )

@@ -186,6 +186,10 @@ class _CliResult:
     def __init__(self, payload: dict[str, object] | None = None) -> None:
         self._payload = payload or {"ok": True}
         self.adapter_path = None
+        self.validation_split = None
+        self.derived_plan = None
+        self.pipeline_gate_passed = True
+        self.training_time_seconds = 0.0
 
     def to_dict(self) -> dict[str, object]:
         return dict(self._payload)
@@ -408,7 +412,10 @@ def test_pilot_variance_split_fails_on_loss_count_mismatch():
     assert diagnostics["n_losses"] == 2
 
 
-def test_answer_mask_without_answer_start_fails_fast(tmp_path: Path):
+def test_answer_mask_without_answer_start_fails_fast(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
     model_dir = tmp_path / "model"
     model_dir.mkdir()
 
@@ -421,7 +428,8 @@ def test_answer_mask_without_answer_start_fails_fast(tmp_path: Path):
     _write_jsonl(train_path, rows)
     _write_jsonl(eval_path, rows)
 
-    service = DatasetTrainingService(adapter=_DummyAdapter(), backend=_DummyBackend())
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
+    _patch_lightweight_training(monkeypatch, service)
 
     with pytest.raises(TrainingDerivationError) as excinfo:
         service.train_from_dataset(
@@ -449,7 +457,8 @@ def test_train_from_dataset_rejects_image_samples_for_non_vl_model(
     _write_jsonl(train_path, rows)
     _write_jsonl(eval_path, rows)
 
-    service = DatasetTrainingService(adapter=_DummyAdapter(), backend=_DummyBackend())
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
+    _patch_lightweight_training(monkeypatch, service)
     monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
 
     with pytest.raises(ValueError, match="model has no vision_config"):
@@ -540,7 +549,7 @@ def test_train_from_dataset_uses_vl_loader_and_preprocessor(
     )
 
     assert isinstance(result, DatasetTrainResult)
-    assert calls["vl_load"] == 1
+    assert calls["vl_load"] == 2
     assert calls["preprocess"] == 2
     assert backend.load_model_called is False
 
@@ -1720,7 +1729,7 @@ def test_build_training_plan_requires_tokenizable_text(tmp_path: Path):
     model_dir = tmp_path / "model"
     model_dir.mkdir()
     train_path = tmp_path / "train.jsonl"
-    _write_jsonl(train_path, [{"messages": [{"role": "user", "content": "hello"}]}])
+    _write_jsonl(train_path, [{"text": ""}])
 
     service = DatasetTrainingService(adapter=_DummyAdapter(), backend=_DummyBackend())
 
