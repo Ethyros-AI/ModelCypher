@@ -205,6 +205,136 @@ class TestEtaSPS:
 
 
 # ===================================================================
+# Class 3b: Preconditioned SPS (g·d correction)
+# ===================================================================
+class TestPreconditionedSPS:
+    """Tests for SPS with g_dot_d correction for preconditioned gradients.
+
+    When the update direction d = P*g is preconditioned (e.g., diagonal Fisher
+    / Adam), the correct Polyak step is:
+        η_sps = (loss - f*) / (g^T d)
+    not:
+        η_sps = (loss - f*) / ||d||^2
+
+    The standard formula ||d||^2 underestimates the step by ||d||/||g|| when
+    the preconditioner amplifies.  For Adam with n parameters, ||d|| ≈ √n
+    while g^T d ≈ ||g||₁, giving ~√n / ||g||₂ × underestimate.
+    """
+
+    def test_g_dot_d_none_falls_back_to_d_norm_squared(self):
+        """When g_dot_d is None, SPS uses ||d||^2 (backward compatible)."""
+        result_none = compute_per_step_rates(1.0, 2.0, 0.5, 0.01, g_dot_d=None)
+        result_explicit = compute_per_step_rates(1.0, 2.0, 0.5, 0.01, g_dot_d=4.0)
+        # g_dot_d=4.0 == d_norm^2=4.0 → same SPS
+        assert result_none[1] == pytest.approx(result_explicit[1])
+
+    def test_g_dot_d_equals_d_norm_sq_when_no_preconditioner(self):
+        """When d = g (no preconditioner), g·d = ||g||^2 = ||d||^2."""
+        d_norm = 3.0
+        _, sps_old, _, _, _ = compute_per_step_rates(1.0, d_norm, 0.5, 0.01)
+        _, sps_new, _, _, _ = compute_per_step_rates(
+            1.0, d_norm, 0.5, 0.01, g_dot_d=d_norm ** 2,
+        )
+        assert sps_old == pytest.approx(sps_new)
+
+    def test_preconditioner_amplification_produces_larger_sps(self):
+        """When preconditioner amplifies (||d|| >> ||g||), g·d < ||d||^2,
+        so corrected SPS is larger than uncorrected."""
+        loss, d_norm = 2.0, 100.0
+        # Simulate: ||g|| = 5, d = P*g with P amplifying to ||d|| = 100
+        # g·d ≈ ||g|| * ||d|| * cos(0) = 500 (aligned)
+        g_dot_d = 500.0
+        _, sps_corrected, _, _, _ = compute_per_step_rates(
+            loss, d_norm, 0.5, 1.0, g_dot_d=g_dot_d,
+        )
+        _, sps_uncorrected, _, _, _ = compute_per_step_rates(
+            loss, d_norm, 0.5, 1.0,
+        )
+        # sps_corrected = 2.0 / 500 = 0.004
+        # sps_uncorrected = 2.0 / 10000 = 0.0002
+        assert sps_corrected == pytest.approx(loss / g_dot_d)
+        assert sps_uncorrected == pytest.approx(loss / d_norm ** 2)
+        assert sps_corrected > sps_uncorrected
+        assert sps_corrected / sps_uncorrected == pytest.approx(d_norm ** 2 / g_dot_d)
+
+    def test_r2_frozen_tuple_scenario(self):
+        """Reproduce the R2 frozen-tuple SPS choke.
+
+        Measured at epoch 1 step 1 of NB-LoRA training:
+            loss ≈ 3.22, d_norm ≈ 1128 (Fisher-preconditioned), ce_grad_norm ≈ 9.375
+            g·d ≈ Σ g_i² / (√v̂_i + ε)  (at step 1, v̂ = g², so g·d ≈ ||g||₁)
+
+        With ||d||²: η_sps = 3.22 / 1128² ≈ 2.53e-06 (SPS chokes at 0.02% of ceiling)
+        With g·d:    η_sps = 3.22 / g·d  (should be ~100× larger)
+        """
+        loss = 3.22
+        d_norm = 1128.0
+        sigma_k_min = 0.4
+        eta_ceiling = 0.0125
+
+        # Uncorrected: SPS chokes
+        _, sps_choked, _, _, _ = compute_per_step_rates(
+            loss, d_norm, sigma_k_min, eta_ceiling,
+        )
+        assert sps_choked == pytest.approx(3.22 / 1128.0 ** 2, rel=1e-3)
+        assert sps_choked < eta_ceiling / 100  # <1% of ceiling
+
+        # Corrected: g·d estimate (conservative: ||g|| * ||d|| * cos_theta)
+        # At step 1 with Adam, g·d = Σ|g_i| ≈ √n * ||g||₂ for uniform g
+        # Here: g·d ≈ 9.375 * 1128 = 10,575 (aligned gradient)
+        g_dot_d = 9.375 * 1128.0  # upper bound (Cauchy-Schwarz)
+        _, sps_corrected, _, _, _ = compute_per_step_rates(
+            loss, d_norm, sigma_k_min, eta_ceiling, g_dot_d=g_dot_d,
+        )
+        assert sps_corrected == pytest.approx(3.22 / g_dot_d, rel=1e-3)
+        assert sps_corrected > sps_choked * 50  # at least 50× improvement
+        assert sps_corrected > eta_ceiling * 0.01  # now >1% of ceiling
+
+    def test_g_dot_d_zero_falls_back(self):
+        """g_dot_d=0 or negative falls back to ||d||^2."""
+        _, sps_zero, _, _, _ = compute_per_step_rates(
+            1.0, 2.0, 0.5, 0.01, g_dot_d=0.0,
+        )
+        _, sps_neg, _, _, _ = compute_per_step_rates(
+            1.0, 2.0, 0.5, 0.01, g_dot_d=-1.0,
+        )
+        _, sps_fallback, _, _, _ = compute_per_step_rates(
+            1.0, 2.0, 0.5, 0.01,
+        )
+        assert sps_zero == pytest.approx(sps_fallback)
+        assert sps_neg == pytest.approx(sps_fallback)
+
+    def test_g_dot_d_does_not_affect_weyl_or_ceiling(self):
+        """g_dot_d only affects SPS, not Weyl or ceiling."""
+        for g_dot_d in [None, 1.0, 100.0, 10000.0]:
+            kwargs = {"g_dot_d": g_dot_d} if g_dot_d is not None else {}
+            _, _, eta_weyl, _, _ = compute_per_step_rates(
+                loss=1.0, d_norm=10.0, sigma_k_min=0.5, eta_ceiling=0.01,
+                **kwargs,
+            )
+            assert eta_weyl == pytest.approx(0.5 / 10.0)
+
+    def test_step_still_bounded_by_ceiling(self):
+        """Even with corrected SPS, eta_step never exceeds ceiling."""
+        # Very small g_dot_d → very large SPS → ceiling should bind
+        eta_step, eta_sps, _, _, _ = compute_per_step_rates(
+            loss=10.0, d_norm=1.0, sigma_k_min=5.0, eta_ceiling=0.01,
+            g_dot_d=0.001,
+        )
+        assert eta_sps == pytest.approx(10000.0)
+        assert eta_step == pytest.approx(0.01)  # ceiling binds
+
+    def test_f_star_with_g_dot_d(self):
+        """f_star and g_dot_d work correctly together."""
+        loss, f_star, g_dot_d = 1.0, 0.4, 100.0
+        _, sps, _, _, _ = compute_per_step_rates(
+            loss, d_norm=50.0, sigma_k_min=5.0, eta_ceiling=1.0,
+            f_star=f_star, g_dot_d=g_dot_d,
+        )
+        assert sps == pytest.approx((loss - f_star) / g_dot_d)
+
+
+# ===================================================================
 # Class 4: Weyl Displacement Bound
 # ===================================================================
 class TestEtaWeyl:

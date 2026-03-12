@@ -38,6 +38,7 @@ from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.star.problem_generator import StarProblem, StarProblemGenerator
 from modelcypher.core.domain.training.mass_step_size import (
     CONTROLLER_MODE_STRUCTURAL_OBSERVE,
+    DerivedClosedLoopLaw,
     OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
     validate_controller_mode,
     validate_optimizer_research_mode,
@@ -387,6 +388,7 @@ class DerivedTrainingValidationService:
         benchmark_suite: str | None = None,
         controller_mode: str = CONTROLLER_MODE_STRUCTURAL_OBSERVE,
         optimizer_research_mode: str = OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+        controller_law: DerivedClosedLoopLaw | dict[str, Any] | None = None,
         enable_phase5_inference: bool = False,
         phase5_probe_count: int | None = None,
         phase5_probe_seed: int | None = None,
@@ -461,6 +463,7 @@ class DerivedTrainingValidationService:
                 no_save=bool(train_kwargs["no_save"]),
                 controller_mode=controller_mode,
                 optimizer_research_mode=optimizer_research_mode,
+                controller_law=controller_law,
             )
             result = self._dataset_training_service.train_from_dataset(
                 **train_kwargs,
@@ -468,6 +471,7 @@ class DerivedTrainingValidationService:
                 controller_mode=controller_mode,
                 optimizer_research_mode=optimizer_research_mode,
                 plan=plan,
+                controller_law=controller_law,
             )
 
             loss_delta = float(result.baseline_loss - result.post_loss)

@@ -21,7 +21,8 @@ All parameters are derived from the spectral structure of base weights:
 - Target modules: where tail_dims > 0 (non-zero null-space capacity)
 - sigma_k: SV at the edge of the informationally significant subspace
   (derived from Shannon effective rank, not numerical precision)
-- Rank: bounded by tail_dims = full_rank - floor(shannon_eff_rank)
+- Structural slack: bounded by tail_dims = full_rank - floor(shannon_eff_rank)
+- Adaptation budget: spectral-knee span scaled by structural slack fraction
 
 No hyperparameters. The geometry IS the configuration.
 
@@ -62,6 +63,7 @@ class LayerGeometry:
     tail_dims: int  # full_rank - floor(shannon_eff_rank) (structural null-space)
     shannon_effective_rank: float  # exp(H(σ²)) - continuous spectral utilization
     spectral_gap: float  # σ_{k-1} - σ_k at structural rank boundary (Weyl crossing threshold)
+    recommended_rank: int = 1  # Largest relative spectral-gap knee
 
     @property
     def is_targetable(self) -> bool:
@@ -71,6 +73,38 @@ class LayerGeometry:
         tail_dims > 0 after Shannon structural rank estimation.
         """
         return self.tail_dims > 0
+
+
+def _largest_relative_gap_rank_from_array(
+    singular_values: "Array",
+    backend: "Backend",
+) -> int:
+    """Return the 1-based rank at the largest relative spectral gap."""
+    n_svs = int(singular_values.shape[0])
+    if n_svs <= 0:
+        return 0
+    if n_svs == 1:
+        return 1
+
+    values = backend.tolist(singular_values)
+    if isinstance(values, (int, float)):
+        return 1
+
+    best_rank = 1
+    best_ratio = 0.0
+    for idx in range(n_svs - 1):
+        left = float(values[idx])
+        right = float(values[idx + 1])
+        if left <= 0.0:
+            continue
+        ratio = float("inf") if right <= 0.0 else left / right
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_rank = idx + 1
+
+    if best_ratio == 0.0:
+        return 1
+    return best_rank
 
 
 def compute_layer_geometry(
@@ -120,11 +154,13 @@ def compute_layer_geometry(
             tail_dims=full_rank,
             shannon_effective_rank=0.0,
             spectral_gap=0.0,
+            recommended_rank=0,
         )
 
     # Extract singular values
     sigma_max = float(b.to_scalar(S[0]))
     sigma_min = float(b.to_scalar(S[n_svs - 1]))
+    recommended_rank = _largest_relative_gap_rank_from_array(S, b)
 
     # Precision-based effective rank (LAPACK/MATLAB convention):
     # significant if σ_i > max(m,n) * eps(dtype) * σ_max
@@ -196,6 +232,7 @@ def compute_layer_geometry(
         tail_dims=tail_dims,
         shannon_effective_rank=shannon_effective_rank,
         spectral_gap=spectral_gap,
+        recommended_rank=recommended_rank,
     )
 
 
@@ -337,6 +374,7 @@ def compute_layer_geometry_randomized(
             tail_dims=full_rank,
             shannon_effective_rank=0.0,
             spectral_gap=0.0,
+            recommended_rank=0,
         )
 
     eps_mach = float(b.finfo().eps)
@@ -403,9 +441,11 @@ def compute_layer_geometry_randomized(
             tail_dims=full_rank,
             shannon_effective_rank=0.0,
             spectral_gap=0.0,
+            recommended_rank=0,
         )
 
     sigma_max = float(b.to_scalar(S[0]))
+    recommended_rank = _largest_relative_gap_rank_from_array(S, b)
 
     # Precision-based effective rank (LAPACK/MATLAB convention)
     rank_eps = svd_rank_threshold(b, S, max(shape))
@@ -486,6 +526,7 @@ def compute_layer_geometry_randomized(
         tail_dims=tail_dims,
         shannon_effective_rank=shannon_effective_rank,
         spectral_gap=spectral_gap,
+        recommended_rank=recommended_rank,
     )
 
 
@@ -514,11 +555,12 @@ def analyze_weight_geometries(
             analyzed += 1
 
             logger.debug(
-                "%s: decay=%.1f×, σ_k=%.4f, tail=%d, targetable=%s",
+                "%s: decay=%.1f×, σ_k=%.4f, tail=%d, knee=%d, targetable=%s",
                 layer_key,
                 geometry.decay_ratio,
                 geometry.sigma_k,
                 geometry.tail_dims,
+                geometry.recommended_rank,
                 geometry.is_targetable,
             )
             if analyzed % progress_interval == 0 or analyzed == total:
@@ -698,10 +740,11 @@ def compute_per_layer_signal_ranks(
         results[layer_idx] = result
 
         logger.info(
-            "RMT signal rank layer %d: signal_rank=%d, noise_rank=%d, "
-            "mp_upper_edge=%.6f, signal_var=%.1f%%",
+            "RMT signal rank layer %d: signal_rank=%d, activation_erank=%.2f, "
+            "noise_rank=%d, mp_upper_edge=%.6f, signal_var=%.1f%%",
             layer_idx,
             result.signal_rank,
+            float(getattr(result, "effective_rank", 0.0)),
             result.noise_rank,
             result.mp_upper_edge,
             100.0 * result.signal_variance_fraction,
@@ -714,11 +757,12 @@ def apply_signal_rank_ceiling(
     per_module_ranks: dict[str, int],
     signal_rank_results: dict[int, "SignalRankResult"],
 ) -> dict[str, int]:
-    """Cap per-module LoRA ranks at the RMT signal rank for each layer.
+    """Cap per-module LoRA ranks at measured activation-capacity ceilings.
 
-    The signal rank measures how many directions actually carry information
-    in the training data's activation space.  Adapting beyond this wastes
-    parameters on noise dimensions.
+    ``signal_rank`` is a strict upper bound on how many activation directions
+    are distinguishable from noise. When available, ``effective_rank`` is the
+    tighter budget because it measures how concentrated the activation spectrum
+    actually is. The train rank is capped by both.
 
     Modules with rank=0 stay 0 (not targetable).  Modules in layers without
     a signal-rank measurement keep their original rank.
@@ -729,7 +773,7 @@ def apply_signal_rank_ceiling(
             ``compute_per_layer_signal_ranks``.
 
     Returns:
-        New dict with ranks capped at ``max(1, signal_rank)`` per layer.
+        New dict with ranks capped at the measured activation budget per layer.
     """
     capped: dict[str, int] = {}
     for key, rank in per_module_ranks.items():
@@ -747,7 +791,12 @@ def apply_signal_rank_ceiling(
         if sr is None:
             capped[key] = rank
             continue
-        capped[key] = min(rank, max(1, sr.signal_rank))
+        effective_rank = getattr(sr, "effective_rank", None)
+        if effective_rank is None:
+            activation_rank_cap = max(1, int(sr.signal_rank))
+        else:
+            activation_rank_cap = max(1, int(math.floor(float(effective_rank))))
+        capped[key] = min(rank, activation_rank_cap, max(1, int(sr.signal_rank)))
     return capped
 
 
@@ -813,8 +862,28 @@ def compute_coupled_ranks(
 
     # Start with uncoupled ranks
     per_layer_ranks = compute_per_layer_ranks(geometries, target_modules)
+    n_coupled = _apply_attention_rank_coupling(
+        per_layer_ranks,
+        target_modules,
+        cap_reason="k_proj tail capacity",
+    )
 
-    # Group attention projections by layer index
+    if n_coupled > 0:
+        logger.info(
+            "Cross-projection rank coupling: %d layers capped",
+            n_coupled,
+        )
+
+    return per_layer_ranks
+
+
+def _apply_attention_rank_coupling(
+    per_layer_ranks: dict[str, int],
+    target_modules: list[str],
+    *,
+    cap_reason: str,
+) -> int:
+    """Cap q_proj ranks by the matched k_proj budget for each attention layer."""
     layer_attn_keys: dict[int, dict[str, str]] = {}
     for key in target_modules:
         if ".self_attn." not in key:
@@ -851,15 +920,61 @@ def compute_coupled_ranks(
 
         if q_rank > k_rank:
             logger.info(
-                "Rank coupling layer %d: q_proj %d -> %d (capped by k_proj tail_dims)",
-                layer_idx, q_rank, k_rank,
+                "Rank coupling layer %d: q_proj %d -> %d (capped by %s)",
+                layer_idx, q_rank, k_rank, cap_reason,
             )
             per_layer_ranks[q_key] = k_rank
             n_coupled += 1
 
+    return n_coupled
+
+
+def compute_adaptation_budget_ranks(
+    geometries: dict[str, LayerGeometry],
+    target_modules: list[str],
+) -> dict[str, int]:
+    """Compute canonical adapter ranks for exact-reconstruction geometric LoRA.
+
+    ``signal_rank`` is an upper bound, not the training prescription. For the
+    PiSSA exact-reconstruction path, the spendable rank is the weight-spectrum
+    knee scaled by the layer's structural slack fraction:
+
+        rank_i = floor(recommended_rank_i * tail_dims_i / full_rank_i)
+
+    This couples the span worth adapting (largest relative spectral-gap knee)
+    with how much structural slack the layer actually has.
+    """
+    if not target_modules:
+        raise ValueError("No target modules provided")
+
+    per_layer_ranks: dict[str, int] = {}
+    for key in target_modules:
+        geom = geometries.get(key)
+        if geom is None:
+            continue
+        if geom.tail_dims > 0:
+            full_rank = max(int(geom.full_rank), 1)
+            knee_rank = max(1, int(getattr(geom, "recommended_rank", 1)))
+            slack_fraction = float(geom.tail_dims) / float(full_rank)
+            rank_budget = math.floor(float(knee_rank) * slack_fraction)
+            per_layer_ranks[key] = max(
+                1,
+                min(int(geom.tail_dims), int(rank_budget) if rank_budget > 0 else 1),
+            )
+        elif geom.spectral_gap > 0:
+            per_layer_ranks[key] = 1
+
+    if not per_layer_ranks:
+        raise ValueError("No geometries found for target modules")
+
+    n_coupled = _apply_attention_rank_coupling(
+        per_layer_ranks,
+        target_modules,
+        cap_reason="k_proj adaptation budget",
+    )
     if n_coupled > 0:
         logger.info(
-            "Cross-projection rank coupling: %d layers capped",
+            "Cross-projection adaptation-budget coupling: %d layers capped",
             n_coupled,
         )
 
@@ -974,6 +1089,7 @@ __all__ = [
     "apply_signal_rank_ceiling",
     "LayerGeometry",
     "analyze_weight_geometries",
+    "compute_adaptation_budget_ranks",
     "compute_coupled_ranks",
     "compute_geometric_dropout",
     "compute_geometric_rank",

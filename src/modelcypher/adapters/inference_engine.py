@@ -170,18 +170,13 @@ class InferenceEngine(HiddenStateEngine):
         if cached is not None:
             return cached
 
-        # Check for geometric LoRA adapter
-        if adapter_path and self._is_geometric_lora_adapter(adapter_path):
-            logger.info("Loading geometric LoRA adapter from %s", adapter_path)
-            model, tokenizer = self._load_geometric_lora_adapter(
-                model_path, adapter_path
-            )
-        else:
-            # Use Backend for model loading
-            model, tokenizer = self._backend.load_model(
-                str(model_path),
-                adapter_path=str(adapter_path) if adapter_path else None,
-            )
+        # Use Backend.load_model() for all adapter types. mlx_lm.load()
+        # handles standard LoRA adapters (including geometric/PiSSA) natively
+        # via adapter_config.json + lora_parameters.
+        model, tokenizer = self._backend.load_model(
+            str(model_path),
+            adapter_path=str(adapter_path) if adapter_path else None,
+        )
 
         entry = ModelCacheEntry(
             model=model,
@@ -218,12 +213,29 @@ class InferenceEngine(HiddenStateEngine):
         with open(config_path) as f:
             json.load(f)
 
-        # Load adapter weights — use the right loader for the file format
-        weights_path = adapter_path / "adapters.safetensors"
-        if not weights_path.exists():
-            weights_path = adapter_path / "adapter.safetensors"
-        if not weights_path.exists():
-            weights_path = adapter_path / "adapters.bin"
+        # Load adapter weights — search repo-supported filenames, dispatch
+        # by extension to the correct backend loader.
+        _candidates = [
+            "adapters.safetensors",
+            "adapter_model.safetensors",
+            "adapter.safetensors",
+            "lora_weights.safetensors",
+            "adapters.bin",
+            "adapter_model.bin",
+            "adapter_model.pt",
+        ]
+        weights_path = None
+        for candidate in _candidates:
+            p = adapter_path / candidate
+            if p.exists():
+                weights_path = p
+                break
+
+        if weights_path is None:
+            raise FileNotFoundError(
+                f"No adapter weights found in {adapter_path}. "
+                f"Searched: {', '.join(_candidates)}"
+            )
 
         if weights_path.suffix == ".safetensors":
             weights = self._backend.load_safetensors(str(weights_path))

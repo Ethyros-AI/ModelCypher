@@ -19,7 +19,7 @@
 
 One canonical training path. Geometry and measurement derive everything:
 - Which layers to target (tail_dims > 0)
-- Rank per layer (min(tail_dims, n_train_samples))
+- Rank per layer (spectral-knee budget, then data/activation ceilings)
 - Initialization (PiSSA on the geometry-derived surface)
 - Step size (MASS: min(eta_ceiling, eta_sps, eta_weyl))
 - Batch size (B_crit = 1/SNR from gradient noise)
@@ -48,9 +48,9 @@ from modelcypher.core.domain.dataset_loading import (
 from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 from modelcypher.core.domain.training.geometric_lora import (
     analyze_weight_geometries,
+    compute_adaptation_budget_ranks,
     apply_data_rank_ceiling,
     apply_signal_rank_ceiling,
-    compute_coupled_ranks,
     compute_per_layer_signal_ranks,
     estimate_nb_lora_parameter_count,
     select_target_modules,
@@ -77,8 +77,10 @@ from modelcypher.core.domain.training.pipeline_gate import (
     evaluate_pipeline_gate,
 )
 from modelcypher.core.domain.training.mass_step_size import (
+    CONTROLLER_MODE_BEHAVIORAL_CLOSED_LOOP,
     CONTROLLER_MODE_BEHAVIORAL_PROBE,
     CONTROLLER_MODE_STRUCTURAL_OBSERVE,
+    DerivedClosedLoopLaw,
     OPTIMIZER_MODE_ADAMW_MATCHED_TRACE,
     OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
     replay_controller_trace,
@@ -204,6 +206,7 @@ class DatasetTrainResult:
     optimizer_research_mode: str | None = None
     controller_trace: list[dict[str, Any]] | None = None
     offline_replay: dict[str, Any] | None = None
+    closed_loop_control_law: dict[str, Any] | None = None
     derived_plan: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -335,6 +338,8 @@ class DatasetTrainResult:
             result["controller_trace"] = self.controller_trace
         if self.offline_replay is not None:
             result["offline_replay"] = self.offline_replay
+        if self.closed_loop_control_law is not None:
+            result["closed_loop_control_law"] = self.closed_loop_control_law
         if self.derived_plan is not None:
             result["derived_plan"] = self.derived_plan
         if self.benchmark_baseline is not None and self.benchmark_post is not None:
@@ -408,6 +413,7 @@ class DerivedTrainingPlan:
     quantization_frontier_precheck: dict[str, Any] | None
     controller_mode: str
     optimizer_research_mode: str
+    controller_law: dict[str, Any] | None = None
 
     def _module_geometry_payload(self) -> dict[str, dict[str, Any]]:
         payload: dict[str, dict[str, Any]] = {}
@@ -422,6 +428,7 @@ class DerivedTrainingPlan:
                 "tail_dims": int(geom.tail_dims),
                 "shannon_effective_rank": float(geom.shannon_effective_rank),
                 "spectral_gap": float(geom.spectral_gap),
+                "recommended_rank": int(getattr(geom, "recommended_rank", 1)),
             }
         return payload
 
@@ -431,6 +438,7 @@ class DerivedTrainingPlan:
         return {
             int(layer_idx): {
                 "signal_rank": int(result.signal_rank),
+                "effective_rank": float(getattr(result, "effective_rank", 0.0)),
                 "noise_rank": int(result.noise_rank),
                 "mp_upper_edge": float(result.mp_upper_edge),
                 "signal_variance_fraction": float(result.signal_variance_fraction),
@@ -490,6 +498,7 @@ class DerivedTrainingPlan:
                 "stopping": GEOMETRIC_LORA_STOPPING,
                 "controller_mode": self.controller_mode,
                 "optimizer_research_mode": self.optimizer_research_mode,
+                "closed_loop_control_law": self.controller_law,
                 "learning_rate_policy": (
                     "No fixed scalar LR is derived upfront. MASS chooses "
                     "eta_step = min(eta_ceiling, eta_sps, eta_weyl) online."
@@ -685,6 +694,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         target_experts: list[str] | str | None = None,
         controller_mode: str = CONTROLLER_MODE_STRUCTURAL_OBSERVE,
         optimizer_research_mode: str = OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+        controller_law: DerivedClosedLoopLaw | dict[str, Any] | None = None,
     ) -> DerivedTrainingPlan:
         """Resolve the exact canonical training plan without mutating model state."""
         model_path = Path(model_path).expanduser().resolve()
@@ -709,6 +719,21 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         optimizer_research_mode = validate_optimizer_research_mode(
             optimizer_research_mode,
         )
+        resolved_controller_law: DerivedClosedLoopLaw | None = None
+        if controller_law is not None:
+            if isinstance(controller_law, DerivedClosedLoopLaw):
+                resolved_controller_law = controller_law
+            else:
+                resolved_controller_law = DerivedClosedLoopLaw.from_dict(
+                    dict(controller_law),
+                )
+        if (
+            controller_mode == CONTROLLER_MODE_BEHAVIORAL_CLOSED_LOOP
+            and resolved_controller_law is None
+        ):
+            raise ValueError(
+                "mass_behavioral_closed_loop requires an offline-derived controller_law.",
+            )
 
         if no_save:
             output_dir = None
@@ -880,23 +905,30 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             if not target_modules:
                 raise ValueError("No targetable layers found from geometric analysis")
 
-            coupled_ranks = compute_coupled_ranks(geometries, target_modules)
+            budgeted_ranks = compute_adaptation_budget_ranks(
+                geometries,
+                target_modules,
+            )
+            data_capped_ranks = apply_data_rank_ceiling(
+                budgeted_ranks,
+                n_samples=len(train_samples),
+            )
             signal_rank_results = compute_per_layer_signal_ranks(
                 base_activations,
                 self._backend,
             )
             if signal_rank_results:
                 final_ranks = apply_signal_rank_ceiling(
-                    coupled_ranks,
+                    data_capped_ranks,
                     signal_rank_results,
                 )
-                ceiling_label = "RMT signal-rank"
-            else:
-                final_ranks = apply_data_rank_ceiling(
-                    coupled_ranks,
-                    n_samples=len(train_samples),
+                ceiling_label = (
+                    "spectral-knee×slack + data-rank + activation erank + "
+                    "RMT signal-rank"
                 )
-                ceiling_label = "data-rank (fallback)"
+            else:
+                final_ranks = data_capped_ranks
+                ceiling_label = "spectral-knee×slack + data-rank"
 
             sigma_k_min = min(
                 geom.sigma_k
@@ -940,6 +972,11 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 quantization_frontier_precheck=quantization_frontier_precheck_result,
                 controller_mode=controller_mode,
                 optimizer_research_mode=optimizer_research_mode,
+                controller_law=(
+                    resolved_controller_law.to_dict()
+                    if resolved_controller_law is not None
+                    else None
+                ),
             )
         finally:
             del model, tokenizer
@@ -1064,6 +1101,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         # AdamW-decoupled weight decay (research variable, default 0.0)
         weight_decay: float = 0.0,
         plan: DerivedTrainingPlan | None = None,
+        controller_law: DerivedClosedLoopLaw | dict[str, Any] | None = None,
     ) -> DatasetTrainResult:
         """Train a geometric LoRA adapter from a JSONL dataset.
 
@@ -1089,6 +1127,14 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         optimizer_research_mode = validate_optimizer_research_mode(
             optimizer_research_mode,
         )
+        resolved_controller_law: DerivedClosedLoopLaw | None = None
+        if controller_law is not None:
+            if isinstance(controller_law, DerivedClosedLoopLaw):
+                resolved_controller_law = controller_law
+            else:
+                resolved_controller_law = DerivedClosedLoopLaw.from_dict(
+                    dict(controller_law),
+                )
 
         # Emit training started progress event
         rp = self._progress_reporter
@@ -1109,6 +1155,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 target_experts=target_experts,
                 controller_mode=controller_mode,
                 optimizer_research_mode=optimizer_research_mode,
+                controller_law=resolved_controller_law,
             )
         else:
             if plan.model_path != model_path or plan.dataset_path != dataset_path:
@@ -1126,6 +1173,14 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             if plan.optimizer_research_mode != optimizer_research_mode:
                 raise ValueError(
                     "Provided plan does not match optimizer_research_mode.",
+                )
+            if plan.controller_law is not None:
+                resolved_controller_law = DerivedClosedLoopLaw.from_dict(
+                    plan.controller_law,
+                )
+            elif controller_mode == CONTROLLER_MODE_BEHAVIORAL_CLOSED_LOOP:
+                raise ValueError(
+                    "Provided plan does not include a closed-loop controller law.",
                 )
             if no_save and plan.output_path is not None:
                 raise ValueError("Provided plan does not match no_save=True.")
@@ -1567,11 +1622,12 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 continue
             actual_rank = final_ranks.get(mod_name, geom.tail_dims)
             logger.info(
-                "Injected %s: rank=%d (tail_dims=%d), shannon_eff_rank=%.1f, "
-                "sigma_k=%.6f, capacity_util=%.3f",
+                "Injected %s: rank=%d (tail_dims=%d, knee=%d), "
+                "shannon_eff_rank=%.1f, sigma_k=%.6f, capacity_util=%.3f",
                 mod_name,
                 actual_rank,
                 geom.tail_dims,
+                int(getattr(geom, "recommended_rank", 1)),
                 geom.shannon_effective_rank,
                 geom.sigma_k,
                 geom.shannon_effective_rank / float(geom.full_rank),
@@ -1970,6 +2026,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             baseline_margins=baseline_margins,
             weight_decay=weight_decay,
             base_token_losses=base_token_losses,
+            behavioral_control_law=resolved_controller_law,
         )
         training_time_seconds = time.time() - train_start
 
@@ -2452,6 +2509,11 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             optimizer_research_mode=optimizer_research_mode,
             controller_trace=controller_trace_payload,
             offline_replay=offline_replay,
+            closed_loop_control_law=(
+                resolved_controller_law.to_dict()
+                if resolved_controller_law is not None
+                else None
+            ),
             derived_plan=plan.to_dict(),
         )
         if saved_path_obj is not None:

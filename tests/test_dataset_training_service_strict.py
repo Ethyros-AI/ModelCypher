@@ -244,7 +244,7 @@ def _patch_lightweight_training(monkeypatch: pytest.MonkeyPatch, service: Datase
     )
     monkeypatch.setattr(
         dataset_training_service_module,
-        "compute_coupled_ranks",
+        "compute_adaptation_budget_ranks",
         lambda _geometries, target_modules: {module: 1 for module in target_modules},
     )
     monkeypatch.setattr(
@@ -1513,15 +1513,18 @@ def test_verify_capability_preservation_without_delta_extractor_keeps_null_acces
 
 class _FakeSignalRankResult:
     """Minimal stand-in for SignalRankResult (avoids importing geometry module)."""
-    def __init__(self, signal_rank: int):
+    def __init__(self, signal_rank: int, effective_rank: float | None = None):
         self.signal_rank = signal_rank
         self.noise_rank = 0
         self.mp_upper_edge = 0.0
         self.signal_variance_fraction = 0.0
+        self.effective_rank = (
+            float(signal_rank) if effective_rank is None else float(effective_rank)
+        )
 
 
 def test_signal_rank_ceiling_reduces_ranks():
-    """Modules in a measured layer get capped to signal_rank."""
+    """Modules in a measured layer get capped to the activation budget."""
     from modelcypher.core.domain.training.geometric_lora import apply_signal_rank_ceiling
 
     ranks = {
@@ -1532,6 +1535,16 @@ def test_signal_rank_ceiling_reduces_ranks():
     result = apply_signal_rank_ceiling(ranks, signal)
     assert result["model.layers.0.self_attn.q_proj.weight"] == 25
     assert result["model.layers.0.self_attn.k_proj.weight"] == 25
+
+
+def test_signal_rank_ceiling_prefers_effective_rank_when_tighter():
+    """Activation effective rank is the tighter budget than raw signal rank."""
+    from modelcypher.core.domain.training.geometric_lora import apply_signal_rank_ceiling
+
+    ranks = {"model.layers.0.self_attn.q_proj.weight": 500}
+    signal = {0: _FakeSignalRankResult(signal_rank=25, effective_rank=7.9)}
+    result = apply_signal_rank_ceiling(ranks, signal)
+    assert result["model.layers.0.self_attn.q_proj.weight"] == 7
 
 
 def test_signal_rank_ceiling_floors_at_one():
@@ -1597,7 +1610,7 @@ def test_build_training_plan_exposes_resolved_surface(monkeypatch, tmp_path: Pat
     assert payload["data_plan"]["n_eval"] == 1
     assert payload["adaptation_surface"]["target_module_count"] == 1
     assert payload["adaptation_surface"]["rank_range"] == [1, 1]
-    assert payload["adaptation_surface"]["rank_ceiling_source"] == "data-rank (fallback)"
+    assert payload["adaptation_surface"]["rank_ceiling_source"] == "spectral-knee×slack + data-rank"
     assert payload["controller_plan"]["method"] == "geometric_lora"
     assert payload["controller_plan"]["init_method"] == "pissa"
     assert payload["controller_plan"]["optimizer"] == "fisher_mass"

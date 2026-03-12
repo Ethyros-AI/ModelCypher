@@ -108,6 +108,8 @@ class BehavioralStateMeasurement:
     cka_blindness_worst_layer: int | None = None
     null_accessibility: dict[str, dict[str, float | int]] | None = None
     null_observability: dict[str, dict[str, float | int]] | None = None
+    per_layer_stable_rank: dict[str, float] | None = None
+    adapter_rank: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -125,6 +127,8 @@ class BehavioralStateMeasurement:
             "cka_blindness_worst_layer": self.cka_blindness_worst_layer,
             "null_accessibility": self.null_accessibility,
             "null_observability": self.null_observability,
+            "per_layer_stable_rank": self.per_layer_stable_rank,
+            "adapter_rank": self.adapter_rank,
         }
 
 
@@ -169,6 +173,97 @@ class ControllerStepTrace:
             "optimizer_second_moment_norm": self.optimizer_second_moment_norm,
             "optimizer_preconditioner_scale": self.optimizer_preconditioner_scale,
             "per_layer_measurements": _serialize_mapping(self.per_layer_measurements),
+        }
+
+
+@dataclass(frozen=True)
+class DerivedClosedLoopLaw:
+    """Offline-derived layer-local intervention law for research-only control."""
+
+    schema: str = "r2_behavioral_freeze_v1"
+    law_id: str = "r2_closed_loop"
+    source_artifacts: tuple[str, ...] = ()
+    safe_artifacts: tuple[str, ...] = ()
+    counterexample_artifacts: tuple[str, ...] = ()
+    arm_on_online_eval_accuracy_drop: bool = True
+    arm_on_margin_trend_declining: bool = True
+    arm_on_stable_rank_concentration: bool = True
+    max_interventions: int = 1
+    target_ordering: tuple[str, ...] = (
+        "behavioral_transport_over_remaining_budget",
+        "spectral_budget_ratio",
+        "stable_rank_concentration",
+    )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema": self.schema,
+            "law_id": self.law_id,
+            "source_artifacts": list(self.source_artifacts),
+            "safe_artifacts": list(self.safe_artifacts),
+            "counterexample_artifacts": list(self.counterexample_artifacts),
+            "arm_on_online_eval_accuracy_drop": self.arm_on_online_eval_accuracy_drop,
+            "arm_on_margin_trend_declining": self.arm_on_margin_trend_declining,
+            "arm_on_stable_rank_concentration": self.arm_on_stable_rank_concentration,
+            "max_interventions": int(self.max_interventions),
+            "target_ordering": list(self.target_ordering),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "DerivedClosedLoopLaw":
+        return cls(
+            schema=str(payload.get("schema", "r2_behavioral_freeze_v1")),
+            law_id=str(payload.get("law_id", "r2_closed_loop")),
+            source_artifacts=tuple(str(item) for item in payload.get("source_artifacts", ()) or ()),
+            safe_artifacts=tuple(str(item) for item in payload.get("safe_artifacts", ()) or ()),
+            counterexample_artifacts=tuple(
+                str(item) for item in payload.get("counterexample_artifacts", ()) or ()
+            ),
+            arm_on_online_eval_accuracy_drop=bool(
+                payload.get("arm_on_online_eval_accuracy_drop", True),
+            ),
+            arm_on_margin_trend_declining=bool(
+                payload.get("arm_on_margin_trend_declining", True),
+            ),
+            arm_on_stable_rank_concentration=bool(
+                payload.get("arm_on_stable_rank_concentration", True),
+            ),
+            max_interventions=int(payload.get("max_interventions", 1)),
+            target_ordering=tuple(
+                str(item)
+                for item in payload.get(
+                    "target_ordering",
+                    (
+                        "behavioral_transport_over_remaining_budget",
+                        "spectral_budget_ratio",
+                        "stable_rank_concentration",
+                    ),
+                )
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class ClosedLoopControlDecision:
+    """Layer-local intervention emitted by an offline-derived control law."""
+
+    armed: bool
+    epoch: int
+    trigger_reasons: tuple[str, ...]
+    freeze_layers: tuple[str, ...]
+    target_layer: str | None
+    ordering_metrics: dict[str, dict[str, float | None]] | None = None
+    interventions_used: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "armed": self.armed,
+            "epoch": int(self.epoch),
+            "trigger_reasons": list(self.trigger_reasons),
+            "freeze_layers": list(self.freeze_layers),
+            "target_layer": self.target_layer,
+            "ordering_metrics": self.ordering_metrics,
+            "interventions_used": int(self.interventions_used),
         }
 
 
@@ -229,6 +324,185 @@ def controller_precision_floor(
     return scale_bound * math.sqrt(max(eps, 0.0))
 
 
+def _target_order_metrics(
+    *,
+    layer_key: str,
+    behavioral_state: BehavioralStateMeasurement,
+) -> dict[str, float | None]:
+    transport = (behavioral_state.per_layer_behavioral_transport_norm or {}).get(layer_key)
+    remaining = (behavioral_state.per_layer_remaining_budget or {}).get(layer_key)
+    budget_ratio = (behavioral_state.per_layer_spectral_budget_ratio or {}).get(layer_key)
+    stable_rank = (behavioral_state.per_layer_stable_rank or {}).get(layer_key)
+    transport_over_remaining: float | None = None
+    if transport is not None and remaining is not None and remaining > 0.0:
+        transport_over_remaining = float(transport) / float(remaining)
+    stable_rank_concentration: float | None = None
+    if (
+        stable_rank is not None
+        and behavioral_state.adapter_rank is not None
+        and behavioral_state.adapter_rank > 1
+        and stable_rank > 0.0
+    ):
+        stable_rank_concentration = math.sqrt(float(behavioral_state.adapter_rank)) / float(
+            stable_rank,
+        )
+    return {
+        "behavioral_transport_over_remaining_budget": transport_over_remaining,
+        "spectral_budget_ratio": float(budget_ratio) if budget_ratio is not None else None,
+        "stable_rank_concentration": stable_rank_concentration,
+        "stable_rank": float(stable_rank) if stable_rank is not None else None,
+    }
+
+
+def select_closed_loop_target_layer(
+    behavioral_state: BehavioralStateMeasurement | None,
+    *,
+    already_frozen_layers: Sequence[str] = (),
+) -> tuple[str | None, dict[str, dict[str, float | None]] | None]:
+    """Select the next layer to freeze using the pre-registered ordering."""
+    if behavioral_state is None:
+        return None, None
+
+    candidate_layers = set()
+    for mapping in (
+        behavioral_state.per_layer_behavioral_transport_norm,
+        behavioral_state.per_layer_remaining_budget,
+        behavioral_state.per_layer_spectral_budget_ratio,
+        behavioral_state.per_layer_stable_rank,
+    ):
+        if mapping:
+            candidate_layers.update(str(key) for key in mapping)
+    candidate_layers.difference_update(str(layer) for layer in already_frozen_layers)
+    if not candidate_layers:
+        return None, None
+
+    metrics_by_layer = {
+        layer_key: _target_order_metrics(
+            layer_key=layer_key,
+            behavioral_state=behavioral_state,
+        )
+        for layer_key in sorted(candidate_layers)
+    }
+
+    def _risk_tuple(layer_key: str) -> tuple[float, float, float, str]:
+        metrics = metrics_by_layer[layer_key]
+        transport_score = metrics["behavioral_transport_over_remaining_budget"]
+        spectral_score = metrics["spectral_budget_ratio"]
+        stable_rank_score = metrics["stable_rank_concentration"]
+        return (
+            float(transport_score) if transport_score is not None else float("-inf"),
+            float(spectral_score) if spectral_score is not None else float("-inf"),
+            float(stable_rank_score) if stable_rank_score is not None else float("-inf"),
+            layer_key,
+        )
+
+    target_layer = max(metrics_by_layer, key=_risk_tuple)
+    return target_layer, metrics_by_layer
+
+
+def evaluate_closed_loop_law(
+    law: DerivedClosedLoopLaw,
+    *,
+    epoch: int,
+    behavioral_state: BehavioralStateMeasurement | None,
+    margin_history: Sequence[float],
+    stable_rank_history: Sequence[float],
+    loss_stability_window_epochs: int,
+    adapter_rank: int | None,
+    interventions_used: int = 0,
+    already_frozen_layers: Sequence[str] = (),
+) -> ClosedLoopControlDecision:
+    """Evaluate the offline-derived law against current behavioral state."""
+    if interventions_used >= law.max_interventions:
+        return ClosedLoopControlDecision(
+            armed=False,
+            epoch=epoch,
+            trigger_reasons=(),
+            freeze_layers=(),
+            target_layer=None,
+            ordering_metrics=None,
+            interventions_used=interventions_used,
+        )
+
+    trigger_reasons: list[str] = []
+    if (
+        law.arm_on_online_eval_accuracy_drop
+        and behavioral_state is not None
+        and behavioral_state.online_eval_accuracy_delta is not None
+        and float(behavioral_state.online_eval_accuracy_delta) < 0.0
+    ):
+        trigger_reasons.append("online_eval_accuracy_drop")
+
+    if (
+        law.arm_on_margin_trend_declining
+        and loss_stability_window_epochs > 0
+        and len(margin_history) >= 2 * loss_stability_window_epochs
+    ):
+        from modelcypher.core.domain.training.geometric_early_stopping import (
+            check_margin_trend_declining,
+        )
+
+        margin_declining, _ = check_margin_trend_declining(
+            list(margin_history),
+            window=loss_stability_window_epochs,
+        )
+        if margin_declining:
+            trigger_reasons.append("margin_trend_declining")
+
+    if (
+        law.arm_on_stable_rank_concentration
+        and adapter_rank is not None
+        and adapter_rank > 1
+        and stable_rank_history
+    ):
+        from modelcypher.core.domain.training.geometric_early_stopping import (
+            check_stable_rank_concentration,
+        )
+
+        rank_concentrated, _ = check_stable_rank_concentration(
+            list(stable_rank_history),
+            adapter_rank,
+        )
+        if rank_concentrated:
+            trigger_reasons.append("stable_rank_concentration")
+
+    if not trigger_reasons:
+        return ClosedLoopControlDecision(
+            armed=False,
+            epoch=epoch,
+            trigger_reasons=(),
+            freeze_layers=(),
+            target_layer=None,
+            ordering_metrics=None,
+            interventions_used=interventions_used,
+        )
+
+    target_layer, ordering_metrics = select_closed_loop_target_layer(
+        behavioral_state,
+        already_frozen_layers=already_frozen_layers,
+    )
+    if target_layer is None:
+        return ClosedLoopControlDecision(
+            armed=False,
+            epoch=epoch,
+            trigger_reasons=tuple(trigger_reasons),
+            freeze_layers=(),
+            target_layer=None,
+            ordering_metrics=ordering_metrics,
+            interventions_used=interventions_used,
+        )
+
+    return ClosedLoopControlDecision(
+        armed=True,
+        epoch=epoch,
+        trigger_reasons=tuple(trigger_reasons),
+        freeze_layers=(target_layer,),
+        target_layer=target_layer,
+        ordering_metrics=ordering_metrics,
+        interventions_used=interventions_used + 1,
+    )
+
+
 def replay_controller_trace(
     epoch_metrics: Sequence[dict[str, Any]] | None,
     *,
@@ -245,6 +519,7 @@ def replay_controller_trace(
         return None
 
     decisions: list[dict[str, Any]] = []
+    closed_loop_decisions: list[dict[str, Any]] = []
     controller_mode: str | None = None
     optimizer_mode: str | None = None
     replay_floor_multiplier = math.sqrt(max(eps, 0.0))
@@ -256,6 +531,9 @@ def replay_controller_trace(
         controller_trace = epoch_metric.get("controller_trace")
         if not isinstance(controller_trace, dict):
             continue
+        closed_loop_decision = controller_trace.get("closed_loop_decision")
+        if isinstance(closed_loop_decision, dict):
+            closed_loop_decisions.append(dict(closed_loop_decision))
         for step_trace in controller_trace.get("step_traces", []) or []:
             if not isinstance(step_trace, dict):
                 continue
@@ -319,6 +597,7 @@ def replay_controller_trace(
         "precision_floor_multiplier": replay_floor_multiplier,
         "n_replayed_steps": len(decisions),
         "decisions": decisions,
+        "closed_loop_decisions": closed_loop_decisions or None,
     }
 
 
@@ -418,26 +697,45 @@ def compute_per_step_rates(
     eta_ceiling: float,
     remaining_budget: float | None = None,
     f_star: float = 0.0,
+    g_dot_d: float | None = None,
 ) -> tuple[float, float, float, float, float | None]:
     """Compute SPS, Weyl, optional conformal margin, and combined eta_step.
 
-    - SPS (Loizou et al. 2020): eta_sps = max(0, f(x) - f*) / ||g||^2
-    - Weyl displacement bound: eta_weyl = sigma_k_min / ||g||
-    - Conformal margin (Sahraee-Ardakan et al. 2026): eta_margin = remaining / ||g||
+    - SPS (Loizou et al. 2020): eta_sps = max(0, f(x) - f*) / (g · d)
+      For preconditioned descent (d = P*g), the first-order loss decrease from
+      step -η*d is η * g^T d.  Setting this equal to (loss - f*) gives the
+      correct Polyak step: η = (loss - f*) / (g^T d).
+      When d = g (no preconditioner), g^T d = ||g||^2 and the formula reduces
+      to the standard SPS.
+    - Weyl displacement bound: eta_weyl = sigma_k_min / ||d||
+    - Conformal margin (Sahraee-Ardakan et al. 2026): eta_margin = remaining / ||d||
     - Combined: eta_step = min(eta_sps, eta_weyl, [eta_margin,] eta_ceiling)
 
     Args:
+        loss: Current loss value f(x_t).
+        d_norm: L2 norm of the update direction ||d||.
+        sigma_k_min: Minimum significant singular value across adapted layers.
+        eta_ceiling: Static spectral ceiling (Weyl + √N correction).
+        remaining_budget: Optional remaining spectral budget for conformal margin.
         f_star: Irreducible loss floor. For MSE distillation, derived from RMT:
             f_star = initial_loss × (1 - mean_sv_frac), where sv_frac is the
             mean signal_variance_fraction from RMT analysis of E_q. The MP
             noise floor bounds the loss achievable by any low-rank corrector.
             Default 0.0 preserves original SPS behavior.
+        g_dot_d: Dot product of raw gradient and update direction (g^T d).
+            Required for correct SPS when d ≠ g (e.g., Fisher/Adam preconditioning).
+            The diagonal Fisher preconditioner normalizes each component to ~unit
+            scale, inflating ||d|| ≈ √n_params while g^T d ≈ ||g||₁.  Using
+            ||d||² instead of g^T d underestimates the step by ||d||/||g|| ≈ 120×
+            on a 2M-parameter adapter.
+            When None, falls back to ||d||² (correct only when d = g).
 
     Returns (eta_step, eta_sps, eta_weyl, displacement, eta_margin).
     eta_margin is None when remaining_budget is None.
     """
     if d_norm > 0:
-        eta_sps = max(0.0, loss - f_star) / (d_norm ** 2)
+        sps_denom = g_dot_d if (g_dot_d is not None and g_dot_d > 0) else d_norm ** 2
+        eta_sps = max(0.0, loss - f_star) / sps_denom
         eta_weyl = sigma_k_min / d_norm
     else:
         eta_sps = eta_ceiling

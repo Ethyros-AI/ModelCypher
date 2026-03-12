@@ -14,6 +14,7 @@ import pytest
 from modelcypher.core.domain.training.geometric_lora import (
     LayerGeometry,
     apply_data_rank_ceiling,
+    compute_adaptation_budget_ranks,
     compute_coupled_ranks,
     compute_geometric_dropout,
     compute_geometric_rank,
@@ -40,6 +41,7 @@ def _geometry(
     sigma_k: float = 0.5,
     spectral_gap: float = 0.1,
     shape: tuple[int, int] = (4, 4),
+    recommended_rank: int = 1,
 ) -> LayerGeometry:
     """Build a LayerGeometry with sensible defaults for unit tests."""
     return LayerGeometry(
@@ -53,6 +55,7 @@ def _geometry(
         tail_dims=tail_dims,
         shannon_effective_rank=shannon_eff_rank,
         spectral_gap=spectral_gap,
+        recommended_rank=recommended_rank,
     )
 
 
@@ -396,7 +399,57 @@ class TestCoupledRanks:
 
 
 # ===========================================================================
-# 4. Data Ceiling + Parameter Count Helpers
+# 4. compute_adaptation_budget_ranks — Canonical PiSSA Budget
+# ===========================================================================
+
+
+class TestAdaptationBudgetRanks:
+    def test_budget_scales_knee_by_structural_slack(self):
+        geoms = {
+            "model.layers.0.self_attn.q_proj.weight": _geometry(
+                "model.layers.0.self_attn.q_proj.weight",
+                tail_dims=256,
+                full_rank=1024,
+                recommended_rank=128,
+                shape=(1024, 1024),
+            ),
+            "model.layers.0.self_attn.k_proj.weight": _geometry(
+                "model.layers.0.self_attn.k_proj.weight",
+                tail_dims=128,
+                full_rank=512,
+                recommended_rank=64,
+                shape=(512, 1024),
+            ),
+        }
+
+        ranks = compute_adaptation_budget_ranks(geoms, list(geoms.keys()))
+
+        # q budget: floor(128 * 256 / 1024) = 32, then coupled to k budget
+        # k budget: floor(64 * 128 / 512) = 16
+        assert ranks["model.layers.0.self_attn.q_proj.weight"] == 16
+        assert ranks["model.layers.0.self_attn.k_proj.weight"] == 16
+
+    def test_budget_floors_targetable_layer_at_one(self):
+        geoms = {
+            "model.layers.0.self_attn.v_proj.weight": _geometry(
+                "model.layers.0.self_attn.v_proj.weight",
+                tail_dims=1,
+                full_rank=1024,
+                recommended_rank=8,
+                shape=(512, 1024),
+            ),
+        }
+
+        ranks = compute_adaptation_budget_ranks(geoms, list(geoms.keys()))
+        assert ranks["model.layers.0.self_attn.v_proj.weight"] == 1
+
+    def test_budget_empty_raises(self):
+        with pytest.raises(ValueError, match="No target modules provided"):
+            compute_adaptation_budget_ranks({}, [])
+
+
+# ===========================================================================
+# 5. Data Ceiling + Parameter Count Helpers
 # ===========================================================================
 
 

@@ -124,6 +124,7 @@ def evaluate_skill_mastery(
 
     engine = get_inference_engine()
     n_correct = 0
+    n_errors = 0
 
     for item in problems:
         text = item["text"]
@@ -181,9 +182,27 @@ def evaluate_skill_mastery(
                 if expected and expected.lower() in predicted.lower():
                     n_correct += 1
         except Exception:
+            n_errors += 1
             logger.debug(
                 "Inference failed for a problem in skill '%s'", skill.name, exc_info=True
             )
+            # Fail fast on systematic errors. If the first 3 samples all fail,
+            # or error rate exceeds 50%, this is infrastructure breakage (e.g.,
+            # adapter won't load), not model incorrectness. A sporadic single
+            # failure (OOM on one long prompt) is tolerable.
+            n_attempted = problems.index(item) + 1
+            if n_errors >= 3 and n_errors == n_attempted:
+                raise RuntimeError(
+                    f"First {n_errors} inference attempts all failed for skill "
+                    f"'{skill.name}'. This indicates infrastructure failure "
+                    f"(adapter loading, model path), not model incorrectness."
+                ) from None
+            if n_errors > n_total // 2:
+                raise RuntimeError(
+                    f"Inference failed for {n_errors}/{n_attempted} samples in "
+                    f"skill '{skill.name}'. Error rate too high — infrastructure "
+                    f"failure, not model incorrectness."
+                ) from None
 
     accuracy = n_correct / n_total if n_total > 0 else 0.0
     ci_lower, ci_upper = clopper_pearson_interval(

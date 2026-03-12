@@ -33,6 +33,7 @@ References:
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -647,6 +648,10 @@ class SignalRankResult:
     noise_rank: int
     mp_upper_edge: float
     signal_variance_fraction: float
+    # Shannon effective rank of the activation covariance spectrum.
+    # This is the concentration-aware budget; signal_rank remains the
+    # distinguishability ceiling from MP noise separation.
+    effective_rank: float = 0.0
 
 
 def compute_signal_rank_from_singular_values(
@@ -750,12 +755,30 @@ def compute_signal_rank_from_singular_values(
     else:
         signal_variance_fraction = 0.0
 
+    if total_var_val > eps:
+        eig_list = b.tolist(eigenvalues)
+        if isinstance(eig_list, (int, float)):
+            eig_values = [float(eig_list)]
+        else:
+            eig_values = [float(v) for v in eig_list]
+        entropy = 0.0
+        for eig in eig_values:
+            if eig <= 0.0:
+                continue
+            prob = eig / total_var_val
+            entropy -= prob * math.log(prob)
+        effective_rank = math.exp(entropy) if entropy > 0.0 else float(bool(eig_values))
+    else:
+        effective_rank = 0.0
+
     logger.debug(
-        "RMT (from SVD): signal_rank=%d, noise_rank=%d, MP_edge=%.6f, signal_var=%.1f%%",
+        "RMT (from SVD): signal_rank=%d, noise_rank=%d, MP_edge=%.6f, "
+        "signal_var=%.1f%%, erank=%.2f",
         signal_rank,
         noise_rank,
         upper_edge,
         100.0 * signal_variance_fraction,
+        effective_rank,
     )
 
     return SignalRankResult(
@@ -763,6 +786,7 @@ def compute_signal_rank_from_singular_values(
         noise_rank=noise_rank,
         mp_upper_edge=upper_edge,
         signal_variance_fraction=signal_variance_fraction,
+        effective_rank=effective_rank,
     )
 
 

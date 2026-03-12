@@ -44,14 +44,17 @@ from modelcypher.core.domain.training.spectral_budget import (  # noqa: F401
 )
 from modelcypher.core.domain.training.mass_step_size import (
     _SQRT_EPS_F32,
+    ClosedLoopControlDecision,
     CONTROLLER_MODE_BEHAVIORAL_CLOSED_LOOP,
     CONTROLLER_MODE_BEHAVIORAL_PROBE,
     CONTROLLER_MODE_STRUCTURAL_OBSERVE,
+    DerivedClosedLoopLaw,
     OPTIMIZER_MODE_ADAMW_MATCHED_TRACE,
     OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
     BehavioralStateMeasurement,
     ControllerLayerMeasurement,
     ControllerStepTrace,
+    evaluate_closed_loop_law,
     validate_controller_mode,
     validate_optimizer_research_mode,
 )
@@ -143,6 +146,8 @@ class _MLXTrainingAdapterTrainMixin:
         weight_decay: float = 0.0,
         # P4: Pre-computed base-model per-token CE for token-weighted val loss.
         base_token_losses: list | None = None,
+        # R2: Offline-derived closed-loop intervention law.
+        behavioral_control_law: DerivedClosedLoopLaw | None = None,
     ) -> tuple[list[tuple[int, float, float]], str, list[EpochMetrics]]:
         """Train with geometric stopping and MASS step sizing.
 
@@ -184,10 +189,12 @@ class _MLXTrainingAdapterTrainMixin:
         optimizer_research_mode = validate_optimizer_research_mode(
             optimizer_research_mode,
         )
-        if controller_mode == CONTROLLER_MODE_BEHAVIORAL_CLOSED_LOOP:
+        if (
+            controller_mode == CONTROLLER_MODE_BEHAVIORAL_CLOSED_LOOP
+            and behavioral_control_law is None
+        ):
             raise ValueError(
-                "mass_behavioral_closed_loop is reserved until an offline-derived "
-                "control law has been validated."
+                "mass_behavioral_closed_loop requires an offline-derived control law."
             )
 
         import mlx.optimizers as opt
@@ -485,6 +492,33 @@ class _MLXTrainingAdapterTrainMixin:
                         step_learning_rate=current.step_learning_rate,
                     )
             return per_layer
+
+        def _freeze_param_names_for_layer(layer_key: str) -> tuple[str, ...]:
+            prefix = layer_key.removesuffix(".weight")
+            if use_pissa_lora:
+                return (prefix + ".lora_a", prefix + ".lora_b")
+            return (prefix + ".A_tilde", prefix + ".B_tilde", prefix + ".S_raw")
+
+        def _mask_frozen_gradients(
+            grad_tree: Any,
+            *,
+            frozen_layers: set[str],
+        ) -> tuple[Any, dict[str, Any], tuple[str, ...]]:
+            grad_flat_local = dict(mlx_flatten(grad_tree))
+            if not frozen_layers:
+                return grad_tree, grad_flat_local, ()
+            masked_param_names: list[str] = []
+            for layer_key in sorted(frozen_layers):
+                for param_name in _freeze_param_names_for_layer(layer_key):
+                    grad_value = grad_flat_local.get(param_name)
+                    if grad_value is None:
+                        continue
+                    grad_flat_local[param_name] = mx.zeros_like(grad_value)
+                    masked_param_names.append(param_name)
+            if not masked_param_names:
+                return grad_tree, grad_flat_local, ()
+            masked_tree = mlx_unflatten(list(grad_flat_local.items()))
+            return masked_tree, grad_flat_local, tuple(sorted(masked_param_names))
 
         def _summarize_fisher_state() -> tuple[float | None, float | None, float | None]:
             """Return (second_moment_norm, preconditioner_scale, first_moment_norm)."""
@@ -972,14 +1006,23 @@ class _MLXTrainingAdapterTrainMixin:
             mass_metrics: dict[str, float] = {}
             d_flat = [p.reshape(-1) for p in update_direction.values() if p.size > 0]
             d_norm_sq = sum(mx.sum(p * p) for p in d_flat)
-            mx.eval(d_norm_sq, loss)
+            # g·d: raw gradient dot preconditioned direction for correct SPS.
+            # For d=P*g, first-order loss decrease is η*g^Td (not η*||d||²).
+            g_dot_d_arr = sum(
+                mx.sum(grad_flat[k] * update_direction[k])
+                for k in update_direction
+                if k in grad_flat
+            )
+            mx.eval(d_norm_sq, g_dot_d_arr, loss)
             d_norm_val = float(mx.sqrt(d_norm_sq).item())
+            g_dot_d_float = float(g_dot_d_arr.item()) if hasattr(g_dot_d_arr, 'item') else float(g_dot_d_arr)
             loss_float = float(loss)
 
             eta_step, eta_sps_val, eta_weyl_val, displacement_val, eta_margin_val = (
                 compute_per_step_rates(
                     loss_float, d_norm_val, sigma_k_min, eta_ceiling,
                     remaining_budget=remaining_budget,
+                    g_dot_d=g_dot_d_float,
                 )
             )
 
@@ -988,6 +1031,7 @@ class _MLXTrainingAdapterTrainMixin:
             mass_metrics["eta_weyl"] = eta_weyl_val
             mass_metrics["displacement"] = displacement_val
             mass_metrics["d_norm"] = d_norm_val
+            mass_metrics["g_dot_d"] = g_dot_d_float
             if eta_margin_val is not None:
                 mass_metrics["eta_margin"] = eta_margin_val
 
