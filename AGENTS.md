@@ -45,6 +45,21 @@ For repository accounting, treat `mc train run` as the only clearly shipped
 canonical surface today. Merge, continual learning, stacking, and sovereignty
 remain experimental, partial, or downstream until their certificates close.
 
+### Canonical Training Identity
+
+For doctrine, metadata, docs, and user-facing output, the shipped training
+method is **geometry-derived LoRA**.
+
+- canonical method id: `geometric_lora`
+- current shipped runtime components:
+  `init_method=pissa`, `optimizer=fisher_mass`, `controller=mass`,
+  `stopping=geometric_certificate`
+- target selection, rank derivation, MASS step sizing, and geometric stopping
+  define the method
+- names such as NB-LoRA, Cayley, and PiSSA should only be used when referring
+  to the specific retained parameterization, helper, file, experiment arm, or
+  historical result family they actually describe
+
 ### Quantization Is The Endgame
 
 `bf16/fp16` is the derivation phase. Quantized models are the deployment target.

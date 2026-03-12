@@ -101,21 +101,48 @@ def _prepare_training_data(skill) -> Path:
     return tmp
 
 
+def _merge_eval_files(skill) -> Path:
+    """Merge all eval files for a skill into a single temp JSONL.
+
+    Skills with multiple eval shards (e.g., word_problem_multi) need all
+    shards concatenated for complete mastery evaluation.
+    """
+    if len(skill.eval_files) == 1:
+        return _resolve_data_path(skill.eval_files[0])
+
+    all_lines = []
+    for rel_path in skill.eval_files:
+        p = _resolve_data_path(rel_path)
+        with open(p) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    all_lines.append(line)
+
+    tmp = Path(tempfile.mktemp(suffix=f"_{skill.name}_eval_merged.jsonl"))
+    with open(tmp, "w") as f:
+        for line in all_lines:
+            f.write(line + "\n")
+
+    print(f"  Merged {len(skill.eval_files)} eval files ({len(all_lines)} samples) -> {tmp}")
+    return tmp
+
+
 def _run_mastery_eval(model_path: str, skill, adapter_path: str | None = None):
     """Run mastery evaluation on a skill's held-out eval set.
 
-    Returns (n_correct, n_total, accuracy, regime, sample_outputs).
+    Returns MasteryRecord with accuracy, CI, and regime.
     """
     from modelcypher.adapters.curriculum_eval_adapter import evaluate_skill_mastery
 
-    eval_path = _resolve_data_path(skill.eval_files[0])
+    eval_path = _merge_eval_files(skill)
     print(f"  Eval file: {eval_path}")
 
-    effective_model = adapter_path if adapter_path else model_path
     record = evaluate_skill_mastery(
-        model_path=effective_model,
+        model_path=model_path,
         skill=skill,
         eval_jsonl_path=eval_path,
+        adapter_path=adapter_path,
     )
 
     return record
@@ -123,9 +150,16 @@ def _run_mastery_eval(model_path: str, skill, adapter_path: str | None = None):
 
 def _run_sample_inference(model_path: str, skill, n_samples: int = 5, adapter_path: str | None = None):
     """Run inference on a few eval samples and print actual outputs for diagnosis."""
-    eval_path = _resolve_data_path(skill.eval_files[0])
-    with open(eval_path) as f:
-        items = [json.loads(line.strip()) for line in f if line.strip()][:n_samples]
+    # Draw samples from all eval files
+    all_items = []
+    for rel_path in skill.eval_files:
+        p = _resolve_data_path(rel_path)
+        with open(p) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    all_items.append(json.loads(line))
+    items = all_items[:n_samples]
 
     from modelcypher.adapters.inference_engine import get_inference_engine
     from modelcypher.core.domain._backend import get_default_backend
@@ -138,20 +172,26 @@ def _run_sample_inference(model_path: str, skill, n_samples: int = 5, adapter_pa
         set_default_backend(get_backend(detect_default_backend_type()))
 
     engine = get_inference_engine()
-    effective_model = adapter_path if adapter_path else model_path
 
     print(f"\n  === Sample Outputs ({n_samples} examples) ===")
     for i, item in enumerate(items):
         text = item["text"]
-        parts = text.rsplit("Answer:", 1)
-        if len(parts) == 2:
+        answer_start = item.get("answer_start")
+
+        # Match the prompt/expected extraction logic in evaluate_skill_mastery
+        if answer_start is not None:
+            prompt = text[:answer_start]
+            expected = text[answer_start:].strip()
+        elif "Answer:" in text:
+            parts = text.rsplit("Answer:", 1)
             prompt = parts[0] + "Answer:"
             expected = parts[1].strip()
         else:
-            prompt = text
-            expected = "(unknown)"
+            tokens = text.split()
+            prompt = " ".join(tokens[:-1])
+            expected = tokens[-1].strip()
 
-        result = engine.run(model=effective_model, prompt=prompt, max_tokens=256)
+        result = engine.run(model=model_path, prompt=prompt, adapter=adapter_path, max_tokens=256)
         predicted = result.response.strip()
 
         print(f"\n  [{i+1}] Prompt: {prompt[:100]}...")
@@ -206,7 +246,7 @@ def main() -> None:
     adapter_path = args.output_dir / f"{skill.name}_adapter"
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    eval_data_path = _resolve_data_path(skill.eval_files[0])
+    eval_data_path = _merge_eval_files(skill)
 
     cmd = [
         "poetry", "run", "mc", "train", "run",
@@ -238,16 +278,21 @@ def main() -> None:
         print(f"  Full output saved to: {error_path}")
         return
 
-    # Parse training result
+    # Parse training result — mc train run --json emits an AgentEnvelope
+    # with the training dict under envelope["result"].
+    envelope = None
     training_result = None
     try:
-        training_result = json.loads(result.stdout)
+        envelope = json.loads(result.stdout)
     except json.JSONDecodeError:
         print("  WARNING: Could not parse training JSON output")
         print(f"  stdout: {result.stdout[:2000]}")
 
-    if training_result:
-        print(f"  Training completed:")
+    if envelope is not None:
+        # Extract the training result from the AgentEnvelope
+        training_result = envelope.get("result", envelope)
+
+        print(f"  Training completed (status: {envelope.get('status', '?')}):")
         print(f"    Iterations: {training_result.get('train_iters', '?')}")
         print(f"    Baseline loss: {training_result.get('baseline_loss', '?')}")
         print(f"    Final loss: {training_result.get('final_loss', '?')}")
@@ -257,14 +302,24 @@ def main() -> None:
         print(f"    Pipeline gate: {training_result.get('pipeline_gate_passed', '?')}")
         print(f"    Adapter: {training_result.get('adapter_path', '?')}")
 
-        # Save training result
+        # Print diagnostics if available
+        diagnostics = envelope.get("diagnostics", {})
+        if diagnostics.get("summary"):
+            print(f"    Diagnostics: {diagnostics['summary']}")
+
+        # Save full envelope for reproducibility
         result_path = args.output_dir / f"{skill.name}_training_result.json"
         with open(result_path, "w") as f:
-            json.dump(training_result, f, indent=2)
+            json.dump(envelope, f, indent=2)
 
     # Step 4: Post-training eval
     print("\n--- Step 4: Post-Training Evaluation ---")
-    resolved_adapter = training_result.get("adapter_path", str(adapter_path)) if training_result else str(adapter_path)
+    # Adapter path: check training result first, then envelope metadata, then default
+    resolved_adapter = str(adapter_path)
+    if training_result and training_result.get("adapter_path"):
+        resolved_adapter = training_result["adapter_path"]
+    elif envelope and envelope.get("metadata", {}).get("adapter_path"):
+        resolved_adapter = envelope["metadata"]["adapter_path"]
 
     if not Path(resolved_adapter).exists():
         print(f"  ERROR: Adapter not found at {resolved_adapter}")

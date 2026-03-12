@@ -43,6 +43,7 @@ from modelcypher.core.domain.training.spectral_budget import (  # noqa: F401
     is_budget_exhausted,
 )
 from modelcypher.core.domain.training.mass_step_size import (
+    _SQRT_EPS_F32,
     CONTROLLER_MODE_BEHAVIORAL_CLOSED_LOOP,
     CONTROLLER_MODE_BEHAVIORAL_PROBE,
     CONTROLLER_MODE_STRUCTURAL_OBSERVE,
@@ -590,8 +591,11 @@ class _MLXTrainingAdapterTrainMixin:
                         A, B = lora_module._cayley_transform()
                         S = mx.clip(lora_module.S_raw, 0.0, lora_module._scale_bound)
                         delta_w_t = 2.0 * mx.matmul((S[:, None] * A).T, B)
-                    transport = mx.matmul(layer_stack.astype(mx.float32), delta_w_t.astype(mx.float32))
-                    transport_norm = mx.norm(transport)
+                    transport = mx.matmul(
+                        layer_stack.astype(mx.float32),
+                        delta_w_t.astype(mx.float32),
+                    )
+                    transport_norm = mx.sqrt(mx.sum(transport * transport))
                     mx.eval(transport_norm)
                     per_layer_transport[layer_key] = float(transport_norm.item())
 

@@ -1675,3 +1675,95 @@ def test_train_from_dataset_persists_training_plan_and_matches_plan(
     assert saved_plan == plan_payload
     result_payload = result.to_dict()
     assert result_payload["derived_plan"] == plan_payload
+
+
+def test_train_from_dataset_persists_benchmark_and_result_artifacts(
+    monkeypatch,
+    tmp_path: Path,
+):
+    from modelcypher.core.use_cases.benchmark_service import (
+        EvalBenchmarkResult,
+        SuiteResult,
+    )
+
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    adapter_dir = tmp_path / "adapter"
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(train_path, [{"text": "train sample one"}, {"text": "train sample two"}])
+    _write_jsonl(eval_path, [{"text": "eval sample"}])
+
+    service = DatasetTrainingService(adapter=_FlowAdapter(), backend=_FlowBackend())
+    _patch_lightweight_training(monkeypatch, service)
+
+    benchmark_runs: list[str] = []
+    benchmark_writes: list[str] = []
+
+    class _FakeBenchmarkService:
+        def run_suite(self, *args, **kwargs):
+            del args
+            benchmark_runs.append(str(kwargs["suite_name"]))
+            accuracy = 0.5 if len(benchmark_runs) == 1 else 0.1
+            return SuiteResult(
+                suite=str(kwargs["suite_name"]),
+                benchmarks=[
+                    EvalBenchmarkResult(
+                        benchmark="gsm8k",
+                        accuracy=accuracy,
+                        correct=int(accuracy * 10),
+                        total=10,
+                    ),
+                ],
+                overall_accuracy=accuracy,
+            )
+
+        def save_results(self, result: SuiteResult, output_path: Path) -> None:
+            benchmark_writes.append(str(output_path))
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(
+                json.dumps(result.to_dict(), indent=2),
+                encoding="utf-8",
+            )
+
+    monkeypatch.setattr(
+        "modelcypher.core.use_cases.benchmark_service.BenchmarkService",
+        _FakeBenchmarkService,
+    )
+
+    result = service.train_from_dataset(
+        model_path=model_dir,
+        dataset_path=train_path,
+        output_path=adapter_dir,
+        eval_dataset_path=eval_path,
+        seed=55,
+        benchmark_suite="quick",
+        max_iters_cap=1,
+    )
+
+    train_result_path = adapter_dir / "train_result.json"
+    baseline_path = adapter_dir / "benchmark_quick_baseline.json"
+    post_path = adapter_dir / "benchmark_quick_post.json"
+
+    assert benchmark_runs == ["quick", "quick"]
+    assert train_result_path.exists()
+    assert baseline_path.exists()
+    assert post_path.exists()
+    assert str(baseline_path) in benchmark_writes
+    assert str(post_path) in benchmark_writes
+
+    saved_result = json.loads(train_result_path.read_text(encoding="utf-8"))
+    assert saved_result["benchmark_baseline"]["gsm8k"] == pytest.approx(0.5)
+    assert saved_result["benchmark_post"]["gsm8k"] == pytest.approx(0.1)
+    assert saved_result["benchmark_delta"]["gsm8k"] == pytest.approx(-0.4)
+    assert saved_result["adapter_path"] == str(adapter_dir)
+    assert saved_result["method"] == "geometric_lora"
+    assert result.benchmark_baseline == {"gsm8k": 0.5, "overall": 0.5}
+    assert result.benchmark_post == {"gsm8k": 0.1, "overall": 0.1}
+
+    saved_baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+    saved_post = json.loads(post_path.read_text(encoding="utf-8"))
+    assert saved_baseline["suite"] == "quick"
+    assert saved_post["suite"] == "quick"
+    assert saved_baseline["benchmarks"][0]["benchmark"] == "gsm8k"
+    assert saved_post["benchmarks"][0]["accuracy"] == pytest.approx(0.1)

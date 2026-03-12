@@ -371,6 +371,27 @@ def train_validate_derived(
         "--seq-length",
         help="Optional explicit sequence length (otherwise auto-derived from data)",
     ),
+    benchmark: str = typer.Option(
+        None,
+        "--benchmark",
+        help="Optional benchmark suite (quick, reasoning, factual, comprehensive)",
+    ),
+    controller_mode: str = typer.Option(
+        "mass_structural_observe",
+        "--controller-mode",
+        help=(
+            "Research controller mode "
+            "(mass_structural_observe, mass_behavioral_probe, mass_behavioral_closed_loop)"
+        ),
+    ),
+    optimizer_research_mode: str = typer.Option(
+        "cayley_stiefel_mass",
+        "--optimizer-research-mode",
+        help=(
+            "Research optimizer mode "
+            "(cayley_stiefel_mass, adamw_matched_trace)"
+        ),
+    ),
     report_path: str = typer.Option(
         None,
         "--report-path",
@@ -421,6 +442,9 @@ def train_validate_derived(
         trials=trials,
         base_seed=base_seed,
         seq_length=seq_length,
+        benchmark_suite=benchmark,
+        controller_mode=controller_mode,
+        optimizer_research_mode=optimizer_research_mode,
     )
     payload = result.to_dict()
 

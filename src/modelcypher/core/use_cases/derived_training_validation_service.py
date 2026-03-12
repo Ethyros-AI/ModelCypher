@@ -36,6 +36,12 @@ logger = logging.getLogger(__name__)
 
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.star.problem_generator import StarProblem, StarProblemGenerator
+from modelcypher.core.domain.training.mass_step_size import (
+    CONTROLLER_MODE_STRUCTURAL_OBSERVE,
+    OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+    validate_controller_mode,
+    validate_optimizer_research_mode,
+)
 from modelcypher.core.domain.training.pipeline_gate import (
     PipelineGateInput,
     evaluate_pipeline_gate,
@@ -85,6 +91,9 @@ class DerivedTrainingTrial:
 
     trial_index: int
     seed: int
+    controller_mode: str
+    optimizer_research_mode: str
+    benchmark_suite: str | None
     baseline_loss: float
     post_loss: float
     loss_delta: float
@@ -115,6 +124,10 @@ class DerivedTrainingTrial:
     epoch_geometry_trace: list[dict[str, Any]] | None
     adapter_saturation_median_ratio: float | None
     max_effective_gain_ratio: float | None
+    eta_ceiling: float | None
+    eta_sps: float | None
+    eta_weyl: float | None
+    eta_step: float | None
     online_eval_baseline_correct: int | None
     online_eval_baseline_total: int | None
     online_eval_adapted_correct: int | None
@@ -167,6 +180,7 @@ class DerivedTrainingTrial:
     dim_final_used_fraction: float | None
     dim_final_null_fraction: float | None
     dim_null_recruitment_from_baseline: float | None
+    benchmark_overall_delta: float | None
     benchmark_baseline: dict[str, float] | None
     benchmark_post: dict[str, float] | None
     structural_passed: bool
@@ -179,6 +193,9 @@ class DerivedTrainingTrial:
         return {
             "trial_index": self.trial_index,
             "seed": self.seed,
+            "controller_mode": self.controller_mode,
+            "optimizer_research_mode": self.optimizer_research_mode,
+            "benchmark_suite": self.benchmark_suite,
             "baseline_loss": self.baseline_loss,
             "post_loss": self.post_loss,
             "loss_delta": self.loss_delta,
@@ -217,6 +234,10 @@ class DerivedTrainingTrial:
             "epoch_geometry_trace": self.epoch_geometry_trace,
             "adapter_saturation_median_ratio": self.adapter_saturation_median_ratio,
             "max_effective_gain_ratio": self.max_effective_gain_ratio,
+            "eta_ceiling": self.eta_ceiling,
+            "eta_sps": self.eta_sps,
+            "eta_weyl": self.eta_weyl,
+            "eta_step": self.eta_step,
             "online_eval_baseline_correct": self.online_eval_baseline_correct,
             "online_eval_baseline_total": self.online_eval_baseline_total,
             "online_eval_adapted_correct": self.online_eval_adapted_correct,
@@ -265,6 +286,7 @@ class DerivedTrainingTrial:
             "dim_null_recruitment_from_baseline": (
                 self.dim_null_recruitment_from_baseline
             ),
+            "benchmark_overall_delta": self.benchmark_overall_delta,
             "benchmark_baseline": self.benchmark_baseline,
             "benchmark_post": self.benchmark_post,
             **(
@@ -294,6 +316,9 @@ class DerivedTrainingValidationResult:
     model_path: str
     dataset_path: str
     eval_dataset_path: str | None
+    controller_mode: str
+    optimizer_research_mode: str
+    benchmark_suite: str | None
     trials_requested: int
     phase5_inference_enabled: bool
     phase5_probe_count: int | None
@@ -319,6 +344,9 @@ class DerivedTrainingValidationResult:
             "model_path": self.model_path,
             "dataset_path": self.dataset_path,
             "eval_dataset_path": self.eval_dataset_path,
+            "controller_mode": self.controller_mode,
+            "optimizer_research_mode": self.optimizer_research_mode,
+            "benchmark_suite": self.benchmark_suite,
             "trials_requested": self.trials_requested,
             "phase5_inference_enabled": self.phase5_inference_enabled,
             "phase5_probe_count": self.phase5_probe_count,
@@ -356,6 +384,9 @@ class DerivedTrainingValidationService:
         trials: int,
         base_seed: int | None = None,
         seq_length: int | None = None,
+        benchmark_suite: str | None = None,
+        controller_mode: str = CONTROLLER_MODE_STRUCTURAL_OBSERVE,
+        optimizer_research_mode: str = OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
         enable_phase5_inference: bool = False,
         phase5_probe_count: int | None = None,
         phase5_probe_seed: int | None = None,
@@ -364,6 +395,10 @@ class DerivedTrainingValidationService:
         if trials <= 0:
             raise ValueError("trials must be positive")
 
+        controller_mode = validate_controller_mode(controller_mode)
+        optimizer_research_mode = validate_optimizer_research_mode(
+            optimizer_research_mode,
+        )
         resolved_model_path = Path(model_path).expanduser().resolve()
         resolved_dataset_path = Path(dataset_path).expanduser().resolve()
         resolved_eval_path = (
@@ -424,9 +459,14 @@ class DerivedTrainingValidationService:
                 seq_length=seq_length,
                 seed=seed,
                 no_save=bool(train_kwargs["no_save"]),
+                controller_mode=controller_mode,
+                optimizer_research_mode=optimizer_research_mode,
             )
             result = self._dataset_training_service.train_from_dataset(
                 **train_kwargs,
+                benchmark_suite=benchmark_suite,
+                controller_mode=controller_mode,
+                optimizer_research_mode=optimizer_research_mode,
                 plan=plan,
             )
 
@@ -451,6 +491,7 @@ class DerivedTrainingValidationService:
                 loss_delta=loss_delta,
                 perplexity_delta=perplexity_delta,
                 phase5_metrics=phase5_metrics,
+                benchmark_suite=benchmark_suite,
                 ngram_order=phase5_ctx.ngram_order if phase5_ctx.enabled else None,
             )
             trials_out.append(trial)
@@ -478,6 +519,9 @@ class DerivedTrainingValidationService:
             model_path=str(resolved_model_path),
             dataset_path=str(resolved_dataset_path),
             eval_dataset_path=str(resolved_eval_path) if resolved_eval_path else None,
+            controller_mode=controller_mode,
+            optimizer_research_mode=optimizer_research_mode,
+            benchmark_suite=benchmark_suite,
             trials_requested=trials,
             phase5_inference_enabled=phase5_ctx.enabled,
             phase5_probe_count=phase5_ctx.probe_count if phase5_ctx.enabled else None,
@@ -507,6 +551,7 @@ class DerivedTrainingValidationService:
         loss_delta: float,
         perplexity_delta: float,
         phase5_metrics: _Phase5Metrics | None,
+        benchmark_suite: str | None = None,
         ngram_order: int | None = None,
     ) -> DerivedTrainingTrial:
         eps = machine_epsilon(
@@ -537,6 +582,23 @@ class DerivedTrainingValidationService:
             if isinstance(epoch_metrics_raw, list)
             else None
         )
+
+        def _latest_epoch_metric(name: str) -> float | None:
+            if not epoch_metrics_in:
+                return None
+            for metric in reversed(epoch_metrics_in):
+                if isinstance(metric, dict):
+                    value = metric.get(name)
+                else:
+                    value = getattr(metric, name, None)
+                if value is not None:
+                    return float(value)
+            return None
+
+        eta_ceiling = _latest_epoch_metric("eta_ceiling")
+        eta_sps = _latest_epoch_metric("eta_sps")
+        eta_weyl = _latest_epoch_metric("eta_weyl")
+        eta_step = _latest_epoch_metric("eta_step")
         gate_input = PipelineGateInput(
             spectral_bounds_ok=getattr(train_result, "spectral_bounds_ok", None),
             stop_reason=getattr(train_result, "stop_reason", None),
@@ -696,23 +758,6 @@ class DerivedTrainingValidationService:
                     for pid in shared_ids
                     if (bm[pid] > 0 and am[pid] <= 0) or (bm[pid] <= 0 and am[pid] > 0)
                 )
-
-        structural_passed = len(structural_failure_modes) == 0
-        inference_passed = len(inference_failure_modes) == 0
-        failure_modes = tuple(structural_failure_modes + inference_failure_modes)
-        passed = len(failure_modes) == 0
-
-        # cka_shift already computed above (bool); co-occurrence tracks
-        # whether CKA moved at all, regardless of bound violation.
-        inference_degraded = len(inference_failure_modes) > 0
-        if cka_shift and inference_degraded:
-            cooccurrence_class = "cka_shift_and_inference_degraded"
-        elif cka_shift and not inference_degraded:
-            cooccurrence_class = "cka_shift_without_inference_degradation"
-        elif (not cka_shift) and inference_degraded:
-            cooccurrence_class = "inference_degraded_without_cka_shift"
-        else:
-            cooccurrence_class = "no_shift_no_inference_degradation"
 
         def _normalize_metric_value(value: Any) -> float | int:
             if isinstance(value, bool):
@@ -950,10 +995,48 @@ class DerivedTrainingValidationService:
             if bench_post_raw is not None
             else None
         )
+        benchmark_overall_delta: float | None = None
+        if (
+            bench_base is not None
+            and bench_post is not None
+            and "overall" in bench_base
+            and "overall" in bench_post
+        ):
+            benchmark_overall_delta = bench_post["overall"] - bench_base["overall"]
+            if benchmark_overall_delta < -sqrt_eps:
+                inference_failure_modes.append("benchmark_degraded")
+
+        structural_passed = len(structural_failure_modes) == 0
+        inference_passed = len(inference_failure_modes) == 0
+        failure_modes = tuple(structural_failure_modes + inference_failure_modes)
+        passed = len(failure_modes) == 0
+
+        # cka_shift already computed above (bool); co-occurrence tracks
+        # whether CKA moved at all, regardless of bound violation.
+        inference_degraded = len(inference_failure_modes) > 0
+        if cka_shift and inference_degraded:
+            cooccurrence_class = "cka_shift_and_inference_degraded"
+        elif cka_shift and not inference_degraded:
+            cooccurrence_class = "cka_shift_without_inference_degradation"
+        elif (not cka_shift) and inference_degraded:
+            cooccurrence_class = "inference_degraded_without_cka_shift"
+        else:
+            cooccurrence_class = "no_shift_no_inference_degradation"
 
         return DerivedTrainingTrial(
             trial_index=index,
             seed=seed,
+            controller_mode=str(
+                getattr(train_result, "controller_mode", CONTROLLER_MODE_STRUCTURAL_OBSERVE),
+            ),
+            optimizer_research_mode=str(
+                getattr(
+                    train_result,
+                    "optimizer_research_mode",
+                    OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+                ),
+            ),
+            benchmark_suite=benchmark_suite,
             baseline_loss=float(train_result.baseline_loss),
             post_loss=float(train_result.post_loss),
             loss_delta=loss_delta,
@@ -992,6 +1075,10 @@ class DerivedTrainingValidationService:
             epoch_geometry_trace=epoch_geometry_trace,
             adapter_saturation_median_ratio=sat,
             max_effective_gain_ratio=max_gain_ratio,
+            eta_ceiling=eta_ceiling,
+            eta_sps=eta_sps,
+            eta_weyl=eta_weyl,
+            eta_step=eta_step,
             online_eval_baseline_correct=online_eval_baseline_correct,
             online_eval_baseline_total=online_eval_baseline_total,
             online_eval_adapted_correct=online_eval_adapted_correct,
@@ -1056,6 +1143,7 @@ class DerivedTrainingValidationService:
             dim_final_used_fraction=dim_used,
             dim_final_null_fraction=dim_null,
             dim_null_recruitment_from_baseline=dim_recruit,
+            benchmark_overall_delta=benchmark_overall_delta,
             benchmark_baseline=bench_base,
             benchmark_post=bench_post,
             structural_passed=structural_passed,

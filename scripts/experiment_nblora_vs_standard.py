@@ -3835,61 +3835,68 @@ def build_summary(all_results: dict) -> dict:
         "overall": {},
     }
 
-    all_nb_vs_std_deltas = []
-    all_nb_vs_tuned_deltas = []
+    all_nb_vs_best_surface_deltas = []
 
     for model_key, model_results in all_results.items():
         comparison = model_results.get("comparison", {})
         h2h = comparison.get("head_to_head", {})
+        training = comparison.get("training", {})
 
-        summary["models"][model_key] = {
+        model_summary = {
             "benchmarks": comparison.get("benchmarks", {}),
             "head_to_head": h2h,
-            "training": comparison.get("training", {}),
+            "training": training,
         }
 
-        nb_vs_std = h2h.get("nb_vs_standard_lora", {})
-        nb_vs_tuned = h2h.get("nb_vs_tuned_lora", {})
+        best_surface_method = None
+        best_surface_stats = None
+        candidate_surfaces = [
+            (method_name, stats)
+            for method_name, stats in training.items()
+            if method_name != "nb_lora" and stats.get("n_runs", 0) > 0
+        ]
+        if candidate_surfaces:
+            best_surface_method, best_surface_stats = min(
+                candidate_surfaces,
+                key=lambda item: item[1].get("final_val_loss_mean", float("inf")),
+            )
+            best_surface_h2h = h2h.get(f"nb_vs_{best_surface_method}", {})
+            model_summary["best_matched_surface"] = {
+                "method": best_surface_method,
+                "selection": (
+                    "lowest final_val_loss_mean among non-canonical "
+                    "matched-surface arms"
+                ),
+                "final_val_loss_mean": (
+                    best_surface_stats.get("final_val_loss_mean")
+                    if best_surface_stats is not None
+                    else None
+                ),
+                "nb_head_to_head": best_surface_h2h,
+            }
+            if best_surface_h2h.get("mean_delta") is not None:
+                all_nb_vs_best_surface_deltas.append(best_surface_h2h["mean_delta"])
 
-        if nb_vs_std.get("mean_delta") is not None:
-            all_nb_vs_std_deltas.append(nb_vs_std["mean_delta"])
-        if nb_vs_tuned.get("mean_delta") is not None:
-            all_nb_vs_tuned_deltas.append(nb_vs_tuned["mean_delta"])
+        summary["models"][model_key] = model_summary
 
-    if all_nb_vs_std_deltas:
-        summary["overall"]["nb_vs_standard_mean_delta"] = _safe_mean(all_nb_vs_std_deltas)
-    if all_nb_vs_tuned_deltas:
-        summary["overall"]["nb_vs_tuned_mean_delta"] = _safe_mean(all_nb_vs_tuned_deltas)
-
-    # Verdict: aggregate per-task measured SEs from all models.
-    # For each (model, task) pair, se_delta = sqrt(nb_se² + opp_se²).
-    # Overall mean delta SE = sqrt(Σ se_delta²) / N.
-    # Tie band = 2 × SE_overall (95% CI for the difference).
-    se_delta_sq_all: list[float] = []
-    for model_key, model_results in all_results.items():
-        h2h = model_results.get("comparison", {}).get("head_to_head", {})
-        nb_vs_std = h2h.get("nb_vs_standard_lora", {})
-        for task, band in nb_vs_std.get("per_task_tie_bands", {}).items():
-            se_d = math.sqrt(band["nb_se"] ** 2 + band["opp_se"] ** 2)
-            se_delta_sq_all.append(se_d ** 2)
-
-    if all_nb_vs_std_deltas and se_delta_sq_all:
-        n_pairs = len(se_delta_sq_all)
-        agg_se = math.sqrt(sum(se_delta_sq_all)) / n_pairs
-        agg_tie_band = 2.0 * agg_se
-        mean_delta = _safe_mean(all_nb_vs_std_deltas)
-        if mean_delta > agg_tie_band:
-            summary["overall"]["verdict"] = "NB-LoRA > Standard"
-        elif mean_delta < -agg_tie_band:
-            summary["overall"]["verdict"] = "Standard LoRA > NB-LoRA"
-        else:
-            summary["overall"]["verdict"] = "Within measurement noise"
-        summary["overall"]["verdict_threshold"] = agg_tie_band
-        summary["overall"]["verdict_derivation"] = (
-            f"2*sqrt(Σse²)/{n_pairs} from {n_pairs} measured (model,task) pairs"
+    if all_nb_vs_best_surface_deltas:
+        mean_delta = _safe_mean(all_nb_vs_best_surface_deltas)
+        summary["overall"]["nb_vs_best_matched_surface_mean_delta"] = mean_delta
+        summary["overall"]["best_matched_surface_selection"] = (
+            "lowest final_val_loss_mean among non-canonical matched-surface arms"
         )
-    elif all_nb_vs_std_deltas:
-        summary["overall"]["verdict"] = "no stderr data for threshold"
+        if mean_delta < 0:
+            summary["overall"]["verdict"] = (
+                "NB-LoRA trails best matched surface on frozen tuple"
+            )
+        elif mean_delta > 0:
+            summary["overall"]["verdict"] = (
+                "NB-LoRA leads best matched surface on frozen tuple"
+            )
+        else:
+            summary["overall"]["verdict"] = (
+                "NB-LoRA ties best matched surface on frozen tuple"
+            )
     else:
         summary["overall"]["verdict"] = "no data"
 

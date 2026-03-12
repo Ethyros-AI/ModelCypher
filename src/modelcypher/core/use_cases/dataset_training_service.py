@@ -1208,6 +1208,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
 
         # 2.2. Pre-training benchmark (optional, when --benchmark is set)
         benchmark_baseline_scores: dict[str, float] | None = None
+        benchmark_baseline_suite: Any | None = None
         _benchmark_service = None
         _benchmark_generate_fn = None
         if benchmark_suite is not None:
@@ -1233,6 +1234,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                     r.benchmark: r.accuracy for r in baseline_suite.benchmarks
                 }
                 benchmark_baseline_scores["overall"] = baseline_suite.overall_accuracy
+                benchmark_baseline_suite = baseline_suite
                 logger.info(
                     "Pre-training benchmark: %s",
                     ", ".join(
@@ -2169,6 +2171,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
 
         # 11.8. Post-training benchmark (optional, when --benchmark is set)
         benchmark_post_scores: dict[str, float] | None = None
+        benchmark_post_suite: Any | None = None
         if (
             benchmark_suite is not None
             and _benchmark_service is not None
@@ -2188,6 +2191,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                     r.benchmark: r.accuracy for r in post_suite.benchmarks
                 }
                 benchmark_post_scores["overall"] = post_suite.overall_accuracy
+                benchmark_post_suite = post_suite
                 logger.info(
                     "Post-training benchmark: %s",
                     ", ".join(
@@ -2261,6 +2265,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
 
         # 12. Save if requested
         saved_adapter_path: str | None = None
+        saved_path_obj: Path | None = None
         if output_dir is not None:
             logger.info("Saving adapter to %s...", output_dir)
             metadata = {
@@ -2290,8 +2295,9 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 output_path=output_dir,
                 metadata=metadata,
             )
+            saved_path_obj = Path(saved_path)
             self._write_geometry_manifest(
-                adapter_dir=saved_path,
+                adapter_dir=saved_path_obj,
                 model_path=model_path,
                 target_modules=target_modules,
                 geometries=geometries,
@@ -2299,10 +2305,10 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 rank_ceiling_source=ceiling_label,
             )
             self._write_training_plan(
-                adapter_dir=saved_path,
+                adapter_dir=saved_path_obj,
                 derived_plan=plan.to_dict(),
             )
-            saved_adapter_path = str(saved_path)
+            saved_adapter_path = str(saved_path_obj)
 
         moe_saturated_during_training: list[str] | None = None
         moe_saturation_threshold = max(
@@ -2356,7 +2362,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 post_loss=post_loss,
             )
 
-        return DatasetTrainResult(
+        result = DatasetTrainResult(
             train_iters=train_iters,
             initial_loss=initial_loss,
             final_loss=final_loss,
@@ -2448,5 +2454,26 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             offline_replay=offline_replay,
             derived_plan=plan.to_dict(),
         )
+        if saved_path_obj is not None:
+            self._write_json(saved_path_obj / "train_result.json", result.to_dict())
+            if (
+                benchmark_suite is not None
+                and _benchmark_service is not None
+                and benchmark_baseline_suite is not None
+            ):
+                _benchmark_service.save_results(
+                    benchmark_baseline_suite,
+                    saved_path_obj / f"benchmark_{benchmark_suite}_baseline.json",
+                )
+            if (
+                benchmark_suite is not None
+                and _benchmark_service is not None
+                and benchmark_post_suite is not None
+            ):
+                _benchmark_service.save_results(
+                    benchmark_post_suite,
+                    saved_path_obj / f"benchmark_{benchmark_suite}_post.json",
+                )
+        return result
 
 __all__ = ["DatasetTrainResult", "DatasetTrainingService", "DerivedTrainingPlan"]

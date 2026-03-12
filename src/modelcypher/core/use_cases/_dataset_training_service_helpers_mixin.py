@@ -38,6 +38,13 @@ _MOE_EXPERT_WEIGHT_RE = re.compile(
 
 
 class _DatasetTrainingServiceHelperMixin:
+    def _write_json(self, path: Path, payload: Any) -> None:
+        """Persist a JSON payload with stable formatting."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+
     def _derive_training_seed(self, model_path: Path, dataset_path: Path) -> int:
         """Derive deterministic seed from model artifacts and dataset bytes."""
         model_hash = self._hash_model_artifacts(model_path)
@@ -1092,8 +1099,7 @@ class _DatasetTrainingServiceHelperMixin:
         if rank_ceiling_source is not None:
             manifest["rank_ceiling_source"] = str(rank_ceiling_source)
         manifest_path = adapter_dir / "geometry_manifest.json"
-        with manifest_path.open("w", encoding="utf-8") as handle:
-            json.dump(manifest, handle, indent=2, sort_keys=True)
+        self._write_json(manifest_path, manifest)
 
     def _write_training_plan(
         self,
@@ -1103,9 +1109,7 @@ class _DatasetTrainingServiceHelperMixin:
     ) -> None:
         """Persist the exact resolved training plan alongside adapter artifacts."""
         plan_path = adapter_dir / "training_plan.json"
-        with plan_path.open("w", encoding="utf-8") as handle:
-            json.dump(derived_plan, handle, indent=2, sort_keys=True)
-            handle.write("\n")
+        self._write_json(plan_path, derived_plan)
 
     def _hash_model_artifacts(self, model_path: Path) -> str:
         """Compute SHA256 over model config + safetensors for adapter provenance."""

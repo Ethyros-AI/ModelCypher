@@ -110,6 +110,42 @@ def _parse_args() -> argparse.Namespace:
         default=Path("results/pipeline_validation"),
         help="Root directory for results (default: results/pipeline_validation).",
     )
+    parser.add_argument(
+        "--model-path",
+        type=Path,
+        default=None,
+        help="Override the configured model path for the selected --model-scale.",
+    )
+    parser.add_argument(
+        "--train-data",
+        type=Path,
+        default=None,
+        help="Override the configured training dataset for the selected --model-scale.",
+    )
+    parser.add_argument(
+        "--eval-data",
+        type=Path,
+        default=None,
+        help="Override the configured eval dataset for the selected --model-scale.",
+    )
+    parser.add_argument(
+        "--benchmark-suite",
+        default=None,
+        help="Optional benchmark suite (quick, reasoning, factual, comprehensive).",
+    )
+    parser.add_argument(
+        "--controller-mode",
+        default="mass_structural_observe",
+        help=(
+            "Research controller mode "
+            "(mass_structural_observe, mass_behavioral_probe, mass_behavioral_closed_loop)."
+        ),
+    )
+    parser.add_argument(
+        "--optimizer-research-mode",
+        default="cayley_stiefel_mass",
+        help="Research optimizer mode (cayley_stiefel_mass, adamw_matched_trace).",
+    )
     return parser.parse_args()
 
 
@@ -169,6 +205,9 @@ def _run_validation(
     trials: int,
     output_dir: Path,
     log: logging.Logger,
+    benchmark_suite: str | None = None,
+    controller_mode: str = "mass_structural_observe",
+    optimizer_research_mode: str = "cayley_stiefel_mass",
 ) -> dict[str, Any]:
     """Run validation for a single model and return the result dict."""
     from modelcypher.cli.composition import get_backend, get_dataset_training_service
@@ -182,6 +221,9 @@ def _run_validation(
     log.info("  Train data: %s", config.train_data)
     log.info("  Eval data:  %s", config.eval_data)
     log.info("  Trials:     %d", trials)
+    log.info("  Controller: %s", controller_mode)
+    log.info("  Optimizer:  %s", optimizer_research_mode)
+    log.info("  Benchmark:  %s", benchmark_suite or "none")
     log.info("=" * 72)
 
     _check_data_files(config)
@@ -205,6 +247,9 @@ def _run_validation(
         dataset_path=config.train_data,
         eval_dataset_path=config.eval_data,
         trials=trials,
+        benchmark_suite=benchmark_suite,
+        controller_mode=controller_mode,
+        optimizer_research_mode=optimizer_research_mode,
         enable_phase5_inference=True,
         artifact_root=output_dir / "phase5_artifacts",
     )
@@ -256,6 +301,9 @@ def _build_report(
         f"**Timestamp:** {timestamp}",
         f"**Git hash:** {git_hash}",
         f"**Trials per model:** {trials}",
+        f"**Controller mode:** {next(iter(all_results.values()), {}).get('controller_mode', 'n/a')}",
+        f"**Optimizer mode:** {next(iter(all_results.values()), {}).get('optimizer_research_mode', 'n/a')}",
+        f"**Benchmark suite:** {next(iter(all_results.values()), {}).get('benchmark_suite', 'none')}",
         "",
     ]
 
@@ -479,6 +527,9 @@ def _build_report(
                 null_obs_max_cond_layer = cx.get("null_observability_max_condition_layer")
                 first_pre_degraded = cx.get("online_eval_first_pre_degraded_epoch")
                 first_post_degraded = cx.get("online_eval_first_post_degraded_epoch")
+                benchmark_overall_delta = cx.get("benchmark_overall_delta")
+                benchmark_baseline = cx.get("benchmark_baseline")
+                benchmark_post = cx.get("benchmark_post")
                 lines.append(f"- **Seed {seed}**: {', '.join(modes)}")
                 lines.append(f"  - loss_delta={loss_d:.4f}, ppl_delta={ppl_d:.4f}")
                 lines.append(f"  - stop_reason={stop}")
@@ -497,6 +548,21 @@ def _build_report(
                     lines.append(f"  - online_eval_delta_correct={int(delta_correct):+d}")
                 if rep_delta is not None:
                     lines.append(f"  - max_ngram_repeat_delta={float(rep_delta):+.6f}")
+                if benchmark_overall_delta is not None:
+                    lines.append(
+                        f"  - benchmark_overall_delta={float(benchmark_overall_delta):+.4f}",
+                    )
+                if (
+                    isinstance(benchmark_baseline, dict)
+                    and isinstance(benchmark_post, dict)
+                    and "overall" in benchmark_baseline
+                    and "overall" in benchmark_post
+                ):
+                    lines.append(
+                        "  - benchmark_overall="
+                        f"{float(benchmark_baseline['overall']):.4f}"
+                        f" -> {float(benchmark_post['overall']):.4f}",
+                    )
                 if null_access_min is not None:
                     if null_access_layer is None:
                         lines.append(
@@ -652,7 +718,14 @@ def _build_report(
 def main() -> None:
     args = _parse_args()
 
-    _check_volume()
+    if args.model_path is None:
+        _check_volume()
+    elif args.model_scale is None:
+        print(
+            "ERROR: --model-path requires --model-scale so the overridden run stays labeled.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
 
     output_root = args.output_root.expanduser().resolve()
     output_root.mkdir(parents=True, exist_ok=True)
@@ -666,6 +739,9 @@ def main() -> None:
     log.info("  Timestamp: %s", timestamp)
     log.info("  Git hash:  %s", git_hash)
     log.info("  Trials:    %d", args.trials)
+    log.info("  Controller: %s", args.controller_mode)
+    log.info("  Optimizer:  %s", args.optimizer_research_mode)
+    log.info("  Benchmark:  %s", args.benchmark_suite or "none")
 
     # Determine which scales to run
     if args.model_scale is not None:
@@ -679,9 +755,28 @@ def main() -> None:
 
     for scale in scales:
         config = MODEL_CONFIGS[scale]
+        if args.model_path is not None:
+            config = ModelConfig(
+                scale=scale,
+                model_path=str(args.model_path.expanduser().resolve()),
+                train_data=str(
+                    (args.train_data or Path(config.train_data)).expanduser().resolve()
+                ),
+                eval_data=str(
+                    (args.eval_data or Path(config.eval_data)).expanduser().resolve()
+                ),
+            )
         scale_dir = output_root / scale
         try:
-            result_dict = _run_validation(config, args.trials, scale_dir, log)
+            result_dict = _run_validation(
+                config,
+                args.trials,
+                scale_dir,
+                log,
+                benchmark_suite=args.benchmark_suite,
+                controller_mode=args.controller_mode,
+                optimizer_research_mode=args.optimizer_research_mode,
+            )
             all_results[scale] = result_dict
         except Exception:
             log.exception("FAILED: %s", scale)
@@ -703,6 +798,9 @@ def main() -> None:
         "timestamp": timestamp,
         "git_hash": git_hash,
         "trials_per_model": args.trials,
+        "controller_mode": args.controller_mode,
+        "optimizer_research_mode": args.optimizer_research_mode,
+        "benchmark_suite": args.benchmark_suite,
         "scales": scales,
         "all_pass": all_pass,
         "all_structural_pass": all_structural_pass,

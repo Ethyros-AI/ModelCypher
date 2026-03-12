@@ -37,6 +37,7 @@ def evaluate_skill_mastery(
     skill: SkillNode,
     eval_jsonl_path: Path,
     *,
+    adapter_path: str | None = None,
     chance_rate: float = 0.0,
 ) -> MasteryRecord:
     """Evaluate mastery of a skill on its held-out eval set.
@@ -63,6 +64,9 @@ def evaluate_skill_mastery(
             how generated output is compared to expected).
         eval_jsonl_path: Path to held-out eval JSONL. Each line:
             {"text": "prompt answer"} or {"text": "...", "answer_start": N}
+        adapter_path: Optional path to a LoRA adapter directory. When
+            provided, inference runs on the base model with the adapter
+            applied. When None, inference runs on the base model alone.
         chance_rate: Random-chance baseline for this problem type.
             0.0 for free-text answers, 0.25 for 4-way multiple choice.
 
@@ -139,7 +143,7 @@ def evaluate_skill_mastery(
                 expected = tokens[-1].strip().lower()
 
         try:
-            result = engine.run(model=model_path, prompt=prompt, max_tokens=None)
+            result = engine.run(model=model_path, prompt=prompt, adapter=adapter_path, max_tokens=None)
             predicted = result.response.strip()
 
             if skill.answer_mode == "numeric":

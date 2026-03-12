@@ -1,6 +1,6 @@
 # Research Roadmap
 
-**Updated:** 2026-03-09
+**Updated:** 2026-03-12
 
 ## What This File Is For
 
@@ -52,7 +52,7 @@ new canonical result families, or repeated agent-driven run families.
 
 | ID | Goal | Primary evidence family | Exit criterion |
 | --- | --- | --- | --- |
-| `R1` | Same-model same-data same-eval baseline suite against standard practice | `results/nblora_vs_standard/` | Pre-registered multi-seed comparison against standard LoRA, rsLoRA, PiSSA, EVA, DoRA, and at least one recipe-level baseline; promotion allowed only if preservation gates stay valid |
+| `R1` | Same-model same-data same-eval baseline suite against standard practice for the canonical geometry-derived LoRA path | `results/nblora_vs_standard/` | Pre-registered multi-seed comparison against standard LoRA, rsLoRA, PiSSA, EVA, DoRA, and at least one recipe-level baseline; promotion allowed only if preservation gates stay valid |
 | `R2` | Causal operator for behavioral failure when structural safety passes | `results/pipeline_validation/`, `results/pipeline_validation_blindness_350M_t20/` | A pre-registered operator predicts failure before online degradation, survives intervention, and explains the retained 350M failure cases |
 | `R3` | 8B non-ceiling efficacy closure | `results/g5_8b_validation_multiseed/` | The pre-registered seed set on the fixed non-ceiling eval bundle passes the declared gate set without mixed or measurement-invalid outcomes |
 | `R4` | Quantization frontier law | `results/quantization_frontier/`, `results/closedform_sequential_correction/`, `results/quantization_ab_survey/` | One architecture-conditioned frontier statistic orders achieved CKA floor and degeneration across bit-depth sweeps and survives a held-out family |
@@ -68,15 +68,21 @@ Current state:
 
 - `results/nblora_vs_standard/` retains standardized slices and a grid-search
   summary, but it is not yet a promotable benchmark bundle.
+- The family name `results/nblora_vs_standard/` is historical. The doctrine
+  question is whether the canonical `geometric_lora` path beats standard
+  practice, not whether the old NB-LoRA label survives.
 - The repo has no mandatory, stable same-model same-data same-eval suite across
   the PEFT baseline set.
 - Immediate execution note (2026-03-12): freeze the next spend to the local
   LFM2-350M bf16 tuple with
   `data/training/benchmark_train.jsonl` /
-  `data/training/benchmark_val.jsonl`; run one-seed Stage A on
-  `standard_nb_surface`, `pissa_nb_surface`, `dora_nb_surface`, and
-  canonical `nb_lora`; only expand to additional seeds if `nb_lora` is
-  competitive, otherwise pivot directly to `R2` on the same tuple.
+  `data/training/benchmark_val.jsonl`; use canonical `mc train run`
+  (`method=geometric_lora`, current `init_method=pissa`) as the primary arm on
+  that tuple. Matched-surface controls may still use the historical harness arm
+  names `standard_nb_surface`, `pissa_nb_surface`, and `dora_nb_surface`, but
+  those are experiment labels, not doctrine. Only expand to additional seeds if
+  the canonical geometry-derived LoRA path is competitive; otherwise pivot
+  directly to `R2` on the same tuple.
 
 Required controls:
 

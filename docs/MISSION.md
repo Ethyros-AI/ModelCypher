@@ -9,7 +9,7 @@ Every training decision — learning rate, rank, scale, convergence, batch size,
 End-state target, not current claim: point a model at a dataset, hit train, and
 get a LoRA that captures the target structure while preserving the base model.
 
-## Current Evidence State (2026-03-11)
+## Current Evidence State (2026-03-12)
 
 - `mc train run` is the canonical shipped training surface, and its runtime path
   is geometry-derived.
@@ -24,6 +24,24 @@ get a LoRA that captures the target structure while preserving the base model.
 - `results/quantization_frontier/20260227T235714Z/quantization_frontier.json`
   shows encouraging correction measurements, but not the frontier law required
   for mission closure.
+
+## Canonical Training Identity (2026-03-12)
+
+The shipped training method is **geometry-derived LoRA**.
+
+- Canonical artifact and runtime identity: `method=geometric_lora`
+- Current shipped runtime components:
+  `init_method=pissa`, `optimizer=fisher_mass`, `controller=mass`,
+  `stopping=geometric_certificate`
+- The method-defining surface is older than both NB-LoRA and PiSSA:
+  target selection, rank derivation, MASS step sizing, budget monitoring,
+  preservation telemetry, and geometric stopping are the identity.
+- PiSSA is the current initialization choice on that surface.
+- NB-LoRA/Cayley remains a retained historical parameterization and comparison
+  substrate. It is useful doctrine history, not the shipped product name.
+- Historical filenames and result-family names such as `cayley_lora.py`,
+  `NBLoRALinear`, and `results/nblora_vs_standard/` are retained labels. They
+  should not be read as the canonical user-facing identity.
 
 ## Precision Objective (2026-03-05)
 
@@ -215,7 +233,7 @@ And the resulting adapter:
 
 1. **Captures the target knowledge or behavior** — measurable via held-out evaluation
 2. **Preserves existing capabilities** — CKA alignment to base model within machine precision on sampled activations
-3. **Respects the base model's spectral structure** — per-layer `||BA||_spectral <= sigma_k(W)` by construction
+3. **Respects the base model's spectral structure** — per-layer spectral discipline is either proved for the active parameterization or enforced by measured control plus post-training gates
 4. **Converges automatically** — stops when the data says to stop, not when a patience counter expires
 5. **Required zero human hyperparameter choices** — every number came from the model's own geometry
 
@@ -245,29 +263,42 @@ The 15 hyperparameters and their geometric replacements:
 |---|---|---|---|
 | 1 | Learning Rate | MASS: Weyl ceiling + SPS + Weyl displacement | `eta_step = min(eta_ceiling, eta_sps, eta_weyl)` where `eta_ceiling = σ_k_min / (σ_max × √N)` (N = batches/epoch, √N = Brownian budget), `eta_sps = f(x_t) / \|\|d_t\|\|²` (Loizou 2020), `eta_weyl = σ_k_min / \|\|d_t\|\|` + val backoff. Replaces broken Lipschitz derivation. Ceiling binding in practice (SPS/Weyl non-binding for fine-tuning). See `docs/research/lr_derivation_analysis.md`. |
 | 2 | Adam Epsilon | Spectral noise floor | `max(sigma_k^2, sqrt(eps) * sigma_max^2)` |
-| 3 | Adam/Momentum | Diagonal Fisher preconditioner + Cayley-Stiefel | Per-parameter `v_t = EMA(g²)`, `d_t = m̂_t/(√v̂_t + ε)`. β₁ derived from half-epoch window ∩ precision ceiling (`derive_beta1()`). β₂ = 0.999 (IEEE 754: EMA error < √ε after 119+ steps). Cayley retraction enforces Stiefel constraint. P removed (2026-02-23: `P ≈ I`). |
+| 3 | Adam/Momentum | Diagonal Fisher preconditioner + MASS | Per-parameter `v_t = EMA(g²)`, `d_t = m̂_t/(√v̂_t + ε)`. β₁ derived from half-epoch window ∩ precision ceiling (`derive_beta1()`). β₂ = 0.999 (IEEE 754: EMA error < √ε after 119+ steps). The shipped path applies this Fisher-preconditioned update on the geometry-derived LoRA surface; Cayley/Stiefel remains a retained historical parameterization, not the canonical identity. |
 | 4 | Weight Decay | Condition-aware scaling | `sigma_k / sigma_max` |
 | 5 | Gradient Clipping | REMOVED | MASS step bound + budget monitoring prevent explosion |
 | 6 | Warmup | REMOVED | Geometric LR stable from step 0 |
 | 7 | LR Schedule | OPTIONAL | MASS ceiling binds throughout training on 350M-1.2B; cosine decay showed no measurable improvement in val loss |
 | 8 | Batch Size | Gradient noise scale | `B_crit = Var(g) / ||E[g]||^2` |
 | 9 | Early Stopping | Geometric convergence | `loss_stable(SE_diff)` OR `adapter_saturation_exhausted(Weyl)` |
-| 10 | LoRA Scale | Spectral bound per-layer | `sigma_max(W) / 2 × (1 - √ε)`. Allows adapter to perturb at weight scale. Per-step displacement bounded by MASS (`η_weyl = σ_k/\|\|d\|\|`). |
+| 10 | LoRA Scale | Exact-reconstruction factor | `scale = 1.0` on the canonical PiSSA path so the residual base weight plus low-rank factors exactly reconstruct `W` at step 0. This is a structural identity constant, not a tuned knob. |
 | 11 | LoRA Rank | Null-space capacity | `tail_dims = full_rank - floor(shannon_effective_rank)` |
 | 12 | Target Modules | Spectral decay analysis | Layers where `tail_dims > 0` |
 | 13 | Dropout | Two spectral ratios | `redundancy * adapter_fraction` |
-| 14 | Weight Init | Spectral normalized | `||BA||_spectral = sigma_k` from step 0 |
+| 14 | Weight Init | PiSSA SVD decomposition | top-`r` singular components initialize `A,B`; residual base weight stores `W - U_r Σ_r V_r^T` so the fused weight equals `W` at step 0 |
 | 15 | Residual Scaling | Spectral ratio per-layer | `sigma_max(x) / sigma_max(f(x))` |
 
-### G2: Spectral Safety by Construction
+### G2: Spectral Safety by Measured Control
 
-The adapter must NEVER violate the base model's spectral structure. This is not checked after the fact — it is guaranteed by the parameterization.
+The adapter must NEVER ignore the base model's spectral structure.
+Mission closure requires the canonical path to stay spectrally disciplined,
+either by a proved bound or by measured control strong enough to survive
+falsification.
 
-- **NB-LoRA (Cayley transform)**: `||W_lora||_spectral <= 2 * max(S)` where `S_i <= sigma_k(W_i)`
-- **Weyl perturbation monitoring**: Per-layer `||scale * BA||_spectral / sigma_k` tracked every step
-- **Budget exhaustion**: Training stops if ANY layer crosses `spectral_gap / (2 * sigma_k)` (Weyl 1912)
+- **Canonical geometric LoRA path**: exact reconstruction at step 0 via PiSSA,
+  Fisher-MASS step sizing, validation-guided ceiling backoff, and gate-based
+  verification on the same geometry-derived surface.
+- **Historical NB-LoRA/Cayley path**: retained as the by-construction bound
+  reference and comparison substrate; useful doctrine history, not the shipped
+  identity.
+- **Promotion rule**: do not claim "by construction" for the canonical path
+  unless the active parameterization actually supplies that theorem.
+- **Budget and preservation discipline**: if measured spectral, behavioral, or
+  pipeline-gate signals cross their derived limits, the run is not promotable.
 
-**Test**: Run SVD on every trained layer. `max(singular_values(BA)) <= sigma_k(W)` for all layers. No exceptions.
+**Test**: Run the full verification bundle on the actual canonical path. A run
+must either satisfy the declared spectral/preservation gates or fail closed.
+If the safety claim depends on a bound theorem, that theorem must match the
+active parameterization.
 
 ### G3: Data-Derived Convergence
 
@@ -307,7 +338,7 @@ regimes, not just the ones already tested.
   promotable baseline suite is still open and 8B efficacy closure is still open
   even though mechanical viability exists
 - **Tested model scales**: 350M, 700M, 1.2B on retained smaller-scale surfaces;
-  8B is mechanically viable (geometry, injection, spectral bounds, stopping)
+  8B is mechanically viable (geometry, injection, controller path, stopping)
   but still open on efficacy
 - **Tested data types**: Logical rules, behavioral patterns, domain knowledge, compositional reasoning
 - **Architecture requirement**: Must have extractable weight matrices (attention + MLP projections)
@@ -349,7 +380,7 @@ Protocol reference:
 One command. One method. Geometry decides everything.
 
 ```
-Dataset --> SVD(W) --> NB-LoRA (Cayley) --> Fisher-preconditioned GD --> MASS --> Weyl Budget --> Certificate --> CKA Verify --> Adapter
+Dataset --> SVD(W) --> Geometry-Derived Surface --> PiSSA Exact-Reconstruction Init --> Fisher-MASS --> Budget + Preservation Telemetry --> Certificate --> Pipeline Gate --> Adapter
 ```
 
 ```bash
@@ -359,13 +390,13 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 **What happens:**
 
 1. **Geometry analysis** — SVD every weight matrix. Extract σ_max, σ_k, effective_rank, tail_dims, spectral_gap per layer.
-2. **Target selection** — Layers where tail_dims > 0 get NB-LoRA. Rank = tail_dims.
+2. **Target selection** — Layers where tail_dims > 0 get geometry-derived LoRA. Rank is then coupled against data and signal ceilings on that surface.
 3. **Optimizer config** — Per-layer ε = max(σ_k², √ε_mach × σ_max²), decay = σ_k / σ_max, spectral_gap = σ_{k-1} - σ_k.
 4. **Base activation snapshot** — Collect per-layer hidden activations on eval probes (for CKA verification).
-5. **NB-LoRA injection** — Cayley-parameterized: ||2 B^T diag(S) A||₂ ≤ σ_k by construction.
+5. **LoRA injection** — Canonical path uses PiSSA: top-`r` singular components initialize `lora_a/lora_b`, and the residual base weight keeps the fused layer equal to the original weight at step 0.
 6. **MASS step size** — Three-layer adaptive: `eta_ceiling = σ_k_min / (σ_max × √N)` (Weyl bound, √N Brownian budget over N batches/epoch), `eta_sps = f(x_t) / ||d_t||²` (Loizou 2020, per-step measured), `eta_weyl = σ_k_min / ||d_t||` (per-step Weyl displacement). Final: `eta_step = min(ceiling, sps, weyl)` + validation-guided backoff.
-7. **Training** — Diagonal Fisher preconditioner (`d_t = m̂/(√v̂ + ε)`, β₁ from half-epoch window, β₂ = 0.999), Cayley-Stiefel retraction (P removed, 2026-02-23: `P ≈ I`), MASS step sizing, Weyl budget monitoring per epoch, geometric certificate + val loss convergence.
-8. **Post-training verification** — Spectral bounds (by construction), CKA alignment to base model.
+7. **Training** — Diagonal Fisher preconditioner (`d_t = m̂/(√v̂ + ε)`, β₁ from half-epoch window, β₂ = 0.999), MASS step sizing, validation-guided ceiling backoff, preservation telemetry, and geometric certificate + val loss convergence. Historical Cayley/Stiefel remains retained for comparison and falsification, not as the shipped identity.
+8. **Post-training verification** — pipeline gate, preservation checks, and optional benchmark deltas on the same canonical path.
 
 **Five stopping criteria (any one triggers):**
 
@@ -381,13 +412,14 @@ mc train run --model /path/to/model --data /path/to/dataset --output /path/to/ad
 
 | Module | Purpose | Key Functions |
 |--------|---------|---------------|
+| `identity.py` | Canonical training identity constants | `GEOMETRIC_LORA_METHOD`, `GEOMETRIC_LORA_INIT_METHOD`, `GEOMETRIC_LORA_OPTIMIZER` |
 | `geometric_lora.py` | Weight analysis → LoRA config | `analyze_weight_geometries()`, `select_target_modules()` |
 | `geometric_optimizer.py` | Per-layer optimizer params from SVD | `derive_optimizer_geometry_config()` |
 | `scaled_gd.py` | Riemannian GD preconditioning | `precondition_lora_gradients()` |
 | `spectral_budget.py` | Weyl-derived adapter saturation monitoring | `compute_budget_ratios()`, `is_budget_exhausted()` |
 | `geometric_early_stopping.py` | Data-derived convergence detection | `check_loss_stable()`, `check_val_loss_converged()`, `check_stopping_certificate()`, `should_certificate_stop()` |
 | `diagonal_fisher_preconditioner.py` | Per-parameter curvature preconditioning | `init_fisher_state()`, `precondition_gradient()`, `derive_beta1()` |
-| `cayley_lora.py` | NB-LoRA parameterization | `cayley_transform_full()`, `NBLoRALayer` |
+| `cayley_lora.py` | Historical NB-LoRA parameterization retained for comparison | `cayley_transform_full()`, `NBLoRALayer` |
 | `cka.py` | Capability preservation verification | `compute_linear_cka_from_activations()` |
 | `activation_provider.py` | Activation collection for CKA | `collect_hidden_activations()` |
 | `marchenko_pastur.py` | Random-matrix noise edge for eigenvalue thresholding | `marchenko_pastur_noise_edge()`, `effective_dimension()` |
@@ -411,10 +443,14 @@ What is already true on the canonical path:
 
 - the runtime training surface no longer exposes the old user-facing
   hyperparameter bypasses
-- spectral safety, MASS control, data-derived stopping, and preservation
+- runtime logs and saved artifacts now identify the shipped path as
+  `method=geometric_lora`
+- spectral discipline, MASS control, data-derived stopping, and preservation
   telemetry are wired into `mc train run`
 - `results/pipeline_validation/verdict.json` still reports `all_pass = false`
   even while `all_structural_pass = true`
+- historical filenames and result-family names still retain NB-LoRA / Cayley
+  labels in places, but those names are no longer doctrine
 
 What does **not** count as mission closure yet:
 
@@ -475,12 +511,12 @@ Vision-gate order after that:
 |-------|-------------|
 | Amari (1998) | Natural gradient: G^{-1} @ grad for Riemannian optimization |
 | Nesterov (2004) | Stability bound: eta ≤ 2/(L * lambda_max(P)) for preconditioned GD |
-| Wen & Yin (2013) | Cayley retraction on Stiefel manifold; feasible orthogonality-constrained optimization |
-| Li, Fuxin, Todorovic (ICLR 2020) | Cayley SGD with convergence proof on Stiefel manifold |
+| Wen & Yin (2013) | Historical Cayley/Stiefel parameterization path retained for comparison and falsification |
+| Li, Fuxin, Todorovic (ICLR 2020) | Historical Cayley SGD reference for the retained Stiefel path |
 | Lezcano-Casado (NeurIPS 2019) | Trivializations: Euclidean GD on phi(theta) = Riemannian GD with pullback metric |
 | Tong et al. (JMLR 2021) | ScaledGD: condition-number-free convergence for unconstrained low-rank (not Stiefel) |
 | Hayou et al. (ICML 2024) | Asymmetric LoRA convergence rates |
-| Wang et al. (2025, arXiv:2501.19050) | NB-LoRA: Cayley parameterization for norm-bounded LoRA |
+| Wang et al. (2025, arXiv:2501.19050) | NB-LoRA historical parameterization and bound reference; not the canonical shipped identity |
 | Weyl (1912) | Perturbation bounds: \|sigma_i(W+E) - sigma_i(W)\| <= \|\|E\|\|_2 |
 | Shuttleworth et al. (2024, arXiv:2410.21228) | Empirical confirmation of Weyl bounds for LoRA |
 | Roy & Vetterli (2007) | Shannon effective rank: exp(H(sigma^2)) |
