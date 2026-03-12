@@ -602,7 +602,7 @@ class ProgressReporter:
                 stage="load",
                 substage="started",
                 model=None,
-                what="Starting NB-LoRA training pipeline",
+                what="Starting geometry-derived LoRA training pipeline",
                 why="Loading model and dataset to derive the plan before training; there is no fixed LR and MASS will choose step sizes online",
                 progress={"model_path": model_path, "dataset_path": dataset_path},
                 event_type="training_progress",
@@ -671,13 +671,13 @@ class ProgressReporter:
         rank_max: int,
         split_method: str,
     ) -> None:
-        """Report geometry analysis and NB-LoRA injection complete."""
+        """Report geometry analysis and adapter injection complete."""
         self._emit(
             ProgressEvent(
                 stage="geometry",
                 substage="complete",
                 model=None,
-                what="Geometry analysis complete, NB-LoRA injected",
+                what="Geometry analysis complete, adapter surface injected",
                 why="All hyperparameters derived from model geometry — training configuration is fully determined",
                 progress={
                     "target_modules": n_target_modules,
@@ -837,7 +837,7 @@ class ProgressReporter:
                 substage="summary",
                 model=None,
                 what="Training pipeline complete",
-                why="NB-LoRA adapter trained and verified",
+                why="Adapter trained and verified",
                 progress={
                     "adapter_path": adapter_path,
                     "training_time_s": round(training_time_seconds, 2),
