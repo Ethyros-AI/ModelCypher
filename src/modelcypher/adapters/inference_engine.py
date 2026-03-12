@@ -218,12 +218,17 @@ class InferenceEngine(HiddenStateEngine):
         with open(config_path) as f:
             json.load(f)
 
-        # Load adapter weights
+        # Load adapter weights — use the right loader for the file format
         weights_path = adapter_path / "adapters.safetensors"
         if not weights_path.exists():
             weights_path = adapter_path / "adapter.safetensors"
+        if not weights_path.exists():
+            weights_path = adapter_path / "adapters.bin"
 
-        weights = self._backend.load_binary_weights(str(weights_path))
+        if weights_path.suffix == ".safetensors":
+            weights = self._backend.load_safetensors(str(weights_path))
+        else:
+            weights = self._backend.load_binary_weights(str(weights_path))
 
         # Apply adapter weights to model
         # This uses Backend's tree operations
