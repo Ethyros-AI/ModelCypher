@@ -63,6 +63,7 @@ class AttentionCollapseResult:
     column_mass: list[float]  # ||A_{·,j}||₂² / ||A||_F² per column
     gradient_suppression: float  # σ₂ / √(2T) — Theorem H.1 bound
     effective_rank: float  # exp(Shannon entropy of normalized σ²)
+    position_0_mass: float  # column_mass[0] — continuous sink indicator
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -72,6 +73,7 @@ class AttentionCollapseResult:
             "columnMass": self.column_mass,
             "gradientSuppression": self.gradient_suppression,
             "effectiveRank": self.effective_rank,
+            "position0Mass": self.position_0_mass,
         }
 
 
@@ -186,6 +188,7 @@ def compute_attention_collapse(
         column_mass=column_mass,
         gradient_suppression=gradient_suppression,
         effective_rank=effective_rank,
+        position_0_mass=column_mass[0] if column_mass else 0.0,
     )
 
 

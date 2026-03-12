@@ -31,6 +31,7 @@ from modelcypher.core.domain.agent_protocol import (
     AgentEnvelope,
     AgentMetadata,
     AgentRecommendation,
+    derived_eval_hash,
     file_hash,
     make_metadata,
     model_id,
@@ -472,3 +473,48 @@ class TestMetadataIdentityFields:
     def test_make_metadata_nonexistent_file(self):
         meta = make_metadata(data_path="/nonexistent/data.jsonl")
         assert meta.data_hash is None
+
+
+class TestDerivedEvalHash:
+    """Auto-derived eval splits must produce a stable identity."""
+
+    def test_deterministic(self):
+        h1 = derived_eval_hash("abc123", 42, 5)
+        h2 = derived_eval_hash("abc123", 42, 5)
+        assert h1 == h2
+        assert len(h1) == 64  # Full SHA-256 hex
+
+    def test_different_seed_different_hash(self):
+        h1 = derived_eval_hash("abc123", 42, 5)
+        h2 = derived_eval_hash("abc123", 99, 5)
+        assert h1 != h2
+
+    def test_different_data_different_hash(self):
+        h1 = derived_eval_hash("abc123", 42, 5)
+        h2 = derived_eval_hash("xyz789", 42, 5)
+        assert h1 != h2
+
+    def test_different_split_size_different_hash(self):
+        h1 = derived_eval_hash("abc123", 42, 5)
+        h2 = derived_eval_hash("abc123", 42, 10)
+        assert h1 != h2
+
+    def test_make_metadata_precomputed_eval_hash(self, tmp_path):
+        """Pre-computed eval_data_hash takes priority over eval_data_path."""
+        f = tmp_path / "eval.jsonl"
+        f.write_text('{"text": "eval data"}')
+        precomputed = derived_eval_hash("data_hash", 42, 5)
+        meta = make_metadata(
+            eval_data_path=str(f),
+            eval_data_hash=precomputed,
+        )
+        # Pre-computed hash wins over file hash
+        assert meta.eval_data_hash == precomputed
+        assert meta.eval_data_hash != file_hash(f)
+
+    def test_make_metadata_falls_back_to_file_hash(self, tmp_path):
+        """Without pre-computed hash, eval_data_path is hashed."""
+        f = tmp_path / "eval.jsonl"
+        f.write_text('{"text": "eval data"}')
+        meta = make_metadata(eval_data_path=str(f))
+        assert meta.eval_data_hash == file_hash(f)

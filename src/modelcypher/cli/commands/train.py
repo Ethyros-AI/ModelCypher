@@ -282,6 +282,8 @@ def train_run(
     # Wrap in AgentEnvelope for structured agent-readable output
     from modelcypher.core.domain.agent_protocol import (
         AgentEnvelope,
+        derived_eval_hash,
+        file_hash,
         make_metadata,
         model_id,
     )
@@ -294,6 +296,26 @@ def train_run(
         model_path=str(model_path),
         adapter_path=result.adapter_path,
     )
+
+    # Compute eval data hash: explicit file hash if --eval-data was provided,
+    # otherwise derive a stable identity from the auto-split parameters.
+    # Use the resolved seed from the training plan (not the CLI arg, which is
+    # None when the seed is auto-derived from model+dataset hash).
+    derived_eval_hash_val: str | None = None
+    if eval_data is None and result.validation_split:
+        vs = result.validation_split
+        n_eval = vs.get("n_eval")
+        data_hash_val = file_hash(data) if data else None
+        resolved_seed = (
+            result.derived_plan.get("seed")
+            if result.derived_plan
+            else seed
+        )
+        if data_hash_val and n_eval is not None and resolved_seed is not None:
+            derived_eval_hash_val = derived_eval_hash(
+                data_hash_val, int(resolved_seed), int(n_eval),
+            )
+
     gate_passed = result.pipeline_gate_passed
     status = "success" if gate_passed is not False else "partial"
     envelope = AgentEnvelope(
@@ -309,6 +331,7 @@ def train_run(
             model_id_value=model_id(str(model_path)),
             data_path=data,
             eval_data_path=eval_data,
+            eval_data_hash=derived_eval_hash_val,
             benchmark_suite=benchmark,
         ),
     )

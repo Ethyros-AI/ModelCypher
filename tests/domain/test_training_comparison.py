@@ -542,3 +542,56 @@ class TestCommensurability:
         (tmp_path / "b.json").write_text(json.dumps(envelope_b))
         result = service.compare_results(tmp_path / "a.json", tmp_path / "b.json")
         assert result.commensurable is True
+
+    def test_non_commensurable_suppresses_winner_recommendation(self, service, tmp_path):
+        """Mismatched identity metadata must suppress use_X recommendations.
+
+        When runs are not commensurable, the envelope must:
+        - set status to "partial" (fail closed)
+        - produce zero recommendations
+        - explain in the summary that runs are not comparable
+        """
+        envelope_a = {
+            "command": "mc train run",
+            "result": {"post_loss": 1.5, "adapter_path": "/a"},
+            "metadata": {"model_id": "model_abc", "data_hash": "same"},
+        }
+        envelope_b = {
+            "command": "mc train run",
+            "result": {"post_loss": 1.2, "adapter_path": "/b"},
+            "metadata": {"model_id": "model_xyz", "data_hash": "same"},
+        }
+        (tmp_path / "a.json").write_text(json.dumps(envelope_a))
+        (tmp_path / "b.json").write_text(json.dumps(envelope_b))
+        result = service.compare_results(tmp_path / "a.json", tmp_path / "b.json")
+        # B has lower post_loss, so _determine_winner picks B
+        assert result.winner == "b"
+        assert result.commensurable is False
+
+        envelope = service.make_envelope(result)
+        d = envelope.to_dict()
+        # Fail closed: status="partial", no winner recommendation
+        assert d["status"] == "partial"
+        assert len(d["diagnostics"]["recommendations"]) == 0
+        assert "not commensurable" in d["diagnostics"]["summary"].lower()
+
+    def test_mismatched_benchmark_suite_non_commensurable(self, service, tmp_path):
+        """Mismatched benchmark_suite must mark comparison as non-commensurable."""
+        envelope_a = {
+            "command": "mc train run",
+            "result": {"post_loss": 1.5},
+            "metadata": {"benchmark_suite": "quick"},
+        }
+        envelope_b = {
+            "command": "mc train run",
+            "result": {"post_loss": 1.2},
+            "metadata": {"benchmark_suite": "full"},
+        }
+        (tmp_path / "a.json").write_text(json.dumps(envelope_a))
+        (tmp_path / "b.json").write_text(json.dumps(envelope_b))
+        result = service.compare_results(tmp_path / "a.json", tmp_path / "b.json")
+        assert result.commensurable is False
+        # Envelope should note the mismatch
+        envelope = service.make_envelope(result)
+        obs = envelope.to_dict()["diagnostics"]["observations"]
+        assert any("benchmark suite" in o for o in obs)

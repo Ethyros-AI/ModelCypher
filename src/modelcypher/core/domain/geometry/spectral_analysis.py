@@ -19,11 +19,15 @@
 
 Computes spectral metrics (condition numbers, singular value ratios) to assess
 relationships between source and target weight matrices.
+
+Also provides principal subspace angle measurement for comparing subspaces
+before and after perturbation (Björck & Golub, 1973).
 """
 
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -234,3 +238,58 @@ def spectral_summary(metrics: dict[str, SpectralMetrics]) -> dict:
         "mean_condition_number": sum(conditions) / len(conditions),
         "max_condition_number": max(conditions),
     }
+
+
+def principal_subspace_angle(
+    V_base: "Array",
+    V_adapted: "Array",
+    backend: "Backend | None" = None,
+) -> float:
+    """Largest principal angle between two k-dimensional subspaces.
+
+    Given two sets of k orthonormal row vectors spanning k-dimensional
+    subspaces, computes the largest principal angle between them.
+
+    Björck & Golub (1973): the principal angles are arccos(σ_i) where
+    σ_i are the singular values of V_base @ V_adapted^T.  The largest
+    angle corresponds to the smallest singular value.
+
+    Euclidean weight space — standard SVD, no geodesic machinery.
+
+    Args:
+        V_base: [k, n] — top-k right singular vectors of the base weight matrix.
+            Rows must be orthonormal.
+        V_adapted: [k, n] — top-k right singular vectors of the adapted weight
+            matrix. Same k and n as V_base.
+        backend: Backend for SVD computation.
+
+    Returns:
+        Largest principal angle in radians.  0.0 = identical subspaces,
+        π/2 = orthogonal along at least one direction.
+    """
+    b = backend or get_default_backend()
+
+    V_b = b.astype(V_base, precision_dtype(b, reference=V_base))
+    V_a = b.astype(V_adapted, precision_dtype(b, reference=V_adapted))
+
+    # M = V_base @ V_adapted^T  — shape [k, k]
+    M = b.matmul(V_b, b.transpose(V_a))
+
+    # SVD of the k×k cross-product matrix
+    _, sigmas, _ = geodesic_svd(b, M)
+    b.eval(sigmas)
+
+    n_sigmas = int(sigmas.shape[0])
+    if n_sigmas == 0:
+        return math.pi / 2.0
+
+    # Smallest singular value → largest principal angle
+    sigma_min_arr = b.take(sigmas, b.array([n_sigmas - 1]), axis=0)
+    sigma_min_arr = b.squeeze(sigma_min_arr)
+    b.eval(sigma_min_arr)
+    sigma_min = float(b.to_scalar(sigma_min_arr))
+
+    # Clamp to [0, 1] for numerical safety before arccos
+    sigma_min = max(0.0, min(1.0, sigma_min))
+
+    return math.acos(sigma_min)

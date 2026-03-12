@@ -169,6 +169,23 @@ def model_id(model_path: str | Path) -> str | None:
         return None
 
 
+def derived_eval_hash(
+    data_hash: str,
+    seed: int,
+    n_eval: int,
+) -> str:
+    """Compute a stable identity hash for an auto-derived eval split.
+
+    When ``--eval-data`` is not provided, the training pipeline derives
+    a held-out split deterministically from the training data, seed, and
+    pilot-variance-measured split size.  This function produces a stable
+    SHA-256 identity from those three inputs so that commensurability
+    checks can compare auto-derived splits.
+    """
+    identity = f"{data_hash}:{seed}:{n_eval}"
+    return hashlib.sha256(identity.encode()).hexdigest()
+
+
 def make_metadata(
     *,
     model: str | None = None,
@@ -178,15 +195,22 @@ def make_metadata(
     model_id_value: str | None = None,
     data_path: str | None = None,
     eval_data_path: str | None = None,
+    eval_data_hash: str | None = None,
     benchmark_suite: str | None = None,
 ) -> AgentMetadata:
     """Create metadata with current UTC timestamp.
 
     If ``data_path`` or ``eval_data_path`` are provided, their SHA-256
     content hashes are computed and stored for commensurability checks.
+    A pre-computed ``eval_data_hash`` (e.g. from ``derived_eval_hash``)
+    takes priority over hashing ``eval_data_path``.
     """
     data_hash_val = file_hash(data_path) if data_path else None
-    eval_data_hash_val = file_hash(eval_data_path) if eval_data_path else None
+    eval_data_hash_val = (
+        eval_data_hash
+        if eval_data_hash is not None
+        else file_hash(eval_data_path) if eval_data_path else None
+    )
 
     return AgentMetadata(
         timestamp=datetime.now(timezone.utc).isoformat(),

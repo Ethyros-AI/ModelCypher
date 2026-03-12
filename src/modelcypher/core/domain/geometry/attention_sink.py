@@ -47,9 +47,14 @@ Metrics:
         check above is the correct verification: it validates the
         division operation itself, which IS exact by construction.
 
+    sink_score_delta: continuous per-head comparison of sink score vectors
+        between two models (e.g. base vs adapted). Reports cosine similarity
+        and L2 distance per head — no interpretation labels.
+
 References:
     Binkowski et al. "From Sparse to Dense: Toeplitz Alignment of Attention
     Sinks in Large Language Models" (2026).
+    Sun et al. "The Spike, the Sparse and the Sink" (arXiv:2603.05498, 2026).
 """
 from __future__ import annotations
 
@@ -275,4 +280,89 @@ def summarize_layer_sinks(
         active_results=active_results,
         mean_max_sink_score=mean_max,
         dominant_sink_position=dominant_pos,
+    )
+
+
+@dataclass(frozen=True)
+class SinkScoreDelta:
+    """Per-head sink score comparison between two models.
+
+    All fields are continuous measurements. No interpretation labels.
+    Downstream code decides what constitutes meaningful change.
+    """
+
+    base_scores: list[list[float]]     # [n_heads][T] — base sink scores
+    adapted_scores: list[list[float]]  # [n_heads][T] — adapted sink scores
+    per_head_cosine: list[float]       # cosine similarity of score vectors per head
+    per_head_l2_delta: list[float]     # L2 distance of score vectors per head
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "baseScores": self.base_scores,
+            "adaptedScores": self.adapted_scores,
+            "perHeadCosine": self.per_head_cosine,
+            "perHeadL2Delta": self.per_head_l2_delta,
+        }
+
+
+def compute_sink_score_delta(
+    base_heads: list[HeadSinkResult],
+    adapted_heads: list[HeadSinkResult],
+) -> SinkScoreDelta:
+    """Compute per-head sink score deltas between base and adapted models.
+
+    Args:
+        base_heads: Per-head sink results from the base model.
+        adapted_heads: Per-head sink results from the adapted model.
+            Must have the same number of heads and sequence length as base.
+
+    Returns:
+        SinkScoreDelta with continuous per-head measurements.
+
+    Raises:
+        ValueError: If head counts or sequence lengths don't match.
+    """
+    if len(base_heads) != len(adapted_heads):
+        msg = (
+            f"Head count mismatch: base has {len(base_heads)}, "
+            f"adapted has {len(adapted_heads)}"
+        )
+        raise ValueError(msg)
+
+    base_scores: list[list[float]] = []
+    adapted_scores: list[list[float]] = []
+    per_head_cosine: list[float] = []
+    per_head_l2_delta: list[float] = []
+
+    for b_head, a_head in zip(base_heads, adapted_heads):
+        b_vec = [ts.sink_score for ts in b_head.token_sinks]
+        a_vec = [ts.sink_score for ts in a_head.token_sinks]
+
+        if len(b_vec) != len(a_vec):
+            msg = (
+                f"Sequence length mismatch at head {b_head.head_idx}: "
+                f"base has {len(b_vec)}, adapted has {len(a_vec)}"
+            )
+            raise ValueError(msg)
+
+        base_scores.append(b_vec)
+        adapted_scores.append(a_vec)
+
+        # Cosine similarity: dot(b, a) / (||b|| * ||a||)
+        dot = sum(bi * ai for bi, ai in zip(b_vec, a_vec))
+        norm_b = math.sqrt(sum(bi * bi for bi in b_vec))
+        norm_a = math.sqrt(sum(ai * ai for ai in a_vec))
+        denom = norm_b * norm_a
+        cosine = dot / denom if denom > 0.0 else 0.0
+        per_head_cosine.append(cosine)
+
+        # L2 distance: ||b - a||_2
+        l2 = math.sqrt(sum((bi - ai) ** 2 for bi, ai in zip(b_vec, a_vec)))
+        per_head_l2_delta.append(l2)
+
+    return SinkScoreDelta(
+        base_scores=base_scores,
+        adapted_scores=adapted_scores,
+        per_head_cosine=per_head_cosine,
+        per_head_l2_delta=per_head_l2_delta,
     )

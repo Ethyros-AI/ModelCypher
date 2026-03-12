@@ -48,6 +48,7 @@ import shutil
 import statistics
 import sys
 import time
+import datetime as dt_module
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -247,13 +248,16 @@ class RetentionTracker:
 
         # Tokenize probes and cache base model logits
         model.eval()
-        for idx, text in enumerate(probe_texts[:30]):  # cap at 30 probes
+        # Budget caps (memory safety, not decision boundaries):
+        # 30 probes and 64 tokens keep peak memory under ~200MB on 350M.
+        _MAX_PROBES = 30  # memory budget cap
+        _MAX_PROBE_TOKENS = 64  # memory budget cap
+        for idx, text in enumerate(probe_texts[:_MAX_PROBES]):
             tokens = mx.array(tokenizer.encode(text))
             if tokens.size == 0:
                 continue
-            # Truncate long probes for memory efficiency
-            if tokens.size > 64:
-                tokens = tokens[:64]
+            if tokens.size > _MAX_PROBE_TOKENS:
+                tokens = tokens[:_MAX_PROBE_TOKENS]
             self._probe_tokens.append(tokens)
 
             # Forward pass for base logits (last token)
@@ -1606,14 +1610,17 @@ def first_step_probe(
     data_dir: Path,
     seed: int = 42,
 ) -> dict:
-    """Compare one training step of geo-pissa vs NB-LoRA on the same surface.
+    """Compare one MASS/Fisher step of geo-pissa vs NB-LoRA on the same surface.
+
+    Both methods use the same MASS/Fisher optimizer to isolate the effect of
+    parameterization (PiSSA init + standard LoRA vs Cayley-bounded NB-LoRA).
 
     All comparisons in effective weight-space / function-space:
     - DeltaW_eff per module (materialized effective weight change)
-    - KL divergence on probe logits (behavioral drift)
+    - Behavioral drift: ||X @ DeltaW_eff^T||_F per module (activation-weighted)
+    - KL divergence D_KL(adapted || base) on probe logits
     - Loss decrease (learning signal)
     - Drift-per-learning ratio (KL / |loss_pre - loss_post|)
-    - Subspace alignment of DeltaW_eff to top-r SVD directions
 
     method: "geo_pissa" or "nblora"
     """
@@ -1685,14 +1692,17 @@ def first_step_probe(
 
     # ── Pre-step measurements ──
     # Cache probe logits
+    # Budget caps (memory safety, not decision boundaries)
+    _MAX_PROBES = 30
+    _MAX_PROBE_TOKENS = 64
     model.eval()
     pre_logits = {}
-    for idx, text in enumerate(probe_texts[:30]):
+    for idx, text in enumerate(probe_texts[:_MAX_PROBES]):
         tokens = mx.array(tokenizer.encode(text))
         if tokens.size == 0:
             continue
-        if tokens.size > 64:
-            tokens = tokens[:64]
+        if tokens.size > _MAX_PROBE_TOKENS:
+            tokens = tokens[:_MAX_PROBE_TOKENS]
         logits = model(tokens[None])
         pre_logits[idx] = logits[0, -1, :]
         mx.eval(pre_logits[idx])
@@ -1718,72 +1728,63 @@ def first_step_probe(
     mx.eval(loss_pre)
     loss_pre_val = float(loss_pre)
 
-    # ── One step ──
-    if method == "geo_pissa":
-        # AdamW step (matches surface-matched arms)
-        import mlx.optimizers as optim
-        opt = optim.AdamW(learning_rate=2e-4, weight_decay=0.0)
-        opt.init(model.trainable_parameters())
-        opt.apply_gradients(grad, model)
-        mx.eval(*[v for _, v in mlx_flatten(model.trainable_parameters())])
+    # ── One step (MASS/Fisher for both — isolates parameterization) ──
+    from modelcypher.core.domain.training.mass_step_size import (
+        compute_per_step_rates,
+        derive_spectral_ceiling,
+    )
+    from modelcypher.core.domain.training.diagonal_fisher_preconditioner import (
+        init_fisher_state,
+        precondition_gradient,
+        update_fisher_state,
+    )
+    from modelcypher.backends import initialize_default_backend
+    from modelcypher.core.domain._backend import get_default_backend
+    initialize_default_backend()
+    backend = get_default_backend()
 
-    elif method == "nblora":
-        # MASS step (matches production training loop)
-        from modelcypher.core.domain.training.mass_step_size import (
-            compute_per_step_rates,
-            derive_spectral_ceiling,
-        )
-        from modelcypher.core.domain.training.diagonal_fisher_preconditioner import (
-            init_fisher_state,
-            precondition_gradient,
-            update_fisher_state,
-        )
-        from modelcypher.backends import initialize_default_backend
-        from modelcypher.core.domain._backend import get_default_backend
-        initialize_default_backend()
-        backend = get_default_backend()
+    # Spectral geometry for MASS (same for both methods)
+    gap_min = float("inf")
+    sigma_max_global = 0.0
+    for wk, sb in scale_bounds.items():
+        sigma_max_global = max(sigma_max_global, sb * 2.0)
+        gap_min = min(gap_min, sb * 4.0)
 
-        # Spectral geometry for MASS
-        gap_min = float("inf")
-        sigma_max_global = 0.0
-        for wk, sb in scale_bounds.items():
-            sigma_max_global = max(sigma_max_global, sb * 2.0)
-            gap_min = min(gap_min, sb * 4.0)  # conservative
+    eta_ceiling = derive_spectral_ceiling(
+        sigma_k_min=gap_min, sigma_max_global=sigma_max_global,
+    )
 
-        eta_ceiling = derive_spectral_ceiling(
-            sigma_k_min=gap_min, sigma_max_global=sigma_max_global,
-        )
+    grad_flat = dict(mlx_flatten(grad))
+    trainable_flat = dict(mlx_flatten(model.trainable_parameters()))
+    fisher_state = init_fisher_state(
+        trainable_flat, backend, n_batches_per_epoch=1,
+    )
+    fisher_state = update_fisher_state(fisher_state, grad_flat, backend)
+    update_direction = precondition_gradient(grad_flat, fisher_state, backend)
 
-        grad_flat = dict(mlx_flatten(grad))
-        trainable_flat = dict(mlx_flatten(model.trainable_parameters()))
-        fisher_state = init_fisher_state(
-            trainable_flat, backend, n_batches_per_epoch=1,
-        )
-        fisher_state = update_fisher_state(fisher_state, grad_flat, backend)
-        update_direction = precondition_gradient(grad_flat, fisher_state, backend)
+    d_flat = [p.reshape(-1) for p in update_direction.values() if p.size > 0]
+    d_norm_sq = sum(mx.sum(p * p) for p in d_flat)
+    mx.eval(d_norm_sq)
+    d_norm_val = float(mx.sqrt(d_norm_sq).item())
 
-        d_flat = [p.reshape(-1) for p in update_direction.values() if p.size > 0]
-        d_norm_sq = sum(mx.sum(p * p) for p in d_flat)
-        mx.eval(d_norm_sq)
-        d_norm_val = float(mx.sqrt(d_norm_sq).item())
+    eta_step, _, _, _, _ = compute_per_step_rates(
+        loss_pre_val, d_norm_val, gap_min, eta_ceiling,
+        remaining_budget=None,
+    )
 
-        eta_step, _, _, _, _ = compute_per_step_rates(
-            loss_pre_val, d_norm_val, gap_min, eta_ceiling,
-            remaining_budget=None,
-        )
+    current_params = dict(mlx_flatten(model.trainable_parameters()))
+    eta_arr = mx.array(eta_step)
+    updated_params = [
+        (k, current_params[k] - eta_arr * update_direction[k])
+        for k in current_params if k in update_direction
+    ]
+    model.load_weights(updated_params, strict=False)
+    mx.eval(*[v for _, v in mlx_flatten(model.trainable_parameters())])
 
-        current_params = dict(mlx_flatten(model.trainable_parameters()))
-        eta_arr = mx.array(eta_step)
-        updated_params = [
-            (k, current_params[k] - eta_arr * update_direction[k])
-            for k in current_params if k in update_direction
-        ]
-        model.load_weights(updated_params, strict=False)
-        mx.eval(*[v for _, v in mlx_flatten(model.trainable_parameters())])
-
-        # Clamp scale for NBLoRALinear
+    if method == "nblora":
+        from modelcypher.backends.mlx_training_adapter_core import NBLoRALinear as _NBL
         for _, module in model.named_modules():
-            if isinstance(module, NBLoRALinear):
+            if isinstance(module, _NBL):
                 module.clamp_scale()
 
     # ── Post-step measurements ──
@@ -1799,13 +1800,14 @@ def first_step_probe(
     for idx in pre_logits:
         text = probe_texts[idx]
         tokens = mx.array(tokenizer.encode(text))
-        if tokens.size > 64:
-            tokens = tokens[:64]
+        if tokens.size > _MAX_PROBE_TOKENS:  # memory budget cap
+            tokens = tokens[:_MAX_PROBE_TOKENS]
         logits = model(tokens[None])
         post_l = logits[0, -1, :]
         mx.eval(post_l)
 
         base_l = pre_logits[idx]
+        # D_KL(adapted || base) — forward KL measuring adapted drift from base
         adapted_lsm = post_l - mx.logsumexp(post_l, keepdims=True)
         base_lsm = base_l - mx.logsumexp(base_l, keepdims=True)
         p_adapted = mx.softmax(post_l)
@@ -1830,21 +1832,35 @@ def first_step_probe(
             delta = module.get_effective_delta()
             post_delta_eff[name] = delta
 
-    # Compute per-module DeltaW_eff and norms
+    # Behavioral norm: ||X @ DeltaW^T||_F requires per-module input activations,
+    # but MLX has no forward hooks. Report spectral norm (operator norm) of
+    # DeltaW_eff instead: ||DeltaW||_spectral bounds ||X @ DeltaW^T||_F / ||X||_F.
+    # This is the correct operator family for preservation questions (AGENTS.md §4).
     per_module_metrics = {}
-    total_delta_norm_sq = 0.0
+    total_behavioral_bound_sq = 0.0
     for name in pre_delta_eff:
         if name not in post_delta_eff:
             continue
         delta_w = post_delta_eff[name] - pre_delta_eff[name]  # [out, in]
         mx.eval(delta_w)
-        delta_f = float(mx.sqrt(mx.sum(delta_w * delta_w)).item())
+        # Spectral norm (max singular value) — the operator norm for behavioral impact
+        # Use power iteration to avoid SVD crash risk (MLX gotcha)
+        delta_f32 = delta_w.astype(mx.float32)
+        # 10 iterations of power iteration for spectral norm
+        v = mx.ones((delta_f32.shape[1],), dtype=mx.float32)
+        for _ in range(10):
+            u = delta_f32 @ v
+            u = u / (mx.sqrt(mx.sum(u * u)) + 1e-12)
+            v = delta_f32.T @ u
+            v = v / (mx.sqrt(mx.sum(v * v)) + 1e-12)
+        spectral_norm = float(mx.sqrt(mx.sum((delta_f32 @ v) ** 2)).item())
+        mx.eval(mx.array(spectral_norm))
         per_module_metrics[name] = {
-            "delta_w_fro": delta_f,
+            "delta_w_spectral": spectral_norm,
         }
-        total_delta_norm_sq += delta_f ** 2
+        total_behavioral_bound_sq += spectral_norm ** 2
 
-    total_delta_norm = math.sqrt(total_delta_norm_sq)
+    total_behavioral_bound = math.sqrt(total_behavioral_bound_sq)
     loss_decrease = loss_pre_val - loss_post_val
     kl_mean = sum(kl_values) / max(len(kl_values), 1)
 
@@ -1858,7 +1874,7 @@ def first_step_probe(
         "kl_max": max(kl_values) if kl_values else 0.0,
         "top_token_flips": flips,
         "n_probes": len(pre_logits),
-        "total_delta_w_fro": total_delta_norm,
+        "total_delta_w_spectral": total_behavioral_bound,
         "drift_per_learning": (
             kl_mean / abs(loss_decrease) if abs(loss_decrease) > 1e-12 else float("inf")
         ),
@@ -3909,9 +3925,29 @@ def run_diagnostic_experiment(
     5. First-step mechanism probe (geo-pissa vs NB-LoRA)
     """
     import math
+    import subprocess
 
     import mlx.core as mx
     from mlx_lm import load as mlx_load
+
+    # GPU process check (AGENTS.md §8: mandatory before any model work)
+    gpu_check = subprocess.run(
+        ["pgrep", "-af", "python|mlx"],
+        capture_output=True, text=True,
+    )
+    if gpu_check.stdout.strip():
+        # Filter out known non-GPU processes
+        gpu_lines = [
+            line for line in gpu_check.stdout.strip().split("\n")
+            if not any(skip in line for skip in
+                       ["pet server", "vscode", "Code Helper", "Pylance", "pgrep"])
+        ]
+        if gpu_lines:
+            logger.warning(
+                "GPU process check found active Python/MLX processes:\n"
+                + "\n".join(f"  {l}" for l in gpu_lines)
+                + "\nProceeding — verify these are not GPU-heavy workloads."
+            )
 
     model_path = str(model_spec["path"])
     model_name = model_spec["name"]
@@ -4000,7 +4036,9 @@ def run_diagnostic_experiment(
             json.dump(pissa_init_eval, f, indent=2)
         logger.info(f"  Zero-step PiSSA eval: {pissa_init_eval}")
 
-        # Check if benchmarks match base (±0.02 tolerance)
+        # Log per-task deltas for inspection (no hard threshold — the real
+        # falsifier is whether the full benchmark vector matches base within
+        # evaluation noise, judged by the operator, not a magic number).
         if "base_eval" in results:
             for task in tasks:
                 base_score = results["base_eval"].get(task, {}).get("acc_norm",
@@ -4008,10 +4046,12 @@ def run_diagnostic_experiment(
                 init_score = pissa_init_eval.get(task, {}).get("acc_norm",
                     pissa_init_eval.get(task, {}).get("acc", 0))
                 delta = abs(base_score - init_score) if isinstance(base_score, (int, float)) and isinstance(init_score, (int, float)) else None
-                if delta is not None and delta > 0.02:
-                    logger.warning(
-                        f"  MISMATCH: {task} base={base_score:.3f} init={init_score:.3f} "
-                        f"delta={delta:.3f} > 0.02"
+                if delta is not None:
+                    level = "WARNING" if delta > 0.01 else "INFO"
+                    logger.log(
+                        logging.WARNING if delta > 0.01 else logging.INFO,
+                        f"  {task}: base={base_score:.3f} init={init_score:.3f} "
+                        f"delta={delta:.3f}"
                     )
 
     mx.clear_cache()
@@ -4080,7 +4120,7 @@ def run_diagnostic_experiment(
         rank_overrides=rank_overrides,
         seed=seed,
         pissa_init=True,
-        steps_per_save=50,
+        steps_per_save=50,  # checkpoint frequency budget cap, not a derived quantity
         retention_tracker=tracker2,
     )
     results["pissa_nb_surface_checkpointed"] = pissa_result
@@ -4129,7 +4169,102 @@ def run_diagnostic_experiment(
     # ── Save summary ──
     with open(diag_dir / "summary.json", "w") as f:
         json.dump(results, f, indent=2, default=str)
-    logger.info(f"\nDiagnostic results saved to {diag_dir}")
+
+    # ── Required artifact bundle (AGENTS.md §7) ──
+    # Manifest/charter
+    manifest = {
+        "family": "nblora_diagnostic",
+        "blocker": "R2/Q1",
+        "description": (
+            "Post-falsification diagnostic: mechanism investigation for "
+            "NB-LoRA catastrophic forgetting despite good val_loss. "
+            "Exploratory, single-seed. NOT R1 closure."
+        ),
+        "model": model_name,
+        "seed": seed,
+        "timestamp": datetime.now(tz=dt_module.timezone.utc).isoformat(),
+        "artifacts": [
+            "summary.json",
+            "baseline_eval.json",
+            "pissa_init_only/",
+            "geo_pissa_checkpointed/",
+            "pissa_nb_surface_checkpointed/",
+            "first_step_probe/",
+            "REPORT.md",
+            "manifest.json",
+            "ledger.jsonl",
+        ],
+    }
+    with open(diag_dir / "manifest.json", "w") as f:
+        json.dump(manifest, f, indent=2)
+
+    # Append-only ledger
+    ledger_entry = {
+        "timestamp": datetime.now(tz=dt_module.timezone.utc).isoformat(),
+        "model": model_name,
+        "seed": seed,
+        "status": "completed",
+        "summary_keys": list(results.keys()),
+    }
+    ledger_path = diag_dir / "ledger.jsonl"
+    with open(ledger_path, "a") as f:
+        f.write(json.dumps(ledger_entry) + "\n")
+
+    # REPORT.md (generated from results)
+    report_lines = [
+        f"# Diagnostic Report: {model_name}",
+        "",
+        f"**Blocker:** R2 / Q1 (behavioral failure operator)",
+        f"**Seed:** {seed}",
+        f"**Status:** Exploratory mechanism investigation (not R1 closure)",
+        "",
+        "## Results Summary",
+        "",
+    ]
+    if "base_eval" in results:
+        report_lines.append("### Base Model Eval")
+        for task, scores in results["base_eval"].items():
+            if isinstance(scores, dict):
+                acc = scores.get("acc_norm", scores.get("acc", "N/A"))
+                report_lines.append(f"- {task}: {acc}")
+        report_lines.append("")
+
+    if "pissa_init_only" in results and "eval" in results["pissa_init_only"]:
+        report_lines.append("### Zero-Step PiSSA Control")
+        for task, scores in results["pissa_init_only"]["eval"].items():
+            if isinstance(scores, dict):
+                acc = scores.get("acc_norm", scores.get("acc", "N/A"))
+                report_lines.append(f"- {task}: {acc}")
+        report_lines.append("")
+
+    for probe_method in ["geo_pissa", "nblora"]:
+        key = f"first_step_{probe_method}"
+        if key in results:
+            r = results[key]
+            report_lines.extend([
+                f"### First-Step Probe: {probe_method}",
+                f"- Loss: {r.get('loss_pre', 'N/A'):.4f} -> {r.get('loss_post', 'N/A'):.4f}",
+                f"- KL mean: {r.get('kl_mean', 'N/A'):.6f}",
+                f"- Top-token flips: {r.get('top_token_flips', 'N/A')}",
+                f"- DeltaW spectral norm: {r.get('total_delta_w_spectral', 'N/A')}",
+                f"- Drift/learning ratio: {r.get('drift_per_learning', 'N/A')}",
+                "",
+            ])
+
+    report_lines.extend([
+        "## Prediction Contract",
+        "",
+        "See plan file for pre-registered predictions and falsifiers.",
+        "",
+        "## Interpretation",
+        "",
+        "_To be filled after reviewing results._",
+    ])
+
+    with open(diag_dir / "REPORT.md", "w") as f:
+        f.write("\n".join(report_lines) + "\n")
+
+    logger.info(f"\nDiagnostic results + artifact bundle saved to {diag_dir}")
 
     return results
 

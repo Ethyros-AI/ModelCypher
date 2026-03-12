@@ -200,7 +200,15 @@ class TrainingComparisonService:
         observations.extend(result._commensurability_notes)
 
         recs: list[AgentRecommendation] = []
-        if result.winner:
+        if not result.commensurable:
+            # Fail closed: non-commensurable runs get no winner recommendation
+            summary = (
+                "Comparison: results are not commensurable — "
+                "different model, data, or evaluation surface. "
+                "Metric deltas are reported but no winner is recommended."
+            )
+            status = "partial"
+        elif result.winner:
             winner_label = result.label_a if result.winner == "a" else result.label_b
             recs.append(
                 AgentRecommendation(
@@ -208,17 +216,17 @@ class TrainingComparisonService:
                     reason=f"{winner_label} is the better option. {result.winner_reason}",
                 )
             )
-
-        if result.winner:
             summary = (
                 f"Comparison: {result.winner.upper()} wins. {result.winner_reason}"
             )
+            status = "success"
         else:
             summary = "Comparison: no clear winner between the two runs."
+            status = "success"
 
         return AgentEnvelope(
             command="mc train compare",
-            status="success",
+            status=status,
             result=result.to_dict(),
             diagnostics=AgentDiagnostics(
                 summary=summary,
@@ -358,6 +366,7 @@ class TrainingComparisonService:
             "model_id": "model architecture",
             "data_hash": "training data",
             "eval_data_hash": "evaluation data",
+            "benchmark_suite": "benchmark suite",
         }
 
         for field, label in identity_fields.items():

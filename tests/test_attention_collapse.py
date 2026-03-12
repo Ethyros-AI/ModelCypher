@@ -139,6 +139,27 @@ class TestComputeAttentionCollapse:
         assert "columnMass" in d
         assert "gradientSuppression" in d
         assert "effectiveRank" in d
+        assert "position0Mass" in d
+
+    def test_position_0_mass_from_column_mass(self) -> None:
+        """position_0_mass equals column_mass[0]."""
+        # Concentrated on column 0
+        row = [0.9, 0.05, 0.05]
+        matrix = [row[:] for _ in range(3)]
+        result = compute_attention_collapse(matrix, "float32")
+        assert abs(result.position_0_mass - result.column_mass[0]) < 1e-10
+        assert result.position_0_mass > 0.5
+
+    def test_position_0_mass_low_when_sink_elsewhere(self) -> None:
+        """position_0_mass is low when attention concentrates on another column."""
+        # Concentrated on column 2
+        matrix = [
+            [0.05, 0.05, 0.9],
+            [0.05, 0.05, 0.9],
+            [0.05, 0.05, 0.9],
+        ]
+        result = compute_attention_collapse(matrix, "float32")
+        assert result.position_0_mass < 0.1
 
 
 class TestSummarizeLayerCollapse:
@@ -154,6 +175,7 @@ class TestSummarizeLayerCollapse:
                 column_mass=[1.0, 0.0, 0.0],
                 gradient_suppression=0.0,
                 effective_rank=1.0,
+                position_0_mass=1.0,
             )
             for _ in range(4)
         ]
@@ -172,6 +194,7 @@ class TestSummarizeLayerCollapse:
             column_mass=[1.0, 0.0],
             gradient_suppression=0.0,
             effective_rank=1.0,
+            position_0_mass=1.0,
         )
         active = AttentionCollapseResult(
             singular_values=[0.7, 0.3],
@@ -180,6 +203,7 @@ class TestSummarizeLayerCollapse:
             column_mass=[0.6, 0.4],
             gradient_suppression=0.12,
             effective_rank=1.8,
+            position_0_mass=0.6,
         )
         result = summarize_layer_collapse([collapsed, active, collapsed], layer_idx=3)
         assert not result.is_collapsed
@@ -195,6 +219,7 @@ class TestSummarizeLayerCollapse:
             column_mass=[0.4, 0.3, 0.3],
             gradient_suppression=0.1,
             effective_rank=2.5,
+            position_0_mass=0.4,
         )
         result = summarize_layer_collapse([active, active], layer_idx=0)
         assert not result.is_collapsed
