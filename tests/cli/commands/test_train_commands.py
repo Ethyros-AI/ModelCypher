@@ -282,7 +282,12 @@ class _CaptureDatasetService:
                     "signal_rank_summary": None,
                 },
                 "controller_plan": {
-                    "optimizer_type": "cayley_stiefel",
+                    "method": "geometric_lora",
+                    "init_method": "pissa",
+                    "optimizer": "fisher_mass",
+                    "controller": "mass",
+                    "stopping": "geometric_certificate",
+                    "optimizer_type": "geometric_lora",
                     "controller_mode": "structural_observe",
                     "optimizer_research_mode": "cayley_stiefel_mass",
                     "learning_rate_policy": "No fixed scalar LR.",

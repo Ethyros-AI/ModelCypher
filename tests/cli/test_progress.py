@@ -38,4 +38,6 @@ def test_training_loop_started_reports_precision_cap_context():
     assert payload["progress"]["max_iters"] == 141953
     assert payload["progress"]["iters_per_epoch"] == 49
     assert payload["progress"]["precision_floor_epochs"] == 2897
+    assert "geometric LoRA" in payload["what"]
+    assert "geometry-derived LoRA" in payload["why"]
     assert "safety cap" in payload["geometry"]["explanation"]

@@ -54,6 +54,13 @@ from modelcypher.core.domain.training.mass_step_size import (
     validate_controller_mode,
     validate_optimizer_research_mode,
 )
+from modelcypher.core.domain.training.identity import (
+    GEOMETRIC_LORA_CONTROLLER,
+    GEOMETRIC_LORA_INIT_METHOD,
+    GEOMETRIC_LORA_METHOD,
+    GEOMETRIC_LORA_OPTIMIZER,
+    GEOMETRIC_LORA_STOPPING,
+)
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.training.geometric_optimizer import OptimizerGeometryConfig
@@ -816,15 +823,27 @@ class _MLXTrainingAdapterTrainMixin:
         if adaptive_lr:
             lr_mode = "adaptive-monotonic" if lr_monotonic else "adaptive"
         optimizer_name = (
-            "AdamW-matched-trace"
+            "adamw"
             if optimizer_research_mode == OPTIMIZER_MODE_ADAMW_MATCHED_TRACE
-            else ("PiSSA-Fisher" if use_pissa_lora else "Cayley-Fisher")
+            else GEOMETRIC_LORA_OPTIMIZER
         )
+        method_name = GEOMETRIC_LORA_METHOD if use_pissa_lora else "nb_lora_cayley"
+        init_name = GEOMETRIC_LORA_INIT_METHOD if use_pissa_lora else "cayley"
         logger.info(
-            "Training: optimizer=%s, stop=%s, cap=%d, epoch=%d batches, lr=%.2e, mode=%s",
+            (
+                "Training: method=%s, init=%s, optimizer=%s, controller=%s, "
+                "stopping=%s, monitor=%s, cap=%d, epoch=%d batches, lr=%.2e, mode=%s"
+            ),
+            method_name,
+            init_name,
             optimizer_name,
+            GEOMETRIC_LORA_CONTROLLER,
+            GEOMETRIC_LORA_STOPPING,
             "certificate" if use_val_stopping else "training loss",
-            max_iters, n_batches_per_epoch, current_eta, lr_mode,
+            max_iters,
+            n_batches_per_epoch,
+            current_eta,
+            lr_mode,
         )
         # Track params at epoch start for update_norm
         epoch_start_params: dict[str, Any] | None = None

@@ -15,17 +15,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Dataset-driven geometric LoRA training via NB-LoRA.
+"""Dataset-driven geometric LoRA training.
 
-One training method. Geometry derives everything:
+One canonical training path. Geometry and measurement derive everything:
 - Which layers to target (tail_dims > 0)
 - Rank per layer (min(tail_dims, n_train_samples))
-- Scale bound (sigma_k / 2 * (1 - sqrt(eps)), IEEE 754 derived)
-- Learning rate (MASS: min(eta_ceiling, eta_sps, eta_weyl) — spectral bounds)
-- Optimizer (Cayley-Stiefel retraction on rank-r Stiefel manifold)
+- Initialization (PiSSA on the geometry-derived surface)
+- Step size (MASS: min(eta_ceiling, eta_sps, eta_weyl))
 - Batch size (B_crit = 1/SNR from gradient noise)
-- When to stop (val loss convergence, Weyl adapter saturation exhaustion, loss stability)
-- Post-training verification (CKA alignment, spectral bounds)
+- When to stop (validation convergence, adapter saturation, loss stability)
+- Post-training verification (CKA alignment, spectral and behavior gates)
 """
 
 from __future__ import annotations
@@ -66,6 +65,13 @@ from modelcypher.core.domain.training.quantization_weyl_precheck import (
 from modelcypher.core.domain.training.geometric_optimizer import (
     derive_optimizer_geometry_config,
 )
+from modelcypher.core.domain.training.identity import (
+    GEOMETRIC_LORA_CONTROLLER,
+    GEOMETRIC_LORA_INIT_METHOD,
+    GEOMETRIC_LORA_METHOD,
+    GEOMETRIC_LORA_OPTIMIZER,
+    GEOMETRIC_LORA_STOPPING,
+)
 from modelcypher.core.domain.training.pipeline_gate import (
     PipelineGateInput,
     evaluate_pipeline_gate,
@@ -105,7 +111,7 @@ _DEFAULT_ONLINE_EVAL_N = 20
 
 @dataclass
 class DatasetTrainResult:
-    """Result of dataset-driven NB-LoRA training."""
+    """Result of dataset-driven geometric LoRA training."""
 
     train_iters: int
     initial_loss: float
@@ -147,8 +153,12 @@ class DatasetTrainResult:
     dim_final_used_fraction: float | None = None
     dim_final_null_fraction: float | None = None
     dim_null_recruitment_from_baseline: float | None = None
-    # G6: Optimizer type used
-    optimizer_type: str = "cayley_stiefel"
+    # Canonical training identity for the shipped geometry-derived LoRA path.
+    method: str = GEOMETRIC_LORA_METHOD
+    init_method: str = GEOMETRIC_LORA_INIT_METHOD
+    optimizer: str = GEOMETRIC_LORA_OPTIMIZER
+    controller: str = GEOMETRIC_LORA_CONTROLLER
+    stopping: str = GEOMETRIC_LORA_STOPPING
     # Outer similarity (final epoch, when rss_monitor=True)
     rss_final_cosine: float | None = None
     rss_final_spearman: float | None = None
@@ -220,7 +230,11 @@ class DatasetTrainResult:
             "spectral_bounds_ok": self.spectral_bounds_ok,
             "max_spectral_ratio": self.max_spectral_ratio,
             "training_time_seconds": self.training_time_seconds,
-            "optimizer_type": self.optimizer_type,
+            "method": self.method,
+            "init_method": self.init_method,
+            "optimizer": self.optimizer,
+            "controller": self.controller,
+            "stopping": self.stopping,
             "auto_retention_samples_collected": self.auto_retention_samples_collected,
         }
         if self.epoch_metrics is not None:
@@ -333,7 +347,7 @@ class DatasetTrainResult:
 
 @dataclass
 class NBTargetSurface:
-    """Resolved NB-LoRA adaptation surface (geometry-derived).
+    """Resolved geometric LoRA adaptation surface.
 
     Captures the exact modules, per-module ranks, and spectral bounds
     from the production geometry pipeline.  Reusable by any method that
@@ -364,7 +378,7 @@ class NBTargetSurface:
 
 @dataclass
 class DerivedTrainingPlan:
-    """Resolved pre-training plan for the canonical NB-LoRA path.
+    """Resolved pre-training plan for the canonical geometric LoRA path.
 
     The plan carries both the user-facing derivation summary and the internal
     resolved artifacts needed to run training without re-deriving the target
@@ -433,7 +447,7 @@ class DerivedTrainingPlan:
         optimizer_type = (
             "adamw"
             if self.optimizer_research_mode == OPTIMIZER_MODE_ADAMW_MATCHED_TRACE
-            else "cayley_stiefel"
+            else GEOMETRIC_LORA_METHOD
         )
         return {
             "inputs": {
@@ -470,6 +484,15 @@ class DerivedTrainingPlan:
                 "signal_rank_summary": self._signal_rank_payload(),
             },
             "controller_plan": {
+                "method": GEOMETRIC_LORA_METHOD,
+                "init_method": GEOMETRIC_LORA_INIT_METHOD,
+                "optimizer": (
+                    "adamw"
+                    if self.optimizer_research_mode == OPTIMIZER_MODE_ADAMW_MATCHED_TRACE
+                    else GEOMETRIC_LORA_OPTIMIZER
+                ),
+                "controller": GEOMETRIC_LORA_CONTROLLER,
+                "stopping": GEOMETRIC_LORA_STOPPING,
                 "optimizer_type": optimizer_type,
                 "controller_mode": self.controller_mode,
                 "optimizer_research_mode": self.optimizer_research_mode,
@@ -479,7 +502,7 @@ class DerivedTrainingPlan:
                 ),
                 "batch_size_policy": (
                     "Batch size is derived during training from gradient noise "
-                    "scale after NB-LoRA injection."
+                    "scale after LoRA injection."
                 ),
             },
             "derived_now": {
@@ -600,10 +623,10 @@ class DerivedTrainingPlan:
 
 
 class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
-    """Train LoRA adapters from text datasets using NB-LoRA.
+    """Train geometry-derived LoRA adapters from text datasets.
 
-    One method. Geometry decides everything. Bounds by construction.
-    ScaledGD preconditioning. Weyl adapter-saturation monitoring. CKA verification.
+    One canonical path. Geometry decides the surface, MASS chooses step sizes,
+    and verification measures preservation and failure modes directly.
     """
 
     def __init__(self, adapter: Any, backend: "Backend"):
@@ -1048,7 +1071,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         weight_decay: float = 0.0,
         plan: DerivedTrainingPlan | None = None,
     ) -> DatasetTrainResult:
-        """Train an NB-LoRA adapter from a JSONL dataset.
+        """Train a geometric LoRA adapter from a JSONL dataset.
 
         All hyperparameters are geometry-derived.  The user selects a model
         and dataset; everything else is math.
@@ -1246,12 +1269,11 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 train_samples, retention_samples, retention_fraction,
             )
         else:
-            # Auto-retention disabled by default. The Cayley-Stiefel spectral
-            # bound already provides preservation by construction (||ΔW||₂ bounded).
-            # Auto-retention duplicates training samples at 50% mix, diluting
-            # gradient signal by 2× and doubling iterations per epoch with no
-            # new information. Use explicit retention_dataset_path when needed.
-            logger.info("Auto-retention disabled (Cayley-Stiefel bound provides preservation)")
+            # Auto-retention is disabled by default on the canonical path.
+            # Duplicating training samples at 50% mix dilutes gradient signal
+            # by 2x and doubles iterations per epoch with no new information.
+            # Use explicit retention_dataset_path when preservation data is needed.
+            logger.info("Auto-retention disabled on the canonical geometric LoRA path")
 
         # 2.6. Answer-masked dataset preparation
         answer_masked_train = None
@@ -1443,7 +1465,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             n_model_layers = self._backend.get_num_layers(model)
             target_layers = list(range(n_model_layers))
 
-            # Measure baseline constraints on clean base model (before NB-LoRA)
+            # Measure baseline constraints on the clean base model before LoRA injection.
             inv_distances, sep_distances, layer_entropies, layer_entropy_stds = (
                 self._adapter.measure_baseline_constraints(
                     model, tokenizer, paired_train_dataset,
@@ -1529,9 +1551,9 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                         "Pre-training routing collection failed", exc_info=True,
                     )
 
-        # 6. Inject PiSSA-initialized LoRA on geometry-derived surface
+        # 6. Inject geometry-derived LoRA using PiSSA initialization.
         logger.info(
-            "Injecting PiSSA-LoRA into %d target modules...",
+            "Injecting geometry-derived LoRA (init=pissa) into %d target modules...",
             len(target_modules),
         )
         n_lora_layers = self._adapter.inject_pissa_lora(
@@ -1539,8 +1561,8 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             rank_overrides=final_ranks,
         )
         if n_lora_layers <= 0:
-            raise ValueError("No PiSSA-LoRA layers were injected")
-        logger.info("PiSSA-LoRA injection complete: %d layers", n_lora_layers)
+            raise ValueError("No geometry-derived LoRA layers were injected")
+        logger.info("Geometry-derived LoRA injection complete: %d layers", n_lora_layers)
 
         # 6b. Log per-layer capacity at injection time
         for mod_name in target_modules:
@@ -1855,16 +1877,18 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 logger.debug("Baseline degeneration unavailable", exc_info=True)
 
         # 8.10.2. Collect inference probe activations for dual-manifold CKA
-        # (diagnostic-only). Model is post-injection but NB-LoRA starts at
-        # identity, so activations are mathematically equivalent to base.
+        # (diagnostic-only). Model is post-injection but geometric LoRA starts
+        # as an exact reconstruction of the base weights, so activations are
+        # mathematically equivalent to base.
         inference_base_activations: dict[int, list] | None = None
         if eval_problems:
             inference_base_activations = self._collect_inference_probe_activations(
                 model, tokenizer, eval_problems,
             )
 
-        # 8.10.3. Collect base token losses for token-weighted val loss (P4)
-        # NB-LoRA starts at identity, so model output == base model output.
+        # 8.10.3. Collect base token losses for token-weighted val loss (P4).
+        # Geometric LoRA starts as an exact reconstruction of the base weights,
+        # so model output == base model output.
         base_token_losses = None
         if eval_dataset:
             try:
@@ -2241,8 +2265,16 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 "stop_reason": stop_reason,
                 "n_lora_layers": str(n_lora_layers),
                 "train_iters": str(train_iters),
-                "method": "pissa_lora",
-                "optimizer": "pissa_fisher",
+                "type": GEOMETRIC_LORA_METHOD,
+                "method": GEOMETRIC_LORA_METHOD,
+                "init_method": GEOMETRIC_LORA_INIT_METHOD,
+                "optimizer": (
+                    "adamw"
+                    if optimizer_research_mode == OPTIMIZER_MODE_ADAMW_MATCHED_TRACE
+                    else GEOMETRIC_LORA_OPTIMIZER
+                ),
+                "controller": GEOMETRIC_LORA_CONTROLLER,
+                "stopping": GEOMETRIC_LORA_STOPPING,
                 "training_objective": training_objective,
                 "capability_transfer": "true",
             }
@@ -2358,11 +2390,15 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             dim_final_used_fraction=dim_final_used_fraction,
             dim_final_null_fraction=dim_final_null_fraction,
             dim_null_recruitment_from_baseline=dim_null_recruitment_from_baseline,
-            optimizer_type=(
+            method=GEOMETRIC_LORA_METHOD,
+            init_method=GEOMETRIC_LORA_INIT_METHOD,
+            optimizer=(
                 "adamw"
                 if optimizer_research_mode == OPTIMIZER_MODE_ADAMW_MATCHED_TRACE
-                else "cayley_stiefel"
+                else GEOMETRIC_LORA_OPTIMIZER
             ),
+            controller=GEOMETRIC_LORA_CONTROLLER,
+            stopping=GEOMETRIC_LORA_STOPPING,
             rss_final_cosine=rss_final_cosine,
             rss_final_spearman=rss_final_spearman,
             rss_final_top1=rss_final_top1,

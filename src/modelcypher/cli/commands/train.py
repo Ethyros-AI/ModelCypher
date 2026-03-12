@@ -17,9 +17,9 @@
 
 """Training CLI.
 
-NB-LoRA: Cayley-parameterized, geometry-derived, bounds by construction.
-All training controls on the canonical path are derived from model geometry or
-measured data; optional flags add instrumentation only.
+Geometric LoRA: geometry-derived target selection, ranks, step sizing,
+and stopping. All training controls on the canonical path are derived
+from model geometry or measured data.
 """
 
 from __future__ import annotations
@@ -196,11 +196,11 @@ def train_run(
         help="Enable entropy floor regularization during CE training (prevents overconfident logits)",
     ),
 ) -> None:
-    """Canonical NB-LoRA training path.
+    """Canonical geometric LoRA training path.
 
-    Trains an NB-LoRA adapter using Cayley-Stiefel optimization with all
-    hyperparameters derived from model geometry by default. Optional flags
-    expose instrumentation on the same path.
+    Trains a geometry-derived LoRA adapter with all hyperparameters derived
+    from model geometry by default. Optional flags expose instrumentation on
+    the same path.
 
     Output fields (when --json):
         train_iters: Number of training iterations completed

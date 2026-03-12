@@ -265,6 +265,36 @@ def test_save_adapter_per_layer_ranks(backend_name, tmp_path) -> None:
         assert rank > 0
 
 
+@pytest.mark.parametrize("backend_name", ["mlx"])
+@pytest.mark.mlx
+def test_save_pissa_adapter_writes_geometric_lora_identity(backend_name, tmp_path) -> None:
+    """PiSSA export writes the canonical geometric_lora identity surface."""
+    import json
+
+    backend, model, _ = _load_model_and_tokenizer(backend_name)
+    adapter = MLXTrainingAdapter(backend)
+
+    weights = adapter.extract_weight_matrices(model)
+    geometries = analyze_weight_geometries(weights, backend)
+    targets = select_target_modules(geometries)
+
+    assert targets, "Expected targetable layers in toy model"
+
+    injected = adapter.inject_pissa_lora(model, geometries, targets)
+    assert injected > 0
+
+    output_dir = tmp_path / "pissa_adapter_out"
+    adapter.save_adapter(model, output_dir)
+
+    config = json.loads((output_dir / "adapter_config.json").read_text(encoding="utf-8"))
+    assert config["type"] == "geometric_lora"
+    assert config["method"] == "geometric_lora"
+    assert config["init_method"] == "pissa"
+    assert config["optimizer"] == "fisher_mass"
+    assert config["controller"] == "mass"
+    assert config["stopping"] == "geometric_certificate"
+
+
 # ── Qwen3.5-style layout: root.language_model.layers ──────────────────────────
 
 class _ToyLMBackbone(nn.Module):
