@@ -481,6 +481,8 @@ def _active_gpu_processes() -> list[str]:
         "uvicorn",
         "resource_tracker",
         "multiprocessing",
+        "pytest",
+        "exec(eval(sys.stdin.readline()))",
     )
     lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
     filtered = []

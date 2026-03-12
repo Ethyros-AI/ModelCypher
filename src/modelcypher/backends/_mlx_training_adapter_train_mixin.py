@@ -1064,8 +1064,12 @@ class _MLXTrainingAdapterTrainMixin:
         # Sub-epoch re-anchor: run exact spectral measurement every N steps
         # instead of accumulating per-step Frobenius decrements (which
         # over-count by ~3-4× due to triangle inequality on spectral norm).
-        # ~10 re-anchors per epoch balances accuracy vs overhead.
-        budget_reanchor_interval: int = max(10, n_batches_per_epoch // 10)
+        # Power iteration costs < 1ms per re-anchor (rank-r intermediates).
+        # Every 10 steps gives the controller fresh budget signal ~96×/epoch
+        # on a 960-step epoch.  The old interval (n_batches//10 ≈ 96) left
+        # the controller blind for the entire first re-anchor window, causing
+        # matched-trace MASS to consume the full budget unseen.
+        budget_reanchor_interval: int = 10
         if remaining_budget is not None:
             logger.info(
                 "PiSSA remaining budget seed: %.4e (exact reconstruction at step 0), "
