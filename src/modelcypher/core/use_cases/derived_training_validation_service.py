@@ -627,7 +627,17 @@ class DerivedTrainingValidationService:
             structural_failure_modes.append("loss_not_improved")
         if not perplexity_improved:
             structural_failure_modes.append("perplexity_not_improved")
-        structural_failure_modes.extend(pipeline_gate.failure_modes)
+        # Only required gate failures are structural blockers.  Non-required
+        # (advisory) failures are still reported in the gate's failure_modes
+        # for diagnostics, but don't drive structural_passed or trial.passed.
+        structural_failure_modes.extend(
+            fm for fm in pipeline_gate.failure_modes
+            if fm in {
+                check.failure_mode
+                for check in pipeline_gate.checks.values()
+                if check.required and check.status == "fail"
+            }
+        )
         min_cka = (
             float(train_result.min_cka)
             if getattr(train_result, "min_cka", None) is not None

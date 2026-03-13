@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import math
+
 import mlx.core as mx
 import mlx.nn as nn
 import pytest
@@ -333,6 +335,107 @@ def test_pissa_effective_update_norm_uses_induced_weight_step(backend_name) -> N
     expected = float(mx.sqrt(induced_norm_sq).item())
 
     assert measured == pytest.approx(expected, rel=1e-6)
+
+
+@pytest.mark.parametrize("backend_name", ["mlx"])
+@pytest.mark.mlx
+def test_batched_layer_measurements_match_expected_for_pissa(backend_name) -> None:
+    backend = _get_backend_or_fail(backend_name)
+    model = _ToyModel()
+    adapter = MLXTrainingAdapter(backend)
+
+    weights = adapter.extract_weight_matrices(model)
+    geometries = analyze_weight_geometries(weights, backend)
+    targets = select_target_modules(geometries)
+    assert targets, "Expected targetable layers in toy model"
+
+    injected = adapter.inject_pissa_lora(model, geometries, targets[:1])
+    assert injected == 1
+
+    layer_key, lora = next(adapter._iter_pissa_lora_modules(model))
+    prefix = layer_key.removesuffix(".weight")
+    d_a = mx.ones_like(lora.lora_a)
+    d_b = mx.ones_like(lora.lora_b) * 0.5
+    grad_map = {
+        prefix + ".lora_a": d_a,
+        prefix + ".lora_b": d_b,
+    }
+
+    measurements = adapter._batched_layer_measurements_from_gradient(
+        model=model,
+        grad_map=grad_map,
+        step_learning_rate=0.25,
+        use_pissa_lora=True,
+        opt_config=None,
+    )
+
+    assert measurements is not None
+    measurement = measurements[layer_key]
+    d_a_sq = mx.sum(d_a * d_a)
+    d_b_sq = mx.sum(d_b * d_b)
+    mx.eval(d_a_sq, d_b_sq)
+    expected_norm = math.sqrt(float(d_a_sq.item()) + float(d_b_sq.item()))
+
+    assert measurement.parameter_update_norm == pytest.approx(0.25 * expected_norm, rel=1e-6)
+    assert measurement.total_step_fraction == pytest.approx(1.0, rel=1e-6)
+    assert measurement.scale_bound is None
+
+
+@pytest.mark.parametrize("backend_name", ["mlx"])
+@pytest.mark.mlx
+def test_batched_layer_measurements_match_expected_for_nb_lora(backend_name) -> None:
+    from modelcypher.backends.mlx_training_adapter import NBLoRALinear
+
+    backend = _get_backend_or_fail(backend_name)
+    model = _ToyModel()
+    adapter = MLXTrainingAdapter(backend)
+
+    weights = adapter.extract_weight_matrices(model)
+    geometries = analyze_weight_geometries(weights, backend)
+    targets = select_target_modules(geometries)
+    assert targets, "Expected targetable layers in toy model"
+
+    injected = adapter.inject_nb_lora(
+        model,
+        geometries,
+        targets[:1],
+        rank_overrides={targets[0]: 1},
+    )
+    assert injected == 1
+
+    layer_key, nb_lora = next(adapter._iter_nb_lora_modules(model))
+    assert isinstance(nb_lora, NBLoRALinear)
+    prefix = layer_key.removesuffix(".weight")
+    d_a = mx.ones_like(nb_lora.A_tilde)
+    d_b = mx.ones_like(nb_lora.B_tilde) * 0.25
+    d_s = mx.ones_like(nb_lora.S_raw) * 0.125
+    grad_map = {
+        prefix + ".A_tilde": d_a,
+        prefix + ".B_tilde": d_b,
+        prefix + ".S_raw": d_s,
+    }
+
+    measurements = adapter._batched_layer_measurements_from_gradient(
+        model=model,
+        grad_map=grad_map,
+        step_learning_rate=0.1,
+        use_pissa_lora=False,
+        opt_config=None,
+    )
+
+    assert measurements is not None
+    measurement = measurements[layer_key]
+    d_a_sq = mx.sum(d_a * d_a)
+    d_b_sq = mx.sum(d_b * d_b)
+    d_s_sq = mx.sum(d_s * d_s)
+    mx.eval(d_a_sq, d_b_sq, d_s_sq)
+    expected_norm = math.sqrt(
+        float(d_a_sq.item()) + float(d_b_sq.item()) + float(d_s_sq.item()),
+    )
+
+    assert measurement.parameter_update_norm == pytest.approx(0.1 * expected_norm, rel=1e-6)
+    assert measurement.total_step_fraction == pytest.approx(1.0, rel=1e-6)
+    assert measurement.scale_bound == pytest.approx(float(nb_lora._scale_bound), rel=1e-6)
 
 
 # ── Qwen3.5-style layout: root.language_model.layers ──────────────────────────

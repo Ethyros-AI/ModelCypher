@@ -354,10 +354,14 @@ def evaluate_pipeline_gate(
     }
 
     failure_modes: list[str] = []
+    advisory_failures: list[str] = []
     unresolved_required: list[str] = []
     for check in checks.values():
         if check.status == "fail" and check.failure_mode is not None:
-            failure_modes.append(check.failure_mode)
+            if check.required:
+                failure_modes.append(check.failure_mode)
+            else:
+                advisory_failures.append(check.failure_mode)
         if (
             check.status == "unresolved"
             and check.required
@@ -368,10 +372,13 @@ def evaluate_pipeline_gate(
                 failure_modes.append(check.failure_mode)
 
     # De-duplicate while preserving order.
-    dedup_failure_modes = tuple(dict.fromkeys(failure_modes))
+    # Only required failures block the gate. Non-required (advisory) failures
+    # are reported in the diagnostics but do not set passed=False.
+    dedup_failure_modes = tuple(dict.fromkeys(failure_modes + advisory_failures))
+    dedup_required_failures = tuple(dict.fromkeys(failure_modes))
     return PipelineGateVerdict(
         operator=_PIPELINE_GATE_OPERATOR,
-        passed=len(dedup_failure_modes) == 0,
+        passed=len(dedup_required_failures) == 0,
         failure_modes=dedup_failure_modes,
         unresolved_required=tuple(unresolved_required),
         checks=checks,

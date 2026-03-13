@@ -181,6 +181,34 @@ class _MLXTrainingAdapterTrainMixin:
     ) -> float | None:
         """Measure first-order PiSSA update norm in weight space.
 
+        Thin wrapper over ``_measure_pissa_effective_update_norm_sq_expression``
+        for call sites that need a realized Python float.
+        """
+        total_norm_sq = self._measure_pissa_effective_update_norm_sq_expression(
+            model,
+            update_direction,
+        )
+        if total_norm_sq is None:
+            return None
+
+        mx.eval(total_norm_sq)
+        total_norm_sq_val = (
+            float(total_norm_sq.item())
+            if hasattr(total_norm_sq, "item")
+            else float(total_norm_sq)
+        )
+        total_norm = math.sqrt(max(total_norm_sq_val, 0.0))
+        if not math.isfinite(total_norm) or total_norm <= 0.0:
+            return None
+        return total_norm
+
+    def _measure_pissa_effective_update_norm_sq_expression(
+        self,
+        model,
+        update_direction: dict[str, Any],
+    ) -> Any | None:
+        """Build the induced PiSSA weight-step Frobenius norm squared lazily.
+
         MASS uses ``eta_weyl = sigma_k / ||D||`` to bound spectral displacement.
         For PiSSA, the trainable coordinates are factor matrices ``(A, B)``, but
         Weyl applies to the induced weight update:
@@ -189,8 +217,9 @@ class _MLXTrainingAdapterTrainMixin:
 
         The factor-space norm can dramatically understate the real displacement
         when ``A`` and ``B`` already encode the model's principal directions.
-        This helper returns a conservative Frobenius norm of the induced update
-        across all active PiSSA layers.
+        This helper returns the unevaluated Frobenius norm squared of the
+        induced update across all active PiSSA layers so callers can batch the
+        realization with other scalar diagnostics.
         """
         total_norm_sq_terms: list[Any] = []
 
@@ -225,11 +254,92 @@ class _MLXTrainingAdapterTrainMixin:
         total_norm_sq = total_norm_sq_terms[0]
         for term in total_norm_sq_terms[1:]:
             total_norm_sq = total_norm_sq + term
-        mx.eval(total_norm_sq)
-        total_norm = float(mx.sqrt(total_norm_sq).item())
-        if not math.isfinite(total_norm) or total_norm <= 0.0:
+        return total_norm_sq
+
+    def _batched_layer_measurements_from_gradient(
+        self,
+        *,
+        model: Any,
+        grad_map: dict[str, Any],
+        step_learning_rate: float,
+        use_pissa_lora: bool,
+        opt_config: "OptimizerGeometryConfig | None",
+    ) -> dict[str, ControllerLayerMeasurement] | None:
+        """Build per-layer controller measurements with one scalar sync."""
+        if not grad_map:
             return None
-        return total_norm
+
+        layer_inputs: list[tuple[str, Any, float | None, float | None]] = []
+        if use_pissa_lora:
+            lora_iter = self._iter_pissa_lora_modules(model)
+            param_suffixes = (".lora_a", ".lora_b")
+        else:
+            lora_iter = self._iter_nb_lora_modules(model)
+            param_suffixes = (".A_tilde", ".B_tilde", ".S_raw")
+
+        for layer_key, lora_module in lora_iter:
+            prefix = layer_key.removesuffix(".weight")
+            grad_norm_sq_terms: list[Any] = []
+            for suffix in param_suffixes:
+                grad_array = grad_map.get(prefix + suffix)
+                if grad_array is None or grad_array.size == 0:
+                    continue
+                grad_norm_sq_terms.append(mx.sum(grad_array * grad_array))
+            if not grad_norm_sq_terms:
+                continue
+
+            grad_norm_sq = grad_norm_sq_terms[0]
+            for term in grad_norm_sq_terms[1:]:
+                grad_norm_sq = grad_norm_sq + term
+
+            decay_scale = None
+            if opt_config is not None and layer_key in opt_config.layer_configs:
+                decay_scale = float(opt_config.layer_configs[layer_key].decay_scale)
+            scale_bound_val = None if use_pissa_lora else float(lora_module._scale_bound)
+            layer_inputs.append((layer_key, grad_norm_sq, decay_scale, scale_bound_val))
+
+        if not layer_inputs:
+            return None
+
+        mx.eval(*[grad_norm_sq for _, grad_norm_sq, _, _ in layer_inputs])
+
+        per_layer: dict[str, ControllerLayerMeasurement] = {}
+        layer_norms: dict[str, float] = {}
+        total_norm_sq = 0.0
+
+        for layer_key, grad_norm_sq, decay_scale, scale_bound_val in layer_inputs:
+            grad_norm_sq_val = (
+                float(grad_norm_sq.item())
+                if hasattr(grad_norm_sq, "item")
+                else float(grad_norm_sq)
+            )
+            grad_norm_sq_val = max(grad_norm_sq_val, 0.0)
+            grad_norm = math.sqrt(grad_norm_sq_val)
+            layer_norms[layer_key] = grad_norm
+            total_norm_sq += grad_norm_sq_val
+            per_layer[layer_key] = ControllerLayerMeasurement(
+                parameter_update_norm=step_learning_rate * grad_norm,
+                total_step_fraction=None,
+                decay_scale=decay_scale,
+                scale_bound=scale_bound_val,
+                step_learning_rate=step_learning_rate,
+            )
+
+        total_norm = math.sqrt(total_norm_sq)
+        if total_norm > 0.0:
+            for layer_key, layer_norm in layer_norms.items():
+                current = per_layer[layer_key]
+                per_layer[layer_key] = ControllerLayerMeasurement(
+                    parameter_update_norm=current.parameter_update_norm,
+                    behavioral_transport_norm=current.behavioral_transport_norm,
+                    spectral_budget_ratio=current.spectral_budget_ratio,
+                    remaining_budget=current.remaining_budget,
+                    total_step_fraction=layer_norm / total_norm,
+                    decay_scale=current.decay_scale,
+                    scale_bound=current.scale_bound,
+                    step_learning_rate=current.step_learning_rate,
+                )
+        return per_layer
 
     def train_loop(
         self,
@@ -586,76 +696,6 @@ class _MLXTrainingAdapterTrainMixin:
                 components.append("vision_language")
             return components
 
-        def _layer_measurements_from_gradient(
-            *,
-            grad_map: dict[str, Any],
-            step_learning_rate: float,
-        ) -> dict[str, ControllerLayerMeasurement] | None:
-            if not grad_map:
-                return None
-            per_layer: dict[str, ControllerLayerMeasurement] = {}
-            total_norm_sq = 0.0
-            layer_norms: dict[str, float] = {}
-
-            if use_pissa_lora:
-                lora_iter = self._iter_pissa_lora_modules(model)
-                param_suffixes = (".lora_a", ".lora_b")
-            else:
-                lora_iter = self._iter_nb_lora_modules(model)
-                param_suffixes = (".A_tilde", ".B_tilde", ".S_raw")
-
-            for layer_key, lora_module in lora_iter:
-                prefix = layer_key.removesuffix(".weight")
-                grad_norm_sq_terms = []
-                for suffix in param_suffixes:
-                    grad_array = grad_map.get(prefix + suffix)
-                    if grad_array is None or grad_array.size == 0:
-                        continue
-                    grad_norm_sq_terms.append(mx.sum(grad_array * grad_array))
-                if not grad_norm_sq_terms:
-                    continue
-                grad_norm_sq = grad_norm_sq_terms[0]
-                for term in grad_norm_sq_terms[1:]:
-                    grad_norm_sq = grad_norm_sq + term
-                mx.eval(grad_norm_sq)
-                grad_norm = float(mx.sqrt(grad_norm_sq).item())
-                layer_norms[layer_key] = grad_norm
-                total_norm_sq += grad_norm * grad_norm
-                decay_scale = None
-                if opt_config is not None and layer_key in opt_config.layer_configs:
-                    decay_scale = float(opt_config.layer_configs[layer_key].decay_scale)
-                scale_bound_val = (
-                    None if use_pissa_lora
-                    else float(lora_module._scale_bound)
-                )
-                per_layer[layer_key] = ControllerLayerMeasurement(
-                    parameter_update_norm=step_learning_rate * grad_norm,
-                    total_step_fraction=None,
-                    decay_scale=decay_scale,
-                    scale_bound=scale_bound_val,
-                    step_learning_rate=step_learning_rate,
-                )
-
-            if not per_layer:
-                return None
-
-            total_norm = math.sqrt(total_norm_sq)
-            if total_norm > 0.0:
-                for layer_key, layer_norm in layer_norms.items():
-                    fraction = layer_norm / total_norm
-                    current = per_layer[layer_key]
-                    per_layer[layer_key] = ControllerLayerMeasurement(
-                        parameter_update_norm=current.parameter_update_norm,
-                        behavioral_transport_norm=current.behavioral_transport_norm,
-                        spectral_budget_ratio=current.spectral_budget_ratio,
-                        remaining_budget=current.remaining_budget,
-                        total_step_fraction=fraction,
-                        decay_scale=current.decay_scale,
-                        scale_bound=current.scale_bound,
-                        step_learning_rate=current.step_learning_rate,
-                    )
-            return per_layer
-
         def _freeze_param_names_for_layer(layer_key: str) -> tuple[str, ...]:
             prefix = layer_key.removesuffix(".weight")
             if use_pissa_lora:
@@ -736,15 +776,35 @@ class _MLXTrainingAdapterTrainMixin:
             first_moment = None
             second_moment = None
             preconditioner_scale = None
+            m_norm_sq = None
+            v_norm_sq = None
+            denom_scale = None
             if m_terms:
                 m_norm_sq = sum(mx.sum(arr * arr) for arr in m_terms)
-                mx.eval(m_norm_sq)
-                first_moment = float(mx.sqrt(m_norm_sq).item())
             if v_terms:
                 v_norm_sq = sum(mx.sum(arr * arr) for arr in v_terms)
                 denom_scale = sum(mx.mean(mx.sqrt(arr)) for arr in v_terms) / len(v_terms)
-                mx.eval(v_norm_sq, denom_scale)
-                second_moment = float(mx.sqrt(v_norm_sq).item())
+            realized = []
+            if m_norm_sq is not None:
+                realized.append(m_norm_sq)
+            if v_norm_sq is not None and denom_scale is not None:
+                realized.extend([v_norm_sq, denom_scale])
+            if realized:
+                mx.eval(*realized)
+            if m_norm_sq is not None:
+                m_norm_sq_val = (
+                    float(m_norm_sq.item())
+                    if hasattr(m_norm_sq, "item")
+                    else float(m_norm_sq)
+                )
+                first_moment = math.sqrt(max(m_norm_sq_val, 0.0))
+            if v_norm_sq is not None and denom_scale is not None:
+                v_norm_sq_val = (
+                    float(v_norm_sq.item())
+                    if hasattr(v_norm_sq, "item")
+                    else float(v_norm_sq)
+                )
+                second_moment = math.sqrt(max(v_norm_sq_val, 0.0))
                 preconditioner_scale = float(denom_scale.item())
             return first_moment, second_moment, preconditioner_scale
 
@@ -1205,6 +1265,7 @@ class _MLXTrainingAdapterTrainMixin:
             )
 
             ce_grad_norm = None
+            ce_norm_sq = None
             objective_components = _objective_components()
             if masked_frozen_params:
                 objective_components.append("closed_loop_freeze")
@@ -1215,8 +1276,6 @@ class _MLXTrainingAdapterTrainMixin:
                 raw_flat = [p.reshape(-1) for p in grad_flat.values() if p.size > 0]
                 if raw_flat:
                     ce_norm_sq = sum(mx.sum(p * p) for p in raw_flat)
-                    mx.eval(ce_norm_sq)
-                    ce_grad_norm = float(mx.sqrt(ce_norm_sq).item())
 
             fisher_second_moment_norm = None
             fisher_preconditioner_scale = None
@@ -1238,10 +1297,8 @@ class _MLXTrainingAdapterTrainMixin:
             # Compute gradient/direction norms for diagnostics (all modes).
             d_flat = [p.reshape(-1) for p in update_direction.values() if p.size > 0]
             d_norm_sq = sum(mx.sum(p * p) for p in d_flat)
-            mx.eval(d_norm_sq, loss)
-            parameter_d_norm_val = float(mx.sqrt(d_norm_sq).item())
-            loss_float = float(loss)
-
+            g_dot_d_arr = None
+            pissa_effective_norm_sq = None
             if use_mass_step_sizing:
                 # MASS per-step: SPS + Weyl + ceiling → eta_step.
                 # g·d: raw gradient dot preconditioned direction for correct SPS.
@@ -1251,14 +1308,49 @@ class _MLXTrainingAdapterTrainMixin:
                     for k in update_direction
                     if k in grad_flat
                 )
-                mx.eval(g_dot_d_arr)
-                d_norm_val = parameter_d_norm_val
                 if use_pissa_lora:
-                    effective_d_norm = self._measure_pissa_effective_update_norm(
-                        model,
-                        update_direction,
+                    pissa_effective_norm_sq = (
+                        self._measure_pissa_effective_update_norm_sq_expression(
+                            model,
+                            update_direction,
+                        )
                     )
-                    if effective_d_norm is not None:
+
+            scalar_realizations = [d_norm_sq, loss]
+            if ce_norm_sq is not None:
+                scalar_realizations.append(ce_norm_sq)
+            if g_dot_d_arr is not None:
+                scalar_realizations.append(g_dot_d_arr)
+            if pissa_effective_norm_sq is not None:
+                scalar_realizations.append(pissa_effective_norm_sq)
+            mx.eval(*scalar_realizations)
+
+            if ce_norm_sq is not None:
+                ce_norm_sq_val = (
+                    float(ce_norm_sq.item())
+                    if hasattr(ce_norm_sq, "item")
+                    else float(ce_norm_sq)
+                )
+                ce_grad_norm = math.sqrt(max(ce_norm_sq_val, 0.0))
+
+            d_norm_sq_val = (
+                float(d_norm_sq.item())
+                if hasattr(d_norm_sq, "item")
+                else float(d_norm_sq)
+            )
+            parameter_d_norm_val = math.sqrt(max(d_norm_sq_val, 0.0))
+            loss_float = float(loss.item()) if hasattr(loss, "item") else float(loss)
+
+            if use_mass_step_sizing:
+                d_norm_val = parameter_d_norm_val
+                if pissa_effective_norm_sq is not None:
+                    effective_d_norm_sq_val = (
+                        float(pissa_effective_norm_sq.item())
+                        if hasattr(pissa_effective_norm_sq, "item")
+                        else float(pissa_effective_norm_sq)
+                    )
+                    effective_d_norm = math.sqrt(max(effective_d_norm_sq_val, 0.0))
+                    if math.isfinite(effective_d_norm) and effective_d_norm > 0.0:
                         d_norm_val = effective_d_norm
                         mass_metrics["parameter_d_norm"] = parameter_d_norm_val
                         if it == 0:
@@ -1267,7 +1359,11 @@ class _MLXTrainingAdapterTrainMixin:
                                 parameter_d_norm_val,
                                 effective_d_norm,
                             )
-                g_dot_d_float = float(g_dot_d_arr.item()) if hasattr(g_dot_d_arr, 'item') else float(g_dot_d_arr)
+                g_dot_d_float = (
+                    float(g_dot_d_arr.item())
+                    if hasattr(g_dot_d_arr, "item")
+                    else float(g_dot_d_arr)
+                )
 
                 # PiSSA: amortize budget over remaining steps (sqrt model).
                 # NB-LoRA: amortization_steps=1 (budget enforced by Cayley).
@@ -1344,9 +1440,12 @@ class _MLXTrainingAdapterTrainMixin:
                 else:
                     update_direction = grad_flat
 
-            step_layer_measurements = _layer_measurements_from_gradient(
+            step_layer_measurements = self._batched_layer_measurements_from_gradient(
+                model=model,
                 grad_map=grad_flat,
                 step_learning_rate=eta_step,
+                use_pissa_lora=use_pissa_lora,
+                opt_config=opt_config,
             )
 
             # Apply the optimizer-specific update.

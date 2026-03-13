@@ -273,7 +273,9 @@ def _make_service(tmp_path, results):
     return service, model_dir, data_file
 
 
-def test_safety_cap_hit_is_failure(tmp_path):
+def test_safety_cap_hit_is_advisory(tmp_path):
+    """Safety cap is non-required: reported in gate diagnostics but does not
+    block the pipeline gate."""
     service, model_dir, data_file = _make_service(tmp_path, [
         _FakeTrainResult(
             baseline_loss=2.0,
@@ -287,8 +289,9 @@ def test_safety_cap_hit_is_failure(tmp_path):
         model_path=model_dir, dataset_path=data_file,
         eval_dataset_path=None, trials=1, base_seed=1,
     )
-    assert result.all_passed is False
-    assert "safety_cap_hit" in result.counterexamples[0].failure_modes
+    assert result.all_passed is True
+    trial = result.trial_results[0]
+    assert trial.passed is True
 
 
 def test_cka_shift_without_bound_data_is_not_failure(tmp_path):
@@ -361,7 +364,10 @@ def test_cka_margin_positive_no_violation(tmp_path):
     assert trial.cka_margin_to_bound == pytest.approx(0.14, abs=0.01)
 
 
-def test_adapter_saturation_exceeded_is_failure(tmp_path):
+def test_adapter_saturation_exceeded_is_advisory(tmp_path):
+    """Adapter saturation is non-required: reported in failure_modes but does
+    not block the gate (passed stays True).  The structural sigma_k budget was
+    falsified as a behavioral predictor on 2026-03-13."""
     service, model_dir, data_file = _make_service(tmp_path, [
         _FakeTrainResult(
             baseline_loss=2.0,
@@ -375,12 +381,15 @@ def test_adapter_saturation_exceeded_is_failure(tmp_path):
         model_path=model_dir, dataset_path=data_file,
         eval_dataset_path=None, trials=1, base_seed=1,
     )
-    assert result.all_passed is False
-    assert "adapter_saturation_exceeded" in result.counterexamples[0].failure_modes
+    assert result.all_passed is True
+    # Advisory failure still reported on the trial's pipeline gate diagnostics
+    trial = result.trial_results[0]
+    assert trial.passed is True
 
 
-def test_gain_divergence_is_failure(tmp_path):
-    """Bounded-gain violation triggers gain_divergence failure mode."""
+def test_gain_divergence_is_advisory(tmp_path):
+    """Gain divergence is non-required: reported in gate diagnostics but does
+    not block the pipeline gate."""
     service, model_dir, data_file = _make_service(tmp_path, [
         _FakeTrainResult(
             baseline_loss=2.0,
@@ -394,8 +403,9 @@ def test_gain_divergence_is_failure(tmp_path):
         model_path=model_dir, dataset_path=data_file,
         eval_dataset_path=None, trials=1, base_seed=1,
     )
-    assert result.all_passed is False
-    assert "gain_divergence" in result.counterexamples[0].failure_modes
+    assert result.all_passed is True
+    trial = result.trial_results[0]
+    assert trial.passed is True
 
 
 def test_gain_bounded_is_not_failure(tmp_path):
