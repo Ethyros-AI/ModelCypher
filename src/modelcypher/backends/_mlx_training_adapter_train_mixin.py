@@ -74,6 +74,21 @@ if TYPE_CHECKING:
 
 
 class _MLXTrainingAdapterTrainMixin:
+    def _structural_sigma_budget_is_enforceable(
+        self,
+        *,
+        use_pissa_lora: bool,
+    ) -> bool:
+        """Return whether structural ``sigma_k`` can gate control decisions.
+
+        PiSSA trains a low-rank displacement on top of an exact-reconstruction
+        initialization. The stored ``sigma_k`` is measured at the Shannon
+        structural boundary, which can sit far outside the adapter-rank block.
+        In that regime ``||ΔW||₂ / sigma_k`` is still a useful structural
+        diagnostic, but not an enforceable behavioral or controller budget.
+        """
+        return not use_pissa_lora
+
     def _seed_remaining_budget(
         self,
         *,
@@ -81,30 +96,33 @@ class _MLXTrainingAdapterTrainMixin:
         use_mass_step_sizing: bool,
         sigma_k_min: float,
     ) -> float | None:
-        """Seed conformal remaining budget for PiSSA from step 0.
+        """Seed conformal remaining budget when a live margin exists.
 
-        PiSSA starts at exact reconstruction, so the initial displacement from
-        the injected state is zero. The full spectral budget is therefore
-        available at training start and equals ``sigma_k_min``.
+        For PiSSA exact-reconstruction adapters we do not seed a running margin:
+        the structural ``sigma_k`` boundary is diagnostic-only when the adapter
+        rank is much smaller than the Shannon structural rank. NB-LoRA enforces
+        its scale bound by construction, so there is no separate seeded margin.
         """
-        if not use_pissa_lora or not use_mass_step_sizing or sigma_k_min <= 0.0:
+        if not use_mass_step_sizing or sigma_k_min <= 0.0:
             return None
-        return float(sigma_k_min)
+        if use_pissa_lora:
+            return None
+        return None
 
     def _reanchor_pissa_budget(
         self,
         model: Any,
         sigma_k_min: float,
     ) -> float | None:
-        """Re-anchor PiSSA remaining budget via exact spectral measurement.
+        """Measure PiSSA structural displacement against the stored ``sigma_k``.
 
         Runs power iteration on the implicit displacement operator
         ``D = a_curr @ b_curr - a_init @ b_init`` for every PiSSA layer to get
         the true spectral norm of cumulative displacement.  Returns
         ``sigma_k_min * (1 - max_ratio)`` clamped to ``[0, sigma_k_min]``.
 
-        This is strictly more accurate than subtracting per-step Frobenius
-        norms (triangle inequality over-counts by 3-4× in practice).
+        This remains useful for structural postmortems even when the resulting
+        ratio is not enforced as a controller or stopping budget.
         """
         init_factors = getattr(self, '_pissa_init_factors', {})
         per_layer_sk = getattr(self, '_pissa_per_layer_sigma_k', {})
@@ -112,6 +130,7 @@ class _MLXTrainingAdapterTrainMixin:
             return None
 
         pissa_products: list[tuple[float, Any, Any, Any, Any, float]] = []
+        pissa_module_names: list[str] = []
         for name, lora in self._iter_pissa_lora_modules(model):
             if name not in init_factors or name not in per_layer_sk:
                 continue
@@ -122,6 +141,7 @@ class _MLXTrainingAdapterTrainMixin:
                 a_init, b_init,
                 per_layer_sk[name],
             ))
+            pissa_module_names.append(name)
             mx.eval(lora.lora_a, lora.lora_b)
 
         if not pissa_products:
@@ -132,6 +152,26 @@ class _MLXTrainingAdapterTrainMixin:
             return None
 
         max_ratio = max(ratios)
+        if len(ratios) == len(pissa_module_names):
+            worst_idx = ratios.index(max_ratio)
+            worst_name = pissa_module_names[worst_idx]
+            worst_sk = pissa_products[worst_idx][5]
+            rank = pissa_products[worst_idx][1].shape[-1]  # lora_a shape
+            logger.info(
+                "PiSSA budget bottleneck: %s ratio=%.4f sigma_k=%.4f rank=%d",
+                worst_name, max_ratio, worst_sk, rank,
+            )
+            if not getattr(self, '_pissa_full_dump_done', False):
+                self._pissa_full_dump_done = True
+                for i, (name, ratio) in enumerate(
+                    zip(pissa_module_names, ratios)
+                ):
+                    sk = pissa_products[i][5]
+                    r = pissa_products[i][1].shape[-1]
+                    logger.info(
+                        "  [budget] %s: ratio=%.4f sigma_k=%.4f rank=%d remaining=%.4f",
+                        name, ratio, sk, r, max(0.0, sk * (1.0 - ratio)),
+                    )
         return max(0.0, sigma_k_min * (1.0 - max_ratio))
 
     def _measure_pissa_effective_update_norm(
@@ -840,6 +880,9 @@ class _MLXTrainingAdapterTrainMixin:
         dim_snapshots: list = []  # DimensionalSnapshot history for trend analysis
         stop_reason: str | None = None
         use_pissa_lora = self._has_pissa_lora(model)
+        enforce_structural_budget = self._structural_sigma_budget_is_enforceable(
+            use_pissa_lora=use_pissa_lora,
+        )
         best_val_loss = float("inf")
         best_weights: dict[str, Any] | None = None
         val_loss_baseline: float | None = None  # First epoch's val loss for certificate condition 5
@@ -1369,7 +1412,11 @@ class _MLXTrainingAdapterTrainMixin:
             # PiSSA LoRA: no clamping — MASS step sizing bounds displacement.
             if not use_pissa_lora:
                 self._clamp_all_scales(model)
-            elif use_mass_step_sizing and (it + 1) % budget_reanchor_interval == 0:
+            elif (
+                remaining_budget is not None
+                and use_mass_step_sizing
+                and (it + 1) % budget_reanchor_interval == 0
+            ):
                 # Sub-epoch re-anchor: exact spectral measurement via power
                 # iteration on the implicit displacement operator.  Replaces
                 # per-step Frobenius decrement which over-estimates cumulative
@@ -1515,8 +1562,10 @@ class _MLXTrainingAdapterTrainMixin:
                 all_target_experts_saturated = False
 
                 if use_pissa_lora:
-                    # PiSSA displacement budget: ||scale*(a_curr@b_curr - a_init@b_init)||_2 / sigma_k
-                    # Feeds remaining_budget into MASS as eta_margin for conformal deceleration.
+                    # PiSSA structural displacement diagnostic:
+                    # ||scale*(a_curr@b_curr - a_init@b_init)||_2 / sigma_k.
+                    # The ratio is logged for postmortems, but structural
+                    # sigma_k is not enforced as a controller budget here.
                     try:
                         pissa_products = []
                         pissa_module_names: list[str] = []
@@ -1540,7 +1589,7 @@ class _MLXTrainingAdapterTrainMixin:
                             pissa_products, self._backend,
                         )
                         if ratios:
-                            budget_exhausted_flag, median_budget_ratio = is_budget_exhausted(
+                            structural_budget_exhausted, median_budget_ratio = is_budget_exhausted(
                                 ratios, threshold=DTYPE_THRESHOLD_F32,
                             )
                             max_ratio = max(ratios)
@@ -1549,15 +1598,37 @@ class _MLXTrainingAdapterTrainMixin:
                                     module_name: float(ratio)
                                     for module_name, ratio in zip(pissa_module_names, ratios)
                                 }
-                                per_layer_remaining_budget = {
-                                    name: max(0.0, per_layer_sk.get(name, sigma_k_min) * (1.0 - float(ratio)))
-                                    for name, ratio in zip(pissa_module_names, ratios)
-                                }
+                            if enforce_structural_budget:
+                                budget_exhausted_flag = structural_budget_exhausted
+                                if len(ratios) == len(pissa_module_names):
+                                    per_layer_remaining_budget = {
+                                        name: max(
+                                            0.0,
+                                            per_layer_sk.get(name, sigma_k_min)
+                                            * (1.0 - float(ratio)),
+                                        )
+                                        for name, ratio in zip(
+                                            pissa_module_names, ratios,
+                                        )
+                                    }
 
-                            # Update conformal margin from fresh spectral measurement
-                            if max_ratio is not None:
-                                remaining_budget = max(
-                                    0.0, sigma_k_min * (1.0 - max_ratio),
+                                # Update conformal margin from fresh spectral measurement
+                                if max_ratio is not None:
+                                    remaining_budget = max(
+                                        0.0, sigma_k_min * (1.0 - max_ratio),
+                                    )
+                            elif (
+                                structural_budget_exhausted
+                                and not getattr(
+                                    self, "_pissa_structural_budget_notice_emitted", False,
+                                )
+                            ):
+                                self._pissa_structural_budget_notice_emitted = True
+                                logger.info(
+                                    "PiSSA structural sigma_k budget exceeded; "
+                                    "keeping this ratio as diagnostic-only because "
+                                    "the structural boundary is not the adapter-rank "
+                                    "boundary.",
                                 )
                     except Exception:
                         logger.warning(
@@ -1763,8 +1834,12 @@ class _MLXTrainingAdapterTrainMixin:
                 gate_confound_event = False
                 online_eval_stop_basis_stage = "pre_outcome"
                 behavioral_state = _behavioral_probe_state(
-                    per_layer_budget_ratio=per_layer_budget_ratio,
-                    per_layer_remaining_budget=per_layer_remaining_budget,
+                    per_layer_budget_ratio=(
+                        per_layer_budget_ratio if enforce_structural_budget else None
+                    ),
+                    per_layer_remaining_budget=(
+                        per_layer_remaining_budget if enforce_structural_budget else None
+                    ),
                     online_eval_accuracy=online_eval_acc,
                     online_eval_n_lost=online_eval_n_lost,
                     online_eval_n_gained=online_eval_n_gained,
@@ -2242,7 +2317,11 @@ class _MLXTrainingAdapterTrainMixin:
                 logger.info(" | ".join(log_parts))
 
                 # 7a. Weyl adapter-saturation exhaustion check (any layer crossing)
-                if budget_exhausted_flag and not disable_early_stopping:
+                if (
+                    enforce_structural_budget
+                    and budget_exhausted_flag
+                    and not disable_early_stopping
+                ):
                     stop_reason = (
                         f"adapter_saturation_exhausted (Weyl crossing, "
                         f"median_ratio={median_budget_ratio:.4f}, epoch={epoch_num})"
@@ -2265,7 +2344,8 @@ class _MLXTrainingAdapterTrainMixin:
 
                 # 7a'. Budget cap: stop when median ratio exceeds user ceiling
                 if (
-                    not disable_early_stopping
+                    enforce_structural_budget
+                    and not disable_early_stopping
                     and budget_cap is not None
                     and median_budget_ratio is not None
                     and median_budget_ratio >= budget_cap

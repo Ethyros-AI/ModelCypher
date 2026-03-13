@@ -802,9 +802,26 @@ class _MLXTrainingAdapterCoreMixin:
                 )
                 self._pissa_per_layer_sigma_k[key] = float(geom.sigma_k)
 
-                logger.debug(
-                    "Injected PiSSA-LoRA at %s: rank=%d, sigma_k=%.6f, sigma_r=%.6f",
-                    key, rank, geom.sigma_k, float(S[rank - 1].item()),
+                # Store spectral gap at adapter rank boundary for budget analysis
+                sigma_r = float(S[rank - 1].item())
+                sigma_r_plus_1 = float(S[rank].item()) if rank < len(S) else 0.0
+                adapter_rank_gap = sigma_r - sigma_r_plus_1
+                self._pissa_adapter_rank_gap = getattr(
+                    self, '_pissa_adapter_rank_gap', {}
+                )
+                self._pissa_adapter_rank_gap[key] = {
+                    'sigma_r': sigma_r,
+                    'sigma_r_plus_1': sigma_r_plus_1,
+                    'gap': adapter_rank_gap,
+                    'sigma_k': float(geom.sigma_k),
+                    'structural_rank': int(geom.shannon_effective_rank),
+                }
+                logger.info(
+                    "PiSSA spectral: %s rank=%d sigma_r=%.4f sigma_{r+1}=%.4f "
+                    "gap_r=%.4f sigma_k=%.4f (structural_rank=%d)",
+                    key, rank, sigma_r, sigma_r_plus_1,
+                    adapter_rank_gap, geom.sigma_k,
+                    int(geom.shannon_effective_rank),
                 )
             except Exception as exc:
                 logger.warning("Failed to inject PiSSA-LoRA at %s: %s", key, exc)

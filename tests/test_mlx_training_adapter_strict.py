@@ -123,16 +123,21 @@ def test_entropy_baseline_derives_floor():
     assert floor == pytest.approx(expected_floor, rel=1e-6)
 
 
-def test_seed_remaining_budget_uses_sigma_k_for_pissa_mass():
+def test_structural_sigma_budget_is_not_enforced_for_pissa():
     adapter = MLXTrainingAdapter(_DummyBackend())
 
-    seeded = adapter._seed_remaining_budget(
+    assert adapter._structural_sigma_budget_is_enforceable(use_pissa_lora=True) is False
+    assert adapter._structural_sigma_budget_is_enforceable(use_pissa_lora=False) is True
+
+
+def test_seed_remaining_budget_skips_pissa_structural_budget():
+    adapter = MLXTrainingAdapter(_DummyBackend())
+
+    assert adapter._seed_remaining_budget(
         use_pissa_lora=True,
         use_mass_step_sizing=True,
         sigma_k_min=0.4,
-    )
-
-    assert seeded == pytest.approx(0.4)
+    ) is None
 
 
 def test_seed_remaining_budget_skips_non_pissa_or_nonpositive_sigma():
@@ -162,7 +167,6 @@ def test_reanchor_pissa_budget_returns_none_without_init_factors():
     result = adapter._reanchor_pissa_budget(_DummyModel(), sigma_k_min=0.4)
 
     assert result is None
-
 
 
 
