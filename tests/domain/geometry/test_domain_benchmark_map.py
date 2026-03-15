@@ -39,6 +39,14 @@ def test_get_benchmarks_for_domains_is_sorted_and_deduplicated() -> None:
 
 def test_get_suite_known_and_unknown() -> None:
     assert get_suite("quick") == BENCHMARK_SUITES["quick"]
+    assert get_suite("leaderboard_v2") == [
+        "leaderboard_ifeval",
+        "leaderboard_bbh",
+        "leaderboard_math_hard",
+        "leaderboard_gpqa",
+        "leaderboard_musr",
+        "leaderboard_mmlu_pro",
+    ]
     assert get_suite("does-not-exist") == []
 
 
@@ -58,4 +66,3 @@ def test_benchmark_mapping_all_benchmarks_property() -> None:
     )
 
     assert mapping.all_benchmarks == ["humaneval", "mbpp"]
-

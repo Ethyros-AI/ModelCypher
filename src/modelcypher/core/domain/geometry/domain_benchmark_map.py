@@ -138,6 +138,14 @@ DOMAIN_BENCHMARK_MAP: dict[EvalDomain, BenchmarkMapping] = {
 
 # Benchmark suites for common evaluation scenarios
 BENCHMARK_SUITES: dict[str, list[str]] = {
+    "leaderboard_v2": [
+        "leaderboard_ifeval",
+        "leaderboard_bbh",
+        "leaderboard_math_hard",
+        "leaderboard_gpqa",
+        "leaderboard_musr",
+        "leaderboard_mmlu_pro",
+    ],
     "quick": [
         "arc_easy",
         "hellaswag",
