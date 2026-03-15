@@ -35,6 +35,7 @@ from .adapter_routing import (
 )
 from .composite_adapter_builder import CompositeAdapterBuilder
 from .divergence_router import LayerDivergenceComputer
+from .execution_plan import LayerExecutionPlan
 
 __all__ = [
     "ActivationFrame",
@@ -47,4 +48,5 @@ __all__ = [
     "AdapterPool",
     "LayerDivergenceComputer",
     "CompositeAdapterBuilder",
+    "LayerExecutionPlan",
 ]
