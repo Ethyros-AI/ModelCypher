@@ -1290,6 +1290,7 @@ class JAXBackend(Backend):
         tokenizer: Any,
         prompts: list[str],
         layer_indices: list[int] | None = None,
+        mask_mode: str = "none",
     ) -> dict[int, Any]:
         """Collect hidden state activations from model layers.
 

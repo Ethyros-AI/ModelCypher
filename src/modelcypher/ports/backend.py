@@ -759,6 +759,7 @@ class Backend(Protocol):
         tokenizer: Any,
         prompts: list[str],
         layer_indices: list[int] | None = None,
+        mask_mode: str = "none",
     ) -> dict[int, Array]:
         """Collect hidden state activations from model layers.
 
@@ -767,6 +768,13 @@ class Backend(Protocol):
             tokenizer: Tokenizer object from load_model.
             prompts: List of input prompts.
             layer_indices: Optional specific layers to collect (None = all).
+            mask_mode: Masking strategy for the forward pass.
+                ``"none"``   – pass ``mask=None`` to every layer (bidirectional,
+                               legacy default).
+                ``"causal"`` – route per layer type: attention layers receive
+                               ``mask="causal"``, conv/non-attention layers
+                               receive ``mask=None``.  This matches the actual
+                               inference path for hybrid architectures (LFM2).
 
         Returns:
             Dictionary mapping layer index to activations [batch, seq, hidden].
