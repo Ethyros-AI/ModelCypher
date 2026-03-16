@@ -64,6 +64,24 @@ Current limitations:
 That is the discipline of this mission: the workbench is real, the derivation
 story is real, and benchmark superiority is still open.
 
+### R2 Investigation Finding (2026-03-16)
+
+The R2 "inference CKA collapse" investigation revealed that:
+
+- Representation geometry is preserved during prompt processing (CKA mean
+  0.93-0.98 on same inputs across all masking conditions).
+- The benchmark failure was step-0 decode divergence caused by training data
+  that stripped the reasoning chain needed for multi-step math.
+- Chain-preserved retraining improved GSM8K from 1/10 to 4/10 and shifted
+  the generation pattern toward the base model's reasoning-word frontier.
+- The remaining gap is arithmetic-execution granularity: the model needs
+  the intermediate computations decomposed at a finer grain than GSM8K chains
+  provide.
+
+This means the workbench's geometry-derived planning, CKA verification, and
+spectral bounds are working as designed. The product gap is now in training
+data quality — what we teach, at what granularity, in what order.
+
 ## Canonical Training Identity
 
 The shipped training method is **geometry-derived LoRA**.
@@ -99,6 +117,47 @@ than a copied recipe does.
 Geometry matters here because it reduces guesswork. The user value is not
 "research purity." The user value is: fewer knobs, clearer plans, and better
 odds of producing a useful adapter.
+
+## Three Product Pillars
+
+### 1. Teach the Loop
+
+Data is a control surface. Training examples do not just teach facts — they
+teach answer contracts, loop structure, when to compress, and when to keep
+uncertainty alive.
+
+Chain granularity must match the model's current skill level. A model that
+hasn't learned single-digit arithmetic won't benefit from word-problem chains
+that assume `180/5 = 36` is a primitive. Curriculum from arithmetic
+primitives → place-value → multi-digit operations → word problems.
+
+### 2. Preserve the Loop at Decode
+
+The adapter must not collapse intermediate computation. Greedy decode,
+scratchpad exemplars, and tool use are different operators with different
+failure modes. Bare-number training actively suppressed the base model's
+chain-of-thought; chain-preserved training partially restored it.
+
+### 3. Escalate to Tools
+
+When internal looping exceeds reliable capacity, the model should reach for
+tools (calculators, Python, etc.). The goal for small and medium models is
+general-human competence plus tool awareness, not calculator replacement.
+
+### Geometry as Instrumentation
+
+Geometry is the instrumentation layer that makes all three pillars
+trustworthy:
+
+- **Pillar 1:** Does the data teach the right latent process? (CKA,
+  activation geometry, corpus audit, logit divergence analysis)
+- **Pillar 2:** Does decode collapse or preserve the internal computation?
+  (step-0 divergence, chain CKA, generation trace analysis)
+- **Pillar 3:** Is the model fighting or specializing within the prior?
+  (spectral bounds, readout alignment)
+
+The geometry work is the reason the training advice is trustworthy. It is not
+an end in itself.
 
 ## Build Standards
 

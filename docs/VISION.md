@@ -22,7 +22,11 @@ story.
 | --- | --- | --- |
 | Training workbench | `SHIPPED` | `mc train run`, `mc train evaluate`, `mc train compare`, `mc train export`, `mc train merge` exist today |
 | Geometry-derived planning | `SHIPPED` | derived ranks, target surfaces, controller quantities, and post-run verification are part of the workflow |
-| Benchmark advantage over standard practice | `IN PROGRESS` | the workbench runs; the head-to-head proof is still being measured |
+| Geometry as diagnostic instrument | `SHIPPED` | CKA preservation, logit divergence, corpus audit, step-0 analysis — tools that show what training actually teaches the model |
+| Training data as control surface | `IN PROGRESS` | R2 investigation proved data format determines generation behavior; chain-preserved training improved GSM8K 1/10 → 4/10 |
+| Arithmetic curriculum | `NEXT` | GSM8K-level chains are too coarse for reliable small-model math; need primitives → place-value → multi-digit → word problems |
+| Tool-escalation training | `NOT YET` | teach models to recognize when internal looping is unreliable and call external tools |
+| Benchmark advantage over standard practice | `IN PROGRESS` | chain-preserved adapter at 66.7% vs 70% base (gap narrowed from 7pp to 3pp); remaining gap is arithmetic granularity |
 | Quantization-first deployment story | `PARTIAL` | quantization is a stated target and active work area, but the full behavior law is still open |
 | Cross-architecture portability | `EXPERIMENTAL` | merge infrastructure exists, but there is no closed portable certificate |
 | Adapter stacking | `EXPERIMENTAL` | infrastructure exists, preservation guarantee does not |
@@ -34,7 +38,9 @@ Make `mc train run` an obvious win for OSS model builders:
 
 - it should remove backend-specific trivia,
 - it should remove hand-tuned folklore knobs,
-- and it should produce adapters that survive real evaluation.
+- it should produce adapters that survive real evaluation,
+- and it should give trainers a window into what the model actually learned,
+  where decode diverges, and why behavior changed — circuits, not vibes.
 
 The next hard product milestone is not a manifesto milestone. It is a user
 milestone:
