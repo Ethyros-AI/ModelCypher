@@ -1109,10 +1109,10 @@ class LoRAMemoryStore:
                             processed_keys.add(B_tilde_key)
                             processed_keys.add(S_raw_key)
 
-            logger.info("Loaded NB-LoRA weights from %s", path)
+            logger.info("Loaded geometry-derived LoRA weights from %s", path)
 
         except Exception as e:
-            logger.warning("Failed to load NB-LoRA weights: %s", e)
+            logger.warning("Failed to load geometry-derived LoRA weights: %s", e)
 
     def accumulate(
         self,
@@ -1597,7 +1597,7 @@ class LoRAMemoryStore:
             self._save_events()
 
         logger.info(
-            "Saved NB-LoRA memory store: agent=%s, buffer=%d, lora_keys=%d",
+            "Saved geometry-derived LoRA memory store: agent=%s, buffer=%d, lora_keys=%d",
             self._agent_id,
             self.buffer_size,
             len(self._lora_layers),
@@ -1629,7 +1629,7 @@ class LoRAMemoryStore:
                 json.dump(metadata, f, indent=2)
 
         except Exception as e:
-            logger.error("Failed to save NB-LoRA weights: %s", e)
+            logger.error("Failed to save geometry-derived LoRA weights: %s", e)
 
     def _save_events(self) -> None:
         """Save event buffer to safetensors."""
@@ -1791,7 +1791,7 @@ class LoRAMemoryStore:
             preserved_frac = total_preserved / max(total_original, norm_floor)
 
             logger.info(
-                "Merged NB-LoRA to base: layers=%d, preserved=%.2f%%",
+                "Merged geometry-derived LoRA to base: layers=%d, preserved=%.2f%%",
                 layers_merged,
                 preserved_frac * 100,
             )
@@ -1838,7 +1838,7 @@ class LoRAMemoryStore:
         # Save updated metadata
         self.save()
 
-        logger.info("Reset NB-LoRA memory: agent=%s", self._agent_id)
+        logger.info("Reset geometry-derived LoRA memory: agent=%s", self._agent_id)
 
     def get_stats(self) -> dict[str, Any]:
         """Get current store statistics."""

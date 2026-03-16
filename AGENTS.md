@@ -1,16 +1,16 @@
 # AI-Assisted Development Guide
 
-ModelCypher is research code for geometric diagnostics, training, and merging of
-LLMs. The goal is not convenience. The goal is bedrock-correct math and code.
+ModelCypher is a training workbench for open-source model builders. The goal is
+to ship a tool that produces working adapters without requiring users to learn
+MLX internals or hand-tune hyperparameters. Every design decision is derived
+from the model's geometry — that's what makes the auto-derivation trustworthy,
+not a theoretical claim.
 
 ## 1. Purpose
 
-### Research, Not Product
+### Principled Product
 
-- No backwards compatibility.
-- No deprecation shims.
-- No duplicate implementations for convenience.
-- Correct is singular.
+ModelCypher is a product built on derived math. Both halves of that matter.
 
 There is one correct architecture:
 
@@ -20,10 +20,18 @@ There is one correct architecture:
 
 If duplicate paths exist, delete them.
 
+**Ship beats prove.** A working adapter with a principled derivation beats a
+theoretically superior adapter that hasn't shipped. Benchmark improvement on
+real models is the arbiter.
+
+**Product friction is a priority bug.** Stale docs, broken examples, missing
+command coverage, and workflows that don't help users succeed get fixed before
+new features get added.
+
 ### Mission
 
-Train and merge models better than standard practice allows, using only
-geometry.
+Make model fine-tuning accessible. One command, derived parameters, adapters
+that work.
 
 Every design decision must be derived from:
 
@@ -36,14 +44,13 @@ Every design decision must be derived from:
 
 Keep these roles separate:
 
-- **Mission** = what must become promotably true in the canonical engine
+- **Mission** = the training workbench works end-to-end for real users
 - **Vision** = what mission success may later enable
 - **Roadmap** = the closure order
 - **Open Questions** = only the mathematical blockers on that order
 
-For repository accounting, treat `mc train run` as the only clearly shipped
-canonical surface today. Merge, continual learning, stacking, and sovereignty
-remain experimental, partial, or downstream until their certificates close.
+`mc train run` is the shipped canonical surface. Merge, continual learning,
+stacking, and sovereignty remain experimental, partial, or downstream.
 
 ### Canonical Training Identity
 
@@ -134,9 +141,11 @@ Apply:
 
 ### "What" Is Not An Answer
 
-Never stop at what happened. Always continue to why and how.
+When something fails or a design decision is being made, always answer why
+and how — not just what.
 
-After every meaningful experiment, answer:
+When a training run degrades, when a claim doesn't hold, when a threshold
+needs to be set:
 
 ```text
 WHAT was observed?
@@ -145,41 +154,26 @@ HOW did the computation produce it, operator by operator?
 WHAT exact quantity should be measured next?
 ```
 
-Observations are not explanations:
+This protocol applies when:
+- diagnosing a failure or unexpected result
+- deciding whether to promote a claim to doctrine
+- choosing a threshold or parameter that will appear in production code
 
-- "the claim failed"
-- "AICc did not generalize"
-- "the metric is mixed"
-- "the model is inconsistent"
-
-Each must be followed by:
-
-- the operator chain
-- the link that broke the prediction
-- the quantity that exposes that link
-- the next falsifier targeting it directly
+It does NOT apply as overhead on routine implementation tasks (writing a
+test, fixing a bug, updating a doc). For those: just do it.
 
 ### Failed Falsifier = Dig Deeper
 
-A failed falsifier is a pointer to missing understanding, not a stopping point.
-
-Protocol:
+A failed prediction is a pointer to missing understanding, not a stopping point.
 
 1. record the failed prediction and the observed value
-2. write the exact chain from input to reported observable
+2. write the chain from input to reported observable
 3. locate the link that violates the prediction
 4. identify the missing quantity at that link
 5. measure it directly
 
-The answer is always in:
-
-- the model weights
-- the kernel or operator implementation
-- the MLX/JAX/CUDA backend code
-- the measurement code
-- the tensors you can collect
-
-"The mechanism is unclear" is never acceptable.
+The answer is always in the model weights, the backend code, or the
+measurement code. "The mechanism is unclear" is never acceptable.
 
 ### One Variable Per Day
 
@@ -375,25 +369,21 @@ CLI promotion requires:
 
 1. correct derivation
 2. direct measurements
-3. reproducible improvement on real models
+3. reproducible usefulness on real models
 4. no unresolved hard guardrail violations
 
 Stable workflows should use `mc`. Exploratory falsifiers and one-off measurement
-passes may live in `scripts/` until validated.
+passes may live in `scripts/` until validated. A surface does not need a grand
+research claim to justify existing in the CLI; it does need to help users do
+real work better.
 
-### Link Every Experiment To An Active Blocker
-
-No linked blocker, no experiment.
+### Link Every Experiment To A User Outcome
 
 Before creating or extending any script, result family, or repeated run loop,
-link the work to exactly one of:
+answer: "Does this help `mc train run` produce better adapters for users, or
+does it answer a specific question about why it's currently failing to do so?"
 
-- an active roadmap item in
-  `docs/RESEARCH-ROADMAP.md`
-- an active blocker in
-  `docs/research/OPEN-MATHEMATICAL-QUESTIONS.md`
-
-If you cannot make that linkage:
+If the answer is no:
 
 1. classify the work as parked exploration
 2. do not create a new canonical script or result family
@@ -401,7 +391,7 @@ If you cannot make that linkage:
 
 Use `results/repo_research_inventory/` as the triage source of truth:
 
-- `canonical` = live surface tied to an active blocker
+- `canonical` = live surface connected to a user-facing outcome
 - `summary_only` = dormant unless explicitly reactivated
 - `delete` = off-limits unless a human explicitly reopens the thread
 
@@ -469,6 +459,10 @@ a family is newly promoted or explicitly reactivated.
 ### Documentation
 
 Keep documentation concise, ordered, and falsifier-oriented.
+
+Lead user-facing docs with the workflow and the user outcome, not the abstract
+research narrative. Broken examples, stale command signatures, and product copy
+that hides what the CLI actually does are documentation bugs.
 
 When a claim is promotable, document:
 

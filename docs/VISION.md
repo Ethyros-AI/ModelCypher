@@ -1,151 +1,113 @@
-# Vision: Geometry as the Identity Layer
+# Vision
 
-## The Trajectory
+## What We Are Building Toward
 
-ModelCypher's training engine is the first destination, not the final one.
+Any developer should be able to specialize an open-source model for their
+domain without needing to know what LoRA rank means, what a learning rate
+schedule does, or how MLX is wired.
 
-The long-term vision remains:
+The long-term product promise is simple:
 
-**personal, portable, sovereign AI identity carried as geometry, not data.**
+- bring a model
+- bring data
+- let the workbench derive the training plan
+- keep only the adapters that measurably help
 
-The important correction is scope. That identity layer is not something the
-repository can currently claim as operational. It is the downstream consequence
-of promotably true geometry, not a narrative shortcut around unfinished
-mechanism work.
+That is the center of gravity. Geometry is the method. The user outcome is the
+story.
 
-## Scope Cascade
+## Current Ship Status
 
-- **Mission**: close the canonical geometric engine, centered on
-  `mc train run`.
-- **Vision**: describe what mission success may eventually enable.
-- **Roadmap**: define the closure order from current evidence to promotable
-  claims.
-- **Open Questions**: carry only the mathematical blockers on that closure
-  order.
+| Capability | Status | What It Means Right Now |
+| --- | --- | --- |
+| Training workbench | `SHIPPED` | `mc train run`, `mc train evaluate`, `mc train compare`, `mc train export`, `mc train merge` exist today |
+| Geometry-derived planning | `SHIPPED` | derived ranks, target surfaces, controller quantities, and post-run verification are part of the workflow |
+| Benchmark advantage over standard practice | `IN PROGRESS` | the workbench runs; the head-to-head proof is still being measured |
+| Quantization-first deployment story | `PARTIAL` | quantization is a stated target and active work area, but the full behavior law is still open |
+| Cross-architecture portability | `EXPERIMENTAL` | merge infrastructure exists, but there is no closed portable certificate |
+| Adapter stacking | `EXPERIMENTAL` | infrastructure exists, preservation guarantee does not |
+| User-owned portable identity layer | `NOT YET` | downstream of portability and stacking actually working |
 
-This file must stay downstream of:
+## Near-Term Product Goal
 
-- [MISSION.md](/Users/jasonkempf/ModelCypher/docs/MISSION.md)
-- [RESEARCH-ROADMAP.md](/Users/jasonkempf/ModelCypher/docs/RESEARCH-ROADMAP.md)
-- [OPEN-MATHEMATICAL-QUESTIONS.md](/Users/jasonkempf/ModelCypher/docs/research/OPEN-MATHEMATICAL-QUESTIONS.md)
-- [FIRST_PRINCIPLES_REVIEW_PROTOCOL.md](/Users/jasonkempf/ModelCypher/docs/research/FIRST_PRINCIPLES_REVIEW_PROTOCOL.md)
+Make `mc train run` an obvious win for OSS model builders:
 
-## Quantized First
+- it should remove backend-specific trivia,
+- it should remove hand-tuned folklore knobs,
+- and it should produce adapters that survive real evaluation.
 
-The vision is quantized-first by design.
+The next hard product milestone is not a manifesto milestone. It is a user
+milestone:
 
-- `bf16/fp16` is the derivation regime.
-- Quantized models are the deployment regime.
-- If quantized behavior diverges from full precision, the response is operator
-  tracing, not tolerance of unexplained damage.
+**show measurable benchmark improvement on real models with a workflow ordinary open-source developers can run.**
 
-The deployment story is still not "compress and accept loss." The target is
-smaller-and-smarter behavior under measured geometric control.
+## Why Geometry Still Matters
 
-## Hard Gates Before Identity-Layer Promotion
+Geometry is not the branding gimmick. It is why the workbench can derive a plan
+instead of punting choices back to the user.
 
-The identity-layer story is downstream of four gates. Until these are closed,
-the vision stays directional rather than operational.
+The value is practical:
 
-### Gate 1: Portable Cross-Architecture Certificate
+- ranks come from measured model capacity rather than cargo-cult defaults
+- controller quantities come from the run rather than copied schedules
+- stopping comes from measured convergence rather than patience folklore
+- preservation checks are part of the workflow rather than a manual audit
 
-We need a commensurable certificate that a personal adapter or transferred delta
-preserves behavior across model families, not just probe alignment on one merge
-pipeline.
+If the geometry does not improve the shipped experience, it is research. If it
+reduces guesswork and improves adapters, it becomes product.
 
-Blocked by:
+## Quantization Is The Deployment Reality
 
-- [OPEN-MATHEMATICAL-QUESTIONS.md](/Users/jasonkempf/ModelCypher/docs/research/OPEN-MATHEMATICAL-QUESTIONS.md) `Q8`
-- [RESEARCH-ROADMAP.md](/Users/jasonkempf/ModelCypher/docs/RESEARCH-ROADMAP.md) `R5`
+`bf16/fp16` is the derivation regime. Quantized models are the deployment
+regime.
 
-### Gate 2: Stacking Preservation Certificate
+The vision is not "train in full precision and accept whatever quantization
+breaks later." The vision is smaller-and-smarter behavior under measured
+control. If quantized behavior diverges, we trace the operator path, identify
+the missing precision term, and re-test.
 
-Stacking must prove that multiple adapters can compose without silent drift in
-the target model's preserved behavior.
+That makes geometry more useful, not more abstract.
 
-This is not yet a shipped workflow. Today it is experimental infrastructure
-without a promotable preservation certificate.
+## Longer-Term Directions
 
-### Gate 3: Consolidation-Without-Forgetting Operator
+Once the training workbench reliably improves real adapters, the same approach
+could unlock more ambitious product surfaces:
 
-Nightly consolidation is only promotable if there is a derived update operator
-that adds new user structure while preserving old structure better than
-meaningful continual-learning baselines.
+### Portable Adapters Across Architectures
 
-Blocked by:
+Adapters or deltas that transfer across model families under a real behavior
+certificate, not just an interesting probe-alignment story.
 
-- [OPEN-MATHEMATICAL-QUESTIONS.md](/Users/jasonkempf/ModelCypher/docs/research/OPEN-MATHEMATICAL-QUESTIONS.md) `Q9`
-- [RESEARCH-ROADMAP.md](/Users/jasonkempf/ModelCypher/docs/RESEARCH-ROADMAP.md) `R6`
+### Adapter Stacking Without Silent Drift
 
-### Gate 4: Sovereignty Infrastructure
+Multiple adapters composing without quietly degrading preserved behavior.
 
-Even after the geometry closes, sovereignty still requires serialization,
-access-control, revocation, and user-owned runtime wiring. That is
-infrastructure work, not yet a completed research claim.
+### User-Owned Portable Identity
 
-## Why The Vision Still Holds
+A developer's fine-tuning work carried as geometry across model upgrades and
+runtime environments.
 
-The repo already supports the direction of travel:
+These are downstream possibilities, not current claims.
 
-- the canonical training path removes runtime guesswork from the control plane,
-- the merge work shows that activation-space geometry matters more than naive
-  weight blending,
-- the quantization work shows that full-precision derivation can improve
-  low-precision outcomes instead of merely explaining failure after the fact.
+## Why This Vision Still Holds
 
-What the repo does **not** yet support is talking as if portable identity is a
-deployed capability. The correct statement is:
+The repo already supports the direction:
 
-**the geometry-first engine is the prerequisite; the identity layer is the
-destination after the certificates close.**
+- the training workbench exists and can derive plans instead of exposing raw
+  tuning knobs
+- evaluation and comparison surfaces exist so results can be measured rather
+  than narrated
+- quantization and merge work show where the practical frontier is, even when
+  those surfaces are not yet finished products
 
-## Capability Scorecard
-
-| Capability | Current status | Evidence | Promotion block |
-| --- | --- | --- | --- |
-| Geometry-derived training | `SHIPPED` on the canonical path | `mc train run`, `pipeline_gate_v1`, doctrine cleanup in runtime code | Behavioral preservation still fails in retained `pipeline_validation` trials |
-| Quantized-first control | `PARTIAL` | `results/quantization_ab_survey/`, `results/closedform_sequential_correction/` | Frontier law is still open |
-| Cross-architecture portability | `PARTIAL / EXPERIMENTAL` | `src/modelcypher/experimental/merge/`, `results/geometry_sota/analysis_summary.json` | No portable behavior certificate or MergeBench-style baseline closure |
-| Nightly consolidation | `EXPERIMENTAL` | `src/modelcypher/experimental/continual/`, `src/modelcypher/experimental/use_cases/consolidation_service.py`, `results/continual_learning/` | Consolidation operator still open |
-| Adapter stacking | `EXPERIMENTAL` | `src/modelcypher/experimental/self_improve/lora_stacker.py` | No preservation certificate |
-| Adapter sovereignty | `NOT BUILT` | no user-owned runtime flow | infrastructure not built |
+The discipline is to keep the promises honest. We do not skip from "interesting
+infrastructure" to "users can rely on this" without the measurements in between.
 
 ## What This File Does Not License
 
-This vision file does not authorize:
-
-- mixed-model "partial validation" language,
-- user-facing portability claims from probe-only alignment,
-- sovereignty claims from unbuilt infrastructure,
-- stacking or consolidation claims without preservation certificates,
-- treating experimental code as canonical just because it has a CLI entry
-  point.
-
-If a claim cannot survive the first-principles review protocol, it does not
-belong in mission, vision, roadmap, or agent doctrine.
-
-## Closure Order
-
-The order stays strict:
-
-1. baseline suite against standard practice
-2. operator for behavioral failure when structural safety passes
-3. 8B non-ceiling efficacy closure
-4. quantization frontier law
-5. portable adapter certificate
-6. consolidation operator
-7. stacking preservation certificate
-8. sovereignty infrastructure
-
-The identity-layer language becomes stronger only as those gates close in that
-order.
-
-## Bottom Line
-
-ModelCypher is still building toward a world where the user owns the geometric
-identity layer and can carry it across substrates. That remains the right
-destination.
-
-What changed is discipline: the repository should now talk about that future as
-**downstream of closed certificates**, not as if the current experimental merge,
-continual-learning, and stacking surfaces already deliver it.
+- claiming ModelCypher already beats standard practice
+- treating experimental infrastructure as shipped capability
+- describing portability, stacking, or sovereignty as if they are done
+- using mixed-model results as "partial validation"
+- leading with long-range identity narratives instead of the immediate product
+  outcome

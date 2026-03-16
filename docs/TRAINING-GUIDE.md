@@ -1,60 +1,93 @@
 # Training Guide
 
-Current training workflow for ModelCypher.
+ModelCypher's training surface is a workbench, not just a single command. The
+workflow is:
 
-Notes:
-- In this repo, run CLI commands as `poetry run mc ...`.
-- This guide covers only currently implemented training commands.
+`plan -> train -> evaluate -> compare -> export`
 
-Current evidence state (2026-03-11):
-- `mc train run` is the canonical shipped training path.
-- Its control plane is geometry-derived, but the repo has not yet closed a
-  promotable head-to-head advantage over standard practice.
-- Retained 350M pipeline validation still shows structural pass without full
-  inference closure (`5/5` structural, `3/5` inference).
+The user-facing value is straightforward: ModelCypher derives target modules,
+ranks, stopping signals, and controller quantities from the model and data so
+you do not hand-tune folklore hyperparameters.
+
+## Current Reality (2026-03-16)
+
+- `mc train run` is the shipped training path.
+- Its control plane is geometry-derived.
+- The repo has not yet closed a promotable head-to-head advantage over standard
+  practice on real benchmark suites.
+- That is a current limitation of a shipped tool, not a reason to pretend the
+  workbench does not exist.
 
 ## Command Surface
 
 Training-related commands available now:
+
 - `mc train run`
+- `mc train evaluate`
+- `mc train compare`
+- `mc train export`
+- `mc train merge`
+- `mc train status`
 - `mc train validate-derived`
 - `mc train star`
-- `mc train status`
-- `mc train merge`
-- `mc train export`
 
-## Quick Start
+## Recommended Workflow
+
+### 1. Derive The Plan First
 
 ```bash
-# 1) Inspect the resolved training plan without mutating model state
 poetry run mc train run \
-  --model /path/to/base_model \
+  --model /path/to/model \
   --data /path/to/train.jsonl \
   --plan-only
+```
 
-# 2) Train a LoRA adapter with geometry-derived settings
+This resolves the exact training plan without mutating model state. Use it to
+see the derived surface before you commit to a run.
+
+### 2. Run Training
+
+```bash
 poetry run mc train run \
-  --model /path/to/base_model \
+  --model /path/to/model \
   --data /path/to/train.jsonl \
   --output /path/to/adapter
+```
 
-# 3) Inspect training state for an agent/model pair
-poetry run mc train status \
-  --agent agent-001 \
-  --model /path/to/base_model
+### 3. Evaluate The Adapter
 
-# 4) Export adapter artifacts
+```bash
+poetry run mc train evaluate \
+  --model /path/to/model \
+  --adapter /path/to/adapter \
+  --data /path/to/validation.jsonl
+```
+
+### 4. Compare Results
+
+```bash
+poetry run mc train compare \
+  --model /path/to/model \
+  --adapter-a /path/to/adapter_a \
+  --adapter-b /path/to/adapter_b \
+  --data /path/to/validation.jsonl
+```
+
+### 5. Export Or Merge Artifacts
+
+```bash
 poetry run mc train export \
   --agent agent-001 \
-  --model /path/to/base_model \
-  --output /path/to/export
+  --model /path/to/model \
+  --output /path/to/export_dir
 ```
 
 ## Dataset Format
 
 `mc train run` consumes JSONL with either:
+
 - `{"text": "..."}`
-- `{"messages": [{"role": "...", "content": "..."} ...]}`
+- `{"messages": [{"role": "...", "content": "..."}]}`
 
 Examples:
 
@@ -63,11 +96,17 @@ Examples:
 {"messages": [{"role": "user", "content": "Hello"}, {"role": "assistant", "content": "Hi!"}]}
 ```
 
+If your source data is not already JSONL, use:
+
+```bash
+poetry run mc data prepare /path/to/source --output /path/to/train.jsonl
+```
+
 ## `mc train run`
 
-Canonical NB-LoRA training command. The goal is not to expose more knobs. The
-goal is to show the exact derived plan before training and then execute that
-same plan without drift.
+Canonical geometry-derived LoRA training command. The goal is not to expose
+more knobs. The goal is to derive the plan, show it when asked, execute it
+without drift, and leave you with evidence about what happened.
 
 ```bash
 poetry run mc train run \
@@ -78,14 +117,15 @@ poetry run mc train run \
 ```
 
 Options:
+
 - `--model`, `-m` (required)
 - `--data`, `-d` (required)
 - `--output`, `-o`
 - `--eval-data`
-- `--explain`
-- `--plan-only`
 - `--benchmark`
 - `--no-save`
+- `--explain`
+- `--plan-only`
 - `--seq-length`
 - `--seed`
 - `--topo-monitor/--no-topo-monitor`
@@ -93,9 +133,27 @@ Options:
 - `--target-experts`
 - `--entropy-reg/--no-entropy-reg`
 
-### Three-Bucket Model
+### What ModelCypher Derives
 
-`mc train run` now surfaces training state in three buckets:
+The workbench derives or resolves these surfaces from model and data state:
+
+- target modules
+- per-module ranks
+- sequence length when omitted
+- controller quantities used during training
+- stopping and verification surfaces
+- seed and eval split defaults
+
+The controller does not expose a fixed scalar learning rate. The key statement
+is:
+
+```text
+eta_step = min(eta_ceiling, eta_sps, eta_weyl)
+```
+
+### Three Buckets In The Training Plan
+
+`mc train run` surfaces training state in three buckets:
 
 - `derived_now`
   Fixed before training starts: seed, output path, sequence length, eval split,
@@ -108,16 +166,7 @@ Options:
   Post-training gates: spectral bounds, CKA, degeneration, pipeline gate, and
   optional benchmark delta when `--benchmark` is enabled.
 
-The controller does not expose a fixed scalar LR. The canonical statement is:
-
-```text
-eta_step = min(eta_ceiling, eta_sps, eta_weyl)
-```
-
-### Preflight Surfaces
-
-Use `--plan-only` to derive the exact plan without injecting adapters or
-creating output directories:
+### `--plan-only`
 
 ```bash
 poetry run mc train run \
@@ -125,6 +174,9 @@ poetry run mc train run \
   -d /path/to/data.jsonl \
   --plan-only
 ```
+
+Use this when you want the exact resolved plan without injecting adapters or
+creating output directories.
 
 Example text output:
 
@@ -134,7 +186,7 @@ Model: /path/to/model
 Dataset: /path/to/data.jsonl
 Eval: derived split (pilot_variance)
 Seed: 123456789 (derived_from_model_dataset_hash)
-Output: /path/to/adapters/model-nblora-123456789
+Output: /path/to/adapters/model-geometric-lora-123456789
 Seq length: 256 (data_derived_max_token_length)
 Split: pilot_variance | train=480 eval=32
 Target surface: 96 modules | ranks=4-16 | params~1,572,864
@@ -145,7 +197,7 @@ Verified after training: spectral bounds, CKA, degeneration, pipeline gate, opti
 Benchmark: opt-in only; add --benchmark quick for pre/post task scores
 ```
 
-Use `--explain` to print that same summary and then continue into training:
+### `--explain`
 
 ```bash
 poetry run mc train run \
@@ -155,53 +207,80 @@ poetry run mc train run \
   --benchmark quick
 ```
 
-`--benchmark` remains opt-in. It is useful when you want pre/post task scores,
-but it is not part of the default canonical run.
+This prints the resolved summary and then continues into training.
 
-## `mc train validate-derived`
+## `mc train evaluate`
 
-Counterexample search for derived training. Runs repeated training trials with
-derived settings, records failures where post-training metrics do not improve
-over baseline, and now reuses the same shared planning surface as `mc train run`
-before each trial.
+Evaluate a trained adapter against the base model. The command supports three
+modes; choose exactly one per run.
+
+### Prompt comparison mode
 
 ```bash
-poetry run mc train validate-derived \
+poetry run mc train evaluate \
   -m /path/to/model \
-  -d /path/to/data.jsonl \
-  --trials 5 \
-  --report-path /tmp/derived-validation.json
+  -a /path/to/adapter \
+  --prompts /path/to/eval_prompts.jsonl
 ```
 
-Options:
-- `--model`, `-m` (required)
-- `--data`, `-d` (required)
-- `--trials` (required)
-- `--eval-data`
-- `--base-seed` (optional override; default is model+dataset-hash-derived)
-- `--seq-length`
-- `--report-path`
-- `--fail-on-counterexample/--no-fail-on-counterexample`
+Use this when you want side-by-side generations on a prompt set.
 
-## `mc train star`
-
-STaR loop (generate → verify → retrain) built on top of DatasetTrainingService.
+### Dataset loss mode
 
 ```bash
-poetry run mc train star \
+poetry run mc train evaluate \
+  -m /path/to/model \
+  -a /path/to/adapter \
+  -d /path/to/validation.jsonl
+```
+
+Use this when you want loss or perplexity style validation.
+
+### Benchmark mode
+
+```bash
+poetry run mc train evaluate \
+  -m /path/to/model \
+  -a /path/to/adapter \
+  --benchmark quick
+```
+
+Use this when you want lm-eval benchmark scores.
+
+## `mc train compare`
+
+Compare two training runs or two adapters side by side.
+
+### Compare saved training results
+
+```bash
+poetry run mc train compare \
+  --result-a /path/to/run_a.json \
+  --result-b /path/to/run_b.json
+```
+
+### Compare two adapters on a dataset
+
+```bash
+poetry run mc train compare \
+  -m /path/to/model \
+  --adapter-a /path/to/adapter_a \
+  --adapter-b /path/to/adapter_b \
+  -d /path/to/validation.jsonl
+```
+
+Use this when you want a winner call backed by measured deltas instead of
+impressionistic model sampling.
+
+## `mc train export`
+
+Export LoRA artifacts for downstream use.
+
+```bash
+poetry run mc train export \
+  --agent agent-001 \
   --model /path/to/model \
-  --data /path/to/base_data.jsonl \
-  --output /path/to/star_run \
-  --rounds 3 \
-  --problems-per-round 500
-```
-
-## `mc train status`
-
-Show current training state for a specific agent/model pair.
-
-```bash
-poetry run mc train status --agent agent-001 --model /path/to/model
+  --output /path/to/export_dir
 ```
 
 ## `mc train merge`
@@ -216,49 +295,68 @@ poetry run mc train merge \
   --output /path/to/merged_model
 ```
 
-## `mc train export`
+## `mc train status`
 
-Export LoRA artifacts for downstream use.
+Show current training state for a specific agent/model pair.
 
 ```bash
-poetry run mc train export \
-  --agent agent-001 \
-  --model /path/to/model \
-  --output /path/to/export_dir
+poetry run mc train status --agent agent-001 --model /path/to/model
 ```
 
-## Geometry Monitoring During/After Training
+## `mc train validate-derived`
 
-Use analyze commands to inspect geometry of trained checkpoints/models.
+Counterexample search for derived training. This is useful when you want to
+stress the current control plane and capture failures systematically.
+
+```bash
+poetry run mc train validate-derived \
+  -m /path/to/model \
+  -d /path/to/data.jsonl \
+  --trials 5 \
+  --report-path /tmp/derived-validation.json
+```
+
+## `mc train star`
+
+STaR loop support built on top of the training services:
+
+```bash
+poetry run mc train star \
+  --model /path/to/model \
+  --data /path/to/base_data.jsonl \
+  --output /path/to/star_run \
+  --rounds 3 \
+  --problems-per-round 500
+```
+
+Treat this as an advanced workflow, not the default starting point.
+
+## Monitoring And Diagnostics
+
+If you want more visibility into model behavior after training:
 
 ```bash
 poetry run mc analyze dimension-profile --model /path/to/model
 poetry run mc analyze entropy-trajectory --model /path/to/model
 poetry run mc analyze spectral-trajectory --model /path/to/model
-poetry run mc analyze reasoning-flow --model /path/to/model --prompt "Solve x^2 - 5x + 6 = 0."
+poetry run mc analyze lora-svd /path/to/adapter --base /path/to/model
 ```
 
-## Safety and Drift Checks
+## Current Limitations
 
-```bash
-poetry run mc analyze calibrate-safety \
-  --model /path/to/model \
-  --prompt "Hello." \
-  --output-file /tmp/calibration.json
+- The workbench is shipped, but benchmark superiority is still open.
+- `--benchmark` is opt-in; it is available, but it is not yet the default path.
+- Experimental surfaces like merge and STaR exist, but they are not the core
+  promise of the product today.
 
-poetry run mc analyze jailbreak-test \
-  --model /path/to/model \
-  --prompt "test prompt" \
-  --calibration /tmp/calibration.json
-```
+## Live Signatures
 
-## Troubleshooting
-
-If a command fails unexpectedly, inspect help for live signatures:
+If a command fails or you want the exact current signature:
 
 ```bash
 poetry run mc train --help
 poetry run mc train run --help
-poetry run mc analyze --help
-poetry run mc system status
+poetry run mc train evaluate --help
+poetry run mc train compare --help
+poetry run mc data --help
 ```
