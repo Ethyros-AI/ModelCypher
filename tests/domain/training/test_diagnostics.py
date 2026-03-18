@@ -30,6 +30,7 @@ from modelcypher.core.domain.agent_protocol import (
     AgentDiagnostics,
     AgentEnvelope,
     AgentMetadata,
+    NextAction,
     AgentRecommendation,
     derived_eval_hash,
     file_hash,
@@ -143,6 +144,13 @@ class TestAgentProtocol:
             result={"train_iters": 100, "final_loss": 1.2},
             diagnostics=AgentDiagnostics(summary="Done."),
             metadata=AgentMetadata(timestamp="2026-03-11T00:00:00Z"),
+            next_actions=[
+                NextAction(
+                    name="evaluate",
+                    reason="Check the adapter on held-out data.",
+                    command="mc train evaluate -m /model -a /adapter -d /eval.jsonl",
+                )
+            ],
         )
         d = envelope.to_dict()
         serialized = json.dumps(d)
@@ -150,6 +158,7 @@ class TestAgentProtocol:
         assert parsed["command"] == "mc train run"
         assert parsed["result"]["train_iters"] == 100
         assert parsed["diagnostics"]["summary"] == "Done."
+        assert parsed["next_actions"][0]["name"] == "evaluate"
 
     def test_make_metadata_timestamp(self):
         meta = make_metadata(model="/model", seed=42)

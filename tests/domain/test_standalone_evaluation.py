@@ -408,10 +408,13 @@ class TestMakeEnvelope:
             adapted_loss=1.8,
             overall_verdict="improved",
         )
-        envelope = service.make_envelope(result)
+        envelope = service.make_envelope(result, eval_data_path="/eval.jsonl")
         d = envelope.to_dict()
         actions = [r["action"] for r in d["diagnostics"]["recommendations"]]
         assert "deploy" in actions
+        next_steps = [r["name"] for r in d["next_actions"]]
+        assert "compare" in next_steps
+        assert "export" in next_steps
 
     def test_benchmark_improved_recommends_deploy(self, service):
         result = StandaloneEvalResult(
@@ -424,6 +427,19 @@ class TestMakeEnvelope:
         d = envelope.to_dict()
         actions = [r["action"] for r in d["diagnostics"]["recommendations"]]
         assert "deploy" in actions
+
+    def test_inference_envelope_next_actions_include_benchmark(self, service):
+        result = StandaloneEvalResult(
+            model_path="/model",
+            adapter_path="/adapter",
+            mode="inference",
+            n_prompts=3,
+            n_improved=2,
+            overall_verdict="improved",
+        )
+        envelope = service.make_envelope(result)
+        next_steps = [r["name"] for r in envelope.to_dict()["next_actions"]]
+        assert "benchmark" in next_steps
 
     def test_unmeasured_in_observation(self, service):
         result = StandaloneEvalResult(

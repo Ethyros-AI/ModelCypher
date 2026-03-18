@@ -17,13 +17,17 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
+import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from modelcypher.core.domain.runtime_status import RuntimeMemoryStatus, RuntimeOwner
+from modelcypher.core.use_cases.runtime_coordinator import RuntimeCoordinator
 from modelcypher.ports.inference import HiddenStateEngine
-from modelcypher.utils.locks import FileLock, FileLockError
 from modelcypher.utils.model_context import resolve_context_limit
 from modelcypher.utils.paths import get_modelcypher_home
 
@@ -159,9 +163,57 @@ class InferenceEngine(HiddenStateEngine):
             backend = get_default_backend()
         self._backend = backend
         self.base_path = base_path or get_modelcypher_home()
-        self.lock = FileLock(self.base_path / "training.lock")
+        self._runtime_coordinator = RuntimeCoordinator(base_path=self.base_path)
         self._model_cache: dict[tuple[str, str | None], ModelCacheEntry] = {}
         self._context_cache: dict[str, int] = {}
+
+    def _runtime_memory(self) -> RuntimeMemoryStatus:
+        active_gb: float | None = None
+        peak_gb: float | None = None
+        if hasattr(self._backend, "get_active_memory_gb"):
+            try:
+                active_gb = float(self._backend.get_active_memory_gb())
+            except Exception:
+                active_gb = None
+        if hasattr(self._backend, "get_peak_memory_gb"):
+            try:
+                peak_gb = float(self._backend.get_peak_memory_gb())
+            except Exception:
+                peak_gb = None
+        return RuntimeMemoryStatus(
+            active_gpu_memory_gb=active_gb,
+            peak_gpu_memory_gb=peak_gb,
+        )
+
+    @contextmanager
+    def _runtime_session(
+        self,
+        *,
+        model_path: Path,
+        adapter_path: str | None,
+        phase: str,
+    ):
+        with self._runtime_coordinator.session(
+            owner=RuntimeOwner.INFERENCE,
+            job_id=f"infer-{os.getpid()}-{uuid.uuid4().hex[:8]}",
+            phase=phase,
+            details={
+                "pid": os.getpid(),
+                "model_path": str(model_path),
+                "adapter_path": adapter_path,
+            },
+        ):
+            try:
+                yield
+            finally:
+                self._release_runtime_resources()
+
+    def _release_runtime_resources(self) -> None:
+        self._model_cache.clear()
+        try:
+            self._backend.clear_cache()
+        except Exception:
+            logger.debug("Backend cache clear unavailable after inference", exc_info=True)
 
     def _validate_model_assets(self, model_path: Path) -> bool:
         """Validate model directory has required files."""
@@ -302,13 +354,16 @@ class InferenceEngine(HiddenStateEngine):
         model_path = Path(model).expanduser().resolve()
         self._validate_model_assets(model_path)
 
-        try:
-            self.lock.acquire()
-        except FileLockError as exc:
-            raise RuntimeError("Training is running; inference is locked") from exc
-
-        try:
+        with self._runtime_session(
+            model_path=model_path,
+            adapter_path=adapter,
+            phase="load",
+        ):
             entry = self._load_model(model_path, adapter)
+            self._runtime_coordinator.update(
+                phase="generate",
+                memory=self._runtime_memory(),
+            )
 
             if max_tokens is None:
                 max_tokens = self._derive_max_tokens(model_path, prompt, entry.tokenizer)
@@ -328,6 +383,13 @@ class InferenceEngine(HiddenStateEngine):
             token_count = len(self._backend.encode_tokens(entry.tokenizer, response))
             tokens_per_second = token_count / duration if duration > 0.0 else 0.0
             stop_reason = "length" if token_count >= max_tokens else "eos"
+            self._runtime_coordinator.update(
+                phase="complete",
+                eta_seconds=0.0,
+                throughput_tokens_per_second=tokens_per_second,
+                memory=self._runtime_memory(),
+                details={"token_count": token_count},
+            )
 
             return {
                 "response": response,
@@ -339,8 +401,6 @@ class InferenceEngine(HiddenStateEngine):
                 "model": str(model_path),
                 "adapter": entry.adapter_path,
             }
-        finally:
-            self.lock.release()
 
     def capture_hidden_states(
         self,
@@ -355,15 +415,16 @@ class InferenceEngine(HiddenStateEngine):
         """
         model_path = Path(model).expanduser().resolve()
         self._validate_model_assets(model_path)
-
-        entry = self._load_model(model_path, adapter)
-
-        try:
-            self.lock.acquire()
-        except FileLockError as exc:
-            raise RuntimeError("Training is running; inference is locked") from exc
-
-        try:
+        with self._runtime_session(
+            model_path=model_path,
+            adapter_path=adapter,
+            phase="collect_hidden_states",
+        ):
+            entry = self._load_model(model_path, adapter)
+            self._runtime_coordinator.update(
+                phase="collect_hidden_states",
+                memory=self._runtime_memory(),
+            )
             # Use Backend for hidden state collection
             hidden_states = self._backend.collect_hidden_activations(
                 entry.model,
@@ -391,8 +452,6 @@ class InferenceEngine(HiddenStateEngine):
                 result[layer_idx] = self._backend.tolist(layer_act)
 
             return result
-        finally:
-            self.lock.release()
 
     def _perform_security_scan(
         self, prompt: str, response: str, model: str
@@ -420,14 +479,16 @@ class InferenceEngine(HiddenStateEngine):
         """Execute inference with optional adapter and security scanning."""
         model_path = Path(model).expanduser().resolve()
         self._validate_model_assets(model_path)
-
-        try:
-            self.lock.acquire()
-        except FileLockError as exc:
-            raise RuntimeError("Training is running; inference is locked") from exc
-
-        try:
+        with self._runtime_session(
+            model_path=model_path,
+            adapter_path=adapter,
+            phase="load",
+        ):
             entry = self._load_model(model_path, adapter)
+            self._runtime_coordinator.update(
+                phase="generate",
+                memory=self._runtime_memory(),
+            )
             if max_tokens is None:
                 max_tokens = self._derive_max_tokens(model_path, prompt, entry.tokenizer)
             start_time = time.time()
@@ -445,6 +506,13 @@ class InferenceEngine(HiddenStateEngine):
             security_summary = None
             if security_scan:
                 security_summary = self._perform_security_scan(prompt, response, model)
+            self._runtime_coordinator.update(
+                phase="complete",
+                eta_seconds=0.0,
+                throughput_tokens_per_second=tokens_per_second,
+                memory=self._runtime_memory(),
+                details={"token_count": token_count},
+            )
 
             return InferenceResult(
                 prompt=prompt,
@@ -458,8 +526,6 @@ class InferenceEngine(HiddenStateEngine):
                 adapter=entry.adapter_path,
                 security=security_summary,
             )
-        finally:
-            self.lock.release()
 
     def suite(
         self,

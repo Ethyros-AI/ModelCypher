@@ -279,3 +279,12 @@ class ServiceFactory:
             backend=self._registry.backend,
             model_loader=self._registry.model_loader,
         )
+
+    def export_service(self):
+        """Create ExportService for explicit deployment targets."""
+        from modelcypher.core.use_cases.export_service import ExportService
+
+        return ExportService(
+            exporter=self._registry.exporter,
+            quantization_service=self.quantization_service(),
+        )

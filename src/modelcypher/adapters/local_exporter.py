@@ -26,86 +26,69 @@ from modelcypher.utils.paths import expand_path
 
 
 class LocalExporter(Exporter):
-    def export_model(self, model_path: str, output_path: str, export_format: str) -> dict:
-        """Export model to specified format.
-
-        Parameters
-        ----------
-        model_path : str
-            Path to source model directory.
-        output_path : str
-            Destination path for exported model.
-        export_format : str
-            Target format. Only `safetensors` is supported.
-
-        Returns
-        -------
-        dict
-            Export result with format and output path.
-        """
-        return self._export_any(model_path, output_path, export_format)
-
-    def export_checkpoint(self, checkpoint_path: str, output_path: str, export_format: str) -> dict:
-        """Export training checkpoint to specified format.
-
-        Parameters
-        ----------
-        checkpoint_path : str
-            Path to source checkpoint.
-        output_path : str
-            Destination path for exported checkpoint.
-        export_format : str
-            Target format. Only `safetensors` is supported.
-
-        Returns
-        -------
-        dict
-            Export result with format and output path.
-        """
-        return self._export_any(checkpoint_path, output_path, export_format)
-
-    def _export_any(self, source_path: str, output_path: str, export_format: str) -> dict:
-        source = expand_path(source_path)
+    def export(
+        self,
+        *,
+        model_path: str,
+        adapter_path: str | None,
+        output_path: str,
+        target_kind: str,
+    ) -> dict:
+        model_dir = expand_path(model_path)
         target = expand_path(output_path)
-        export_format = export_format.lower()
+        normalized_target = target_kind.lower()
 
-        if export_format != "safetensors":
-            raise ValueError(
-                f"Unsupported export format: {export_format}. Only safetensors is supported."
-            )
-
-        self._export_safetensors(source, target)
-
-        return {"format": export_format, "outputPath": str(target)}
-
-    def _export_safetensors(self, source: Path, target: Path) -> None:
-        """Export to safetensors format using backend native I/O."""
-        backend = get_default_backend()
-
-        if source.is_dir():
-            # Look for safetensors files in directory
-            if (source / "model.safetensors").exists():
-                # Already safetensors, copy
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy(source / "model.safetensors", target)
-                return
-            # Try to find any safetensors file
-            safetensor_files = list(source.glob("*.safetensors"))
-            if safetensor_files:
-                # Load and merge all safetensors files
-                weights = {}
-                for sf in safetensor_files:
-                    weights.update(backend.load_safetensors(str(sf)))
-                target.parent.mkdir(parents=True, exist_ok=True)
-                backend.save_safetensors(str(target), weights)
-                return
-            raise ValueError(f"No safetensors files found in {source}")
-
-        if source.suffix == ".safetensors":
-            # Copy safetensors file directly
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy(source, target)
+        if normalized_target == "adapter":
+            if adapter_path is None:
+                raise ValueError("adapter target requires adapter_path")
+            self._export_adapter(expand_path(adapter_path), target)
+        elif normalized_target == "merged_fp16":
+            if adapter_path is None:
+                raise ValueError("merged_fp16 target requires adapter_path")
+            self._export_merged_fp16(model_dir, expand_path(adapter_path), target)
         else:
             raise ValueError(
-                f"Unsupported source format: {source.suffix}. Only .safetensors is supported."
+                f"Unsupported export target: {target_kind}. "
+                "Supported targets: adapter, merged_fp16"
             )
+
+        return {"target_kind": normalized_target, "output_path": str(target)}
+
+    def _export_adapter(self, adapter_dir: Path, output_dir: Path) -> None:
+        if not adapter_dir.is_dir():
+            raise ValueError(f"Adapter path is not a directory: {adapter_dir}")
+        if output_dir.exists():
+            raise FileExistsError(f"Export destination already exists: {output_dir}")
+        shutil.copytree(adapter_dir, output_dir)
+
+    def _export_merged_fp16(self, model_dir: Path, adapter_dir: Path, output_dir: Path) -> None:
+        backend = get_default_backend()
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        model, _tokenizer = backend.load_model(
+            str(model_dir),
+            adapter_path=str(adapter_dir),
+        )
+        weights = dict(model.parameters())
+        backend.save_safetensors(str(output_dir / "model.safetensors"), weights)
+        self._copy_model_artifacts(model_dir, output_dir)
+        backend.clear_cache()
+
+    def _copy_model_artifacts(self, model_dir: Path, output_dir: Path) -> None:
+        skipped_suffixes = {
+            ".safetensors",
+            ".bin",
+            ".pt",
+            ".ckpt",
+            ".npz",
+            ".gguf",
+        }
+        for item in model_dir.iterdir():
+            if item.name == ".modelcypher":
+                continue
+            if item.is_dir():
+                shutil.copytree(item, output_dir / item.name, dirs_exist_ok=True)
+                continue
+            if item.suffix in skipped_suffixes or item.name.endswith(".index.json"):
+                continue
+            shutil.copy2(item, output_dir / item.name)

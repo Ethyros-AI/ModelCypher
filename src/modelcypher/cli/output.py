@@ -85,6 +85,12 @@ def write_agent_output(
                 if rec.command:
                     line += f"\n    $ {rec.command}"
                 parts.append(line)
+        if envelope.next_actions:
+            parts.append("")
+            parts.append("Exact next commands:")
+            for action in envelope.next_actions:
+                parts.append(f"  [{action.name}] {action.reason}")
+                parts.append(f"    $ {action.command}")
         write_output("\n".join(parts), output_format, pretty)
     else:
         write_output(envelope.to_dict(), output_format, pretty)

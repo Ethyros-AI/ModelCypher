@@ -353,6 +353,7 @@ class TestComparisonEnvelope:
             metrics=[MetricDelta("post_loss", 1.5, 1.2, -0.3, "b")],
             winner="b",
             winner_reason="Lower post-training loss",
+            _meta_b={"model": "/model", "adapter_path": "/adapter-b"},
         )
         envelope = service.make_envelope(result)
         assert envelope.command == "mc train compare"
@@ -362,6 +363,7 @@ class TestComparisonEnvelope:
         recs = d["diagnostics"]["recommendations"]
         assert len(recs) == 1
         assert recs[0]["action"] == "use_b"
+        assert d["next_actions"][0]["name"] == "export"
 
     def test_no_winner_envelope(self, service):
         result = ComparisonResult(

@@ -35,6 +35,22 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
+class NextAction:
+    """An exact follow-up command or artifact reference."""
+
+    name: str
+    reason: str
+    command: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "reason": self.reason,
+            "command": self.command,
+        }
+
+
+@dataclass(frozen=True)
 class AgentRecommendation:
     """A concrete next step the agent can take."""
 
@@ -116,6 +132,7 @@ class AgentEnvelope:
     result: dict[str, Any]
     diagnostics: AgentDiagnostics
     metadata: AgentMetadata
+    next_actions: list[NextAction] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -124,6 +141,7 @@ class AgentEnvelope:
             "result": self.result,
             "diagnostics": self.diagnostics.to_dict(),
             "metadata": self.metadata.to_dict(),
+            "next_actions": [action.to_dict() for action in self.next_actions],
         }
 
 

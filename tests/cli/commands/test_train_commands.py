@@ -135,6 +135,8 @@ class TestTrainCommandHelp:
         result = runner.invoke(app, ["train", "export", "--help"])
         assert result.exit_code == 0
         assert "--output" in result.stdout
+        assert "--adapter" in result.stdout
+        assert "--target" in result.stdout
 
 
 class TestTrainCommandValidation:

@@ -108,6 +108,7 @@ class ProgressEvent:
     why: str  # Why this matters (for AI to explain)
     progress: dict[str, Any]  # Numeric progress metrics
     geometry: dict[str, Any] | None = None  # Geometric context
+    runtime: dict[str, Any] | None = None  # Runtime ownership + telemetry
     event_type: str = "merge_progress"  # "merge_progress" or "training_progress"
     timestamp: float = field(default_factory=time.time)
 
@@ -126,6 +127,8 @@ class ProgressEvent:
             result["model"] = self.model
         if self.geometry:
             result["geometry"] = self.geometry
+        if self.runtime:
+            result["runtime"] = self.runtime
         return result
 
 
@@ -594,7 +597,12 @@ class ProgressReporter:
     # TRAINING: LOAD
     # =========================================================================
 
-    def training_started(self, model_path: str, dataset_path: str) -> None:
+    def training_started(
+        self,
+        model_path: str,
+        dataset_path: str,
+        runtime: dict[str, Any] | None = None,
+    ) -> None:
         """Report training pipeline started."""
         self._current_stage = "load"
         self._emit(
@@ -605,11 +613,17 @@ class ProgressReporter:
                 what="Starting geometry-derived LoRA training pipeline",
                 why="Loading model and dataset to derive the plan before training; there is no fixed LR and MASS will choose step sizes online",
                 progress={"model_path": model_path, "dataset_path": dataset_path},
+                runtime=runtime,
                 event_type="training_progress",
             )
         )
 
-    def training_model_loaded(self, model_path: str, n_layers: int) -> None:
+    def training_model_loaded(
+        self,
+        model_path: str,
+        n_layers: int,
+        runtime: dict[str, Any] | None = None,
+    ) -> None:
         """Report model loaded for training."""
         self._emit(
             ProgressEvent(
@@ -619,12 +633,17 @@ class ProgressReporter:
                 what="Model loaded for training",
                 why="Model weights are needed for geometric analysis and adapter injection",
                 progress={"model_path": model_path, "layers": n_layers},
+                runtime=runtime,
                 event_type="training_progress",
             )
         )
 
     def training_dataset_loaded(
-        self, n_train: int, n_eval: int, seq_length: int
+        self,
+        n_train: int,
+        n_eval: int,
+        seq_length: int,
+        runtime: dict[str, Any] | None = None,
     ) -> None:
         """Report dataset loaded and split."""
         self._emit(
@@ -639,6 +658,7 @@ class ProgressReporter:
                     "n_eval": n_eval,
                     "seq_length": seq_length,
                 },
+                runtime=runtime,
                 event_type="training_progress",
             )
         )
@@ -647,7 +667,7 @@ class ProgressReporter:
     # TRAINING: GEOMETRY ANALYSIS
     # =========================================================================
 
-    def training_geometry_started(self) -> None:
+    def training_geometry_started(self, runtime: dict[str, Any] | None = None) -> None:
         """Report geometry analysis started."""
         self._current_stage = "geometry"
         self._emit(
@@ -658,6 +678,7 @@ class ProgressReporter:
                 what="Analyzing weight geometry via SVD",
                 why="SVD of each weight matrix determines rank, null-space, and spectral bounds for training",
                 progress={},
+                runtime=runtime,
                 event_type="training_progress",
             )
         )
@@ -670,6 +691,7 @@ class ProgressReporter:
         rank_min: int,
         rank_max: int,
         split_method: str,
+        runtime: dict[str, Any] | None = None,
     ) -> None:
         """Report geometry analysis and adapter injection complete."""
         self._emit(
@@ -694,6 +716,7 @@ class ProgressReporter:
                         "to be measured."
                     ),
                 },
+                runtime=runtime,
                 event_type="training_progress",
             )
         )
@@ -708,6 +731,7 @@ class ProgressReporter:
         *,
         iters_per_epoch: int | None = None,
         precision_floor_epochs: int | None = None,
+        runtime: dict[str, Any] | None = None,
     ) -> None:
         """Report training loop started."""
         progress: dict[str, Any] = {"max_iters": max_iters}
@@ -735,6 +759,7 @@ class ProgressReporter:
                 why="Optimizing geometry-derived LoRA adapters; there is no fixed LR and MASS will choose step sizes online",
                 progress=progress,
                 geometry=geometry,
+                runtime=runtime,
                 event_type="training_progress",
             )
         )
@@ -746,6 +771,7 @@ class ProgressReporter:
         final_loss: float,
         stop_reason: str,
         training_time_seconds: float,
+        runtime: dict[str, Any] | None = None,
     ) -> None:
         """Report training loop complete."""
         self._emit(
@@ -762,6 +788,7 @@ class ProgressReporter:
                     "stop_reason": stop_reason,
                     "training_time_s": round(training_time_seconds, 2),
                 },
+                runtime=runtime,
                 event_type="training_progress",
             )
         )
@@ -770,7 +797,11 @@ class ProgressReporter:
     # TRAINING: VERIFICATION
     # =========================================================================
 
-    def training_verification_started(self, gates: list[str] | None = None) -> None:
+    def training_verification_started(
+        self,
+        gates: list[str] | None = None,
+        runtime: dict[str, Any] | None = None,
+    ) -> None:
         """Report post-training verification started."""
         self._current_stage = "verify"
         self._emit(
@@ -781,6 +812,7 @@ class ProgressReporter:
                 what="Starting post-training verification",
                 why="Checking the exact post-training gates that determine whether the adapter is promotable on this run",
                 progress={"gates": list(gates or [])},
+                runtime=runtime,
                 event_type="training_progress",
             )
         )
@@ -791,6 +823,7 @@ class ProgressReporter:
         min_cka: float | None,
         mean_cka: float | None,
         gates: list[str] | None = None,
+        runtime: dict[str, Any] | None = None,
     ) -> None:
         """Report verification complete."""
         progress: dict[str, Any] = {"spectral_bounds_ok": spectral_bounds_ok}
@@ -815,6 +848,7 @@ class ProgressReporter:
                         "degeneration and the pipeline gate."
                     ),
                 },
+                runtime=runtime,
                 event_type="training_progress",
             )
         )
@@ -829,6 +863,7 @@ class ProgressReporter:
         training_time_seconds: float,
         final_loss: float,
         post_loss: float,
+        runtime: dict[str, Any] | None = None,
     ) -> None:
         """Report training pipeline complete."""
         self._emit(
@@ -844,6 +879,7 @@ class ProgressReporter:
                     "final_loss": round(final_loss, 4),
                     "post_eval_loss": round(post_loss, 4),
                 },
+                runtime=runtime,
                 event_type="training_progress",
             )
         )

@@ -41,6 +41,9 @@ from typing import TYPE_CHECKING, Any
 from modelcypher.core.use_cases._dataset_training_service_helpers_mixin import (
     _DatasetTrainingServiceHelperMixin,
 )
+from modelcypher.core.use_cases.model_capability_manifest import (
+    ModelCapabilityManifestResolver,
+)
 from modelcypher.core.domain.dataset_loading import (
     load_jsonl_dataset,
     merge_datasets_with_fraction,
@@ -210,6 +213,10 @@ class DatasetTrainResult:
     offline_replay: dict[str, Any] | None = None
     closed_loop_control_law: dict[str, Any] | None = None
     derived_plan: dict[str, Any] | None = None
+    artifacts: dict[str, str] | None = None
+    capability_manifest: dict[str, Any] | None = None
+    runtime_status: dict[str, Any] | None = None
+    next_actions: list[dict[str, Any]] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert result to a JSON-serializable dictionary."""
@@ -344,6 +351,14 @@ class DatasetTrainResult:
             result["closed_loop_control_law"] = self.closed_loop_control_law
         if self.derived_plan is not None:
             result["derived_plan"] = self.derived_plan
+        if self.artifacts is not None:
+            result["artifacts"] = self.artifacts
+        if self.capability_manifest is not None:
+            result["capability_manifest"] = self.capability_manifest
+        if self.runtime_status is not None:
+            result["runtime_status"] = self.runtime_status
+        if self.next_actions is not None:
+            result["next_actions"] = self.next_actions
         if self.benchmark_baseline is not None and self.benchmark_post is not None:
             result["benchmark_delta"] = {
                 k: self.benchmark_post[k] - self.benchmark_baseline.get(k, 0.0)
@@ -664,6 +679,112 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         self._adapter = adapter
         self._backend = backend
         self._progress_reporter: Any | None = None
+        self._runtime_coordinator: Any | None = None
+
+    def _capture_runtime_status(
+        self,
+        *,
+        phase: str,
+        eta_seconds: float | None = None,
+        throughput_tokens_per_second: float | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        from datetime import datetime, timezone
+
+        from modelcypher.core.domain.runtime_status import RuntimeMemoryStatus, RuntimeOwner
+
+        active_gb: float | None = None
+        peak_gb: float | None = None
+        if hasattr(self._backend, "get_active_memory_gb"):
+            try:
+                active_gb = float(self._backend.get_active_memory_gb())
+            except Exception:
+                active_gb = None
+        if hasattr(self._backend, "get_peak_memory_gb"):
+            try:
+                peak_gb = float(self._backend.get_peak_memory_gb())
+            except Exception:
+                peak_gb = None
+        memory = RuntimeMemoryStatus(
+            active_gpu_memory_gb=active_gb,
+            peak_gpu_memory_gb=peak_gb,
+        )
+
+        if self._runtime_coordinator is None:
+            payload: dict[str, Any] = {
+                "owner": RuntimeOwner.TRAINING.value,
+                "phase": phase,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            if eta_seconds is not None:
+                payload["eta_seconds"] = eta_seconds
+            if throughput_tokens_per_second is not None:
+                payload["throughput_tokens_per_second"] = throughput_tokens_per_second
+            memory_payload = memory.to_dict()
+            if memory_payload:
+                payload["memory"] = memory_payload
+            if details:
+                payload["details"] = dict(details)
+            return payload
+
+        status = self._runtime_coordinator.update(
+            phase=phase,
+            eta_seconds=eta_seconds,
+            throughput_tokens_per_second=throughput_tokens_per_second,
+            memory=memory,
+            details=details,
+        )
+        return status.to_dict()
+
+    def _build_next_actions(
+        self,
+        *,
+        model_path: Path,
+        adapter_path: str | None,
+        eval_data_path: str | None,
+        artifact_dir: Path | None,
+    ) -> list[dict[str, Any]]:
+        from modelcypher.core.domain.agent_protocol import NextAction
+
+        actions: list[NextAction] = []
+        if adapter_path and eval_data_path:
+            actions.append(
+                NextAction(
+                    name="evaluate",
+                    reason="Measure the saved adapter on the held-out evaluation set.",
+                    command=(
+                        f"mc train evaluate -m {model_path} -a {adapter_path} "
+                        f"-d {eval_data_path}"
+                    ),
+                )
+            )
+            actions.append(
+                NextAction(
+                    name="compare",
+                    reason="Compare the adapter directly against the base model on the same data.",
+                    command=(
+                        f"mc train compare -m {model_path} --adapter-a {adapter_path} "
+                        f"-d {eval_data_path}"
+                    ),
+                )
+            )
+        if adapter_path:
+            export_output = (
+                artifact_dir.parent / f"{artifact_dir.name}-deployment"
+                if artifact_dir is not None
+                else Path(adapter_path).parent / f"{Path(adapter_path).name}-deployment"
+            )
+            actions.append(
+                NextAction(
+                    name="export",
+                    reason="Produce a deployment-ready quantized export from the saved adapter.",
+                    command=(
+                        f"mc train export -m {model_path} --adapter {adapter_path} "
+                        f"-o {export_output} --target deployment_quantized"
+                    ),
+                )
+            )
+        return [action.to_dict() for action in actions]
 
     def _load_training_model(
         self,
@@ -1169,8 +1290,24 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
 
         # Emit training started progress event
         rp = self._progress_reporter
+        if hasattr(self._backend, "reset_peak_memory"):
+            try:
+                self._backend.reset_peak_memory()
+            except Exception:
+                logger.debug("Peak memory reset unavailable for training start", exc_info=True)
+        start_runtime_status = self._capture_runtime_status(
+            phase="load",
+            details={
+                "model_path": str(model_path),
+                "dataset_path": str(dataset_path),
+            },
+        )
         if rp is not None:
-            rp.training_started(str(model_path), str(dataset_path))
+            rp.training_started(
+                str(model_path),
+                str(dataset_path),
+                runtime=start_runtime_status,
+            )
 
         if plan is None:
             plan = self.build_training_plan(
@@ -1259,6 +1396,15 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         # 1. Load model + tokenizer
         logger.info("Loading model from %s", model_path)
         model, tokenizer, vl_model = self._load_training_model(model_path)
+        if rp is not None:
+            rp.training_model_loaded(
+                str(model_path),
+                n_layers=int(self._backend.get_num_layers(model)),
+                runtime=self._capture_runtime_status(
+                    phase="load_model",
+                    details={"model_path": str(model_path)},
+                ),
+            )
         random.seed(seed)
         self._backend.random_seed(seed)
         logger.info("RNG seeded for training execution: seed=%d", seed)
@@ -1464,6 +1610,14 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 n_train=len(train_dataset),
                 n_eval=len(eval_dataset),
                 seq_length=seq_length,
+                runtime=self._capture_runtime_status(
+                    phase="load_dataset",
+                    details={
+                        "n_train": len(train_dataset),
+                        "n_eval": len(eval_dataset),
+                        "seq_length": seq_length,
+                    },
+                ),
             )
 
         # 3. Baseline eval
@@ -1474,7 +1628,9 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
 
         # 4. Analyze geometry — this IS the configuration
         if rp is not None:
-            rp.training_geometry_started()
+            rp.training_geometry_started(
+                runtime=self._capture_runtime_status(phase="geometry"),
+            )
 
         geometries = plan.geometries
         opt_config = plan.optimizer_geometry_config
@@ -1737,6 +1893,13 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 rank_min=min(final_ranks.values()) if final_ranks else 0,
                 rank_max=max(final_ranks.values()) if final_ranks else 0,
                 split_method=str(validation_split_info.get("method", "unknown")),
+                runtime=self._capture_runtime_status(
+                    phase="geometry_complete",
+                    details={
+                        "target_modules": len(target_modules),
+                        "trainable_params": n_trainable_params,
+                    },
+                ),
             )
 
         derived_max_iters_cap = self._derive_training_safety_cap(
@@ -2011,6 +2174,13 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 precision_floor_epochs=math.ceil(
                     resolved_max_iters_cap / max(iters_per_epoch, 1),
                 ),
+                runtime=self._capture_runtime_status(
+                    phase="train",
+                    details={
+                        "max_iters": resolved_max_iters_cap,
+                        "iters_per_epoch": iters_per_epoch,
+                    },
+                ),
             )
         train_start = time.time()
         losses, stop_reason, epoch_metrics = self._adapter.train_loop(
@@ -2081,12 +2251,23 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             train_iters = 0
 
         if rp is not None:
+            approximate_throughput = None
+            if training_time_seconds > 0 and batch_size > 0 and seq_length > 0:
+                approximate_throughput = (
+                    float(train_iters * batch_size * seq_length) / float(training_time_seconds)
+                )
             rp.training_loop_complete(
                 train_iters=train_iters,
                 initial_loss=initial_loss,
                 final_loss=final_loss,
                 stop_reason=stop_reason,
                 training_time_seconds=training_time_seconds,
+                runtime=self._capture_runtime_status(
+                    phase="train_complete",
+                    eta_seconds=0.0,
+                    throughput_tokens_per_second=approximate_throughput,
+                    details={"train_iters": train_iters},
+                ),
             )
 
         # 10. Post-training eval
@@ -2108,6 +2289,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                     "mode_connectivity_barrier",
                     "pipeline_gate_passed",
                 ],
+                runtime=self._capture_runtime_status(phase="verify"),
             )
         logger.info("Verifying spectral bounds...")
         spectral_bounds_ok, max_spectral_ratio, _ = self._adapter.verify_bounds(model)
@@ -2187,6 +2369,10 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                     "mode_connectivity_barrier",
                     "pipeline_gate_passed",
                 ],
+                runtime=self._capture_runtime_status(
+                    phase="verify_complete",
+                    eta_seconds=0.0,
+                ),
             )
 
         # Extract adapter saturation ratio from last epoch metrics
@@ -2415,6 +2601,21 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 derived_plan=plan.to_dict(),
             )
 
+        resolved_eval_data_path: str | None = str(eval_path) if eval_path is not None else None
+        if artifact_path_obj is not None and eval_path is None and eval_samples:
+            eval_split_path = artifact_path_obj / "eval_dataset.jsonl"
+            self._write_jsonl(eval_split_path, list(eval_samples))
+            resolved_eval_data_path = str(eval_split_path)
+
+        artifacts: dict[str, str] | None = None
+        if artifact_path_obj is not None:
+            artifacts = {
+                "artifact_dir": str(artifact_path_obj),
+                "train_result_path": str(artifact_path_obj / "train_result.json"),
+            }
+            if resolved_eval_data_path is not None:
+                artifacts["eval_data_path"] = resolved_eval_data_path
+
         moe_saturated_during_training: list[str] | None = None
         moe_saturation_threshold = max(
             0.0,
@@ -2459,12 +2660,39 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                     "Post-training routing collection failed", exc_info=True,
                 )
 
+        approximate_throughput = None
+        if training_time_seconds > 0 and batch_size > 0 and seq_length > 0:
+            approximate_throughput = (
+                float(train_iters * batch_size * seq_length) / float(training_time_seconds)
+            )
+        final_runtime_status = self._capture_runtime_status(
+            phase="complete",
+            eta_seconds=0.0,
+            throughput_tokens_per_second=approximate_throughput,
+            details={
+                "adapter_path": saved_adapter_path,
+                "post_loss": post_loss,
+            },
+        )
+        capability_manifest = (
+            ModelCapabilityManifestResolver()
+            .resolve(model_path)
+            .to_dict()
+        )
+        next_actions = self._build_next_actions(
+            model_path=model_path,
+            adapter_path=saved_adapter_path,
+            eval_data_path=resolved_eval_data_path,
+            artifact_dir=artifact_path_obj,
+        )
+
         if rp is not None:
             rp.training_complete(
                 adapter_path=saved_adapter_path,
                 training_time_seconds=training_time_seconds,
                 final_loss=final_loss,
                 post_loss=post_loss,
+                runtime=final_runtime_status,
             )
 
         result = DatasetTrainResult(
@@ -2563,6 +2791,10 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 else None
             ),
             derived_plan=plan.to_dict(),
+            artifacts=artifacts,
+            capability_manifest=capability_manifest,
+            runtime_status=final_runtime_status,
+            next_actions=next_actions,
         )
         if artifact_path_obj is not None:
             self._write_json(artifact_path_obj / "train_result.json", result.to_dict())

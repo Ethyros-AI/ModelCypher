@@ -20,7 +20,8 @@ poetry run mc model capacity /path/to/model
 poetry run mc train run -m /path/to/model -d /path/to/data.jsonl --plan-only
 poetry run mc train run -m /path/to/model -d /path/to/data.jsonl -o /path/to/adapter
 poetry run mc train evaluate -m /path/to/model -a /path/to/adapter -d /path/to/validation.jsonl
-poetry run mc train compare -m /path/to/model --adapter-a /path/to/a --adapter-b /path/to/b -d /path/to/validation.jsonl
+poetry run mc train compare -m /path/to/model --adapter-a /path/to/adapter -d /path/to/validation.jsonl
+poetry run mc train export -m /path/to/model --adapter /path/to/adapter -o /path/to/deployment --target deployment_quantized
 ```
 
 ## Global Options
@@ -74,8 +75,9 @@ poetry run mc train evaluate -m /path/to/model -a /path/to/adapter -d /path/to/v
 poetry run mc train evaluate -m /path/to/model -a /path/to/adapter --prompts /path/to/prompts.jsonl
 poetry run mc train evaluate -m /path/to/model -a /path/to/adapter --benchmark quick
 poetry run mc train compare --result-a run1.json --result-b run2.json
+poetry run mc train compare -m /path/to/model --adapter-a /path/to/adapter -d /path/to/validation.jsonl
 poetry run mc train compare -m /path/to/model --adapter-a /path/to/a --adapter-b /path/to/b -d /path/to/validation.jsonl
-poetry run mc train export --agent agent-001 --model /path/to/model --output /path/to/export
+poetry run mc train export --model /path/to/model --adapter /path/to/adapter --output /path/to/deployment --target deployment_quantized
 poetry run mc train merge --agent agent-001 --model /path/to/model --save --output /path/to/merged
 poetry run mc train status --agent agent-001 --model /path/to/model
 poetry run mc train validate-derived --model /path/to/model --data /path/to/data.jsonl --trials 5

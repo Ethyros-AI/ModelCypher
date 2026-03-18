@@ -129,7 +129,8 @@ poetry run mc train evaluate \
 
 ### 6. Compare Results
 
-Compare two saved runs or two adapters side by side:
+Compare a saved run against another run, or compare an adapter directly against
+the base model on the same evaluation set:
 
 ```bash
 poetry run mc train compare \
@@ -138,8 +139,7 @@ poetry run mc train compare \
 
 poetry run mc train compare \
   --model /path/to/model \
-  --adapter-a /path/to/adapter_a \
-  --adapter-b /path/to/adapter_b \
+  --adapter-a /path/to/adapter \
   --data /path/to/validation.jsonl
 ```
 
@@ -147,9 +147,10 @@ poetry run mc train compare \
 
 ```bash
 poetry run mc train export \
-  --agent agent-001 \
   --model /path/to/model \
-  --output /path/to/export_dir
+  --adapter /path/to/adapter \
+  --output /path/to/deployment_dir \
+  --target deployment_quantized
 
 poetry run mc train merge \
   --agent agent-001 \

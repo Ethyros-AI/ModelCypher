@@ -429,6 +429,11 @@ def get_quantization_service():
     return _get_factory().quantization_service()
 
 
+def get_export_service():
+    """Get ExportService for adapter/merged/deployment exports."""
+    return _get_factory().export_service()
+
+
 def get_capacity_analysis_service() -> "CapacityAnalysisService":
     """Get CapacityAnalysisService for per-layer spectral capacity analysis."""
     from modelcypher.core.use_cases.capacity_analysis_service import (

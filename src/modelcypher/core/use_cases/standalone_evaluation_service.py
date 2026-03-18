@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Any
 from modelcypher.core.domain.agent_protocol import (
     AgentDiagnostics,
     AgentEnvelope,
+    NextAction,
     AgentRecommendation,
     make_metadata,
 )
@@ -166,6 +167,7 @@ class StandaloneEvaluationService:
         """Wrap an eval result in an AgentEnvelope."""
         observations: list[str] = []
         recommendations: list[AgentRecommendation] = []
+        next_actions: list[NextAction] = []
 
         if result.mode == "inference":
             obs_parts = [
@@ -228,13 +230,52 @@ class StandaloneEvaluationService:
                         f"-a {result.adapter_path} --benchmark quick",
                     )
                 )
+                next_actions.append(
+                    NextAction(
+                        name="benchmark",
+                        reason="Run a benchmark before making a deployment decision.",
+                        command=(
+                            f"mc train evaluate -m {result.model_path} "
+                            f"-a {result.adapter_path} --benchmark quick"
+                        ),
+                    )
+                )
+
+        if result.adapter_path and eval_data_path:
+            next_actions.append(
+                NextAction(
+                    name="compare",
+                    reason="Compare the adapted model against the base model on the same evaluation set.",
+                    command=(
+                        f"mc train compare -m {result.model_path} "
+                        f"--adapter-a {result.adapter_path} -d {eval_data_path}"
+                    ),
+                )
+            )
+        if result.adapter_path and result.mode in {"loss", "benchmark"}:
+            export_output = (
+                Path(result.adapter_path).parent
+                / f"{Path(result.adapter_path).name}-deployment"
+            )
+            next_actions.append(
+                NextAction(
+                    name="export",
+                    reason="Export the validated adapter to a deployment-ready target.",
+                    command=(
+                        f"mc train export -m {result.model_path} --adapter {result.adapter_path} "
+                        f"-o {export_output} --target deployment_quantized"
+                    ),
+                )
+            )
 
         summary = self._build_summary(result)
+        result_payload = result.to_dict()
+        result_payload["next_actions"] = [action.to_dict() for action in next_actions]
 
         return AgentEnvelope(
             command="mc train evaluate",
             status="success",
-            result=result.to_dict(),
+            result=result_payload,
             diagnostics=AgentDiagnostics(
                 summary=summary,
                 observations=observations,
@@ -247,6 +288,7 @@ class StandaloneEvaluationService:
                 eval_data_path=eval_data_path,
                 benchmark_suite=benchmark_suite,
             ),
+            next_actions=next_actions,
         )
 
     # ------------------------------------------------------------------

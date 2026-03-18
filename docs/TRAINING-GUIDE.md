@@ -3,7 +3,7 @@
 ModelCypher's training surface is a workbench, not just a single command. The
 workflow is:
 
-`plan -> train -> evaluate -> compare -> export`
+`inspect -> plan -> train -> evaluate -> compare -> export`
 
 The user-facing value is straightforward: ModelCypher derives target modules,
 ranks, stopping signals, and controller quantities from the model and data so
@@ -33,7 +33,14 @@ Training-related commands available now:
 
 ## Recommended Workflow
 
-### 1. Derive The Plan First
+### 1. Inspect The Model
+
+```bash
+poetry run mc model info /path/to/model
+poetry run mc model capacity /path/to/model --sort-by recommended-rank
+```
+
+### 2. Derive The Plan
 
 ```bash
 poetry run mc train run \
@@ -45,7 +52,7 @@ poetry run mc train run \
 This resolves the exact training plan without mutating model state. Use it to
 see the derived surface before you commit to a run.
 
-### 2. Run Training
+### 3. Run Training
 
 ```bash
 poetry run mc train run \
@@ -54,7 +61,7 @@ poetry run mc train run \
   --output /path/to/adapter
 ```
 
-### 3. Evaluate The Adapter
+### 4. Evaluate The Adapter
 
 ```bash
 poetry run mc train evaluate \
@@ -63,23 +70,23 @@ poetry run mc train evaluate \
   --data /path/to/validation.jsonl
 ```
 
-### 4. Compare Results
+### 5. Compare Results
 
 ```bash
 poetry run mc train compare \
   --model /path/to/model \
-  --adapter-a /path/to/adapter_a \
-  --adapter-b /path/to/adapter_b \
+  --adapter-a /path/to/adapter \
   --data /path/to/validation.jsonl
 ```
 
-### 5. Export Or Merge Artifacts
+### 6. Export Or Merge Artifacts
 
 ```bash
 poetry run mc train export \
-  --agent agent-001 \
   --model /path/to/model \
-  --output /path/to/export_dir
+  --adapter /path/to/adapter \
+  --output /path/to/deployment_dir \
+  --target deployment_quantized
 ```
 
 ## Dataset Format
@@ -274,14 +281,21 @@ impressionistic model sampling.
 
 ## `mc train export`
 
-Export LoRA artifacts for downstream use.
+Export saved adapters into explicit deployment targets.
 
 ```bash
 poetry run mc train export \
-  --agent agent-001 \
   --model /path/to/model \
-  --output /path/to/export_dir
+  --adapter /path/to/adapter \
+  --output /path/to/deployment_dir \
+  --target deployment_quantized
 ```
+
+Available targets:
+
+- `adapter`
+- `merged_fp16`
+- `deployment_quantized`
 
 ## `mc train merge`
 

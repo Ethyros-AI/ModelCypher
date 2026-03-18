@@ -22,7 +22,11 @@ from typing import Protocol, runtime_checkable
 
 @runtime_checkable
 class Exporter(Protocol):
-    def export_model(self, model_path: str, output_path: str, export_format: str) -> dict: ...
-    def export_checkpoint(
-        self, checkpoint_path: str, output_path: str, export_format: str
+    def export(
+        self,
+        *,
+        model_path: str,
+        adapter_path: str | None,
+        output_path: str,
+        target_kind: str,
     ) -> dict: ...

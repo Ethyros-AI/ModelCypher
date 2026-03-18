@@ -45,6 +45,14 @@ class _DatasetTrainingServiceHelperMixin:
             json.dump(payload, handle, indent=2, sort_keys=True)
             handle.write("\n")
 
+    def _write_jsonl(self, path: Path, rows: list[dict[str, Any]]) -> None:
+        """Persist JSONL rows with one object per line."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as handle:
+            for row in rows:
+                handle.write(json.dumps(row, sort_keys=True))
+                handle.write("\n")
+
     def _derive_training_seed(self, model_path: Path, dataset_path: Path) -> int:
         """Derive deterministic seed from model artifacts and dataset bytes."""
         model_hash = self._hash_model_artifacts(model_path)

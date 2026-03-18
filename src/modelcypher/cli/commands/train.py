@@ -223,9 +223,16 @@ def train_run(
 
     from modelcypher.cli.composition import get_dataset_training_service
 
+    import os
     import sys
+    import uuid
 
     from modelcypher.cli.progress import ProgressReporter
+    from modelcypher.core.domain.runtime_status import RuntimeOwner
+    from modelcypher.core.use_cases.runtime_coordinator import (
+        RuntimeBusyError,
+        RuntimeCoordinator,
+    )
 
     reporter = None
     if context.ai_mode or not sys.stderr.isatty():
@@ -233,6 +240,8 @@ def train_run(
 
     service = get_dataset_training_service()
     service._progress_reporter = reporter
+    runtime_coordinator = RuntimeCoordinator()
+    service._runtime_coordinator = runtime_coordinator
     plan = None
     try:
         if explain or plan_only:
@@ -273,7 +282,36 @@ def train_run(
         }
         if plan is not None:
             train_kwargs["plan"] = plan
-        result = service.train_from_dataset(**train_kwargs)
+        with runtime_coordinator.session(
+            owner=RuntimeOwner.TRAINING,
+            job_id=f"train-{os.getpid()}-{uuid.uuid4().hex[:8]}",
+            phase="starting",
+            details={
+                "pid": os.getpid(),
+                "model_path": str(model_path),
+                "dataset_path": str(Path(data).expanduser().resolve()),
+            },
+        ):
+            result = service.train_from_dataset(**train_kwargs)
+    except RuntimeBusyError as exc:
+        active = exc.status.to_dict() if exc.status is not None else None
+        detail = str(exc)
+        if active is not None:
+            detail = (
+                f"{detail} Finish or stop the active workflow before starting training."
+            )
+        error = ErrorDetail(
+            code="MC-2019",
+            title="Runtime busy",
+            detail=detail,
+            hint="Wait for the active train/infer/export job, then retry.",
+            trace_id=context.trace_id,
+        )
+        payload = error.as_dict()
+        if active is not None:
+            payload["active_runtime"] = active
+        write_error(payload, context.output_format, context.pretty)
+        raise typer.Exit(code=1)
     except TrainingDerivationError as exc:
         _write_training_derivation_error(exc, context)
 
@@ -282,6 +320,7 @@ def train_run(
     # Wrap in AgentEnvelope for structured agent-readable output
     from modelcypher.core.domain.agent_protocol import (
         AgentEnvelope,
+        NextAction,
         derived_eval_hash,
         file_hash,
         make_metadata,
@@ -318,6 +357,18 @@ def train_run(
 
     gate_passed = result.pipeline_gate_passed
     status = "success" if gate_passed is not False else "partial"
+    next_actions = [
+        NextAction(
+            name=str(action["name"]),
+            reason=str(action["reason"]),
+            command=str(action["command"]),
+        )
+        for action in payload.get("next_actions", [])
+        if isinstance(action, dict)
+        and action.get("name") is not None
+        and action.get("reason") is not None
+        and action.get("command") is not None
+    ]
     envelope = AgentEnvelope(
         command="mc train run",
         status=status,
@@ -334,6 +385,7 @@ def train_run(
             eval_data_hash=derived_eval_hash_val,
             benchmark_suite=benchmark,
         ),
+        next_actions=next_actions,
     )
 
     if context.ai_mode or context.output_format != "text":
@@ -758,7 +810,10 @@ def train_merge(
 def train_export(
     ctx: typer.Context,
     agent: str = typer.Option(
-        ..., "--agent", "-a", help="Agent ID for training state"
+        None, "--agent", "-a", help="Legacy agent ID for in-memory LoRA export"
+    ),
+    adapter: str = typer.Option(
+        None, "--adapter", help="Path to saved adapter directory"
     ),
     model: str = typer.Option(
         ..., "--model", "-m", help="Path to model directory"
@@ -766,30 +821,159 @@ def train_export(
     output: str = typer.Option(
         ..., "--output", "-o", help="Output path for exported LoRA"
     ),
+    target: str = typer.Option(
+        "deployment_quantized",
+        "--target",
+        help="Export target: adapter, merged_fp16, deployment_quantized",
+    ),
+    quantization_bits: int = typer.Option(
+        4, "--quantization-bits", help="Quantization bits for deployment_quantized"
+    ),
+    quantization_group_size: int = typer.Option(
+        64,
+        "--quantization-group-size",
+        help="Quantization group size for deployment_quantized",
+    ),
+    quantization_mode: str = typer.Option(
+        "nf4",
+        "--quantization-mode",
+        help="Quantization mode for deployment_quantized",
+    ),
 ) -> None:
-    """Export LoRA adapters to files.
+    """Export adapters into explicit deployment targets.
 
-    Exports the trained LoRA weights and metadata to a directory.
+    Canonical path:
+      --model + --adapter + --target
 
-    Example:
-        mc train export --agent agent-001 --model /path/to/model --output /path/to/export
+    Legacy compatibility:
+      --model + --agent exports the in-memory LoRA store only.
     """
     context = _context(ctx)
     model_path = Path(model)
     output_path = Path(output)
     _validate_model_path(model_path, context)
 
+    if adapter is not None:
+        import os
+        import uuid
+
+        from modelcypher.core.domain.runtime_status import RuntimeOwner
+        from modelcypher.core.use_cases.export_orchestrator import (
+            ExportOrchestrator,
+            ExportOrchestrationError,
+        )
+        from modelcypher.core.use_cases.export_service import (
+            ExportRequest,
+            ExportTargetKind,
+        )
+        from modelcypher.core.use_cases.runtime_coordinator import (
+            RuntimeBusyError,
+            RuntimeCoordinator,
+        )
+
+        adapter_path = Path(adapter).expanduser().resolve()
+        if not adapter_path.exists():
+            error = ErrorDetail(
+                code="MC-2020",
+                title="Adapter not found",
+                detail=f"Adapter path does not exist: {adapter_path}",
+                hint="Pass a saved adapter directory from mc train run.",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+
+        try:
+            target_kind = ExportTargetKind(target)
+        except ValueError:
+            error = ErrorDetail(
+                code="MC-2021",
+                title="Invalid export target",
+                detail=f"Unsupported export target: {target}",
+                hint="Use adapter, merged_fp16, or deployment_quantized.",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+
+        coordinator = RuntimeCoordinator()
+        orchestrator = ExportOrchestrator()
+        try:
+            with coordinator.session(
+                owner=RuntimeOwner.EXPORT,
+                job_id=f"export-{os.getpid()}-{uuid.uuid4().hex[:8]}",
+                phase="export",
+                details={
+                    "pid": os.getpid(),
+                    "model_path": str(model_path.resolve()),
+                    "adapter_path": str(adapter_path),
+                    "target_kind": target_kind.value,
+                },
+            ):
+                worker_result = orchestrator.run(
+                    ExportRequest(
+                        model_path=model_path.resolve(),
+                        adapter_path=adapter_path,
+                        output_path=output_path.resolve(),
+                        target_kind=target_kind,
+                        quantization_bits=quantization_bits,
+                        quantization_group_size=quantization_group_size,
+                        quantization_mode=quantization_mode,
+                    )
+                )
+        except RuntimeBusyError as exc:
+            active = exc.status.to_dict() if exc.status is not None else None
+            payload = ErrorDetail(
+                code="MC-2022",
+                title="Runtime busy",
+                detail=str(exc),
+                hint="Wait for the active train/infer/export job, then retry.",
+                trace_id=context.trace_id,
+            ).as_dict()
+            if active is not None:
+                payload["active_runtime"] = active
+            write_error(payload, context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+        except ExportOrchestrationError as exc:
+            error = ErrorDetail(
+                code="MC-2023",
+                title="Export failed",
+                detail=str(exc),
+                hint="Check model/adapter paths and export target support.",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+
+        write_output(
+            {
+                "model": str(model_path.resolve()),
+                "adapter": str(adapter_path),
+                "export": worker_result.payload,
+            },
+            context.output_format,
+            context.pretty,
+        )
+        return
+
+    if agent is None:
+        error = ErrorDetail(
+            code="MC-2024",
+            title="Missing export source",
+            detail="Provide either --adapter for saved adapters or --agent for legacy in-memory export.",
+            hint="Canonical path: mc train export -m /model --adapter /adapter -o /export",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
     from modelcypher.cli.composition import get_lora_memory_service
 
     service = get_lora_memory_service()
-
-    # Get store
     service.get_or_create_store(
         agent_id=agent,
         base_model_path=model_path,
     )
-
-    # Export
     export_result = service.export_lora(
         agent_id=agent,
         output_path=output_path,
@@ -810,7 +994,6 @@ def train_export(
         "agent_id": agent,
         "export": export_result.to_dict(),
     }
-
     write_output(result, context.output_format, context.pretty)
 
 
@@ -949,7 +1132,8 @@ def train_compare(
 
     Two comparison modes:
       --result-a/--result-b: Compare saved training result JSON files
-      --adapter-a/--adapter-b with --model: Evaluate both adapters and compare
+      --adapter-a/--adapter-b with --model: Evaluate adapters and compare
+      --adapter-a with --model: Compare one adapter directly against the base model
 
     Output fields (when --json):
         label_a/label_b: Labels for each run
@@ -960,6 +1144,7 @@ def train_compare(
     Examples:
         mc train compare --result-a run1.json --result-b run2.json
         mc train compare -m /path/to/model --adapter-a /a1 --adapter-b /a2 -d val.jsonl
+        mc train compare -m /path/to/model --adapter-a /adapter -d val.jsonl
     """
     context = _context(ctx)
 
@@ -974,13 +1159,13 @@ def train_compare(
             result = service.compare_results(
                 Path(result_a), Path(result_b),
             )
-        elif adapter_a and adapter_b and model:
+        elif model and data and (adapter_a or adapter_b):
             from modelcypher.cli.composition import get_backend
 
             result = service.compare_adapters(
                 model_path=Path(model),
-                adapter_a_path=Path(adapter_a),
-                adapter_b_path=Path(adapter_b),
+                adapter_a_path=Path(adapter_a) if adapter_a else None,
+                adapter_b_path=Path(adapter_b) if adapter_b else None,
                 data_path=Path(data) if data else None,
                 backend=get_backend(),
             )
@@ -988,8 +1173,11 @@ def train_compare(
             error = ErrorDetail(
                 code="MC-2017",
                 title="Invalid comparison mode",
-                detail="Provide either --result-a/--result-b or --model/--adapter-a/--adapter-b",
-                hint="Compare result files: --result-a r1.json --result-b r2.json",
+                detail=(
+                    "Provide either --result-a/--result-b or "
+                    "--model with --data and at least one adapter."
+                ),
+                hint="Compare base vs adapter: -m /model --adapter-a /adapter -d eval.jsonl",
                 trace_id=context.trace_id,
             )
             write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_INPUT)
