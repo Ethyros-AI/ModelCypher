@@ -20,16 +20,24 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import modelcypher.cli.composition as composition
+import modelcypher.core.use_cases.observation_service as observation_module
 
 
 @dataclass
 class _DummyRegistry:
+    backend: object
+    activation_provider: object
     model_probe: object
     model_loader: object
 
 
 def test_composition_probe_and_thermo_getters_smoke(monkeypatch) -> None:
-    registry = _DummyRegistry(model_probe=object(), model_loader=object())
+    registry = _DummyRegistry(
+        backend=object(),
+        activation_provider=object(),
+        model_probe=object(),
+        model_loader=object(),
+    )
 
     composition._get_factory.cache_clear()
     monkeypatch.setattr(composition, "_get_registry", lambda: registry)
@@ -39,3 +47,38 @@ def test_composition_probe_and_thermo_getters_smoke(monkeypatch) -> None:
 
     assert probe_service is not None
     assert thermo_service is not None
+
+
+def test_composition_observation_getter_injects_sublayer_collector(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    sentinel_collector = object()
+    registry = _DummyRegistry(
+        backend=object(),
+        activation_provider=object(),
+        model_probe=object(),
+        model_loader=object(),
+    )
+
+    class _StubObservationService:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+    composition._get_factory.cache_clear()
+    monkeypatch.setattr(composition, "_get_registry", lambda: registry)
+    monkeypatch.setattr(
+        "modelcypher.backends.sublayer_collector.collect_sublayer_activations",
+        sentinel_collector,
+    )
+    monkeypatch.setattr(
+        observation_module,
+        "ObservationService",
+        _StubObservationService,
+    )
+
+    service = composition.get_observation_service()
+
+    assert isinstance(service, _StubObservationService)
+    assert captured["backend"] is registry.backend
+    assert captured["activation_provider"] is registry.activation_provider
+    assert captured["model_loader"] is registry.model_loader
+    assert captured["sublayer_collector"] is sentinel_collector

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import re
 import time
@@ -9,7 +10,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.backends.sublayer_collector import collect_sublayer_activations
 from modelcypher.core.use_cases.behavioral_analyzer import BehavioralAnalyzer
 from modelcypher.core.use_cases.chain_analysis_service import ChainAnalysisService
 from modelcypher.core.use_cases.geodesic_trajectory_service import GeodesicTrajectoryService
@@ -21,6 +21,11 @@ if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
     from modelcypher.ports.backend import Backend
     from modelcypher.ports.model_loader import ModelLoaderPort
+
+    SublayerCollector = Callable[[Any, Any, list[str], int, Backend], list[dict[str, Any]]]
+
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_ANALYSIS_SPACES = ("hidden", "embedding")
@@ -196,14 +201,21 @@ class ObservationService:
         backend: "Backend",
         model_loader: "ModelLoaderPort",
         activation_provider: "ActivationProvider",
+        sublayer_collector: "SublayerCollector | None" = None,
         geometry_service_factory: "Callable[[], GeometryAnalysisService] | None" = None,
         chain_service_factory: "Callable[[], ChainAnalysisService] | None" = None,
         geodesic_service_factory: "Callable[[], GeodesicTrajectoryService] | None" = None,
         behavioral_analyzer_factory: "Callable[[], BehavioralAnalyzer] | None" = None,
     ) -> None:
+        if chain_service_factory is None and sublayer_collector is None:
+            raise ValueError(
+                "ObservationService requires sublayer_collector when using the default "
+                "chain analysis service factory."
+            )
         self._backend = backend
         self._model_loader = model_loader
         self._activation_provider = activation_provider
+        self._sublayer_collector = sublayer_collector
         self._geometry_service_factory = geometry_service_factory or self._build_geometry_service
         self._chain_service_factory = chain_service_factory or self._build_chain_service
         self._geodesic_service_factory = geodesic_service_factory or self._build_geodesic_service
@@ -306,6 +318,10 @@ class ObservationService:
         comparisons: list[dict[str, Any]] = []
         variant_index: dict[tuple[str, str, str], dict[str, Any]] = {}
         hidden_layer_index: dict[tuple[str, str, str], dict[int, dict[str, Any]]] = {}
+        geometry_service = self._geometry_service_factory()
+        chain_service = self._chain_service_factory()
+        geodesic_service = self._geodesic_service_factory()
+        behavioral_analyzer = self._behavioral_analyzer_factory()
 
         for target in targets:
             model, tokenizer = self._model_loader.load_model(
@@ -321,6 +337,10 @@ class ObservationService:
                     variant=variant,
                     spaces=spaces,
                     max_tokens=max_tokens,
+                    geometry_service=geometry_service,
+                    chain_service=chain_service,
+                    geodesic_service=geodesic_service,
+                    behavioral_analyzer=behavioral_analyzer,
                 )
                 variant_rows.append(variant_row)
                 layer_rows.extend(variant_layer_rows)
@@ -384,10 +404,12 @@ class ObservationService:
         )
 
     def _build_chain_service(self) -> ChainAnalysisService:
+        if self._sublayer_collector is None:
+            raise ValueError("ObservationService is missing sublayer_collector.")
         return ChainAnalysisService(
             backend=self._backend,
             activation_provider=self._activation_provider,
-            sublayer_collector=collect_sublayer_activations,
+            sublayer_collector=self._sublayer_collector,
         )
 
     def _build_geodesic_service(self) -> GeodesicTrajectoryService:
@@ -408,12 +430,12 @@ class ObservationService:
         variant: PromptVariant,
         spaces: tuple[str, ...],
         max_tokens: int,
+        geometry_service: GeometryAnalysisService,
+        chain_service: ChainAnalysisService,
+        geodesic_service: GeodesicTrajectoryService,
+        behavioral_analyzer: BehavioralAnalyzer,
     ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         backend = self._backend
-        geometry_service = self._geometry_service_factory()
-        chain_service = self._chain_service_factory()
-        geodesic_service = self._geodesic_service_factory()
-        behavioral_analyzer = self._behavioral_analyzer_factory()
 
         prompt_token_count = len(backend.encode_tokens(tokenizer, variant.text))
         generation_started = time.time()
@@ -981,6 +1003,7 @@ class ObservationService:
             f"- Targets: {summary['targetCount']}",
             f"- Variants: {summary['variantCount']}",
             f"- Comparisons: {summary['comparisonCount']}",
+            f"- Measurement errors: {summary['errorCount']}",
             f"- Spaces: {', '.join(summary['spaces'])}",
             "",
             "## Means",
@@ -1010,6 +1033,14 @@ class ObservationService:
                     f"entropy_delta={deltas.get('meanEntropy')}, "
                     f"geodesic_delta={deltas.get('meanGeodesicDeviation')}, "
                     f"curvature_delta={deltas.get('meanCurvature')}"
+                )
+        error_rows = [row for row in variant_rows if row.get("errors")]
+        if error_rows:
+            lines.extend(["", "## Measurement Errors", ""])
+            for row in error_rows[:10]:
+                lines.append(
+                    f"- `{row['targetLabel']}` / `{row['caseId']}` / `{row['variantId']}`: "
+                    + "; ".join(row["errors"])
                 )
         lines.append("")
         return "\n".join(lines)
@@ -1053,7 +1084,8 @@ class ObservationService:
         try:
             self._backend.eval(value)
             python_value = self._backend.tolist(value)
-        except Exception:
+        except Exception as exc:
+            logger.debug("Vector stats failed during backend materialization: %s", exc)
             return None, None
         flat = self._flatten_numeric(python_value)
         if not flat:

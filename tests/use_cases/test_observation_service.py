@@ -243,3 +243,63 @@ def test_compare_bundle_writes_between_target_comparisons(tmp_path: Path) -> Non
     between = next(row for row in comparisons if row["mode"] == "between_targets")
     assert between["from"] == "base"
     assert between["to"] == "adapter"
+
+
+def test_bundle_reuses_analysis_services_per_bundle(tmp_path: Path) -> None:
+    factory_counts = {
+        "geometry": 0,
+        "chain": 0,
+        "geodesic": 0,
+        "behavioral": 0,
+    }
+
+    def _geometry_factory():
+        factory_counts["geometry"] += 1
+        return _StubGeometryService()
+
+    def _chain_factory():
+        factory_counts["chain"] += 1
+        return _StubChainService()
+
+    def _geodesic_factory():
+        factory_counts["geodesic"] += 1
+        return _StubGeodesicService()
+
+    def _behavioral_factory():
+        factory_counts["behavioral"] += 1
+        return _StubBehavioralAnalyzer()
+
+    manifest = PromptFamilyManifest.from_data(
+        {
+            "name": "reuse_check",
+            "variants": [
+                {"case_id": "case1", "variant_id": "control", "text": "hello world"},
+                {"case_id": "case1", "variant_id": "all_caps", "text": "HELLO WORLD"},
+                {"case_id": "case2", "variant_id": "control", "text": "explain geometry"},
+            ],
+        }
+    )
+
+    service = ObservationService(
+        backend=_StubBackend(),
+        model_loader=_StubModelLoader(),
+        activation_provider=_StubActivationProvider(),
+        geometry_service_factory=_geometry_factory,
+        chain_service_factory=_chain_factory,
+        geodesic_service_factory=_geodesic_factory,
+        behavioral_analyzer_factory=_behavioral_factory,
+    )
+
+    service.compare(
+        left=ObservationTarget(label="base", model="/tmp/model"),
+        right=ObservationTarget(label="adapter", model="/tmp/model", adapter="/tmp/adapter"),
+        manifest=manifest,
+        output_dir=str(tmp_path / "bundle"),
+    )
+
+    assert factory_counts == {
+        "geometry": 1,
+        "chain": 1,
+        "geodesic": 1,
+        "behavioral": 1,
+    }

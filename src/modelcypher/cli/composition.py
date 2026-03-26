@@ -114,6 +114,7 @@ def get_inference_engine() -> "InferenceEngine":
 
 def get_observation_service() -> "ObservationService":
     """Get ObservationService with proper dependency injection."""
+    from modelcypher.backends.sublayer_collector import collect_sublayer_activations
     from modelcypher.core.use_cases.observation_service import ObservationService
 
     registry = _get_registry()
@@ -121,6 +122,7 @@ def get_observation_service() -> "ObservationService":
         backend=registry.backend,
         model_loader=registry.model_loader,
         activation_provider=registry.activation_provider,
+        sublayer_collector=collect_sublayer_activations,
     )
 
 
