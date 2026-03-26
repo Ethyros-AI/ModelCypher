@@ -51,6 +51,7 @@ from .workflows import (
     analyze_capture,
     analyze_compare,
     analyze_family,
+    analyze_report,
 )
 
 WORKFLOW_PANEL = "Canonical Workflows"
@@ -60,7 +61,7 @@ app = typer.Typer(
     no_args_is_help=True,
     help=(
         "Workflow-first model observation and analysis. "
-        "Canonical workflows: capture, family, compare, and probe. "
+        "Canonical workflows: capture, family, compare, report, and probe. "
         "Expert metric commands remain available for direct inspection."
     ),
 )
@@ -74,6 +75,7 @@ app.add_typer(probe_app, name="probe", rich_help_panel=WORKFLOW_PANEL)
 app.command("capture", rich_help_panel=WORKFLOW_PANEL)(analyze_capture)
 app.command("family", rich_help_panel=WORKFLOW_PANEL)(analyze_family)
 app.command("compare", rich_help_panel=WORKFLOW_PANEL)(analyze_compare)
+app.command("report", rich_help_panel=WORKFLOW_PANEL)(analyze_report)
 
 # Probe workflow canonical subcommands
 probe_app.command("calibrate")(safety_calibrate)

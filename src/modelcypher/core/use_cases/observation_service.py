@@ -10,6 +10,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from modelcypher.core.use_cases.observation_bundle_report_service import (
+    ObservationBundleReportService,
+)
 from modelcypher.core.use_cases.behavioral_analyzer import BehavioralAnalyzer
 from modelcypher.core.use_cases.chain_analysis_service import ChainAnalysisService
 from modelcypher.core.use_cases.geodesic_trajectory_service import GeodesicTrajectoryService
@@ -206,6 +209,7 @@ class ObservationService:
         chain_service_factory: "Callable[[], ChainAnalysisService] | None" = None,
         geodesic_service_factory: "Callable[[], GeodesicTrajectoryService] | None" = None,
         behavioral_analyzer_factory: "Callable[[], BehavioralAnalyzer] | None" = None,
+        report_service: ObservationBundleReportService | None = None,
     ) -> None:
         if chain_service_factory is None and sublayer_collector is None:
             raise ValueError(
@@ -222,6 +226,7 @@ class ObservationService:
         self._behavioral_analyzer_factory = (
             behavioral_analyzer_factory or self._build_behavioral_analyzer
         )
+        self._report_service = report_service or ObservationBundleReportService()
 
     def capture(
         self,
@@ -955,6 +960,14 @@ class ObservationService:
         variants_path = bundle_dir / "variants.jsonl"
         layer_metrics_path = bundle_dir / "layer_metrics.jsonl"
         comparisons_path = bundle_dir / "comparisons.jsonl"
+        files = {
+            "manifest": str(manifest_path),
+            "summary": str(summary_path),
+            "report": str(report_path),
+            "variants": str(variants_path),
+            "layerMetrics": str(layer_metrics_path),
+            "comparisons": str(comparisons_path),
+        }
 
         manifest_path.write_text(
             json.dumps(manifest_payload, indent=2, sort_keys=True) + "\n",
@@ -976,74 +989,21 @@ class ObservationService:
             "".join(json.dumps(row, sort_keys=True) + "\n" for row in comparisons),
             encoding="utf-8",
         )
+        report_payload = self._report_service.build(
+            bundle_dir=bundle_dir,
+            manifest=manifest_payload,
+            summary=summary,
+            variant_rows=variant_rows,
+            layer_rows=layer_rows,
+            comparisons=comparisons,
+            files=files,
+        )
         report_path.write_text(
-            self._build_report(summary, variant_rows, comparisons),
+            report_payload.markdown,
             encoding="utf-8",
         )
 
-        return {
-            "manifest": str(manifest_path),
-            "summary": str(summary_path),
-            "report": str(report_path),
-            "variants": str(variants_path),
-            "layerMetrics": str(layer_metrics_path),
-            "comparisons": str(comparisons_path),
-        }
-
-    @staticmethod
-    def _build_report(
-        summary: dict[str, Any],
-        variant_rows: list[dict[str, Any]],
-        comparisons: list[dict[str, Any]],
-    ) -> str:
-        lines = [
-            "# Observation Bundle",
-            "",
-            f"- Workflow: `{summary['workflow']}`",
-            f"- Targets: {summary['targetCount']}",
-            f"- Variants: {summary['variantCount']}",
-            f"- Comparisons: {summary['comparisonCount']}",
-            f"- Measurement errors: {summary['errorCount']}",
-            f"- Spaces: {', '.join(summary['spaces'])}",
-            "",
-            "## Means",
-            "",
-            f"- Mean prompt tokens: {summary['meanPromptTokenCount']}",
-            f"- Mean response tokens: {summary['meanResponseTokenCount']}",
-            f"- Mean entropy: {summary['meanEntropy']}",
-            f"- Mean geodesic deviation: {summary['meanGeodesicDeviation']}",
-            f"- Mean curvature: {summary['meanCurvature']}",
-        ]
-        if variant_rows:
-            lines.extend(["", "## Variants", ""])
-            for row in variant_rows[:10]:
-                summary_metrics = row.get("summaryMetrics", {})
-                lines.append(
-                    f"- `{row['targetLabel']}` / `{row['caseId']}` / `{row['variantId']}`: "
-                    f"entropy={summary_metrics.get('meanEntropy')}, "
-                    f"geodesic={summary_metrics.get('meanGeodesicDeviation')}, "
-                    f"curvature={summary_metrics.get('meanCurvature')}"
-                )
-        if comparisons:
-            lines.extend(["", "## Comparisons", ""])
-            for row in comparisons[:10]:
-                deltas = row.get("scalarDeltas", {})
-                lines.append(
-                    f"- `{row['from']}` -> `{row['to']}` on `{row['caseId']}`: "
-                    f"entropy_delta={deltas.get('meanEntropy')}, "
-                    f"geodesic_delta={deltas.get('meanGeodesicDeviation')}, "
-                    f"curvature_delta={deltas.get('meanCurvature')}"
-                )
-        error_rows = [row for row in variant_rows if row.get("errors")]
-        if error_rows:
-            lines.extend(["", "## Measurement Errors", ""])
-            for row in error_rows[:10]:
-                lines.append(
-                    f"- `{row['targetLabel']}` / `{row['caseId']}` / `{row['variantId']}`: "
-                    + "; ".join(row["errors"])
-                )
-        lines.append("")
-        return "\n".join(lines)
+        return files
 
     @staticmethod
     def _resolve_output_dir(

@@ -18,6 +18,7 @@ collection just to ask questions like:
 - `mc analyze` is now the clearest entrypoint for workflow-first model observation.
 - `mc analyze capture`, `mc analyze family`, and `mc analyze compare` create
   observation bundles you can inspect or hand to another agent.
+- `mc analyze report --bundle ...` is the read-side companion for existing bundles.
 - Training remains shipped and useful, but it is a downstream workflow rather
   than the headline.
 - The repo still does **not** claim benchmark superiority for its training path.
@@ -107,7 +108,16 @@ poetry run mc analyze compare \
 Use this when you want to see what an adapter or checkpoint changed on the same
 prompt family.
 
-### 5. Drop Into Expert Metrics
+### 5. Read An Existing Bundle
+
+```bash
+poetry run mc analyze report --bundle /path/to/bundle
+```
+
+Use this when you already have a bundle directory and want the shared report
+view without opening files manually.
+
+### 6. Drop Into Expert Metrics
 
 ```bash
 poetry run mc analyze reasoning-flow --model /path/to/model --prompt "Prove that sqrt(2) is irrational."
@@ -160,6 +170,7 @@ repository's main shipped promise today.
 
 ## Documentation Map
 
+- [OBSERVATION-BUNDLES.md](OBSERVATION-BUNDLES.md): manifest schema, bundle files, and starter perturbation manifests
 - [TRAINING-GUIDE.md](TRAINING-GUIDE.md): the downstream adapter workflow
 - [CLI-REFERENCE.md](CLI-REFERENCE.md): live command reference
 - [MISSION.md](MISSION.md): product mission and implementation standards

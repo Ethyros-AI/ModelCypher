@@ -19,6 +19,7 @@ poetry run mc model info /path/to/model
 poetry run mc analyze capture --model /path/to/model --prompt "Explain geodesics."
 poetry run mc analyze family --model /path/to/model --manifest data/probes/prompt_family_minimal_pairs.json
 poetry run mc analyze compare --left-model /path/to/base --right-model /path/to/base --right-adapter /path/to/adapter --manifest data/probes/prompt_family_minimal_pairs.json
+poetry run mc analyze report --bundle /path/to/bundle
 ```
 
 The training workflow remains available when you want to turn measurements into an adapter workflow:
@@ -185,6 +186,7 @@ Canonical workflow commands:
 - `capture`: one prompt or prompt file -> observation bundle
 - `family`: explicit prompt-family manifest -> observation bundle + pairwise deltas
 - `compare`: two targets on the same prompt-family manifest -> observation bundle + cross-target deltas
+- `report`: existing observation bundle -> shared report view
 - `probe`: targeted probe and red-team workflows (`calibrate`, `jailbreak`, `redteam`, `behavioral`, `bilm-info`)
 
 Stable file interfaces:
@@ -193,6 +195,9 @@ Stable file interfaces:
   optional `tags`, optional `comparison_to`
 - `ObservationBundle`: `manifest.json`, `summary.json`, `REPORT.md`,
   `variants.jsonl`, `layer_metrics.jsonl`, `comparisons.jsonl`
+
+Schema details and starter manifests live in
+[`OBSERVATION-BUNDLES.md`](OBSERVATION-BUNDLES.md).
 
 Default spaces are `hidden` and `embedding`. Opt-in spaces are
 `intermediate`, `q`, `k`, `v`, and `gate`.
@@ -214,6 +219,7 @@ Expert metric surfaces remain available directly under `mc analyze`:
 poetry run mc analyze capture --model /path/to/model --prompt "Explain geodesics."
 poetry run mc analyze family --model /path/to/model --manifest data/probes/prompt_family_minimal_pairs.json
 poetry run mc analyze compare --left-model /path/to/base --right-model /path/to/base --right-adapter /path/to/adapter --manifest data/probes/prompt_family_minimal_pairs.json
+poetry run mc analyze report --bundle /path/to/bundle
 poetry run mc analyze probe calibrate --model /path/to/model --prompt "Hello." --output-file /tmp/calibration.json
 poetry run mc analyze reasoning-flow --model /path/to/model --prompt "Prove that sqrt(2) is irrational."
 poetry run mc analyze lora-svd /path/to/adapter --base /path/to/model

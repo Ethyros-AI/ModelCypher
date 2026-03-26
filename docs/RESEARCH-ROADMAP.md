@@ -55,7 +55,7 @@ new canonical result families, or repeated agent-driven run families.
 
 | ID | Goal | Primary evidence family | Exit criterion |
 | --- | --- | --- | --- |
-| `A1` | Observation-bundle closure for workflow-first `mc analyze` | `results/analysis/` families plus CLI/service contract tests | `capture`, `family`, and `compare` are stable, documented, and produce commensurable observation bundles for prompt and target studies without legacy safety-first packaging or buried command paths |
+| `A1` | Observation-bundle closure for workflow-first `mc analyze` | `results/analysis/` families plus CLI/service contract tests | `capture`, `family`, `compare`, and `report` are stable, documented, and produce commensurable observation bundles for prompt and target studies without legacy safety-first packaging or buried command paths |
 | `R1` | Same-model same-data same-eval baseline suite against standard practice for the canonical geometry-derived LoRA path | `results/nblora_vs_standard/` | Pre-registered multi-seed comparison against standard LoRA, rsLoRA, PiSSA, EVA, DoRA, and at least one recipe-level baseline; promotion allowed only if preservation gates stay valid |
 | `R2` | Causal operator for behavioral failure when structural safety passes | `results/pipeline_validation/`, `results/pipeline_validation_blindness_350M_t20/` | A pre-registered operator predicts failure before online degradation, survives intervention, and explains the retained 350M failure cases |
 | `R3` | 8B non-ceiling efficacy closure | `results/g5_8b_validation_multiseed/` | The pre-registered seed set on the fixed non-ceiling eval bundle passes the declared gate set without mixed or measurement-invalid outcomes |
@@ -73,6 +73,8 @@ Current state (2026-03-26):
 
 - `mc analyze capture`, `mc analyze family`, and `mc analyze compare` now define
   the canonical workflow surface.
+- `mc analyze report --bundle ...` now closes the read-side loop for existing
+  observation bundles without regenerating artifacts.
 - The prompt-family manifest is explicit rather than transform-driven:
   `case_id`, `variant_id`, `text`, optional `tags`, optional `comparison_to`.
 - Every run is expected to emit the same observation bundle contract:
@@ -80,10 +82,9 @@ Current state (2026-03-26):
   `layer_metrics.jsonl`, `comparisons.jsonl`.
 - Phase 1 scope is inference-first and checkpoint-comparison-first. Live
   training-stream telemetry remains deferred.
-- The remaining work is doctrine, discoverability, and commensurability:
-  making the measurement story clearer than the historical training-first
-  narrative and keeping expert instruments available without making them the
-  headline.
+- The remaining work is downstream polish rather than blocker closure:
+  richer summaries, curated manifests, and bundle-reading ergonomics on top of
+  the now-stable observation contract.
 
 ### R1. Baseline Suite Against Standard Practice
 
@@ -131,7 +132,12 @@ Required controls:
 This is the shortest path from "interesting geometry" to "the canonical
 measurement and training path really preserves behavior."
 
-Current state (2026-03-12):
+Current state (2026-03-26):
+
+Use [results/nblora_vs_standard/REPORT.md](/Users/jasonkempf/ModelCypher/results/nblora_vs_standard/REPORT.md)
+as the source of truth for this thread. The older geometry-collapse summary
+below has been superseded there by a data-format and arithmetic-granularity
+mechanism.
 
 All surface-level explanations for the canonical path's benchmark degradation
 have been eliminated. The R2 falsifier chain:

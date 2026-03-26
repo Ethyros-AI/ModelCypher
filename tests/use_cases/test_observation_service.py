@@ -205,6 +205,11 @@ def test_family_bundle_writes_manifest_summary_and_comparisons(tmp_path: Path) -
     assert summary["variantCount"] == 2
     assert summary["comparisonCount"] == 1
 
+    report = (bundle_dir / "REPORT.md").read_text(encoding="utf-8")
+    assert "## Observed Spaces" in report
+    assert "## Largest Scalar Shifts" in report
+    assert "## Most Shifted Layers" in report
+
     comparisons = [
         json.loads(line)
         for line in (bundle_dir / "comparisons.jsonl").read_text(encoding="utf-8").splitlines()

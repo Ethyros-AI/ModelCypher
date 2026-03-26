@@ -39,6 +39,121 @@ from modelcypher.cli.app import app
 runner = CliRunner()
 
 
+def _write_report_bundle_fixture(tmp_path: Path) -> Path:
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+    (bundle_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "bundleVersion": "mc.analyze.bundle.v1",
+                "workflow": "family",
+                "promptFamilyManifest": {"name": "fixture_family"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (bundle_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "bundleVersion": "mc.analyze.bundle.v1",
+                "workflow": "family",
+                "targetCount": 1,
+                "variantCount": 2,
+                "comparisonCount": 1,
+                "errorCount": 0,
+                "spaces": ["embedding", "hidden"],
+                "meanPromptTokenCount": 5.0,
+                "meanResponseTokenCount": 7.0,
+                "meanEntropy": 0.3,
+                "meanGeodesicDeviation": 0.2,
+                "meanCurvature": 0.4,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (bundle_dir / "variants.jsonl").write_text(
+        "".join(
+            [
+                json.dumps(
+                    {
+                        "targetLabel": "base",
+                        "caseId": "case1",
+                        "variantId": "control",
+                        "summaryMetrics": {
+                            "meanEntropy": 0.2,
+                            "meanGeodesicDeviation": 0.1,
+                            "meanCurvature": 0.3,
+                        },
+                    }
+                )
+                + "\n",
+                json.dumps(
+                    {
+                        "targetLabel": "base",
+                        "caseId": "case1",
+                        "variantId": "all_caps",
+                        "summaryMetrics": {
+                            "meanEntropy": 0.5,
+                            "meanGeodesicDeviation": 0.4,
+                            "meanCurvature": 0.7,
+                        },
+                    }
+                )
+                + "\n",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (bundle_dir / "layer_metrics.jsonl").write_text(
+        "".join(
+            [
+                json.dumps(
+                    {
+                        "targetLabel": "base",
+                        "caseId": "case1",
+                        "variantId": "control",
+                        "layer": -1,
+                        "space": "embedding",
+                        "vectorNorm": 0.5,
+                    }
+                )
+                + "\n",
+                json.dumps(
+                    {
+                        "targetLabel": "base",
+                        "caseId": "case1",
+                        "variantId": "all_caps",
+                        "layer": 1,
+                        "space": "hidden",
+                        "vectorNorm": 2.0,
+                    }
+                )
+                + "\n",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (bundle_dir / "comparisons.jsonl").write_text(
+        json.dumps(
+            {
+                "mode": "within_target",
+                "caseId": "case1",
+                "from": "control",
+                "to": "all_caps",
+                "targetLabel": "base",
+                "scalarDeltas": {"meanEntropy": 0.3},
+                "perLayerDeltas": {"entropy": [{"layer": 1, "delta": 0.4}]},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (bundle_dir / "REPORT.md").write_text("# report\n", encoding="utf-8")
+    return bundle_dir
+
+
 class TestAnalyzeCommandHelp:
     """Test that analyze commands have proper help text."""
 
@@ -47,7 +162,7 @@ class TestAnalyzeCommandHelp:
         result = runner.invoke(app, ["analyze", "--help"])
         assert result.exit_code == 0
         stdout_lower = result.stdout.lower()
-        for command in ["capture", "family", "compare", "probe", "dimension-profile"]:
+        for command in ["capture", "family", "compare", "report", "probe", "dimension-profile"]:
             assert command in stdout_lower
 
     def test_analyze_probe_help(self):
@@ -80,6 +195,11 @@ class TestAnalyzeWorkflowCommands:
         assert result.exit_code == 0
         assert "--left-model" in result.stdout
         assert "--right-model" in result.stdout
+
+    def test_report_help(self):
+        result = runner.invoke(app, ["analyze", "report", "--help"])
+        assert result.exit_code == 0
+        assert "--bundle" in result.stdout
 
     def test_family_uses_observation_service(self, monkeypatch, tmp_path):
         model_dir = tmp_path / "model"
@@ -154,6 +274,66 @@ class TestAnalyzeWorkflowCommands:
         assert payload["workflow"] == "family"
         assert payload["summary"]["comparisonCount"] == 1
         assert Path(captured["target"].model) == model_dir.resolve()
+
+    def test_report_reads_existing_bundle(self, tmp_path):
+        bundle_dir = _write_report_bundle_fixture(tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "--output",
+                "json",
+                "analyze",
+                "report",
+                "--bundle",
+                str(bundle_dir),
+            ],
+        )
+
+        assert result.exit_code == 0, result.stdout
+        payload = json.loads(result.stdout)
+        assert payload["bundleDir"] == str(bundle_dir.resolve())
+        assert payload["summary"]["workflow"] == "family"
+        assert "observedSpaces" in payload["sections"]
+        assert "topScalarShifts" in payload["sections"]
+
+    def test_report_missing_bundle_directory(self, tmp_path):
+        result = runner.invoke(
+            app,
+            [
+                "--output",
+                "json",
+                "analyze",
+                "report",
+                "--bundle",
+                str(tmp_path / "missing-bundle"),
+            ],
+        )
+
+        assert result.exit_code != 0
+        payload = json.loads(result.stdout)
+        assert payload["error"]["code"] == "MC-1098"
+
+    def test_report_missing_required_files(self, tmp_path):
+        bundle_dir = tmp_path / "bundle"
+        bundle_dir.mkdir()
+        (bundle_dir / "manifest.json").write_text("{}", encoding="utf-8")
+
+        result = runner.invoke(
+            app,
+            [
+                "--output",
+                "json",
+                "analyze",
+                "report",
+                "--bundle",
+                str(bundle_dir),
+            ],
+        )
+
+        assert result.exit_code != 0
+        payload = json.loads(result.stdout)
+        assert payload["error"]["code"] == "MC-1099"
 
 
 class TestSafetyAdapterProbe:

@@ -24,6 +24,7 @@ A forward pass is a deterministic geometric map. The industry treats 15 training
 poetry run mc analyze capture --model /path/to/model --prompt "Explain geodesics."
 poetry run mc analyze family --model /path/to/model --manifest data/probes/prompt_family_minimal_pairs.json
 poetry run mc analyze compare --left-model /path/to/base --right-model /path/to/base --right-adapter /path/to/adapter --manifest data/probes/prompt_family_minimal_pairs.json
+poetry run mc analyze report --bundle /path/to/bundle
 ```
 
 These commands emit an observation bundle under
@@ -94,6 +95,9 @@ poetry run mc analyze capture --model /path/to/model --prompt "Explain geodesics
 # Build an observation bundle from a prompt family
 poetry run mc analyze family --model /path/to/model --manifest data/probes/prompt_family_minimal_pairs.json
 
+# Re-read an existing bundle and print the shared report view
+poetry run mc analyze report --bundle /path/to/bundle
+
 # Layer-wise intrinsic dimension profile
 poetry run mc analyze dimension-profile --model /path/to/model --samples 50
 
@@ -131,11 +135,12 @@ training blockers and exit criteria live in [MISSION.md](docs/MISSION.md) and
 
 ## Measurement Toolkit
 
-`mc analyze` is organized around four canonical workflows:
+`mc analyze` is organized around five canonical workflows:
 
 - `capture`: measure one prompt or prompt file
 - `family`: run explicit minimal-pair or perturbation studies
 - `compare`: compare two targets on the same prompt family
+- `report`: read an existing bundle and render the shared high-signal view
 - `probe`: targeted probe and red-team workflows
 
 Expert instruments remain directly callable when you want the underlying
@@ -166,6 +171,7 @@ All geometric computations are framework-agnostic. Backend selection is automati
 | Document | What It Covers |
 |----------|---------------|
 | [Start Here](docs/START-HERE.md) | Installation, first observation bundle, and downstream training |
+| [Observation Bundles](docs/OBSERVATION-BUNDLES.md) | `PromptFamilyManifest`, `ObservationBundle`, and ready-to-run perturbation manifests |
 | [Geometry Guide](docs/GEOMETRY-GUIDE.md) | Interpreting CKA, intrinsic dimension, curvature, and entropy measurements |
 | [Training Guide](docs/TRAINING-GUIDE.md) | Downstream adapter workflows and dataset preparation |
 | [CLI Reference](docs/CLI-REFERENCE.md) | Workflow-first `mc analyze` plus expert command examples |

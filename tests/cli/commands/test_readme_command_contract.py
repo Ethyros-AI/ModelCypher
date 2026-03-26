@@ -43,6 +43,7 @@ def test_readme_contains_mc_commands_for_contract() -> None:
         "analyze capture",
         "analyze family",
         "analyze compare",
+        "analyze report",
         "train run",
         "model info",
         "analyze dimension-profile",

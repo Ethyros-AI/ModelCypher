@@ -20,6 +20,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import modelcypher.cli.composition as composition
+from modelcypher.core.use_cases.observation_bundle_report_service import (
+    ObservationBundleReportService,
+)
 import modelcypher.core.use_cases.observation_service as observation_module
 
 
@@ -82,3 +85,8 @@ def test_composition_observation_getter_injects_sublayer_collector(monkeypatch) 
     assert captured["activation_provider"] is registry.activation_provider
     assert captured["model_loader"] is registry.model_loader
     assert captured["sublayer_collector"] is sentinel_collector
+
+
+def test_composition_observation_bundle_report_getter_smoke() -> None:
+    service = composition.get_observation_bundle_report_service()
+    assert isinstance(service, ObservationBundleReportService)

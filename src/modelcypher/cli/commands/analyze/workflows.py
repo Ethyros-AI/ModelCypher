@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import json
+import shlex
 import sys
 from pathlib import Path
 from typing import Any
 
 import typer
 
-from modelcypher.cli.composition import get_observation_service
+from modelcypher.cli.composition import (
+    get_observation_bundle_report_service,
+    get_observation_service,
+)
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.exit_codes import EXIT_INPUT, EXIT_RUNTIME
 from modelcypher.cli.input_validation import (
@@ -113,15 +117,32 @@ def _emit_observation_result(
         lines = [
             "ANALYZE WORKFLOW",
             f"Workflow: {payload['workflow']}",
-            f"Output: {payload['outputDir']}",
+            f"Bundle: {payload['outputDir']}",
+            f"Report: {payload['files'].get('report')}",
             f"Targets: {summary['targetCount']}",
             f"Variants: {summary['variantCount']}",
             f"Comparisons: {summary['comparisonCount']}",
+            f"Errors: {summary['errorCount']}",
             f"Spaces: {', '.join(summary['spaces'])}",
+            (
+                "Next: poetry run mc analyze report --bundle "
+                + shlex.quote(payload["outputDir"])
+            ),
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
     write_output(payload, context.output_format, context.pretty)
+
+
+def _emit_bundle_report_result(
+    *,
+    result: Any,
+    context: CLIContext,
+) -> None:
+    if context.output_format == "text":
+        write_output(result.markdown, context.output_format, context.pretty)
+        return
+    write_output(result.to_dict(), context.output_format, context.pretty)
 
 
 def analyze_capture(
@@ -359,3 +380,56 @@ def analyze_compare(
         raise typer.Exit(code=EXIT_RUNTIME)
 
     _emit_observation_result(result=result, context=context)
+
+
+def analyze_report(
+    ctx: typer.Context,
+    bundle: str = typer.Option(
+        ...,
+        "--bundle",
+        help="Observation bundle directory",
+    ),
+) -> None:
+    """Read an existing observation bundle and render the shared report view."""
+    context = _context(ctx)
+    bundle_dir = Path(bundle).expanduser().resolve()
+
+    if not bundle_dir.exists() or not bundle_dir.is_dir():
+        error = ErrorDetail(
+            code="MC-1098",
+            title="Missing observation bundle",
+            detail=f"Bundle directory not found: {bundle_dir}",
+            hint="Point --bundle at a directory created by mc analyze capture/family/compare.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_INPUT)
+        raise typer.Exit(code=EXIT_INPUT)
+
+    try:
+        service = get_observation_bundle_report_service()
+        result = service.load(bundle_dir)
+    except ValueError as exc:
+        error = ErrorDetail(
+            code="MC-1099",
+            title="Invalid observation bundle",
+            detail=str(exc),
+            hint=(
+                "Check that the bundle contains manifest.json, summary.json, variants.jsonl, "
+                "layer_metrics.jsonl, and comparisons.jsonl."
+            ),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_INPUT)
+        raise typer.Exit(code=EXIT_INPUT)
+    except RuntimeError as exc:
+        error = ErrorDetail(
+            code="MC-1100",
+            title="Analyze report failed",
+            detail=str(exc),
+            hint="Retry with a valid bundle directory or inspect the stored files directly.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_RUNTIME)
+        raise typer.Exit(code=EXIT_RUNTIME)
+
+    _emit_bundle_report_result(result=result, context=context)

@@ -42,6 +42,9 @@ if TYPE_CHECKING:
     from modelcypher.core.use_cases.entropy_calibration_service import (
         EntropyCalibrationService,
     )
+    from modelcypher.core.use_cases.observation_bundle_report_service import (
+        ObservationBundleReportService,
+    )
     from modelcypher.core.use_cases.observation_service import ObservationService
     from modelcypher.core.use_cases.model_probe_service import ModelProbeService
     from modelcypher.core.use_cases.model_service import ModelService
@@ -124,6 +127,15 @@ def get_observation_service() -> "ObservationService":
         activation_provider=registry.activation_provider,
         sublayer_collector=collect_sublayer_activations,
     )
+
+
+def get_observation_bundle_report_service() -> "ObservationBundleReportService":
+    """Get ObservationBundleReportService for read-side bundle reporting."""
+    from modelcypher.core.use_cases.observation_bundle_report_service import (
+        ObservationBundleReportService,
+    )
+
+    return ObservationBundleReportService()
 
 
 def get_geometry_training_service():
