@@ -1,6 +1,8 @@
 # Inference Infrastructure
 
-ModelCypher's inference subsystem provides unified generation, entropy-aware monitoring, adapter pooling, and backend-agnostic execution.
+ModelCypher's inference subsystem is the base layer for `mc analyze`. It
+provides unified generation, activation capture, trajectory collection,
+entropy-aware monitoring, adapter pooling, and backend-agnostic execution.
 
 Notes:
 - In this repo, run commands as `poetry run mc ...`.
@@ -97,11 +99,27 @@ through the backend abstraction.
 ## CLI Integration
 
 ```bash
-# Run inference with adapter
+# Run direct inference
 poetry run mc infer run \
     --model /path/to/model \
-    --adapter /path/to/adapter \
     --prompt "Hello, world!"
+
+# Build an observation bundle from one prompt
+poetry run mc analyze capture \
+    --model /path/to/model \
+    --prompt "Explain geodesics."
+
+# Build an observation bundle from a prompt family
+poetry run mc analyze family \
+    --model /path/to/model \
+    --manifest data/probes/prompt_family_minimal_pairs.json
+
+# Compare two targets on the same prompt family
+poetry run mc analyze compare \
+    --left-model /path/to/base \
+    --right-model /path/to/base \
+    --right-adapter /path/to/adapter \
+    --manifest data/probes/prompt_family_minimal_pairs.json
 
 # Run a prompt suite
 poetry run mc infer suite \

@@ -1,24 +1,54 @@
 # ModelCypher
 
-**Geometry-first LoRA training. Every hyperparameter derived from the weight matrix, not tuned.**
+**See what a model is doing below token level.**
 
-Current evidence state (2026-03-11): `mc train run` is shipped and
-geometry-derived, but the
-repo has not yet closed the promotable same-model same-data same-eval benchmark
-needed to claim "better than standard practice." See
+ModelCypher is a measurement and observability workbench for open-source model
+builders. It gives humans and frontier AI a clear way to inspect geometry,
+entropy, curvature, chain structure, and adapter-induced changes through
+workflow-first CLI surfaces instead of ad hoc activation scripts.
+
+Current evidence state (2026-03-26): `mc analyze` is the clearest public
+entrypoint for prompt capture, prompt-family studies, and checkpoint or
+adapter comparison. `mc train run` remains shipped and geometry-derived, but
+the repo has not yet closed the promotable same-model same-data same-eval
+benchmark needed to claim "better than standard practice." See
 [RESEARCH-ROADMAP.md](docs/RESEARCH-ROADMAP.md).
 
 ## The Thesis
 
 A forward pass is a deterministic geometric map. The industry treats 15 training hyperparameters as knobs to tune — learning rate, rank, scale, warmup, clipping, schedule, decay, dropout, batch size, early stopping, target modules, weight init, epsilon, momentum, residual scaling. Every one of these has a closed-form geometric replacement derived from SVD, IEEE 754 machine precision, or a cited theorem. ModelCypher replaces all 15. See [AGENTS.md](AGENTS.md) for the full derivation philosophy.
 
-## One Command, Zero Configuration
+## Start By Measuring
+
+```bash
+poetry run mc analyze capture --model /path/to/model --prompt "Explain geodesics."
+poetry run mc analyze family --model /path/to/model --manifest data/probes/prompt_family_minimal_pairs.json
+poetry run mc analyze compare --left-model /path/to/base --right-model /path/to/base --right-adapter /path/to/adapter --manifest data/probes/prompt_family_minimal_pairs.json
+```
+
+These commands emit an observation bundle under
+`results/analysis/<timestamp-slug>/` by default:
+
+- `manifest.json`
+- `summary.json`
+- `REPORT.md`
+- `variants.jsonl`
+- `layer_metrics.jsonl`
+- `comparisons.jsonl`
+
+The prompt-family interface is explicit in phase 1. Each row includes:
+`case_id`, `variant_id`, `text`, optional `tags`, and optional
+`comparison_to`.
+
+## Train When You Want To Act On The Measurements
 
 ```bash
 poetry run mc train run --model /path/to/model --data /path/to/dataset --output /path/to/adapter
 ```
 
-No learning rate. No rank selection. No warmup schedule. No gradient clipping. The optimizer (Cayley-Stiefel retraction on the Stiefel manifold) and step size (MASS: `eta = min(eta_ceiling, eta_sps, eta_weyl)`) are derived from the weight matrices at initialization.
+No learning rate. No rank selection. No warmup schedule. No gradient clipping.
+The optimizer and step sizes are derived from measured geometry rather than
+copied recipes.
 
 Need extra instrumentation? Use flags on the same command path, such as
 `--benchmark`, `--topo-monitor`, `--dim-monitor`, or `--entropy-reg`.
@@ -55,26 +85,30 @@ poetry run mc --help    # Verify CLI install
 ```
 
 ```bash
-# Train a LoRA adapter — all hyperparameters derived from geometry
-poetry run mc train run --model /path/to/model --data /path/to/data.jsonl --output /path/to/adapter
-
-# Validate derived training across repeated trials (counterexample search)
-poetry run mc train validate-derived --model /path/to/model --data /path/to/data.jsonl --trials 5
-
 # Inspect a model's per-layer geometry
 poetry run mc model info /path/to/model
+
+# Build an observation bundle from one prompt
+poetry run mc analyze capture --model /path/to/model --prompt "Explain geodesics."
+
+# Build an observation bundle from a prompt family
+poetry run mc analyze family --model /path/to/model --manifest data/probes/prompt_family_minimal_pairs.json
 
 # Layer-wise intrinsic dimension profile
 poetry run mc analyze dimension-profile --model /path/to/model --samples 50
 
 # LoRA adapter spectral analysis
 poetry run mc analyze lora-svd /path/to/adapter --base /path/to/model
+
+# Train a LoRA adapter after inspecting the model
+poetry run mc train run --model /path/to/model --data /path/to/data.jsonl --output /path/to/adapter
 ```
 
 ## Evidence Snapshot
 
 | Question | What retained artifacts show | Tag |
 |---|---|---|
+| Does the measurement layer exist as a real workflow? | Yes. `mc analyze capture`, `mc analyze family`, and `mc analyze compare` now emit observation bundles with machine-readable artifacts plus a short report | [EMPIRICAL] |
 | Canonical training path exists | `mc train run` is the shipped geometry-derived runtime path guarded by `pipeline_gate_v1` | [EMPIRICAL] |
 | Does the retained 350M validation bundle close preservation? | No. `results/pipeline_validation/verdict.json` reports structural pass `5/5`, inference pass `3/5`, `all_pass = false` | [EMPIRICAL] |
 | Does the retained evidence close "better than standard practice"? | No. `results/nblora_vs_standard/` is retained as `summary_only`, and the retained single-seed LFM2-350M summary does not support superiority of `nb_lora` over the kept baselines | [EMPIRICAL] |
@@ -97,17 +131,24 @@ training blockers and exit criteria live in [MISSION.md](docs/MISSION.md) and
 
 ## Measurement Toolkit
 
-31 analysis subcommands under `mc analyze` across 5 categories:
+`mc analyze` is organized around four canonical workflows:
 
-| Category | What It Measures |
-|----------|-----------------|
-| Geometric | Intrinsic dimension, geodesic curvature, expansion ratio, spectral entropy, Jacobian spectrum |
-| Behavioral | Adapter probes, behavioral signatures, cognitive reflection |
-| Safety | Jailbreak entropy, refusal boundaries, red-team probes, circuit breakers |
-| Benchmark | LoRA SVD, knowledge typing, curriculum profiling, sparse regions |
-| Monitoring | Persona drift, uncertainty modes, entropy baselines |
+- `capture`: measure one prompt or prompt file
+- `family`: run explicit minimal-pair or perturbation studies
+- `compare`: compare two targets on the same prompt family
+- `probe`: targeted probe and red-team workflows
 
-58 subcommands across 8 groups (`train`, `merge`, `infer`, `analyze`, `model`, `system`, `adapter`, `quantize`). Full reference: [CLI-REFERENCE.md](docs/CLI-REFERENCE.md)
+Expert instruments remain directly callable when you want the underlying
+measurements without the bundle wrapper:
+
+- geometry and trajectory: `reasoning-flow`, `geodesic-profile`,
+  `entropy-trajectory`, `chain-profile`, `dimension-profile`, `jacobian-trace`
+- probe and monitoring: `calibrate-safety`, `jailbreak-test`,
+  `probe-redteam`, `probe-behavioral`, `circuit-breaker`, `entropy-pattern`
+- diagnostics and adapter analysis: `lora-svd`, `benchmark`,
+  `knowledge-type`, `curriculum-profile`, `crm-build`, `crm-compare`
+
+Full reference: [CLI-REFERENCE.md](docs/CLI-REFERENCE.md)
 
 ## Architecture
 
@@ -124,11 +165,11 @@ All geometric computations are framework-agnostic. Backend selection is automati
 
 | Document | What It Covers |
 |----------|---------------|
-| [Start Here](docs/START-HERE.md) | Installation, first measurement, reading paths for engineers/researchers/auditors |
+| [Start Here](docs/START-HERE.md) | Installation, first observation bundle, and downstream training |
 | [Geometry Guide](docs/GEOMETRY-GUIDE.md) | Interpreting CKA, intrinsic dimension, curvature, and entropy measurements |
-| [Training Guide](docs/TRAINING-GUIDE.md) | LoRA training workflows and dataset preparation |
-| [CLI Reference](docs/CLI-REFERENCE.md) | All 58 commands with examples |
-| [Mission](docs/MISSION.md) | The 15 hyperparameter replacements and why they work |
+| [Training Guide](docs/TRAINING-GUIDE.md) | Downstream adapter workflows and dataset preparation |
+| [CLI Reference](docs/CLI-REFERENCE.md) | Workflow-first `mc analyze` plus expert command examples |
+| [Mission](docs/MISSION.md) | Measurement-first mission and derived training standards |
 | [Glossary](docs/GLOSSARY.md) | 60+ term definitions |
 | [Architecture](docs/ARCHITECTURE.md) | Hexagonal architecture and domain boundaries |
 | [Bibliography](docs/references/BIBLIOGRAPHY.md) | All cited papers with local reference PDFs |

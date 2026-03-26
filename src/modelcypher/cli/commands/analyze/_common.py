@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Shared utilities for safety CLI commands."""
+"""Shared utilities for legacy expert analyze commands."""
 
 from __future__ import annotations
 

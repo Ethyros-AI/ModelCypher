@@ -2,14 +2,22 @@
 
 ## Mission Statement
 
-**Make model fine-tuning accessible: one command, derived parameters, honest evidence about whether the adapter helped.**
+**Make model behavior measurable below token level, then make downstream
+training accessible with derived parameters and honest evidence.**
 
-ModelCypher is a training workbench for open-source model builders. You prepare
-data, derive the training plan, run training, and measure whether the model
-improved without needing to know MLX internals, guess at LoRA rank, or cargo
-cult a learning rate schedule.
+ModelCypher is a measurement and observability workbench for open-source model
+builders. You should be able to point it at a model, a prompt family, or an
+adapter comparison and get direct measurements of geometry, entropy,
+curvature, chain structure, and representation drift without hand-rolling
+activation scripts or guessing from token outputs alone.
 
-Every training decision that enters the shipped path must come from the model
+Training remains shipped and important, but it sits downstream of the
+measurement substrate. We first expose what the model is doing. We then use
+those measurements to derive a training plan, run training, and measure whether
+the adapter helped without needing to know MLX internals, guess at LoRA rank,
+or cargo cult a learning rate schedule.
+
+Every derived decision that enters the shipped path must come from the model
 and the data:
 
 - spectral structure of the weights
@@ -17,43 +25,67 @@ and the data:
 - IEEE 754 machine precision
 - direct measurements from the training run
 
-The model tells us what it needs. The product's job is to measure that and make
-it usable.
+The model tells us what it is doing and what it needs. The product's job is to
+measure that and make it usable.
 
 ## What Users Should Be Able To Do
 
-The core workflow is:
+The clearest workflow is:
+
+```bash
+poetry run mc analyze capture --model /path/to/model --prompt "Explain geodesics."
+poetry run mc analyze family --model /path/to/model --manifest data/probes/prompt_family_minimal_pairs.json
+poetry run mc analyze compare --left-model /path/to/base --right-model /path/to/base --right-adapter /path/to/adapter --manifest data/probes/prompt_family_minimal_pairs.json
+```
+
+Every analysis run should produce a stable observation bundle:
+
+- `manifest.json`
+- `summary.json`
+- `REPORT.md`
+- `variants.jsonl`
+- `layer_metrics.jsonl`
+- `comparisons.jsonl`
+
+The explicit prompt-family manifest is the phase-1 comparison surface. Each row
+includes `case_id`, `variant_id`, `text`, optional `tags`, and optional
+`comparison_to`.
+
+When the user wants to turn those measurements into an adapter workflow, the
+downstream training path is:
 
 ```bash
 poetry run mc train run --model /path/to/model --data /path/to/data.jsonl --output /path/to/adapter
-```
-
-And then:
-
-```bash
 poetry run mc train evaluate --model /path/to/model --adapter /path/to/adapter --data /path/to/validation.jsonl
 poetry run mc train compare --model /path/to/model --adapter-a /path/to/a --adapter-b /path/to/b --data /path/to/validation.jsonl
 ```
 
 The workbench is doing its job when a developer can move through this sequence
-without manual hyperparameter tuning:
+without manual hyperparameter tuning and without guessing what changed inside
+the model:
 
-`prepare -> inspect -> plan -> train -> evaluate -> compare -> export`
+`inspect -> capture -> perturb -> compare -> derive -> train -> evaluate -> compare -> export`
 
-## Current Reality (2026-03-16)
+## Current Reality (2026-03-26)
 
 What is true today:
 
+- `mc analyze` is the clearest public entrypoint.
+- `mc analyze capture`, `mc analyze family`, and `mc analyze compare` create
+  bundleable measurement artifacts for prompt and target studies.
 - `mc train run` is a shipped training surface.
 - The current runtime path is `geometry-derived LoRA`.
 - The workbench can derive plans, train adapters, and evaluate or compare
   results.
-- The CLI already exposes the surrounding workflow: `data prepare`,
-  `model info`, `model capacity`, `train evaluate`, `train compare`,
-  `train export`, and `train merge`.
+- The CLI already exposes the surrounding workflow: `model info`,
+  `analyze`, `train evaluate`, `train compare`, `train export`, and
+  `train merge`.
 
 Current limitations:
 
+- The repo does **not** yet offer live during-training observability under the
+  new observation bundle surface. Phase 1 is inference-first and
+  checkpoint-comparison-first.
 - The repo has **not** yet closed a promotable claim that the current training
   path beats standard practice head-to-head.
 - Benchmark advantage is still something to measure and earn, not narrate into
@@ -61,8 +93,8 @@ Current limitations:
 - Experimental merge, stacking, and continual-learning paths are not the core
   shipped promise.
 
-That is the discipline of this mission: the workbench is real, the derivation
-story is real, and benchmark superiority is still open.
+That is the discipline of this mission: the measurement layer is real, the
+derivation story is real, and benchmark superiority is still open.
 
 ### R2 Investigation Finding (2026-03-16)
 
@@ -78,9 +110,10 @@ The R2 "inference CKA collapse" investigation revealed that:
   the intermediate computations decomposed at a finer grain than GSM8K chains
   provide.
 
-This means the workbench's geometry-derived planning, CKA verification, and
-spectral bounds are working as designed. The product gap is now in training
-data quality — what we teach, at what granularity, in what order.
+This means the workbench's geometry-derived planning, CKA verification,
+observation surfaces, and spectral bounds are working as designed. The product
+gap is now in training data quality — what we teach, at what granularity, in
+what order.
 
 ## Canonical Training Identity
 
@@ -115,8 +148,8 @@ measured controller quantities tell us more about what the model can absorb
 than a copied recipe does.
 
 Geometry matters here because it reduces guesswork. The user value is not
-"research purity." The user value is: fewer knobs, clearer plans, and better
-odds of producing a useful adapter.
+"research purity." The user value is: clearer observation, fewer knobs, more
+honest comparisons, and better odds of producing a useful adapter.
 
 ## Three Product Pillars
 
@@ -156,8 +189,8 @@ trustworthy:
 - **Pillar 3:** Is the model fighting or specializing within the prior?
   (spectral bounds, readout alignment)
 
-The geometry work is the reason the training advice is trustworthy. It is not
-an end in itself.
+The geometry work is the reason the measurements and training advice are
+trustworthy. It is not an end in itself.
 
 ## Build Standards
 

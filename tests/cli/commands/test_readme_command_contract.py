@@ -40,6 +40,9 @@ def test_readme_contains_mc_commands_for_contract() -> None:
     assert examples, "Expected at least one `poetry run mc ...` command in README bash blocks."
 
     expected_anchors = [
+        "analyze capture",
+        "analyze family",
+        "analyze compare",
         "train run",
         "model info",
         "analyze dimension-profile",

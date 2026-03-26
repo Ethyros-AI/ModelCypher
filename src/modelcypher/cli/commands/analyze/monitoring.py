@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Monitoring and runtime safety CLI commands.
+"""Monitoring and runtime analysis CLI commands.
 
 Provides commands for runtime monitoring and analysis:
 - circuit-breaker: Evaluate circuit breaker state
@@ -51,7 +51,7 @@ def safety_circuit_breaker(
     """Evaluate circuit breaker state.
 
     Examples:
-        mc safety circuit-breaker --job abc123
+        mc analyze circuit-breaker --job abc123
     """
     context = get_context(ctx)
     service = get_geometry_safety_service()
@@ -85,7 +85,7 @@ def safety_persona(
     """Analyze persona drift for a training job.
 
     Examples:
-        mc safety persona --job abc123
+        mc analyze persona --job abc123
     """
     context = get_context(ctx)
     service = get_geometry_safety_service()

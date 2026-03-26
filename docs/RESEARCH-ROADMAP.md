@@ -1,6 +1,6 @@
 # Research Roadmap
 
-**Updated:** 2026-03-12
+**Updated:** 2026-03-26
 
 ## What This File Is For
 
@@ -19,8 +19,11 @@ not on the active ladder, it is either parked or archived.
 
 ## Scope Cascade
 
-- **Mission**: close the canonical geometric engine, centered on `mc train run`.
-- **Vision**: downstream identity-layer consequences of that closure.
+- **Mission**: close the measurement-first workbench so users can see what a
+  model is doing below token level and turn those measurements into better
+  downstream decisions.
+- **Vision**: downstream training, portability, and identity-layer
+  consequences of that closure.
 - **Roadmap**: the required order of work.
 - **Open Questions**: only the mathematical blockers on that order.
 
@@ -52,6 +55,7 @@ new canonical result families, or repeated agent-driven run families.
 
 | ID | Goal | Primary evidence family | Exit criterion |
 | --- | --- | --- | --- |
+| `A1` | Observation-bundle closure for workflow-first `mc analyze` | `results/analysis/` families plus CLI/service contract tests | `capture`, `family`, and `compare` are stable, documented, and produce commensurable observation bundles for prompt and target studies without legacy safety-first packaging or buried command paths |
 | `R1` | Same-model same-data same-eval baseline suite against standard practice for the canonical geometry-derived LoRA path | `results/nblora_vs_standard/` | Pre-registered multi-seed comparison against standard LoRA, rsLoRA, PiSSA, EVA, DoRA, and at least one recipe-level baseline; promotion allowed only if preservation gates stay valid |
 | `R2` | Causal operator for behavioral failure when structural safety passes | `results/pipeline_validation/`, `results/pipeline_validation_blindness_350M_t20/` | A pre-registered operator predicts failure before online degradation, survives intervention, and explains the retained 350M failure cases |
 | `R3` | 8B non-ceiling efficacy closure | `results/g5_8b_validation_multiseed/` | The pre-registered seed set on the fixed non-ceiling eval bundle passes the declared gate set without mixed or measurement-invalid outcomes |
@@ -59,10 +63,33 @@ new canonical result families, or repeated agent-driven run families.
 | `R5` | Portable cross-architecture adapter certificate | `results/geometry_sota/` plus a MergeBench-style comparison family | A commensurable preservation certificate plus head-to-head merge baselines show portable behavior, not just probe alignment |
 | `R6` | Consolidation operator that adds structure without forgetting | `results/continual_learning/` | A fixed update operator beats replay-style baselines on preservation and capacity under a frozen evaluator and comparison budget |
 
+### A1. Workflow-First Observation Closure
+
+This is the shortest path from "interesting geometry" to "a usable measurement
+workbench." It closes whether users and agents can actually run controlled
+prompt and target studies without stitching together one-off expert commands.
+
+Current state (2026-03-26):
+
+- `mc analyze capture`, `mc analyze family`, and `mc analyze compare` now define
+  the canonical workflow surface.
+- The prompt-family manifest is explicit rather than transform-driven:
+  `case_id`, `variant_id`, `text`, optional `tags`, optional `comparison_to`.
+- Every run is expected to emit the same observation bundle contract:
+  `manifest.json`, `summary.json`, `REPORT.md`, `variants.jsonl`,
+  `layer_metrics.jsonl`, `comparisons.jsonl`.
+- Phase 1 scope is inference-first and checkpoint-comparison-first. Live
+  training-stream telemetry remains deferred.
+- The remaining work is doctrine, discoverability, and commensurability:
+  making the measurement story clearer than the historical training-first
+  narrative and keeping expert instruments available without making them the
+  headline.
+
 ### R1. Baseline Suite Against Standard Practice
 
-This is the first active blocker because "better than standard practice" is the
-mission claim, not an optional benchmark.
+This remains the first downstream training blocker because "better than
+standard practice" is a consequential training claim, not an optional
+benchmark.
 
 Current state (2026-03-12):
 
@@ -102,7 +129,7 @@ Required controls:
 ### R2. Behavioral Preservation Operator
 
 This is the shortest path from "interesting geometry" to "the canonical
-training path really preserves behavior."
+measurement and training path really preserves behavior."
 
 Current state (2026-03-12):
 
@@ -247,11 +274,12 @@ The repository should feel narrower after this file, not broader.
 
 If a thread does not close:
 
-1. the baseline suite,
-2. the preservation operator,
-3. 8B closure,
-4. the quantization frontier law,
-5. the portability certificate, or
-6. the consolidation operator,
+1. workflow-first observation closure,
+2. the baseline suite,
+3. the preservation operator,
+4. 8B closure,
+5. the quantization frontier law,
+6. the portability certificate, or
+7. the consolidation operator,
 
 then it is not the work that should currently dominate the repo or the agents.

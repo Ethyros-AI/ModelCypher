@@ -15,10 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for analyze (safety) CLI commands.
+"""Tests for analyze CLI commands.
 
-The 'analyze' command is the largest CLI module, containing ~25 subcommands
-for geometric analysis, safety probing, entropy monitoring, and benchmarks.
+The 'analyze' command exposes workflow-first observation commands plus expert
+metrics for geometry, probes, entropy monitoring, and benchmarks.
 
 Tests:
 - Command help text for each subcommand
@@ -29,6 +29,7 @@ Tests:
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -45,13 +46,114 @@ class TestAnalyzeCommandHelp:
         """Test 'mc analyze --help' lists subcommands."""
         result = runner.invoke(app, ["analyze", "--help"])
         assert result.exit_code == 0
-        # Should list various analyze subcommands
         stdout_lower = result.stdout.lower()
-        # Check for some key commands (not all 25+)
-        assert any(
-            cmd in stdout_lower
-            for cmd in ["adapter-probe", "dimension-profile", "entropy", "benchmark"]
+        for command in ["capture", "family", "compare", "probe", "dimension-profile"]:
+            assert command in stdout_lower
+
+    def test_analyze_probe_help(self):
+        """Test the canonical probe workflow is discoverable."""
+        result = runner.invoke(app, ["analyze", "probe", "--help"])
+        assert result.exit_code == 0
+        stdout_lower = result.stdout.lower()
+        for command in ["calibrate", "jailbreak", "redteam", "behavioral"]:
+            assert command in stdout_lower
+
+
+class TestAnalyzeWorkflowCommands:
+    """Tests for workflow-first analyze commands."""
+
+    def test_capture_help(self):
+        result = runner.invoke(app, ["analyze", "capture", "--help"])
+        assert result.exit_code == 0
+        assert "--model" in result.stdout
+        assert "--prompt" in result.stdout
+        assert "--spaces" in result.stdout
+
+    def test_family_help(self):
+        result = runner.invoke(app, ["analyze", "family", "--help"])
+        assert result.exit_code == 0
+        assert "--manifest" in result.stdout
+        assert "--spaces" in result.stdout
+
+    def test_compare_help(self):
+        result = runner.invoke(app, ["analyze", "compare", "--help"])
+        assert result.exit_code == 0
+        assert "--left-model" in result.stdout
+        assert "--right-model" in result.stdout
+
+    def test_family_uses_observation_service(self, monkeypatch, tmp_path):
+        model_dir = tmp_path / "model"
+        model_dir.mkdir()
+        (model_dir / "config.json").write_text("{}", encoding="utf-8")
+
+        manifest_path = tmp_path / "family.json"
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "name": "caps-study",
+                    "variants": [
+                        {
+                            "case_id": "logic_1",
+                            "variant_id": "control",
+                            "text": "hello world",
+                        },
+                        {
+                            "case_id": "logic_1",
+                            "variant_id": "all_caps",
+                            "text": "HELLO WORLD",
+                            "comparison_to": "control",
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
         )
+
+        captured: dict[str, object] = {}
+
+        class _StubResult:
+            def to_dict(self):
+                return {
+                    "workflow": "family",
+                    "outputDir": str(tmp_path / "bundle"),
+                    "summary": {
+                        "workflow": "family",
+                        "targetCount": 1,
+                        "variantCount": 2,
+                        "comparisonCount": 1,
+                        "spaces": ["hidden", "embedding"],
+                    },
+                    "files": {},
+                }
+
+        class _StubService:
+            def family(self, **kwargs):
+                captured.update(kwargs)
+                return _StubResult()
+
+        monkeypatch.setattr(
+            "modelcypher.cli.commands.analyze.workflows.get_observation_service",
+            lambda: _StubService(),
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "--output",
+                "json",
+                "analyze",
+                "family",
+                "--model",
+                str(model_dir),
+                "--manifest",
+                str(manifest_path),
+            ],
+        )
+        assert result.exit_code == 0, result.stdout
+        payload = json.loads(result.stdout)
+        assert payload["workflow"] == "family"
+        assert payload["summary"]["comparisonCount"] == 1
+        assert Path(captured["target"].model) == model_dir.resolve()
 
 
 class TestSafetyAdapterProbe:

@@ -11,7 +11,17 @@ Notes:
 
 ## Common Workflow
 
-The main shipped workflow is:
+The clearest measurement-first workflow is:
+
+```bash
+poetry run mc system status
+poetry run mc model info /path/to/model
+poetry run mc analyze capture --model /path/to/model --prompt "Explain geodesics."
+poetry run mc analyze family --model /path/to/model --manifest data/probes/prompt_family_minimal_pairs.json
+poetry run mc analyze compare --left-model /path/to/base --right-model /path/to/base --right-adapter /path/to/adapter --manifest data/probes/prompt_family_minimal_pairs.json
+```
+
+The training workflow remains available when you want to turn measurements into an adapter workflow:
 
 ```bash
 poetry run mc system status
@@ -48,7 +58,7 @@ poetry run mc train export -m /path/to/model --adapter /path/to/adapter -o /path
 | `data` | Prepare data for training |
 | `merge` | Experimental geometric model merging |
 | `infer` | Prompt inference and suites |
-| `analyze` | Geometry, safety, and benchmark diagnostics |
+| `analyze` | Workflow-first observation plus expert metrics and probes |
 | `model` | Model registry, inspection, capacity, and quantization |
 | `system` | System status, probes, cache benchmarks |
 | `adapter` | Adapter geometry and baseline calibration |
@@ -170,28 +180,43 @@ poetry run mc infer suite --model /path/to/model --suite /path/to/suite.jsonl
 
 ## `mc analyze`
 
-Subcommand families:
+Canonical workflow commands:
 
-- Geometry: `geodesic-compare`, `geodesic-profile`, `geodesic-trajectory`,
+- `capture`: one prompt or prompt file -> observation bundle
+- `family`: explicit prompt-family manifest -> observation bundle + pairwise deltas
+- `compare`: two targets on the same prompt-family manifest -> observation bundle + cross-target deltas
+- `probe`: targeted probe and red-team workflows (`calibrate`, `jailbreak`, `redteam`, `behavioral`, `bilm-info`)
+
+Stable file interfaces:
+
+- `PromptFamilyManifest`: explicit rows with `case_id`, `variant_id`, `text`,
+  optional `tags`, optional `comparison_to`
+- `ObservationBundle`: `manifest.json`, `summary.json`, `REPORT.md`,
+  `variants.jsonl`, `layer_metrics.jsonl`, `comparisons.jsonl`
+
+Default spaces are `hidden` and `embedding`. Opt-in spaces are
+`intermediate`, `q`, `k`, `v`, and `gate`.
+
+Expert metric surfaces remain available directly under `mc analyze`:
+
+- Geometry and trajectory: `geodesic-compare`, `geodesic-profile`, `geodesic-trajectory`,
   `concept-volume`, `dimension-profile`, `entropy-trajectory`,
   `expansion-ratio`, `reasoning-flow`, `spectral-trajectory`,
-  `jacobian-trace`, `verification-depth-profile`
-- Behavioral and safety: `adapter-probe`, `behavioral-signature`,
+  `jacobian-trace`, `verification-depth-profile`, `chain-profile`
+- Probes, diagnostics, and monitoring: `adapter-probe`, `behavioral-signature`,
   `cognitive-reflection-test`, `calibrate-safety`, `jailbreak-test`,
-  `probe-redteam`, `probe-behavioral`, `bilm-probe-info`
-- Benchmark and monitoring: `benchmark`, `lora-svd`, `sparse-region`,
-  `knowledge-type`, `curriculum-profile`, `circuit-breaker`, `persona`,
-  `uncertainty-modes`, `entropy-pattern`, `entropy-baseline-verify`,
-  `crm-build`, `crm-compare`
+  `probe-redteam`, `probe-behavioral`, `bilm-probe-info`, `benchmark`,
+  `lora-svd`, `sparse-region`, `knowledge-type`, `curriculum-profile`,
+  `circuit-breaker`, `persona`, `uncertainty-modes`, `entropy-pattern`,
+  `entropy-baseline-verify`, `crm-build`, `crm-compare`
 
 ```bash
-poetry run mc analyze dimension-profile --model /path/to/model
+poetry run mc analyze capture --model /path/to/model --prompt "Explain geodesics."
+poetry run mc analyze family --model /path/to/model --manifest data/probes/prompt_family_minimal_pairs.json
+poetry run mc analyze compare --left-model /path/to/base --right-model /path/to/base --right-adapter /path/to/adapter --manifest data/probes/prompt_family_minimal_pairs.json
+poetry run mc analyze probe calibrate --model /path/to/model --prompt "Hello." --output-file /tmp/calibration.json
 poetry run mc analyze reasoning-flow --model /path/to/model --prompt "Prove that sqrt(2) is irrational."
 poetry run mc analyze lora-svd /path/to/adapter --base /path/to/model
-poetry run mc analyze calibrate-safety --model /path/to/model --prompt "Hello." --output-file /tmp/calibration.json
-poetry run mc analyze jailbreak-test --model /path/to/model --prompt "test prompt" --calibration /tmp/calibration.json
-poetry run mc analyze crm-build /path/to/model --output /tmp/model.crm.json
-poetry run mc analyze crm-compare /tmp/source.crm.json /tmp/target.crm.json
 ```
 
 ## `mc merge`

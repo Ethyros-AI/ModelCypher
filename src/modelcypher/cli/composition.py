@@ -42,6 +42,7 @@ if TYPE_CHECKING:
     from modelcypher.core.use_cases.entropy_calibration_service import (
         EntropyCalibrationService,
     )
+    from modelcypher.core.use_cases.observation_service import ObservationService
     from modelcypher.core.use_cases.model_probe_service import ModelProbeService
     from modelcypher.core.use_cases.model_service import ModelService
     from modelcypher.core.use_cases.verification_depth_profile_service import (
@@ -109,6 +110,18 @@ def get_activation_provider() -> "ActivationProvider":
 def get_inference_engine() -> "InferenceEngine":
     """Get InferenceEngine from the registry."""
     return _get_registry().inference_engine
+
+
+def get_observation_service() -> "ObservationService":
+    """Get ObservationService with proper dependency injection."""
+    from modelcypher.core.use_cases.observation_service import ObservationService
+
+    registry = _get_registry()
+    return ObservationService(
+        backend=registry.backend,
+        model_loader=registry.model_loader,
+        activation_provider=registry.activation_provider,
+    )
 
 
 def get_geometry_training_service():

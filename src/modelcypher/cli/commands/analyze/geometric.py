@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Geometric analysis safety CLI commands.
+"""Geometric analysis CLI commands.
 
 Provides commands for geometric analysis of model representations:
 - chain-profile: Unified causal chain diagnostic (entropy → curvature → ID → phase)
@@ -84,9 +84,9 @@ def safety_dimension_profile(
     - Specialist models: Low recovery (~1x)
 
     Examples:
-        mc safety dimension-profile --model ./my-model
-        mc safety dimension-profile --model ./my-model --samples 100
-        mc safety dimension-profile --model ./my-model --recovery
+        mc analyze dimension-profile --model ./my-model
+        mc analyze dimension-profile --model ./my-model --samples 100
+        mc analyze dimension-profile --model ./my-model --recovery
     """
     context = get_context(ctx)
 
@@ -570,9 +570,9 @@ def safety_entropy_trajectory(
     - early_late_ratio: First half / second half mean entropy
 
     Examples:
-        mc safety entropy-trajectory --model ./my-model
-        mc safety entropy-trajectory --model ./my-model --layers 0,4,8,12,16
-        mc safety entropy-trajectory --model ./my-model --probes ./probes.txt
+        mc analyze entropy-trajectory --model ./my-model
+        mc analyze entropy-trajectory --model ./my-model --layers 0,4,8,12,16
+        mc analyze entropy-trajectory --model ./my-model --probes ./probes.txt
     """
     context = get_context(ctx)
 
@@ -731,8 +731,8 @@ def safety_expansion_ratio(
     4. Computes: expansion_ratio = peak_dim / final_dim
 
     Examples:
-        mc safety expansion-ratio --model ./my-model --prompt "A bat and ball cost \\$1.10..."
-        mc safety expansion-ratio --model ./my-model --probes prompts.txt --trajectory
+        mc analyze expansion-ratio --model ./my-model --prompt "A bat and ball cost \\$1.10..."
+        mc analyze expansion-ratio --model ./my-model --probes prompts.txt --trajectory
     """
     context = get_context(ctx)
 
@@ -1020,8 +1020,8 @@ def safety_reasoning_flow(
     GitHub: https://github.com/MasterZhou1/Reasoning-Flow
 
     Examples:
-        mc safety reasoning-flow --model ./my-model --prompt "What is 2+2?" -T
-        mc safety reasoning-flow --model ./my-model --probes prompts.txt -t
+        mc analyze reasoning-flow --model ./my-model --prompt "What is 2+2?" -T
+        mc analyze reasoning-flow --model ./my-model --probes prompts.txt -t
     """
     context = get_context(ctx)
 
@@ -1313,8 +1313,8 @@ def safety_spectral_trajectory(
     Expansion ratio ~ 1.0 indicates flat trajectory (peak ~ final).
 
     Examples:
-        mc safety spectral-trajectory --model ./my-model
-        mc safety spectral-trajectory --model ./my-model --samples 100
+        mc analyze spectral-trajectory --model ./my-model
+        mc analyze spectral-trajectory --model ./my-model --samples 100
     """
     context = get_context(ctx)
 
@@ -1621,8 +1621,8 @@ def safety_jacobian_trace(
     materializing the full [hidden_dim x hidden_dim] Jacobian matrix.
 
     Examples:
-        mc safety jacobian-trace --model ./my-model --prompt "What is 2+2?"
-        mc safety jacobian-trace --model ./my-model -p "A bat and ball cost \\$1.10..." --trajectory
+        mc analyze jacobian-trace --model ./my-model --prompt "What is 2+2?"
+        mc analyze jacobian-trace --model ./my-model -p "A bat and ball cost \\$1.10..." --trajectory
     """
     context = get_context(ctx)
 
@@ -1986,9 +1986,9 @@ def safety_chain_profile(
     curvature only -- attn/MLP decomposition is not available.
 
     Examples:
-        mc safety chain-profile --model ./my-model
-        mc safety chain-profile --model ./my-model --samples 100
-        mc safety chain-profile --model ./my-model --probes ./probes.txt
+        mc analyze chain-profile --model ./my-model
+        mc analyze chain-profile --model ./my-model --samples 100
+        mc analyze chain-profile --model ./my-model --probes ./probes.txt
     """
     import math
 

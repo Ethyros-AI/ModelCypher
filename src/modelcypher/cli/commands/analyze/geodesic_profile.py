@@ -19,8 +19,8 @@
 
 Experimental. Measures per-layer geodesic deviation profile.
 
-    mc safety geodesic-profile --model PATH --prompt TEXT
-    mc safety geodesic-profile --model PATH --prompts FILE
+    mc analyze geodesic-profile --model PATH --prompt TEXT
+    mc analyze geodesic-profile --model PATH --prompts FILE
 """
 
 from __future__ import annotations
@@ -65,9 +65,9 @@ def geodesic_profile(
     Comparison mode (--adapter): per-layer delta between baseline and adapted model.
 
     Example:
-        mc safety geodesic-profile --model /path/to/model --prompt "What is 2+2? Let me think..."
-        mc safety geodesic-profile --model /path/to/model --prompts data/probes/geodesic_comparison.json
-        mc safety geodesic-profile --model /path/to/model --adapter /path/to/adapter --prompt "..."
+        mc analyze geodesic-profile --model /path/to/model --prompt "What is 2+2? Let me think..."
+        mc analyze geodesic-profile --model /path/to/model --prompts data/probes/geodesic_comparison.json
+        mc analyze geodesic-profile --model /path/to/model --adapter /path/to/adapter --prompt "..."
     """
     context = get_context(ctx)
     model_path = Path(model)

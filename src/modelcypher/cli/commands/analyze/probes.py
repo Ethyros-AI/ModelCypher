@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Probe and red-team safety CLI commands.
+"""Probe and red-team analysis CLI commands.
 
 Provides commands for probing and testing model safety:
 - jailbreak-test: Execute jailbreak entropy analysis
@@ -306,8 +306,8 @@ def safety_jailbreak_test(
     Calibration samples are required; fixed default thresholds are not used.
 
     Examples:
-        mc safety jailbreak-test --model ./model --prompts ./prompts.json --calibration ./calibration.json
-        mc safety jailbreak-test --model ./model --prompt "test prompt" --calibration ./calibration.json
+        mc analyze jailbreak-test --model ./model --prompts ./prompts.json --calibration ./calibration.json
+        mc analyze jailbreak-test --model ./model --prompt "test prompt" --calibration ./calibration.json
     """
     import json
 
@@ -435,8 +435,8 @@ def safety_probe_redteam(
     """Scan adapter metadata for threat indicators (static analysis).
 
     Examples:
-        mc safety probe-redteam --name my-adapter
-        mc safety probe-redteam --name my-adapter --tag skill1 --tag skill2
+        mc analyze probe-redteam --name my-adapter
+        mc analyze probe-redteam --name my-adapter --tag skill1 --tag skill2
     """
     from modelcypher.cli.composition import get_safety_probe_service
 
@@ -491,7 +491,7 @@ def safety_probe_behavioral(
     """Run behavioral probes (requires inference hook for full analysis).
 
     Examples:
-        mc safety probe-behavioral --name my-adapter
+        mc analyze probe-behavioral --name my-adapter
     """
     from modelcypher.cli.composition import get_safety_probe_service
 

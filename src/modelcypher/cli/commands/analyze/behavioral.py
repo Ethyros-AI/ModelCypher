@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Behavioral analysis safety CLI commands.
+"""Behavioral analysis CLI commands.
 
 Provides commands for behavioral analysis of models and adapters:
 - adapter-probe: Probe adapter for delta-feature geometry
@@ -57,7 +57,7 @@ def safety_adapter_probe(
     - Outlier layer detection
 
     Examples:
-        mc safety adapter-probe --adapter ./my-adapter
+        mc analyze adapter-probe --adapter ./my-adapter
     """
     context = get_context(ctx)
 
@@ -163,8 +163,8 @@ def safety_behavioral_signature(
     The signature can be compared pre/post merge to detect behavioral drift.
 
     Examples:
-        mc safety behavioral-signature --model ./my-model --layers 4,8,12
-        mc safety behavioral-signature --model ./merged --baseline ./original
+        mc analyze behavioral-signature --model ./my-model --layers 4,8,12
+        mc analyze behavioral-signature --model ./merged --baseline ./original
     """
     context = get_context(ctx)
 
@@ -380,8 +380,8 @@ def safety_cognitive_reflection_test(
     The geometry speaks for itself - no classification or prediction heuristics.
 
     Examples:
-        mc safety cognitive-reflection-test --model ./my-model
-        mc safety cognitive-reflection-test --model ./my-model --trajectory
+        mc analyze cognitive-reflection-test --model ./my-model
+        mc analyze cognitive-reflection-test --model ./my-model --trajectory
     """
     context = get_context(ctx)
 

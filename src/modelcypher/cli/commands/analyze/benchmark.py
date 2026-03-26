@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Benchmark and diagnostic safety CLI commands.
+"""Benchmark and diagnostic analysis CLI commands.
 
 Provides commands for benchmarking and diagnostics:
 - benchmark: Run benchmark suite with geometric metrics

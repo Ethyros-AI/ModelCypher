@@ -1,19 +1,26 @@
-# Start Here: Train A Model That Helps
+# Start Here: See What A Model Is Doing
 
-ModelCypher is a training workbench for open-source model builders. You bring a
-model and a dataset. ModelCypher derives the training plan from the model's
-geometry, runs training, and gives you evidence about whether the adapter
-actually helped.
+ModelCypher is a measurement and observability workbench for open-source model
+builders. You bring a model and a prompt family. ModelCypher gives you bundleable
+measurements about geometry, entropy, curvature, trajectory shape, and how those
+signals move when you change prompt style, formatting, casing, or adapters.
 
-You should not need to memorize MLX internals, guess at LoRA rank, or cargo
-cult a learning rate schedule to fine-tune a model for your domain.
+You should not need to memorize MLX internals or hand-roll activation
+collection just to ask questions like:
 
-## Current Reality (2026-03-16)
+- does ALL CAPS bend the trajectory differently?
+- does profanity move entropy or geodesic deviation?
+- where does an adapter change the chain profile?
+- what changed below token level when behavior changed above it?
 
-- `mc train run` is the shipped training surface.
-- The workbench can already derive plans, train adapters, and evaluate results.
-- The repo has **not** yet closed a promotable claim that its current training
-  path beats standard practice head-to-head.
+## Current Reality (2026-03-26)
+
+- `mc analyze` is now the clearest entrypoint for workflow-first model observation.
+- `mc analyze capture`, `mc analyze family`, and `mc analyze compare` create
+  observation bundles you can inspect or hand to another agent.
+- Training remains shipped and useful, but it is a downstream workflow rather
+  than the headline.
+- The repo still does **not** claim benchmark superiority for its training path.
 - Merge, continual learning, and stacking remain experimental or partial.
 
 That means the product story is honest:
@@ -50,8 +57,8 @@ If the backend you expect is not available, install the matching extras from
 
 ## The Main Workflow
 
-This is the shortest honest path from "I have a model and data" to "I know
-whether the adapter helped."
+This is the shortest honest path from "I have a model" to "I can see what
+changed below token level."
 
 ### 1. Inspect The Model
 
@@ -64,100 +71,52 @@ Use `mc model info` to verify the model loads and `mc model capacity` to inspect
 the spectral structure ModelCypher will use when it derives target modules and
 ranks.
 
-### 2. Prepare Data If Needed
-
-If your dataset is not already JSONL in one of the training formats, convert it:
+### 2. Capture A Prompt
 
 ```bash
-poetry run mc data prepare /path/to/source --output /path/to/train.jsonl
+poetry run mc analyze capture \
+  --model /path/to/model \
+  --prompt "Explain geodesics."
 ```
 
-`mc train run` consumes JSONL with either:
+This writes an observation bundle with machine-readable outputs and a short
+report. Use this when you want a quick single-prompt view of the model’s
+internal measurements.
 
-- `{"text": "..."}`
-- `{"messages": [{"role": "...", "content": "..."}]}`
-
-### 3. Derive The Training Plan
+### 3. Run A Prompt Family
 
 ```bash
-poetry run mc train run \
+poetry run mc analyze family \
   --model /path/to/model \
-  --data /path/to/train.jsonl \
-  --plan-only
+  --manifest data/probes/prompt_family_minimal_pairs.json
 ```
 
-This is the core product surface. ModelCypher resolves the derived plan before
-training: sequence length, target modules, per-module ranks, controller
-quantities, and post-training verification surfaces.
+This is the canonical workflow for controlled perturbation studies such as
+control vs ALL CAPS vs profanity vs formatting.
 
-### 4. Train The Adapter
+### 4. Compare Two Targets
 
 ```bash
-poetry run mc train run \
-  --model /path/to/model \
-  --data /path/to/train.jsonl \
-  --output /path/to/adapter
+poetry run mc analyze compare \
+  --left-model /path/to/base \
+  --right-model /path/to/base \
+  --right-adapter /path/to/adapter \
+  --manifest data/probes/prompt_family_minimal_pairs.json
 ```
 
-The current shipped path is `geometry-derived LoRA`. The goal is simple:
-produce a useful adapter without asking the user to tune folklore knobs.
+Use this when you want to see what an adapter or checkpoint changed on the same
+prompt family.
 
-### 5. Evaluate Whether It Helped
-
-Use one of the built-in evaluation modes:
+### 5. Drop Into Expert Metrics
 
 ```bash
-poetry run mc train evaluate \
-  --model /path/to/model \
-  --adapter /path/to/adapter \
-  --data /path/to/validation.jsonl
-
-poetry run mc train evaluate \
-  --model /path/to/model \
-  --adapter /path/to/adapter \
-  --prompts /path/to/eval_prompts.jsonl
+poetry run mc analyze reasoning-flow --model /path/to/model --prompt "Prove that sqrt(2) is irrational."
+poetry run mc analyze chain-profile --model /path/to/model
+poetry run mc analyze geodesic-profile --model /path/to/model --prompt "Explain geodesics."
 ```
 
-If you want benchmark scores, use the benchmark mode:
-
-```bash
-poetry run mc train evaluate \
-  --model /path/to/model \
-  --adapter /path/to/adapter \
-  --benchmark quick
-```
-
-### 6. Compare Results
-
-Compare a saved run against another run, or compare an adapter directly against
-the base model on the same evaluation set:
-
-```bash
-poetry run mc train compare \
-  --result-a /path/to/run_a.json \
-  --result-b /path/to/run_b.json
-
-poetry run mc train compare \
-  --model /path/to/model \
-  --adapter-a /path/to/adapter \
-  --data /path/to/validation.jsonl
-```
-
-### 7. Export Or Merge
-
-```bash
-poetry run mc train export \
-  --model /path/to/model \
-  --adapter /path/to/adapter \
-  --output /path/to/deployment_dir \
-  --target deployment_quantized
-
-poetry run mc train merge \
-  --agent agent-001 \
-  --model /path/to/model \
-  --save \
-  --output /path/to/merged_model
-```
+These remain available when you want direct access to the underlying geometry
+tools instead of the bundle-oriented workflows.
 
 ## What ModelCypher Gives You
 
@@ -173,20 +132,19 @@ Geometry matters here because it makes the tool more useful. The point is not
 to make users read theory first. The point is to reduce tuning guesswork and
 make training results easier to trust.
 
-## Other Paths
+## Downstream Training
 
-### Analyze A Model
-
-Use the analysis surfaces when you want to inspect geometry directly:
+Training remains in the product when you want to turn these measurements into a
+derived adapter workflow:
 
 ```bash
-poetry run mc analyze dimension-profile --model /path/to/model
-poetry run mc analyze entropy-trajectory --model /path/to/model
-poetry run mc analyze lora-svd /path/to/adapter --base /path/to/model
+poetry run mc train run --model /path/to/model --data /path/to/train.jsonl --plan-only
+poetry run mc train run --model /path/to/model --data /path/to/train.jsonl --output /path/to/adapter
+poetry run mc train evaluate --model /path/to/model --adapter /path/to/adapter --data /path/to/validation.jsonl
 ```
 
-Start here when you are debugging behavior, profiling capacity, or validating a
-hypothesis about the model.
+The difference is emphasis: training is still shipped, but it now sits
+downstream of the measurement layer instead of defining the repo’s headline.
 
 ### Merge Models (Experimental)
 
@@ -202,7 +160,7 @@ repository's main shipped promise today.
 
 ## Documentation Map
 
-- [TRAINING-GUIDE.md](TRAINING-GUIDE.md): the end-to-end training workbench
+- [TRAINING-GUIDE.md](TRAINING-GUIDE.md): the downstream adapter workflow
 - [CLI-REFERENCE.md](CLI-REFERENCE.md): live command reference
 - [MISSION.md](MISSION.md): product mission and implementation standards
 - [VISION.md](VISION.md): where the workbench is headed

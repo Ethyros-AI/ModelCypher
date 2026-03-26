@@ -1,10 +1,12 @@
 # AI-Assisted Development Guide
 
-ModelCypher is a training workbench for open-source model builders. The goal is
-to ship a tool that produces working adapters without requiring users to learn
-MLX internals or hand-tune hyperparameters. Every design decision is derived
-from the model's geometry — that's what makes the auto-derivation trustworthy,
-not a theoretical claim.
+ModelCypher is a measurement and observability workbench for open-source model
+builders. The goal is to ship a tool that lets humans and frontier AI see what
+models are doing below token level without requiring users to learn MLX
+internals or hand-roll activation plumbing. Training remains shipped, but it is
+downstream of the measurement layer. Every design decision is derived from the
+model's geometry — that's what makes the measurements and auto-derivation
+trustworthy, not a theoretical claim.
 
 ## 1. Purpose
 
@@ -30,8 +32,9 @@ new features get added.
 
 ### Mission
 
-Make model fine-tuning accessible. One command, derived parameters, adapters
-that work.
+Make model behavior measurable below token level, then make downstream
+fine-tuning accessible. Clear workflows, derived parameters, adapters that
+work.
 
 Every design decision must be derived from:
 
@@ -44,13 +47,15 @@ Every design decision must be derived from:
 
 Keep these roles separate:
 
-- **Mission** = the training workbench works end-to-end for real users
+- **Mission** = the measurement workbench works end-to-end for real users and
+  feeds the downstream training path
 - **Vision** = what mission success may later enable
 - **Roadmap** = the closure order
 - **Open Questions** = only the mathematical blockers on that order
 
-`mc train run` is the shipped canonical surface. Merge, continual learning,
-stacking, and sovereignty remain experimental, partial, or downstream.
+`mc analyze` is the clearest public entrypoint. `mc train run` remains a shipped
+downstream surface. Merge, continual learning, stacking, and sovereignty remain
+experimental, partial, or downstream.
 
 ### Canonical Training Identity
 
@@ -380,8 +385,10 @@ real work better.
 ### Link Every Experiment To A User Outcome
 
 Before creating or extending any script, result family, or repeated run loop,
-answer: "Does this help `mc train run` produce better adapters for users, or
-does it answer a specific question about why it's currently failing to do so?"
+answer: "Does this help `mc analyze` reveal something users can act on, does it
+help `mc train run` produce better adapters for users, or does it answer a
+specific question about why one of those surfaces is currently failing to do
+so?"
 
 If the answer is no:
 
@@ -410,8 +417,11 @@ poetry run mc --help
 Useful commands:
 
 ```bash
+mc analyze capture --model /path/to/model --prompt "Explain geodesics."
+mc analyze family --model /path/to/model --manifest data/probes/prompt_family_minimal_pairs.json
+mc analyze compare --left-model /path/to/base --right-model /path/to/base --right-adapter /path/to/adapter --manifest data/probes/prompt_family_minimal_pairs.json
 mc train run --model /path/to/model --data /path/to/data.jsonl --output /path/to/adapter
-mc analyze dimension-profile --model /path/to/model
+mc analyze reasoning-flow --model /path/to/model --prompt "Prove that sqrt(2) is irrational."
 mc analyze lora-svd /path/to/adapter --base /path/to/model
 mc merge run -s SOURCE -t TARGET -o OUTPUT
 mc infer run --model /path/to/model --prompt "Hello"
