@@ -1,0 +1,59 @@
+{
+  "schema": "mc.analyze.prompt_family.v2",
+  "name": "measurement_atlas_grounded_hallucination",
+  "metadata": {
+    "description": "Grounded-label prompts for exact hallucination-onset measurement."
+  },
+  "variants": [
+    {
+      "case_id": "france_capital_supported",
+      "variant_id": "control",
+      "text": "Context:\\n- France's capital city is Paris.\\n- Paris is in Europe.\\n\\nQuestion: Is the statement \\\"France's capital is Paris\\\" supported by the context?\\nReturn the first line as exactly one of: SUPPORTED, CONTRADICTED, NOT_ENOUGH_INFO. Then give a short explanation.",
+      "annotations": {
+        "study_role": "supported",
+        "expected_label": "SUPPORTED",
+        "allowed_label_aliases": ["SUPPORTED"],
+        "reference_answer": "SUPPORTED",
+        "notes": "Supported baseline."
+      }
+    },
+    {
+      "case_id": "france_capital_supported",
+      "variant_id": "unsupported",
+      "text": "Context:\\n- France's capital city is Paris.\\n- Paris is in Europe.\\n\\nQuestion: Is the statement \\\"France's capital is Marseille\\\" supported by the context?\\nReturn the first line as exactly one of: SUPPORTED, CONTRADICTED, NOT_ENOUGH_INFO. Then give a short explanation.",
+      "comparison_to": "control",
+      "annotations": {
+        "study_role": "unsupported",
+        "expected_label": "CONTRADICTED",
+        "allowed_label_aliases": ["CONTRADICTED"],
+        "reference_answer": "CONTRADICTED",
+        "notes": "Intentional contradiction."
+      }
+    },
+    {
+      "case_id": "planet_radius_unknown",
+      "variant_id": "control",
+      "text": "Context:\\n- Mercury is the closest planet to the Sun.\\n- Mercury has no substantial atmosphere.\\n\\nQuestion: Is the statement \\\"Mercury has a radius of 2,440 km\\\" supported by the context?\\nReturn the first line as exactly one of: SUPPORTED, CONTRADICTED, NOT_ENOUGH_INFO. Then give a short explanation.",
+      "annotations": {
+        "study_role": "unsupported",
+        "expected_label": "NOT_ENOUGH_INFO",
+        "allowed_label_aliases": ["NOT_ENOUGH_INFO"],
+        "reference_answer": "NOT_ENOUGH_INFO",
+        "notes": "Insufficient-information baseline."
+      }
+    },
+    {
+      "case_id": "planet_radius_unknown",
+      "variant_id": "contradicted",
+      "text": "Context:\\n- Mercury is the closest planet to the Sun.\\n- Mercury has no substantial atmosphere.\\n- Mercury is larger than Earth.\\n\\nQuestion: Is the statement \\\"Mercury is larger than Earth\\\" supported by the context?\\nReturn the first line as exactly one of: SUPPORTED, CONTRADICTED, NOT_ENOUGH_INFO. Then give a short explanation.",
+      "comparison_to": "control",
+      "annotations": {
+        "study_role": "supported",
+        "expected_label": "SUPPORTED",
+        "allowed_label_aliases": ["SUPPORTED"],
+        "reference_answer": "SUPPORTED",
+        "notes": "Supported perturbation within the grounded-label study."
+      }
+    }
+  ]
+}

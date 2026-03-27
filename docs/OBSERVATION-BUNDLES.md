@@ -55,7 +55,7 @@ Top-level fields:
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| `schema` | no | Optional schema id. Current value: `mc.analyze.prompt_family.v1` |
+| `schema` | no | Optional schema id. Accepted values: `mc.analyze.prompt_family.v1` and `mc.analyze.prompt_family.v2` |
 | `name` | no | Human-readable study name |
 | `metadata` | no | Extra descriptive context |
 | `variants` | yes | Flat list of prompt rows |
@@ -69,6 +69,7 @@ Variant row fields:
 | `text` | yes | Exact prompt text to run |
 | `tags` | no | Labels such as `caps`, `markdown`, `profanity`, `persona` |
 | `comparison_to` | no | Explicit baseline variant id for this row |
+| `annotations` | no | Research-only metadata such as `study_role`, `perturbation_type`, `expected_label`, `allowed_label_aliases`, `reference_answer`, and `notes` |
 
 ### Example: Casing And Tone
 
@@ -128,6 +129,20 @@ Variant row fields:
   ]
 }
 ```
+
+### Measurement Atlas Studies
+
+The research-only measurement atlas runner in
+`scripts/run_measurement_atlas.py` consumes the same manifest surface. Its
+starter study pack lives in:
+
+- `data/probes/measurement_atlas_casing.json`
+- `data/probes/measurement_atlas_profanity_tone.json`
+- `data/probes/measurement_atlas_grounded_hallucination.json`
+
+Those manifests use `mc.analyze.prompt_family.v2` so they can carry explicit
+`annotations` for grounded-label and perturbation studies without creating a
+second study-file format.
 
 `capture` builds a synthetic manifest under the hood. Each prompt becomes a
 case with `variant_id="capture"`.

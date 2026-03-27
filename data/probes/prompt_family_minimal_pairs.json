@@ -1,0 +1,61 @@
+{
+  "schema": "mc.analyze.prompt_family.v1",
+  "name": "prompt_family_minimal_pairs",
+  "metadata": {
+    "description": "Explicit minimal pairs for measurement-first prompt-family studies."
+  },
+  "variants": [
+    {
+      "case_id": "logic_instruction",
+      "variant_id": "control",
+      "text": "Explain why the conclusion follows from the premises."
+    },
+    {
+      "case_id": "logic_instruction",
+      "variant_id": "all_caps",
+      "text": "EXPLAIN WHY THE CONCLUSION FOLLOWS FROM THE PREMISES.",
+      "comparison_to": "control",
+      "tags": ["caps", "formatting"]
+    },
+    {
+      "case_id": "logic_instruction",
+      "variant_id": "cussing",
+      "text": "Explain why the damn conclusion follows from the premises.",
+      "comparison_to": "control",
+      "tags": ["tone", "profanity"]
+    },
+    {
+      "case_id": "logic_instruction",
+      "variant_id": "markdown",
+      "text": "## Task\nExplain why the conclusion follows from the premises.\n- Keep the reasoning clear.",
+      "comparison_to": "control",
+      "tags": ["formatting", "markdown"]
+    },
+    {
+      "case_id": "math_reasoning",
+      "variant_id": "control",
+      "text": "What is 17 times 23? Show the intermediate steps."
+    },
+    {
+      "case_id": "math_reasoning",
+      "variant_id": "all_caps",
+      "text": "WHAT IS 17 TIMES 23? SHOW THE INTERMEDIATE STEPS.",
+      "comparison_to": "control",
+      "tags": ["caps", "formatting"]
+    },
+    {
+      "case_id": "math_reasoning",
+      "variant_id": "cussing",
+      "text": "What is 17 times 23? Show the damn intermediate steps.",
+      "comparison_to": "control",
+      "tags": ["tone", "profanity"]
+    },
+    {
+      "case_id": "math_reasoning",
+      "variant_id": "chatty",
+      "text": "Hey, could you walk me through what 17 times 23 is and show the intermediate steps?",
+      "comparison_to": "control",
+      "tags": ["tone", "style"]
+    }
+  ]
+}

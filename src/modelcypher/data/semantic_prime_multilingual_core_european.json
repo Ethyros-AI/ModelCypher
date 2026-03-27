@@ -1,0 +1,405 @@
+{
+  "version": 1,
+  "inventoryID": "core-european-v1",
+  "source": "Embedded Core",
+  "notes": "Manually curated subset for EN, FR, DE, ES, IT",
+  "primes": [
+    {
+      "id": "I",
+      "category": "substantives",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "I",
+            "me"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "je",
+            "moi"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "ich",
+            "mich",
+            "mir"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "yo",
+            "mí",
+            "me"
+          ]
+        },
+        {
+          "language": "it",
+          "texts": [
+            "io",
+            "me"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "YOU",
+      "category": "substantives",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "you"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "tu",
+            "toi",
+            "vous"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "du",
+            "dich",
+            "dir",
+            "Sie"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "tú",
+            "te",
+            "ti",
+            "usted"
+          ]
+        },
+        {
+          "language": "it",
+          "texts": [
+            "tu",
+            "te",
+            "ti",
+            "Lei"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "KNOW",
+      "category": "mentalPredicates",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "know"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "savoir",
+            "connaître"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "wissen",
+            "kennen"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "saber",
+            "conocer"
+          ]
+        },
+        {
+          "language": "it",
+          "texts": [
+            "sapere",
+            "conoscere"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "THINK",
+      "category": "mentalPredicates",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "think"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "penser"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "denken"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "pensar"
+          ]
+        },
+        {
+          "language": "it",
+          "texts": [
+            "pensare"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "WANT",
+      "category": "mentalPredicates",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "want"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "vouloir"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "wollen"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "querer"
+          ]
+        },
+        {
+          "language": "it",
+          "texts": [
+            "volere"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "DO",
+      "category": "actionsEventsMovement",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "do"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "faire"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "tun",
+            "machen"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "hacer"
+          ]
+        },
+        {
+          "language": "it",
+          "texts": [
+            "fare"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "HAPPEN",
+      "category": "actionsEventsMovement",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "happen"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "se passer",
+            "arriver"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "geschehen",
+            "passieren"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "pasar",
+            "suceder",
+            "ocurrir"
+          ]
+        },
+        {
+          "language": "it",
+          "texts": [
+            "succedere",
+            "accadere"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GOOD",
+      "category": "evaluators",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "good"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "bon",
+            "bien"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "gut"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "bueno",
+            "buen",
+            "bien"
+          ]
+        },
+        {
+          "language": "it",
+          "texts": [
+            "buono",
+            "bene"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "BAD",
+      "category": "evaluators",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "bad"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "mauvais",
+            "mal"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "schlecht"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "malo",
+            "mal"
+          ]
+        },
+        {
+          "language": "it",
+          "texts": [
+            "cattivo",
+            "male"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "TRUE",
+      "category": "speech",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "true"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "vrai"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "wahr"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "verdad",
+            "verdadero"
+          ]
+        },
+        {
+          "language": "it",
+          "texts": [
+            "vero",
+            "verità"
+          ]
+        }
+      ]
+    }
+  ]
+}

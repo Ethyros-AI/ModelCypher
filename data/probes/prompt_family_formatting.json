@@ -1,0 +1,61 @@
+{
+  "schema": "mc.analyze.prompt_family.v1",
+  "name": "prompt_family_formatting",
+  "metadata": {
+    "description": "Formatting and output-contract perturbations for observation bundles."
+  },
+  "variants": [
+    {
+      "case_id": "tradeoff_summary",
+      "variant_id": "control",
+      "text": "Summarize the main tradeoffs clearly."
+    },
+    {
+      "case_id": "tradeoff_summary",
+      "variant_id": "markdown",
+      "text": "## Task\\nSummarize the main tradeoffs clearly.\\n- Use short bullets.",
+      "comparison_to": "control",
+      "tags": ["markdown", "formatting"]
+    },
+    {
+      "case_id": "tradeoff_summary",
+      "variant_id": "json",
+      "text": "Return a JSON object with keys summary, risks, and next_step.",
+      "comparison_to": "control",
+      "tags": ["json", "formatting"]
+    },
+    {
+      "case_id": "tradeoff_summary",
+      "variant_id": "xml",
+      "text": "Return XML with tags <summary>, <risks>, and <next_step>.",
+      "comparison_to": "control",
+      "tags": ["xml", "formatting"]
+    },
+    {
+      "case_id": "reasoning_structure",
+      "variant_id": "control",
+      "text": "Explain how you reached the answer."
+    },
+    {
+      "case_id": "reasoning_structure",
+      "variant_id": "bullets",
+      "text": "Explain how you reached the answer using three bullet points.",
+      "comparison_to": "control",
+      "tags": ["bullets", "formatting"]
+    },
+    {
+      "case_id": "reasoning_structure",
+      "variant_id": "markdown",
+      "text": "## Task\\nExplain how you reached the answer.\\n- Use three bullet points.",
+      "comparison_to": "control",
+      "tags": ["markdown", "formatting"]
+    },
+    {
+      "case_id": "reasoning_structure",
+      "variant_id": "json",
+      "text": "Return JSON with keys answer, reasoning_steps, and confidence.",
+      "comparison_to": "control",
+      "tags": ["json", "formatting"]
+    }
+  ]
+}

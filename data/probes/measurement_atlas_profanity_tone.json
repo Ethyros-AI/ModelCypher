@@ -1,0 +1,77 @@
+{
+  "schema": "mc.analyze.prompt_family.v2",
+  "name": "measurement_atlas_profanity_tone",
+  "metadata": {
+    "description": "Tone perturbations for geometry and decode-path measurement."
+  },
+  "variants": [
+    {
+      "case_id": "debugging_step",
+      "variant_id": "control",
+      "text": "Recommend the next debugging step.",
+      "annotations": {
+        "study_role": "control",
+        "perturbation_type": "tone",
+        "notes": "Neutral baseline."
+      }
+    },
+    {
+      "case_id": "debugging_step",
+      "variant_id": "profane",
+      "text": "Recommend the next damn debugging step.",
+      "comparison_to": "control",
+      "tags": ["tone", "profanity"],
+      "annotations": {
+        "study_role": "perturbation",
+        "perturbation_type": "tone",
+        "notes": "Profanity perturbation."
+      }
+    },
+    {
+      "case_id": "debugging_step",
+      "variant_id": "polite",
+      "text": "Please recommend the next debugging step.",
+      "comparison_to": "control",
+      "tags": ["tone", "polite"],
+      "annotations": {
+        "study_role": "perturbation",
+        "perturbation_type": "tone",
+        "notes": "Politeness perturbation."
+      }
+    },
+    {
+      "case_id": "explanation_request",
+      "variant_id": "control",
+      "text": "Explain what geodesic deviation measures.",
+      "annotations": {
+        "study_role": "control",
+        "perturbation_type": "tone",
+        "notes": "Neutral explanation baseline."
+      }
+    },
+    {
+      "case_id": "explanation_request",
+      "variant_id": "profane",
+      "text": "Explain what geodesic deviation damn well measures.",
+      "comparison_to": "control",
+      "tags": ["tone", "profanity"],
+      "annotations": {
+        "study_role": "perturbation",
+        "perturbation_type": "tone",
+        "notes": "Profanity explanation perturbation."
+      }
+    },
+    {
+      "case_id": "explanation_request",
+      "variant_id": "polite",
+      "text": "Please explain what geodesic deviation measures.",
+      "comparison_to": "control",
+      "tags": ["tone", "polite"],
+      "annotations": {
+        "study_role": "perturbation",
+        "perturbation_type": "tone",
+        "notes": "Polite explanation perturbation."
+      }
+    }
+  ]
+}

@@ -75,8 +75,12 @@ Current state (2026-03-26):
   the canonical workflow surface.
 - `mc analyze report --bundle ...` now closes the read-side loop for existing
   observation bundles without regenerating artifacts.
+- The follow-on research surface for token-level prompt and generation tracing
+  now lives in `scripts/run_measurement_atlas.py`, writing
+  `results/measurement_atlas/<run_id>/` without promoting a new CLI verb yet.
 - The prompt-family manifest is explicit rather than transform-driven:
-  `case_id`, `variant_id`, `text`, optional `tags`, optional `comparison_to`.
+  `case_id`, `variant_id`, `text`, optional `tags`, optional
+  `comparison_to`, and optional `annotations` for research studies.
 - Every run is expected to emit the same observation bundle contract:
   `manifest.json`, `summary.json`, `REPORT.md`, `variants.jsonl`,
   `layer_metrics.jsonl`, `comparisons.jsonl`.

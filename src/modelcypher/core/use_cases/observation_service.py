@@ -36,7 +36,12 @@ OPTIONAL_ANALYSIS_SPACES = ("intermediate", "q", "k", "v", "gate")
 SUPPORTED_ANALYSIS_SPACES = DEFAULT_ANALYSIS_SPACES + OPTIONAL_ANALYSIS_SPACES
 DEFAULT_MAX_TOKENS = 128
 OBSERVATION_BUNDLE_VERSION = "mc.analyze.bundle.v1"
-PROMPT_FAMILY_MANIFEST_VERSION = "mc.analyze.prompt_family.v1"
+PROMPT_FAMILY_MANIFEST_VERSION_V1 = "mc.analyze.prompt_family.v1"
+PROMPT_FAMILY_MANIFEST_VERSION_V2 = "mc.analyze.prompt_family.v2"
+PROMPT_FAMILY_MANIFEST_VERSIONS = (
+    PROMPT_FAMILY_MANIFEST_VERSION_V1,
+    PROMPT_FAMILY_MANIFEST_VERSION_V2,
+)
 
 
 @dataclass(frozen=True)
@@ -64,6 +69,7 @@ class PromptVariant:
     text: str
     tags: tuple[str, ...] = ()
     comparison_to: str | None = None
+    annotations: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -75,6 +81,8 @@ class PromptVariant:
             payload["tags"] = list(self.tags)
         if self.comparison_to:
             payload["comparison_to"] = self.comparison_to
+        if self.annotations:
+            payload["annotations"] = self.annotations
         return payload
 
     @classmethod
@@ -94,6 +102,8 @@ class PromptVariant:
 
         raw_comparison_to = payload.get("comparison_to")
         comparison_to = str(raw_comparison_to).strip() if raw_comparison_to else None
+        raw_annotations = payload.get("annotations", {})
+        annotations = dict(raw_annotations) if isinstance(raw_annotations, dict) else {}
 
         return cls(
             case_id=case_id,
@@ -101,6 +111,7 @@ class PromptVariant:
             text=text,
             tags=tags,
             comparison_to=comparison_to,
+            annotations=annotations,
         )
 
 
@@ -114,13 +125,19 @@ class PromptFamilyManifest:
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
-            "schema": PROMPT_FAMILY_MANIFEST_VERSION,
+            "schema": self.schema_version,
             "name": self.name,
             "variants": [variant.to_dict() for variant in self.variants],
         }
         if self.metadata:
             payload["metadata"] = self.metadata
         return payload
+
+    @property
+    def schema_version(self) -> str:
+        if any(variant.annotations for variant in self.variants):
+            return PROMPT_FAMILY_MANIFEST_VERSION_V2
+        return PROMPT_FAMILY_MANIFEST_VERSION_V1
 
     @classmethod
     def from_json_path(cls, path: str | Path) -> "PromptFamilyManifest":
@@ -140,6 +157,12 @@ class PromptFamilyManifest:
             metadata: dict[str, Any] = {}
             rows = data
         elif isinstance(data, dict):
+            schema = data.get("schema")
+            if schema is not None and schema not in PROMPT_FAMILY_MANIFEST_VERSIONS:
+                raise ValueError(
+                    "Prompt family manifest schema must be one of "
+                    f"{', '.join(PROMPT_FAMILY_MANIFEST_VERSIONS)}"
+                )
             name = str(data.get("name", default_name)).strip() or default_name
             metadata = data.get("metadata", {})
             rows = data.get("variants", data.get("rows", data.get("prompts")))

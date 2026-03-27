@@ -1,0 +1,2503 @@
+{
+  "version": 1,
+  "inventoryID": "global-diverse-v1",
+  "source": "NSM Publications (Goddard, Wierzbicka, Onishi, Yoon, Ye, et al.)",
+  "notes": "\"\"\n            Complete 65-prime inventory with 11 language families for polyglot triangulation.\n            Languages: en, fr, de, es, zh (Mandarin), ja, ar, ko, ms (Malay), pl, ru.\n            Primary sources: Goddard & Wierzbicka (2014) NSM Chart; Onishi (1994) Japanese primes;\n            Yoon (2000-2003) Korean primes; Ye (various) Chinese primes.\n            \"\"",
+  "primes": [
+    {
+      "id": "I",
+      "category": "substantives",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "I",
+            "me"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "je",
+            "moi"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "ich",
+            "mich",
+            "mir"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "yo",
+            "mí",
+            "me"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "我",
+            "wǒ"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "私",
+            "わたし",
+            "僕",
+            "ぼく"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "أنا",
+            "ana"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "나",
+            "저"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "saya",
+            "aku"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "ja",
+            "mnie"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "я",
+            "меня"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "YOU",
+      "category": "substantives",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "you"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "tu",
+            "toi",
+            "vous"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "du",
+            "dich",
+            "dir",
+            "Sie"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "tú",
+            "usted"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "你",
+            "您",
+            "nǐ"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "あなた",
+            "君",
+            "きみ"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "أنت",
+            "anta",
+            "anti"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "너",
+            "당신"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "kamu",
+            "awak",
+            "anda"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "ty",
+            "ciebie",
+            "pan",
+            "pani"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "ты",
+            "вы"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SOMEONE",
+      "category": "substantives",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "someone",
+            "somebody"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "quelqu'un"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "jemand"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "alguien"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "某人",
+            "有人"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "誰か",
+            "だれか"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "شخص ما",
+            "أحد"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "누군가"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "seseorang"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "ktoś"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "кто-то"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SOMETHING",
+      "category": "substantives",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "something",
+            "thing"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "quelque chose",
+            "chose"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "etwas",
+            "Ding"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "algo",
+            "cosa"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "东西",
+            "某物"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "何か",
+            "なにか",
+            "もの"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "شيء"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "무엇",
+            "것"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "sesuatu",
+            "benda"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "coś",
+            "rzecz"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "что-то",
+            "вещь"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "PEOPLE",
+      "category": "substantives",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "people"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "gens",
+            "personnes"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "Leute",
+            "Menschen"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "gente",
+            "personas"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "人们",
+            "人"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "人々",
+            "ひとびと"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "الناس",
+            "أناس"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "사람들"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "orang"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "ludzie"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "люди"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "BODY",
+      "category": "substantives",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "body"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "corps"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "Körper"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "cuerpo"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "身体",
+            "身體"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "体",
+            "からだ"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "جسم",
+            "جسد"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "몸"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "badan"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "ciało"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "тело"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "KIND",
+      "category": "relationalSubstantives",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "kind",
+            "kinds"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "genre",
+            "sorte"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "Art",
+            "Sorte"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "tipo",
+            "clase"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "种",
+            "类"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "種類",
+            "しゅるい"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "نوع"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "종류"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "jenis"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "rodzaj"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "род",
+            "вид"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "PART",
+      "category": "relationalSubstantives",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "part",
+            "parts"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "partie"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "Teil"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "parte"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "部分"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "部分",
+            "ぶぶん"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "جزء"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "부분"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "bahagian"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "część"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "часть"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "THIS",
+      "category": "determiners",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "this"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "ceci",
+            "ce"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "dies",
+            "dieser"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "esto",
+            "este"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "这",
+            "這"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "これ",
+            "この"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "هذا",
+            "هذه"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "이",
+            "이것"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "ini"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "to",
+            "ten"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "это",
+            "этот"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "THE_SAME",
+      "category": "determiners",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "the same"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "le même",
+            "la même"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "derselbe",
+            "dieselbe"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "el mismo",
+            "lo mismo"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "同样",
+            "一样"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "同じ",
+            "おなじ"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "نفس",
+            "ذاته"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "같은",
+            "동일한"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "sama"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "ten sam",
+            "taki sam"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "тот же",
+            "такой же"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OTHER",
+      "category": "determiners",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "other",
+            "else"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "autre"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "ander",
+            "andere"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "otro",
+            "otra"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "其他",
+            "别的"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "他の",
+            "ほかの"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "آخر",
+            "أخرى"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "다른"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "lain"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "inny",
+            "inna"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "другой",
+            "иной"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ONE",
+      "category": "quantifiers",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "one"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "un",
+            "une"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "ein",
+            "eine",
+            "eins"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "uno",
+            "una"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "一",
+            "一个"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "一つ",
+            "ひとつ"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "واحد"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "하나"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "satu"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "jeden"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "один"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "TWO",
+      "category": "quantifiers",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "two"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "deux"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "zwei"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "dos"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "二",
+            "两"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "二つ",
+            "ふたつ"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "اثنان"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "둘"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "dua"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "dwa"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "два"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SOME",
+      "category": "quantifiers",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "some"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "quelques"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "einige"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "algunos"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "一些",
+            "有些"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "いくつか"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "بعض"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "몇몇",
+            "일부"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "beberapa"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "kilka",
+            "niektóre"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "несколько",
+            "некоторые"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ALL",
+      "category": "quantifiers",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "all"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "tout",
+            "tous"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "alle",
+            "alles"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "todo",
+            "todos"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "所有",
+            "全部"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "全部",
+            "ぜんぶ",
+            "すべて"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "كل",
+            "جميع"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "모든",
+            "전부"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "semua"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "wszystko",
+            "wszyscy"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "все",
+            "всё"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "MUCH_MANY",
+      "category": "quantifiers",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "much",
+            "many"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "beaucoup"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "viel",
+            "viele"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "mucho",
+            "muchos"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "很多",
+            "许多"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "たくさん",
+            "多い"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "كثير"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "많은"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "banyak"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "dużo",
+            "wiele"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "много"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LITTLE_FEW",
+      "category": "quantifiers",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "little",
+            "few"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "peu"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "wenig"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "poco",
+            "pocos"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "少",
+            "很少"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "少し",
+            "すこし"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "قليل"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "적은",
+            "조금"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "sedikit"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "mało"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "мало"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GOOD",
+      "category": "evaluators",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "good"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "bon",
+            "bien"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "gut"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "bueno",
+            "bien"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "好",
+            "良好"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "良い",
+            "いい",
+            "よい"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "جيد",
+            "حسن"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "좋은"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "baik",
+            "bagus"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "dobry",
+            "dobrze"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "хороший",
+            "хорошо"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "BAD",
+      "category": "evaluators",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "bad"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "mauvais",
+            "mal"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "schlecht"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "malo",
+            "mal"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "坏",
+            "不好"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "悪い",
+            "わるい"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "سيء"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "나쁜"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "buruk",
+            "jahat"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "zły",
+            "źle"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "плохой",
+            "плохо"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "BIG",
+      "category": "descriptors",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "big"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "grand",
+            "gros"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "groß"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "grande"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "大"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "大きい",
+            "おおきい"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "كبير"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "큰"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "besar"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "duży",
+            "wielki"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "большой"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SMALL",
+      "category": "descriptors",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "small"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "petit"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "klein"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "pequeño"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "小"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "小さい",
+            "ちいさい"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "صغير"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "작은"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "kecil"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "mały"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "маленький"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "KNOW",
+      "category": "mentalPredicates",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "know"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "savoir",
+            "connaître"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "wissen",
+            "kennen"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "saber",
+            "conocer"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "知道",
+            "认识"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "知っている",
+            "しっている",
+            "知る"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "يعرف",
+            "عرف"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "알다"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "tahu"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "wiedzieć",
+            "znać"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "знать"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "THINK",
+      "category": "mentalPredicates",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "think"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "penser"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "denken"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "pensar"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "想",
+            "思考"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "思う",
+            "おもう"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "يفكر",
+            "يظن"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "생각하다"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "fikir"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "myśleć"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "думать"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "WANT",
+      "category": "mentalPredicates",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "want"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "vouloir"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "wollen"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "querer"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "想要",
+            "要"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "ほしい",
+            "欲しい",
+            "たい"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "يريد"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "원하다"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "mahu",
+            "ingin"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "chcieć"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "хотеть"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "DONT_WANT",
+      "category": "mentalPredicates",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "don't want"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "ne pas vouloir"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "nicht wollen"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "no querer"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "不想",
+            "不要"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "ほしくない",
+            "いらない"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "لا يريد"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "원하지 않다"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "tidak mahu"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "nie chcieć"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "не хотеть"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "FEEL",
+      "category": "mentalPredicates",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "feel"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "sentir",
+            "ressentir"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "fühlen"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "sentir"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "感觉",
+            "感到"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "気持ち",
+            "きもち",
+            "感じる"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "يشعر"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "느끼다"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "rasa"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "czuć"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "чувствовать"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SEE",
+      "category": "mentalPredicates",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "see"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "voir"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "sehen"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "ver"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "看",
+            "看见"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "見る",
+            "みる"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "يرى"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "보다"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "lihat",
+            "nampak"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "widzieć"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "видеть"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "HEAR",
+      "category": "mentalPredicates",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "hear"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "entendre"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "hören"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "oír"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "听",
+            "听到"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "聞く",
+            "きく"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "يسمع"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "듣다"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "dengar"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "słyszeć"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "слышать"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SAY",
+      "category": "speech",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "say"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "dire"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "sagen"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "decir"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "说",
+            "說"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "言う",
+            "いう"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "يقول"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "말하다"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "kata",
+            "cakap"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "mówić",
+            "powiedzieć"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "сказать",
+            "говорить"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "WORDS",
+      "category": "speech",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "words"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "mots"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "Wörter",
+            "Worte"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "palabras"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "话",
+            "词"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "言葉",
+            "ことば"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "كلمات"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "말",
+            "단어"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "kata-kata",
+            "perkataan"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "słowa"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "слова"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "TRUE",
+      "category": "speech",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "true"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "vrai"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "wahr"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "verdad",
+            "verdadero"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "真",
+            "真的"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "本当",
+            "ほんとう"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "صحيح",
+            "حقيقي"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "진실",
+            "참"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "benar",
+            "betul"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "prawda",
+            "prawdziwy"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "правда",
+            "истинный"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "DO",
+      "category": "actionsEventsMovement",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "do"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "faire"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "tun",
+            "machen"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "hacer"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "做"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "する"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "يفعل"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "하다"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "buat"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "robić"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "делать"
+          ]
+        }
+      ]
+    }
+  ]
+}

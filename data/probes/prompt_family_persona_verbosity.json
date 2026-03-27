@@ -1,0 +1,61 @@
+{
+  "schema": "mc.analyze.prompt_family.v1",
+  "name": "prompt_family_persona_verbosity",
+  "metadata": {
+    "description": "Persona and verbosity perturbations for bundle-based comparison studies."
+  },
+  "variants": [
+    {
+      "case_id": "technical_explanation",
+      "variant_id": "control",
+      "text": "Explain what geodesic deviation measures."
+    },
+    {
+      "case_id": "technical_explanation",
+      "variant_id": "terse",
+      "text": "Explain what geodesic deviation measures in one short paragraph.",
+      "comparison_to": "control",
+      "tags": ["verbosity", "terse"]
+    },
+    {
+      "case_id": "technical_explanation",
+      "variant_id": "teacher",
+      "text": "Explain what geodesic deviation measures like a patient teacher.",
+      "comparison_to": "control",
+      "tags": ["persona", "teacher"]
+    },
+    {
+      "case_id": "technical_explanation",
+      "variant_id": "chatty",
+      "text": "Hey, can you explain what geodesic deviation measures in a friendly way?",
+      "comparison_to": "control",
+      "tags": ["persona", "chatty"]
+    },
+    {
+      "case_id": "decision_request",
+      "variant_id": "control",
+      "text": "Recommend the next debugging step."
+    },
+    {
+      "case_id": "decision_request",
+      "variant_id": "terse",
+      "text": "Recommend the next debugging step in one sentence.",
+      "comparison_to": "control",
+      "tags": ["verbosity", "terse"]
+    },
+    {
+      "case_id": "decision_request",
+      "variant_id": "teacher",
+      "text": "Recommend the next debugging step like a patient teacher helping a beginner.",
+      "comparison_to": "control",
+      "tags": ["persona", "teacher"]
+    },
+    {
+      "case_id": "decision_request",
+      "variant_id": "assertive",
+      "text": "Recommend the next debugging step in a direct, assertive tone.",
+      "comparison_to": "control",
+      "tags": ["persona", "assertive"]
+    }
+  ]
+}

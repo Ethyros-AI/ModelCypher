@@ -1,0 +1,2506 @@
+{
+  "version": 1,
+  "inventoryID": "global-diverse-v1",
+  "source": "NSM Publications (Goddard, Wierzbicka, Onishi, Yoon, Ye, et al.)",
+  "notes": "\"\"\n            Complete 65-prime inventory with 11 language families for polyglot triangulation.\n            Languages: en, fr, de, es, zh (Mandarin), ja, ar, ko, ms (Malay), pl, ru.\n            Primary sources: Goddard & Wierzbicka (2014) NSM Chart; Onishi (1994) Japanese primes;\n            Yoon (2000-2003) Korean primes; Ye (various) Chinese primes.\n            \"\"",
+  "primes": [
+    {
+      "id": "HAPPEN",
+      "category": "actionsEventsMovement",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "happen"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "se passer",
+            "arriver"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "geschehen",
+            "passieren"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "pasar",
+            "ocurrir"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "发生"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "起こる",
+            "おこる"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "يحدث"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "일어나다"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "jadi",
+            "berlaku"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "zdarzyć się"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "случиться",
+            "происходить"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "MOVE",
+      "category": "actionsEventsMovement",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "move"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "bouger"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "bewegen"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "mover"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "动",
+            "移动"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "動く",
+            "うごく"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "يتحرك"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "움직이다"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "bergerak"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "ruszać się"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "двигаться"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "BE_SOMEWHERE",
+      "category": "locationExistenceSpecification",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "be somewhere"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "être quelque part"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "irgendwo sein"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "estar en algún lugar"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "在某处"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "どこかにいる"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "يكون في مكان"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "어딘가에 있다"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "berada di suatu tempat"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "być gdzieś"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "быть где-то"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "THERE_IS",
+      "category": "locationExistenceSpecification",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "there is"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "il y a"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "es gibt"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "hay"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "有"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "ある",
+            "いる"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "يوجد",
+            "هناك"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "있다"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "ada"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "jest",
+            "są"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "есть",
+            "имеется"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "BE_SOMEONE_SOMETHING",
+      "category": "locationExistenceSpecification",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "be someone",
+            "be something"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "être quelqu'un",
+            "être quelque chose"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "jemand sein",
+            "etwas sein"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "ser alguien",
+            "ser algo"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "是"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "である"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "يكون"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "이다"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "adalah"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "być kimś",
+            "być czymś"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "быть кем-то",
+            "быть чем-то"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "MINE",
+      "category": "possession",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "mine"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "le mien",
+            "à moi"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "mein",
+            "meins"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "mío"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "我的"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "私の",
+            "わたしの"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "ملكي",
+            "لي"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "나의",
+            "내 것"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "milik saya",
+            "kepunyaan saya"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "mój",
+            "moje"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "мой",
+            "моё"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LIVE",
+      "category": "lifeAndDeath",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "live"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "vivre"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "leben"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "vivir"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "活",
+            "生活"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "生きる",
+            "いきる"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "يعيش"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "살다"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "hidup"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "żyć"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "жить"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "DIE",
+      "category": "lifeAndDeath",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "die"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "mourir"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "sterben"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "morir"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "死"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "死ぬ",
+            "しぬ"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "يموت"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "죽다"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "mati"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "umrzeć"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "умереть"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "WHEN_TIME",
+      "category": "time",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "when",
+            "time"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "quand",
+            "temps"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "wann",
+            "Zeit"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "cuándo",
+            "tiempo"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "什么时候",
+            "时间"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "いつ",
+            "時",
+            "とき"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "متى",
+            "وقت"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "언제",
+            "시간"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "bila",
+            "masa"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "kiedy",
+            "czas"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "когда",
+            "время"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "NOW",
+      "category": "time",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "now"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "maintenant"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "jetzt"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "ahora"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "现在"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "今",
+            "いま"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "الآن"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "지금"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "sekarang"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "teraz"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "сейчас",
+            "теперь"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "BEFORE",
+      "category": "time",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "before"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "avant"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "vor",
+            "bevor"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "antes"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "之前",
+            "以前"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "前",
+            "まえ"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "قبل"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "전에"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "sebelum"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "przed"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "до",
+            "раньше"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "AFTER",
+      "category": "time",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "after"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "après"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "nach",
+            "nachher"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "después"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "之后",
+            "以后"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "後",
+            "あと"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "بعد"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "후에"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "selepas"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "po"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "после"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A_LONG_TIME",
+      "category": "time",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "a long time"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "longtemps"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "lange Zeit"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "mucho tiempo"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "很长时间"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "長い間",
+            "ながいあいだ"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "وقت طويل"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "오랜 시간"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "lama"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "długo"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "долго",
+            "долгое время"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A_SHORT_TIME",
+      "category": "time",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "a short time"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "peu de temps"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "kurze Zeit"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "poco tiempo"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "短时间"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "短い間",
+            "みじかいあいだ"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "وقت قصير"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "짧은 시간"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "sekejap"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "krótko"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "недолго"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "FOR_SOME_TIME",
+      "category": "time",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "for some time"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "pendant un certain temps"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "eine Weile"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "por un tiempo"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "一段时间"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "しばらく"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "لبعض الوقت"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "얼마 동안"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "untuk sementara"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "przez jakiś czas"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "некоторое время"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "MOMENT",
+      "category": "time",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "moment"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "moment"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "Moment",
+            "Augenblick"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "momento"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "瞬间",
+            "片刻"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "瞬間",
+            "しゅんかん"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "لحظة"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "순간"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "saat"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "chwila"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "момент",
+            "мгновение"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "WHERE_PLACE",
+      "category": "place",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "where",
+            "place"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "où",
+            "endroit"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "wo",
+            "Ort"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "dónde",
+            "lugar"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "哪里",
+            "地方"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "どこ",
+            "場所",
+            "ばしょ"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "أين",
+            "مكان"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "어디",
+            "장소"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "di mana",
+            "tempat"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "gdzie",
+            "miejsce"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "где",
+            "место"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "HERE",
+      "category": "place",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "here"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "ici"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "hier"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "aquí"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "这里"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "ここ"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "هنا"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "여기"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "sini"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "tutaj",
+            "tu"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "здесь",
+            "тут"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ABOVE",
+      "category": "place",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "above"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "au-dessus"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "über",
+            "oberhalb"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "arriba",
+            "encima"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "上面",
+            "以上"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "上",
+            "うえ"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "فوق"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "위"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "atas"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "nad",
+            "powyżej"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "над",
+            "выше"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "BELOW",
+      "category": "place",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "below"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "au-dessous"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "unter",
+            "unterhalb"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "abajo",
+            "debajo"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "下面",
+            "以下"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "下",
+            "した"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "تحت"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "아래"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "bawah"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "pod",
+            "poniżej"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "под",
+            "ниже"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "FAR",
+      "category": "place",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "far"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "loin"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "weit",
+            "fern"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "lejos"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "远"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "遠い",
+            "とおい"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "بعيد"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "먼"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "jauh"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "daleko"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "далеко"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "NEAR",
+      "category": "place",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "near"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "près"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "nah",
+            "nahe"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "cerca"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "近"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "近い",
+            "ちかい"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "قريب"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "가까운"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "dekat"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "blisko"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "близко"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SIDE",
+      "category": "place",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "side"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "côté"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "Seite"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "lado"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "边",
+            "旁边"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "側",
+            "がわ"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "جانب"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "옆"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "sisi",
+            "sebelah"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "strona",
+            "bok"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "сторона"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "INSIDE",
+      "category": "place",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "inside"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "dedans",
+            "à l'intérieur"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "innen",
+            "drinnen"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "dentro"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "里面",
+            "内部"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "中",
+            "なか"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "داخل"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "안"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "dalam"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "wewnątrz",
+            "w środku"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "внутри"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "TOUCH",
+      "category": "place",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "touch"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "toucher"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "berühren"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "tocar"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "触摸",
+            "碰"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "触る",
+            "さわる"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "يلمس"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "만지다"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "sentuh"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "dotykać"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "трогать",
+            "касаться"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "NOT",
+      "category": "logicalConcepts",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "not"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "ne pas",
+            "non"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "nicht"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "no"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "不",
+            "没"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "ない"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "لا",
+            "ليس"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "않다",
+            "아니다"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "tidak",
+            "bukan"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "nie"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "не"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "MAYBE",
+      "category": "logicalConcepts",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "maybe"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "peut-être"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "vielleicht"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "quizás",
+            "tal vez"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "也许",
+            "可能"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "たぶん",
+            "かもしれない"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "ربما"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "아마"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "mungkin"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "może"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "может быть"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CAN",
+      "category": "logicalConcepts",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "can"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "pouvoir"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "können"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "poder"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "能",
+            "可以"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "できる"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "يستطيع"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "할 수 있다"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "boleh",
+            "dapat"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "móc"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "мочь",
+            "можно"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "BECAUSE",
+      "category": "logicalConcepts",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "because"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "parce que"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "weil"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "porque"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "因为"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "から",
+            "ので"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "لأن"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "때문에"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "kerana",
+            "sebab"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "ponieważ",
+            "bo"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "потому что"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "IF",
+      "category": "logicalConcepts",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "if"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "si"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "wenn",
+            "falls"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "si"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "如果"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "もし",
+            "ば"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "إذا"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "만약"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "jika",
+            "kalau"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "jeśli",
+            "gdyby"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "если"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "VERY",
+      "category": "augmentorIntensifier",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "very"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "très"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "sehr"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "muy"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "很",
+            "非常"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "とても"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "جداً"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "매우"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "sangat"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "bardzo"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "очень"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "MORE",
+      "category": "augmentorIntensifier",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "more"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "plus"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "mehr"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "más"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "更",
+            "更多"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "もっと"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "أكثر"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "더"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "lebih"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "więcej"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "больше"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LIKE",
+      "category": "similarity",
+      "languages": [
+        {
+          "language": "en",
+          "texts": [
+            "like",
+            "as"
+          ]
+        },
+        {
+          "language": "fr",
+          "texts": [
+            "comme"
+          ]
+        },
+        {
+          "language": "de",
+          "texts": [
+            "wie"
+          ]
+        },
+        {
+          "language": "es",
+          "texts": [
+            "como"
+          ]
+        },
+        {
+          "language": "zh",
+          "texts": [
+            "像",
+            "如同"
+          ]
+        },
+        {
+          "language": "ja",
+          "texts": [
+            "ように",
+            "みたいに"
+          ]
+        },
+        {
+          "language": "ar",
+          "texts": [
+            "مثل"
+          ]
+        },
+        {
+          "language": "ko",
+          "texts": [
+            "처럼"
+          ]
+        },
+        {
+          "language": "ms",
+          "texts": [
+            "seperti"
+          ]
+        },
+        {
+          "language": "pl",
+          "texts": [
+            "jak"
+          ]
+        },
+        {
+          "language": "ru",
+          "texts": [
+            "как"
+          ]
+        }
+      ]
+    }
+  ]
+}

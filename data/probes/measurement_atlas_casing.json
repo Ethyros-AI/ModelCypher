@@ -1,0 +1,77 @@
+{
+  "schema": "mc.analyze.prompt_family.v2",
+  "name": "measurement_atlas_casing",
+  "metadata": {
+    "description": "Casing perturbations for prompt- and response-region geometry measurements."
+  },
+  "variants": [
+    {
+      "case_id": "reasoning_request",
+      "variant_id": "control",
+      "text": "Explain why the conclusion follows from the premises.",
+      "annotations": {
+        "study_role": "control",
+        "perturbation_type": "casing",
+        "notes": "Baseline wording for the casing study."
+      }
+    },
+    {
+      "case_id": "reasoning_request",
+      "variant_id": "all_caps",
+      "text": "EXPLAIN WHY THE CONCLUSION FOLLOWS FROM THE PREMISES.",
+      "comparison_to": "control",
+      "tags": ["caps", "formatting"],
+      "annotations": {
+        "study_role": "perturbation",
+        "perturbation_type": "casing",
+        "notes": "Uppercase perturbation."
+      }
+    },
+    {
+      "case_id": "reasoning_request",
+      "variant_id": "lowercase",
+      "text": "explain why the conclusion follows from the premises.",
+      "comparison_to": "control",
+      "tags": ["lowercase", "formatting"],
+      "annotations": {
+        "study_role": "perturbation",
+        "perturbation_type": "casing",
+        "notes": "Lowercase perturbation."
+      }
+    },
+    {
+      "case_id": "math_steps",
+      "variant_id": "control",
+      "text": "What is 17 times 23? Show the intermediate steps.",
+      "annotations": {
+        "study_role": "control",
+        "perturbation_type": "casing",
+        "notes": "Baseline wording for the arithmetic casing study."
+      }
+    },
+    {
+      "case_id": "math_steps",
+      "variant_id": "all_caps",
+      "text": "WHAT IS 17 TIMES 23? SHOW THE INTERMEDIATE STEPS.",
+      "comparison_to": "control",
+      "tags": ["caps", "formatting"],
+      "annotations": {
+        "study_role": "perturbation",
+        "perturbation_type": "casing",
+        "notes": "Uppercase arithmetic perturbation."
+      }
+    },
+    {
+      "case_id": "math_steps",
+      "variant_id": "title_case",
+      "text": "What Is 17 Times 23? Show The Intermediate Steps.",
+      "comparison_to": "control",
+      "tags": ["title_case", "formatting"],
+      "annotations": {
+        "study_role": "perturbation",
+        "perturbation_type": "casing",
+        "notes": "Title-case arithmetic perturbation."
+      }
+    }
+  ]
+}

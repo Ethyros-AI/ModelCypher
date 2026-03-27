@@ -25,6 +25,7 @@ poetry run mc analyze capture --model /path/to/model --prompt "Explain geodesics
 poetry run mc analyze family --model /path/to/model --manifest data/probes/prompt_family_minimal_pairs.json
 poetry run mc analyze compare --left-model /path/to/base --right-model /path/to/base --right-adapter /path/to/adapter --manifest data/probes/prompt_family_minimal_pairs.json
 poetry run mc analyze report --bundle /path/to/bundle
+poetry run python scripts/run_measurement_atlas.py --model /path/to/model --manifest data/probes/measurement_atlas_casing.json --manifest data/probes/measurement_atlas_profanity_tone.json --manifest data/probes/measurement_atlas_grounded_hallucination.json --output-root results/measurement_atlas
 ```
 
 These commands emit an observation bundle under
@@ -40,6 +41,20 @@ These commands emit an observation bundle under
 The prompt-family interface is explicit in phase 1. Each row includes:
 `case_id`, `variant_id`, `text`, optional `tags`, and optional
 `comparison_to`.
+
+For research-only generation tracing, the measurement atlas runner writes a
+family artifact under `results/measurement_atlas/<run_id>/` with:
+
+- `run_manifest.json`
+- `summary.json`
+- `REPORT.md`
+- `ledger.tsv`
+- `variants.jsonl`
+- `sequence_metrics.jsonl`
+- `step_metrics.jsonl`
+- `space_step_metrics.jsonl`
+- `comparisons.jsonl`
+- `onset_events.jsonl`
 
 ## Train When You Want To Act On The Measurements
 

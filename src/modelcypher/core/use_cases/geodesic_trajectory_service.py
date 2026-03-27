@@ -31,6 +31,7 @@ import logging
 import math
 import statistics
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -576,6 +577,58 @@ class GeodesicTrajectoryService:
         return GeodesicLayerProfileResult(
             text=text[:80],
             token_count=trajectory.total_tokens,
+            num_layers=len(available_layers),
+            layer_profiles=layer_profiles,
+            peak_deviation_layer=peak_layer,
+            inflection_layer=inflection,
+        )
+
+    def measure_layer_profile_from_positions(
+        self,
+        layer_positions: dict[int, Any],
+    ) -> GeodesicLayerProfileResult:
+        """Measure geodesic deviation across layers from pre-collected positions."""
+        available_layers = sorted(layer_positions.keys())
+        if not available_layers:
+            raise ValueError("No layer positions provided")
+
+        token_count = int(next(iter(layer_positions.values())).shape[0])
+        trajectory = SimpleNamespace(
+            positions=layer_positions,
+            total_tokens=token_count,
+        )
+
+        layer_profiles: list[LayerGeodesicProfile] = []
+        for layer_idx in available_layers:
+            try:
+                result = self._measure_from_trajectory(
+                    trajectory,
+                    layer_idx,
+                    annotate_tokens=False,
+                )
+                layer_profiles.append(
+                    LayerGeodesicProfile(
+                        layer=layer_idx,
+                        mean_deviation=result.mean_deviation,
+                        max_deviation=result.max_deviation,
+                        path_length_ratio=result.path_length_ratio,
+                        intrinsic_dimension=result.intrinsic_dimension,
+                    )
+                )
+            except Exception:
+                logger.warning("Skipping layer %d", layer_idx, exc_info=True)
+
+        if layer_profiles:
+            peak_lp = max(layer_profiles, key=lambda lp: lp.mean_deviation)
+            peak_layer = peak_lp.layer
+            inflection = self._find_inflection_layer(layer_profiles)
+        else:
+            peak_layer = 0
+            inflection = None
+
+        return GeodesicLayerProfileResult(
+            text="pre_collected_positions",
+            token_count=token_count,
             num_layers=len(available_layers),
             layer_profiles=layer_profiles,
             peak_deviation_layer=peak_layer,

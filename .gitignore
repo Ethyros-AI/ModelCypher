@@ -77,7 +77,10 @@ experiments/results/
 *_primes*.json
 clean_json.py
 pytest_profile.txt
-data/
+data/*
+!data/probes/
+data/probes/*
+!data/probes/*.json
 results/
 
 # Private / off-repo experiments
