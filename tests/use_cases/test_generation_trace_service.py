@@ -209,6 +209,15 @@ def test_trace_variant_emits_replay_and_live_regions_with_boundaries() -> None:
         row for row in result.step_metrics
         if row["mode"] == "replay" and row["region"] == "full"
     ]
+    full_stream = next(
+        stream
+        for stream in result.token_streams
+        if stream.mode == "replay" and stream.region == "full"
+    )
+
+    assert result.full_token_ids == result.prompt_token_ids + result.response_token_ids
+    assert full_stream.token_ids == result.full_token_ids
+    assert full_stream.prompt_boundary_index == len(result.prompt_token_ids)
     assert [row["isPromptToken"] for row in full_rows[:2]] == [True, True]
     assert any(row["isResponseToken"] for row in full_rows[2:])
 
@@ -243,3 +252,24 @@ def test_live_trace_rows_include_logit_stats_and_hidden_space_metrics() -> None:
     ]
     assert live_space_rows
     assert {row["space"] for row in live_space_rows} == {"hidden"}
+
+
+def test_trace_variant_preserves_full_region_split_without_leading_whitespace() -> None:
+    service, tokenizer = _service()
+    result = service.trace_variant(
+        model={"model": "stub"},
+        tokenizer=tokenizer,
+        prompt="alpha beta",
+        spaces=("hidden", "embedding"),
+        max_tokens=4,
+    )
+
+    full_stream = next(
+        stream
+        for stream in result.token_streams
+        if stream.mode == "replay" and stream.region == "full"
+    )
+
+    assert not result.generated_text.startswith(" ")
+    assert full_stream.token_texts == ("alpha", "beta", "SUPPORTED", "because")
+    assert full_stream.token_ids == result.prompt_token_ids + result.response_token_ids

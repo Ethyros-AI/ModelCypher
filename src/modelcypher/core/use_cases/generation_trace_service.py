@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -16,8 +17,6 @@ from modelcypher.core.use_cases.observation_service import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from modelcypher.ports.activation_provider import ActivationProvider
     from modelcypher.ports.backend import Backend
     from modelcypher.ports.model_loader import ModelLoaderPort
@@ -76,6 +75,16 @@ class GenerationTraceResult:
     space_step_metrics: tuple[dict[str, Any], ...]
     decode: dict[str, Any]
     errors: tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class ReplayTraceRegion:
+    """One replay region with the token sequence that should represent it."""
+
+    name: str
+    text: str
+    token_ids: tuple[int, ...]
+    prompt_boundary_index: int | None = None
 
 
 LiveTraceRunner = Callable[[Any, Any, str, int], LiveGenerationTraceResult]
@@ -168,19 +177,32 @@ class GenerationTraceService:
                 generated_text = ""
 
         response_token_ids = tuple(self._encode_tokens(tokenizer, generated_text))
-        full_text = prompt + generated_text
-        full_token_ids = tuple(self._encode_tokens(tokenizer, full_text))
-
-        replay_region_texts = {
-            "prompt": prompt,
-            "response": generated_text,
-            "full": full_text,
-        }
+        full_token_ids = prompt_token_ids + response_token_ids
+        # Decode the realized token path so the replay/full region preserves the prompt boundary.
+        full_text = self._decode_tokens(tokenizer, full_token_ids)
+        replay_regions = (
+            ReplayTraceRegion(
+                name="prompt",
+                text=prompt,
+                token_ids=prompt_token_ids,
+            ),
+            ReplayTraceRegion(
+                name="response",
+                text=generated_text,
+                token_ids=response_token_ids,
+            ),
+            ReplayTraceRegion(
+                name="full",
+                text=full_text,
+                token_ids=full_token_ids,
+                prompt_boundary_index=len(prompt_token_ids),
+            ),
+        )
         replay_errors, replay_token_streams, replay_step_metrics, replay_space_metrics, replay_sequence = (
             self._trace_replay_regions(
                 model=model,
                 tokenizer=tokenizer,
-                region_texts=replay_region_texts,
+                regions=replay_regions,
                 prompt_token_count=len(prompt_token_ids),
                 spaces=spaces,
             )
@@ -237,7 +259,7 @@ class GenerationTraceService:
         *,
         model: Any,
         tokenizer: Any,
-        region_texts: dict[str, str],
+        regions: tuple[ReplayTraceRegion, ...],
         prompt_token_count: int,
         spaces: tuple[str, ...],
     ) -> tuple[
@@ -253,7 +275,7 @@ class GenerationTraceService:
         space_step_metrics: list[dict[str, Any]] = []
         sequence_metrics: list[dict[str, Any]] = []
 
-        ordered_regions = [(name, text) for name, text in region_texts.items() if text]
+        ordered_regions = [region for region in regions if region.text]
         if not ordered_regions:
             return errors, token_streams, step_metrics, space_step_metrics, sequence_metrics
 
@@ -261,7 +283,7 @@ class GenerationTraceService:
             trajectory = self._activation_provider.collect_trajectory_batch(
                 model,
                 tokenizer,
-                [text for _, text in ordered_regions],
+                [region.text for region in ordered_regions],
             )
         except Exception as exc:
             errors.append(f"replay_trace:{exc}")
@@ -269,29 +291,29 @@ class GenerationTraceService:
 
         offsets: dict[str, tuple[int, int]] = {}
         cursor = 0
-        for (region, _text), length in zip(ordered_regions, trajectory.text_lengths, strict=False):
+        for region, length in zip(ordered_regions, trajectory.text_lengths, strict=False):
             next_cursor = cursor + int(length)
-            offsets[region] = (cursor, next_cursor)
+            offsets[region.name] = (cursor, next_cursor)
             cursor = next_cursor
 
-        for region, text in ordered_regions:
-            start, end = offsets[region]
-            token_ids = tuple(self._encode_tokens(tokenizer, text))
+        for region in ordered_regions:
+            start, end = offsets[region.name]
+            token_ids = region.token_ids
             if token_ids:
                 token_texts = tuple(self._decode_token_texts(tokenizer, token_ids))
                 token_streams.append(
                     GenerationTraceTokenStream(
                         mode="replay",
-                        region=region,
+                        region=region.name,
                         token_ids=token_ids,
                         token_texts=token_texts,
-                        prompt_boundary_index=prompt_token_count if region == "full" else None,
+                        prompt_boundary_index=region.prompt_boundary_index,
                     )
                 )
                 step_metrics.extend(
                     self._build_step_rows(
                         mode="replay",
-                        region=region,
+                        region=region.name,
                         token_ids=token_ids,
                         token_texts=token_texts,
                         prompt_token_count=prompt_token_count,
@@ -312,15 +334,17 @@ class GenerationTraceService:
                 model=model,
                 tokenizer=tokenizer,
                 mode="replay",
-                region=region,
-                region_text=text,
+                region=region.name,
+                region_text=region.text,
                 space_positions=region_space_positions,
             )
             sequence_metrics.extend(region_sequence_rows)
             space_step_metrics.extend(region_space_rows)
             errors.extend(region_errors)
 
-        missing_regions = [region for region in region_texts if region not in offsets and region_texts[region]]
+        missing_regions = [
+            region.name for region in regions if region.text and region.name not in offsets
+        ]
         for region in missing_regions:
             errors.append(f"replay_region_missing:{region}")
 
@@ -676,11 +700,16 @@ class GenerationTraceService:
         token_ids = self._backend.encode_tokens(tokenizer, text)
         return list(token_ids)
 
+    def _decode_tokens(self, tokenizer: Any, token_ids: tuple[int, ...]) -> str:
+        if not token_ids:
+            return ""
+        return self._backend.decode_tokens(tokenizer, list(token_ids))
+
     def _decode_token_texts(self, tokenizer: Any, token_ids: tuple[int, ...]) -> list[str]:
         texts: list[str] = []
         for token_id in token_ids:
             try:
-                texts.append(self._backend.decode_tokens(tokenizer, [token_id]))
+                texts.append(self._decode_tokens(tokenizer, (token_id,)))
             except Exception:
                 texts.append(f"<{token_id}>")
         return texts
