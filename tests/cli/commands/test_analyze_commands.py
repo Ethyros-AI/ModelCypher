@@ -383,6 +383,161 @@ def _write_measurement_atlas_report_fixture(tmp_path: Path) -> Path:
     return bundle_dir
 
 
+def _write_pipeline_validation_report_fixture(
+    tmp_path: Path,
+    *,
+    include_failures: bool = True,
+) -> Path:
+    bundle_dir = tmp_path / "pipeline-validation-bundle"
+    bundle_dir.mkdir()
+    scale_dir = bundle_dir / "350M"
+    scale_dir.mkdir()
+
+    verdict_payload = {
+        "timestamp": "2026-04-02T00:00:00+00:00",
+        "git_hash": "deadbeef",
+        "trials_per_model": 5 if include_failures else 20,
+        "controller_mode": "mass_behavioral_probe",
+        "optimizer_research_mode": "adamw_matched_trace",
+        "benchmark_suite": "quick",
+        "scales": ["350M"],
+        "all_pass": not include_failures,
+        "all_structural_pass": True,
+        "all_inference_pass": not include_failures,
+        "per_scale": {
+            "350M": {
+                "all_passed": not include_failures,
+                "pass_count": 3 if include_failures else 20,
+                "fail_count": 2 if include_failures else 0,
+                "structural_pass_count": 5 if include_failures else 20,
+                "structural_fail_count": 0,
+                "inference_pass_count": 3 if include_failures else 20,
+                "inference_fail_count": 2 if include_failures else 0,
+                "phase5_inference_enabled": True,
+                "error": None,
+            }
+        },
+    }
+    summary_payload = {
+        "family": "pipeline_validation_fixture",
+        "status": "canonical",
+        "aggregate_verdict": verdict_payload,
+        "per_scale_summary": {
+            "350M": {
+                "pass_count": 3 if include_failures else 20,
+                "fail_count": 2 if include_failures else 0,
+                "structural_pass_count": 5 if include_failures else 20,
+                "structural_fail_count": 0,
+                "inference_pass_count": 3 if include_failures else 20,
+                "inference_fail_count": 2 if include_failures else 0,
+                "phase5_probe_count": 10,
+                "phase5_probe_seed": 3475334679,
+                "mean_loss_delta": 0.9840814639514399 if include_failures else 0.7889143830883715,
+                "mean_perplexity_delta": 12.567903220520218 if include_failures else 10.887178869354896,
+            }
+        },
+        "worst_case_trial_diagnostics": {
+            "lowest_min_cka": {
+                "scale": "350M",
+                "trial_index": 0,
+                "seed": 4231027559,
+                "min_cka": 0.9323521445735921,
+                "min_cka_layer": 15,
+            },
+            "max_blindness_ratio": {
+                "scale": "350M",
+                "trial_index": 1,
+                "seed": 4231027560,
+                "cka_blindness_ratio": 17.356273235045485,
+                "cka_blindness_worst_layer": 7,
+            },
+            "min_behavioral_preserved_null_access_fraction": {
+                "scale": "350M",
+                "trial_index": 1,
+                "seed": 4231027560,
+                "fraction": 0.005462362115171986,
+                "layer": 8,
+            },
+            "largest_loss_delta": {
+                "scale": "350M",
+                "trial_index": 0,
+                "seed": 4231027559,
+                "loss_delta": 1.1657124188826196,
+            },
+            "largest_perplexity_delta": {
+                "scale": "350M",
+                "trial_index": 0,
+                "seed": 4231027559,
+                "perplexity_delta": 14.030564000954609,
+            },
+        },
+        "retained_failure_cases": (
+            [
+                {
+                    "scale": "350M",
+                    "trial_index": 0,
+                    "seed": 4231027559,
+                    "failure_modes": ["online_eval_degraded", "fourgram_degenerated"],
+                    "cooccurrence_class": "cka_shift_and_inference_degraded",
+                    "stop_reason": "certificate (epoch=10)",
+                    "loss_delta": 1.1657124188826196,
+                    "perplexity_delta": 14.030564000954609,
+                    "min_cka": 0.9323521445735921,
+                    "min_cka_layer": 15,
+                    "online_eval_delta_correct": -1,
+                    "max_4gram_repeat_delta": 0.11228338863836185,
+                    "null_access_min_behavioral_preserved_fraction": 0.006602507612182352,
+                    "null_access_min_behavioral_preserved_layer": 8,
+                    "cka_blindness_ratio": 14.165508425614297,
+                    "cka_blindness_worst_layer": 7,
+                }
+            ]
+            if include_failures
+            else []
+        ),
+        "retained_artifacts": [
+            "results/pipeline_validation/verdict.json",
+            "results/pipeline_validation/350M/result.json",
+        ],
+    }
+    result_payload = {
+        "model_path": "/models/LFM2-350M",
+        "dataset_path": "/data/train.jsonl",
+        "eval_dataset_path": "/data/eval.jsonl",
+        "trials_requested": 5 if include_failures else 20,
+        "phase5_inference_enabled": True,
+        "phase5_probe_count": 10,
+        "phase5_probe_seed": 3475334679,
+        "pass_count": 3 if include_failures else 20,
+        "fail_count": 2 if include_failures else 0,
+        "structural_pass_count": 5 if include_failures else 20,
+        "structural_fail_count": 0,
+        "inference_pass_count": 3 if include_failures else 20,
+        "inference_fail_count": 2 if include_failures else 0,
+        "all_passed": not include_failures,
+        "mean_loss_delta": 0.9840814639514399 if include_failures else 0.7889143830883715,
+        "mean_perplexity_delta": 12.567903220520218 if include_failures else 10.887178869354896,
+        "trial_results": [
+            {
+                "trial_index": 0,
+                "seed": 4231027559,
+                "loss_delta": 1.1657124188826196,
+                "perplexity_delta": 14.030564000954609,
+                "min_cka": 0.9323521445735921,
+                "min_cka_layer": 15,
+                "max_ngram_repeat_delta": 0.11228338863836185 if include_failures else -0.08935629587803506,
+            }
+        ],
+        "counterexamples": summary_payload["retained_failure_cases"],
+    }
+
+    (bundle_dir / "verdict.json").write_text(json.dumps(verdict_payload) + "\n", encoding="utf-8")
+    (bundle_dir / "summary.json").write_text(json.dumps(summary_payload) + "\n", encoding="utf-8")
+    (scale_dir / "result.json").write_text(json.dumps(result_payload) + "\n", encoding="utf-8")
+    (bundle_dir / "REPORT.md").write_text("# report\n", encoding="utf-8")
+    return bundle_dir
+
+
 class TestAnalyzeCommandHelp:
     """Test that analyze commands have proper help text."""
 
@@ -584,6 +739,76 @@ class TestAnalyzeWorkflowCommands:
         assert "\\n\\n" not in result.stdout
         assert "chars)" in result.stdout
 
+    def test_report_reads_existing_pipeline_validation_bundle(self, tmp_path):
+        bundle_dir = _write_pipeline_validation_report_fixture(tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "--output",
+                "json",
+                "analyze",
+                "report",
+                "--bundle",
+                str(bundle_dir),
+            ],
+        )
+
+        assert result.exit_code == 0, result.stdout
+        payload = json.loads(result.stdout)
+        assert payload["bundleDir"] == str(bundle_dir.resolve())
+        assert payload["summary"]["workflow"] == "pipeline_validation"
+        assert payload["summary"]["allStructuralPass"] is True
+        assert payload["summary"]["allInferencePass"] is False
+        assert "aggregateVerdict" in payload["sections"]
+        assert "perScaleSummaries" in payload["sections"]
+        assert "failureCases" in payload["sections"]
+        assert payload["sections"]["failureCases"][0]["cooccurrenceClass"] == "cka_shift_and_inference_degraded"
+
+    def test_report_text_for_pipeline_validation_focuses_on_r2_diagnostics(self, tmp_path):
+        bundle_dir = _write_pipeline_validation_report_fixture(tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "--output",
+                "text",
+                "analyze",
+                "report",
+                "--bundle",
+                str(bundle_dir),
+            ],
+        )
+
+        assert result.exit_code == 0, result.stdout
+        assert "# Pipeline Validation Family" in result.stdout
+        assert "Structural verdict: `PASS`" in result.stdout
+        assert "Inference verdict: `FAIL`" in result.stdout
+        assert "## Worst-Case Diagnostics" in result.stdout
+        assert "## Failure Cases" in result.stdout
+
+    def test_report_missing_required_pipeline_validation_files(self, tmp_path):
+        bundle_dir = _write_pipeline_validation_report_fixture(tmp_path)
+        (bundle_dir / "350M" / "result.json").unlink()
+
+        result = runner.invoke(
+            app,
+            [
+                "--output",
+                "json",
+                "analyze",
+                "report",
+                "--bundle",
+                str(bundle_dir),
+            ],
+        )
+
+        assert result.exit_code != 0
+        payload = json.loads(result.stdout)
+        assert payload["error"]["code"] == "MC-1099"
+        assert payload["error"]["title"] == "Invalid report bundle"
+        assert "pipeline-validation files" in payload["error"]["hint"]
+
     def test_report_missing_bundle_directory(self, tmp_path):
         result = runner.invoke(
             app,
@@ -601,6 +826,7 @@ class TestAnalyzeWorkflowCommands:
         payload = json.loads(result.stdout)
         assert payload["error"]["code"] == "MC-1098"
         assert payload["error"]["title"] == "Missing report bundle"
+        assert "pipeline-validation" in payload["error"]["hint"]
 
     def test_report_missing_required_files(self, tmp_path):
         bundle_dir = tmp_path / "bundle"

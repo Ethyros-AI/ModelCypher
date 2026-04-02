@@ -86,6 +86,7 @@ MODEL_CONFIGS: dict[str, ModelConfig] = {
 }
 
 SCALE_ORDER = ["350M", "1p2B", "8B"]
+PIPELINE_VALIDATION_FAMILY_SCHEMA = "mc.pipeline_validation.family.v1"
 
 
 def _parse_args() -> argparse.Namespace:
@@ -715,6 +716,178 @@ def _build_report(
     return "\n".join(lines) + "\n"
 
 
+def _build_verdict_payload(
+    *,
+    all_results: dict[str, dict[str, Any]],
+    timestamp: str,
+    git_hash: str,
+    trials: int,
+    scales: list[str],
+    controller_mode: str,
+    optimizer_research_mode: str,
+    benchmark_suite: str | None,
+) -> dict[str, Any]:
+    all_pass = all(r.get("all_passed", False) for r in all_results.values())
+    all_structural_pass = all(
+        int(r.get("structural_fail_count", 0)) == 0 for r in all_results.values()
+    )
+    all_inference_pass = all(
+        int(r.get("inference_fail_count", 0)) == 0 for r in all_results.values()
+    )
+    return {
+        "workflow": "pipeline_validation",
+        "schema": PIPELINE_VALIDATION_FAMILY_SCHEMA,
+        "timestamp": timestamp,
+        "git_hash": git_hash,
+        "trials_per_model": trials,
+        "controller_mode": controller_mode,
+        "optimizer_research_mode": optimizer_research_mode,
+        "benchmark_suite": benchmark_suite,
+        "scales": scales,
+        "all_pass": all_pass,
+        "all_structural_pass": all_structural_pass,
+        "all_inference_pass": all_inference_pass,
+        "per_scale": {
+            scale: {
+                "all_passed": r.get("all_passed", False),
+                "pass_count": r.get("pass_count", 0),
+                "fail_count": r.get("fail_count", 0),
+                "structural_pass_count": r.get("structural_pass_count", 0),
+                "structural_fail_count": r.get("structural_fail_count", 0),
+                "inference_pass_count": r.get("inference_pass_count", 0),
+                "inference_fail_count": r.get("inference_fail_count", 0),
+                "phase5_inference_enabled": r.get("phase5_inference_enabled", False),
+                "error": r.get("error"),
+            }
+            for scale, r in all_results.items()
+        },
+    }
+
+
+def _build_summary_payload(
+    *,
+    all_results: dict[str, dict[str, Any]],
+    verdict: dict[str, Any],
+    output_root: Path,
+) -> dict[str, Any]:
+    worst_min_cka: dict[str, Any] | None = None
+    worst_blindness: dict[str, Any] | None = None
+    worst_null_access: dict[str, Any] | None = None
+    largest_loss_delta: dict[str, Any] | None = None
+    largest_perplexity_delta: dict[str, Any] | None = None
+    retained_failure_cases: list[dict[str, Any]] = []
+
+    per_scale_summary: dict[str, dict[str, Any]] = {}
+    for scale, result in all_results.items():
+        per_scale_summary[scale] = {
+            "pass_count": result.get("pass_count", 0),
+            "fail_count": result.get("fail_count", 0),
+            "structural_pass_count": result.get("structural_pass_count", 0),
+            "structural_fail_count": result.get("structural_fail_count", 0),
+            "inference_pass_count": result.get("inference_pass_count", 0),
+            "inference_fail_count": result.get("inference_fail_count", 0),
+            "phase5_probe_count": result.get("phase5_probe_count"),
+            "phase5_probe_seed": result.get("phase5_probe_seed"),
+            "mean_loss_delta": result.get("mean_loss_delta"),
+            "min_loss_delta": result.get("min_loss_delta"),
+            "mean_perplexity_delta": result.get("mean_perplexity_delta"),
+            "min_perplexity_delta": result.get("min_perplexity_delta"),
+        }
+
+        for trial in result.get("trial_results", []):
+            if trial.get("min_cka") is not None:
+                candidate = {
+                    "scale": scale,
+                    "trial_index": trial.get("trial_index"),
+                    "seed": trial.get("seed"),
+                    "min_cka": trial.get("min_cka"),
+                    "min_cka_layer": trial.get("min_cka_layer"),
+                    "mean_cka": trial.get("mean_cka"),
+                }
+                if worst_min_cka is None or float(candidate["min_cka"]) < float(
+                    worst_min_cka["min_cka"]
+                ):
+                    worst_min_cka = candidate
+            if trial.get("loss_delta") is not None:
+                candidate = {
+                    "scale": scale,
+                    "trial_index": trial.get("trial_index"),
+                    "seed": trial.get("seed"),
+                    "loss_delta": trial.get("loss_delta"),
+                }
+                if largest_loss_delta is None or float(candidate["loss_delta"]) > float(
+                    largest_loss_delta["loss_delta"]
+                ):
+                    largest_loss_delta = candidate
+            if trial.get("perplexity_delta") is not None:
+                candidate = {
+                    "scale": scale,
+                    "trial_index": trial.get("trial_index"),
+                    "seed": trial.get("seed"),
+                    "perplexity_delta": trial.get("perplexity_delta"),
+                }
+                if (
+                    largest_perplexity_delta is None
+                    or float(candidate["perplexity_delta"])
+                    > float(largest_perplexity_delta["perplexity_delta"])
+                ):
+                    largest_perplexity_delta = candidate
+
+        for counterexample in result.get("counterexamples", []):
+            retained_failure_cases.append({"scale": scale, **counterexample})
+            if counterexample.get("cka_blindness_ratio") is not None:
+                candidate = {
+                    "scale": scale,
+                    "trial_index": counterexample.get("trial_index"),
+                    "seed": counterexample.get("seed"),
+                    "cka_blindness_ratio": counterexample.get("cka_blindness_ratio"),
+                    "cka_blindness_worst_layer": counterexample.get("cka_blindness_worst_layer"),
+                    "inference_min_cka": counterexample.get("inference_min_cka"),
+                }
+                if worst_blindness is None or float(candidate["cka_blindness_ratio"]) > float(
+                    worst_blindness["cka_blindness_ratio"]
+                ):
+                    worst_blindness = candidate
+            if counterexample.get("null_access_min_behavioral_preserved_fraction") is not None:
+                candidate = {
+                    "scale": scale,
+                    "trial_index": counterexample.get("trial_index"),
+                    "seed": counterexample.get("seed"),
+                    "fraction": counterexample.get(
+                        "null_access_min_behavioral_preserved_fraction"
+                    ),
+                    "layer": counterexample.get("null_access_min_behavioral_preserved_layer"),
+                }
+                if worst_null_access is None or float(candidate["fraction"]) < float(
+                    worst_null_access["fraction"]
+                ):
+                    worst_null_access = candidate
+
+    worst_case_trial_diagnostics: dict[str, Any] = {}
+    if worst_min_cka is not None:
+        worst_case_trial_diagnostics["lowest_min_cka"] = worst_min_cka
+    if worst_blindness is not None:
+        worst_case_trial_diagnostics["max_blindness_ratio"] = worst_blindness
+    if worst_null_access is not None:
+        worst_case_trial_diagnostics[
+            "min_behavioral_preserved_null_access_fraction"
+        ] = worst_null_access
+    if largest_loss_delta is not None:
+        worst_case_trial_diagnostics["largest_loss_delta"] = largest_loss_delta
+    if largest_perplexity_delta is not None:
+        worst_case_trial_diagnostics["largest_perplexity_delta"] = largest_perplexity_delta
+
+    return {
+        "workflow": "pipeline_validation",
+        "schema": PIPELINE_VALIDATION_FAMILY_SCHEMA,
+        "family": output_root.name,
+        "aggregate_verdict": verdict,
+        "per_scale_summary": per_scale_summary,
+        "worst_case_trial_diagnostics": worst_case_trial_diagnostics,
+        "retained_failure_cases": retained_failure_cases,
+    }
+
+
 def main() -> None:
     args = _parse_args()
 
@@ -786,43 +959,29 @@ def main() -> None:
                 "all_passed": False,
             }
 
-    # Write verdict
-    all_pass = all(r.get("all_passed", False) for r in all_results.values())
-    all_structural_pass = all(
-        int(r.get("structural_fail_count", 0)) == 0 for r in all_results.values()
+    # Write machine-readable family payloads
+    verdict = _build_verdict_payload(
+        all_results=all_results,
+        timestamp=timestamp,
+        git_hash=git_hash,
+        trials=args.trials,
+        scales=scales,
+        controller_mode=args.controller_mode,
+        optimizer_research_mode=args.optimizer_research_mode,
+        benchmark_suite=args.benchmark_suite,
     )
-    all_inference_pass = all(
-        int(r.get("inference_fail_count", 0)) == 0 for r in all_results.values()
-    )
-    verdict = {
-        "timestamp": timestamp,
-        "git_hash": git_hash,
-        "trials_per_model": args.trials,
-        "controller_mode": args.controller_mode,
-        "optimizer_research_mode": args.optimizer_research_mode,
-        "benchmark_suite": args.benchmark_suite,
-        "scales": scales,
-        "all_pass": all_pass,
-        "all_structural_pass": all_structural_pass,
-        "all_inference_pass": all_inference_pass,
-        "per_scale": {
-            scale: {
-                "all_passed": r.get("all_passed", False),
-                "pass_count": r.get("pass_count", 0),
-                "fail_count": r.get("fail_count", 0),
-                "structural_pass_count": r.get("structural_pass_count", 0),
-                "structural_fail_count": r.get("structural_fail_count", 0),
-                "inference_pass_count": r.get("inference_pass_count", 0),
-                "inference_fail_count": r.get("inference_fail_count", 0),
-                "phase5_inference_enabled": r.get("phase5_inference_enabled", False),
-                "error": r.get("error"),
-            }
-            for scale, r in all_results.items()
-        },
-    }
     verdict_path = output_root / "verdict.json"
     verdict_path.write_text(json.dumps(verdict, indent=2), encoding="utf-8")
     log.info("Wrote %s", verdict_path)
+
+    summary = _build_summary_payload(
+        all_results=all_results,
+        verdict=verdict,
+        output_root=output_root,
+    )
+    summary_path = output_root / "summary.json"
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    log.info("Wrote %s", summary_path)
 
     # Write report
     report = _build_report(all_results, timestamp, git_hash, args.trials)
@@ -832,6 +991,7 @@ def main() -> None:
 
     # Print verdict
     print()
+    all_pass = bool(verdict["all_pass"])
     print(f"{'=' * 50}")
     print(f"VERDICT: {('PASS' if all_pass else 'FAIL')}")
     for scale in scales:

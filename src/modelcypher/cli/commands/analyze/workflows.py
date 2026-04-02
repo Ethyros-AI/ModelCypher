@@ -401,7 +401,7 @@ def analyze_report(
             detail=f"Bundle directory not found: {bundle_dir}",
             hint=(
                 "Point --bundle at a directory created by mc analyze capture/family/compare "
-                "or scripts/run_measurement_atlas.py."
+                "or at a retained measurement-atlas or pipeline-validation family directory."
             ),
             trace_id=context.trace_id,
         )
@@ -421,7 +421,9 @@ def analyze_report(
                 "(manifest.json, summary.json, variants.jsonl, layer_metrics.jsonl, comparisons.jsonl) "
                 "or the measurement-atlas files "
                 "(run_manifest.json, summary.json, variants.jsonl, sequence_metrics.jsonl, "
-                "step_metrics.jsonl, space_step_metrics.jsonl, comparisons.jsonl, onset_events.jsonl)."
+                "step_metrics.jsonl, space_step_metrics.jsonl, comparisons.jsonl, onset_events.jsonl), "
+                "or the pipeline-validation files "
+                "(verdict.json, summary.json, <scale>/result.json)."
             ),
             trace_id=context.trace_id,
         )

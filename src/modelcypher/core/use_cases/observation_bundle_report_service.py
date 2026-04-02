@@ -23,8 +23,13 @@ REQUIRED_MEASUREMENT_ATLAS_FILES = (
     "comparisons.jsonl",
     "onset_events.jsonl",
 )
+REQUIRED_PIPELINE_VALIDATION_FILES = (
+    "verdict.json",
+    "summary.json",
+)
 MEASUREMENT_ATLAS_MANIFEST_PREFIX = "mc.measurement_atlas.run_manifest.v"
 OBSERVATION_BUNDLE_VERSION_PREFIX = "mc.analyze.bundle.v"
+PIPELINE_VALIDATION_SCHEMA_PREFIX = "mc.pipeline_validation.family.v"
 
 
 @dataclass(frozen=True)
@@ -51,7 +56,7 @@ class ObservationBundleReportResult:
 
 
 class ObservationBundleReportService:
-    """Shared reporting logic for observation bundles and atlas artifacts."""
+    """Shared reporting logic for observation bundles and retained report families."""
 
     def load(self, bundle_dir: str | Path) -> ObservationBundleReportResult:
         resolved_dir = Path(bundle_dir).expanduser().resolve()
@@ -63,6 +68,8 @@ class ObservationBundleReportService:
         bundle_family = self._detect_bundle_family(resolved_dir)
         if bundle_family == "measurement_atlas":
             return self._load_measurement_atlas_bundle(resolved_dir)
+        if bundle_family == "pipeline_validation":
+            return self._load_pipeline_validation_bundle(resolved_dir)
         return self._load_observation_bundle(resolved_dir)
 
     def _load_observation_bundle(
@@ -140,9 +147,70 @@ class ObservationBundleReportService:
             markdown=markdown,
         )
 
+    def _load_pipeline_validation_bundle(
+        self,
+        bundle_dir: Path,
+    ) -> ObservationBundleReportResult:
+        files = self._resolve_pipeline_validation_files(bundle_dir)
+        verdict = self._load_json(Path(files["verdict"]))
+        summary = self._load_json(Path(files["summary"]))
+        per_scale_results = {
+            key.split("result:", 1)[1]: self._load_json(Path(path))
+            for key, path in files.items()
+            if key.startswith("result:")
+        }
+        normalized_summary = self._normalize_pipeline_validation_summary(
+            summary=summary,
+            verdict=verdict,
+            per_scale_results=per_scale_results,
+            bundle_dir=bundle_dir,
+        )
+        sections = {
+            "aggregateVerdict": self._pipeline_validation_aggregate_verdict(
+                summary=summary,
+                verdict=verdict,
+                normalized_summary=normalized_summary,
+            ),
+            "perScaleSummaries": self._pipeline_validation_per_scale_summaries(
+                summary=summary,
+                verdict=verdict,
+                per_scale_results=per_scale_results,
+                normalized_summary=normalized_summary,
+            ),
+            "worstCaseDiagnostics": self._pipeline_validation_worst_case_diagnostics(
+                summary=summary,
+                per_scale_results=per_scale_results,
+            ),
+            "failureCases": self._pipeline_validation_failure_cases(
+                summary=summary,
+                per_scale_results=per_scale_results,
+            ),
+            "retention": self._pipeline_validation_retention(summary=summary),
+        }
+        manifest = self._pipeline_validation_manifest(
+            normalized_summary=normalized_summary,
+            summary=summary,
+            verdict=verdict,
+            files=files,
+        )
+        markdown = self._build_pipeline_validation_markdown(
+            summary=normalized_summary,
+            sections=sections,
+        )
+        return ObservationBundleReportResult(
+            bundle_dir=str(bundle_dir.expanduser().resolve()),
+            manifest=manifest,
+            summary=normalized_summary,
+            sections=sections,
+            files=files,
+            markdown=markdown,
+        )
+
     def _detect_bundle_family(self, bundle_dir: Path) -> str:
         atlas_manifest_path = bundle_dir / "run_manifest.json"
         observation_manifest_path = bundle_dir / "manifest.json"
+        verdict_path = bundle_dir / "verdict.json"
+        summary_path = bundle_dir / "summary.json"
 
         if atlas_manifest_path.exists():
             manifest = self._load_json(atlas_manifest_path)
@@ -156,13 +224,21 @@ class ObservationBundleReportService:
             if bundle_version.startswith(OBSERVATION_BUNDLE_VERSION_PREFIX):
                 return "observation"
 
+        if (
+            verdict_path.exists()
+            or summary_path.exists()
+            or self._pipeline_validation_result_paths(bundle_dir)
+        ):
+            return "pipeline_validation"
+
         if atlas_manifest_path.exists():
             return "measurement_atlas"
         if observation_manifest_path.exists():
             return "observation"
 
         raise ValueError(
-            "Report bundle directory must contain manifest.json or run_manifest.json: "
+            "Report bundle directory must contain manifest.json, run_manifest.json, "
+            "or pipeline-validation files (verdict.json, summary.json, <scale>/result.json): "
             f"{bundle_dir}"
         )
 
@@ -253,6 +329,40 @@ class ObservationBundleReportService:
                 f"{missing_text}"
             )
         return {key: str(path.resolve()) for key, path in file_map.items() if path.exists()}
+
+    @staticmethod
+    def _pipeline_validation_result_paths(bundle_dir: Path) -> dict[str, Path]:
+        return {
+            child.name: child / "result.json"
+            for child in sorted(bundle_dir.iterdir(), key=lambda path: path.name)
+            if child.is_dir() and (child / "result.json").exists()
+        }
+
+    @classmethod
+    def _resolve_pipeline_validation_files(cls, bundle_dir: Path) -> dict[str, str]:
+        file_map = {
+            "verdict": bundle_dir / "verdict.json",
+            "summary": bundle_dir / "summary.json",
+            "report": bundle_dir / "REPORT.md",
+        }
+        result_paths = cls._pipeline_validation_result_paths(bundle_dir)
+        missing = [
+            file_name
+            for file_name in REQUIRED_PIPELINE_VALIDATION_FILES
+            if not (bundle_dir / file_name).exists()
+        ]
+        if not result_paths:
+            missing.append("<scale>/result.json")
+        if missing:
+            missing_text = ", ".join(sorted(missing))
+            raise ValueError(
+                "Report bundle is missing required files for pipeline-validation families: "
+                f"{missing_text}"
+            )
+        resolved = {key: str(path.resolve()) for key, path in file_map.items() if path.exists()}
+        for scale, path in result_paths.items():
+            resolved[f"result:{scale}"] = str(path.resolve())
+        return resolved
 
     @staticmethod
     def _load_json(path: Path) -> dict[str, Any]:
@@ -550,6 +660,687 @@ class ObservationBundleReportService:
 
         lines.append("")
         return "\n".join(lines)
+
+    @staticmethod
+    def _normalize_pipeline_validation_summary(
+        *,
+        summary: dict[str, Any],
+        verdict: dict[str, Any],
+        per_scale_results: dict[str, dict[str, Any]],
+        bundle_dir: Path,
+    ) -> dict[str, Any]:
+        aggregate = summary.get("aggregate_verdict")
+        if not isinstance(aggregate, dict):
+            aggregate = verdict
+        scales = aggregate.get("scales")
+        if not isinstance(scales, list) or not scales:
+            scales = sorted(per_scale_results.keys())
+
+        normalized = dict(summary)
+        normalized["workflow"] = "pipeline_validation"
+        normalized["schema"] = (
+            str(summary.get("schema")).strip()
+            if summary.get("schema") is not None
+            else (
+                str(verdict.get("schema")).strip()
+                if verdict.get("schema") is not None
+                else None
+            )
+        )
+        normalized["family"] = str(summary.get("family") or bundle_dir.name)
+        normalized["status"] = str(summary.get("status") or "n/a")
+        normalized["scales"] = list(scales)
+        normalized["trialsPerModel"] = aggregate.get("trials_per_model")
+        normalized["allPass"] = aggregate.get("all_pass")
+        normalized["allStructuralPass"] = aggregate.get("all_structural_pass")
+        normalized["allInferencePass"] = aggregate.get("all_inference_pass")
+        normalized["timestamp"] = aggregate.get("timestamp")
+        normalized["gitHash"] = aggregate.get("git_hash")
+        normalized["controllerMode"] = aggregate.get("controller_mode")
+        normalized["optimizerResearchMode"] = aggregate.get("optimizer_research_mode")
+        normalized["benchmarkSuite"] = aggregate.get("benchmark_suite")
+        return normalized
+
+    def _pipeline_validation_aggregate_verdict(
+        self,
+        *,
+        summary: dict[str, Any],
+        verdict: dict[str, Any],
+        normalized_summary: dict[str, Any],
+    ) -> dict[str, Any]:
+        aggregate = summary.get("aggregate_verdict")
+        if not isinstance(aggregate, dict):
+            aggregate = verdict
+        return {
+            "timestamp": aggregate.get("timestamp") or normalized_summary.get("timestamp"),
+            "gitHash": aggregate.get("git_hash") or normalized_summary.get("gitHash"),
+            "trialsPerModel": (
+                aggregate.get("trials_per_model") or normalized_summary.get("trialsPerModel")
+            ),
+            "controllerMode": (
+                aggregate.get("controller_mode") or normalized_summary.get("controllerMode")
+            ),
+            "optimizerResearchMode": (
+                aggregate.get("optimizer_research_mode")
+                or normalized_summary.get("optimizerResearchMode")
+            ),
+            "benchmarkSuite": (
+                aggregate.get("benchmark_suite") or normalized_summary.get("benchmarkSuite")
+            ),
+            "scales": list(
+                aggregate.get("scales")
+                or normalized_summary.get("scales")
+                or []
+            ),
+            "allPass": aggregate.get("all_pass"),
+            "allStructuralPass": aggregate.get("all_structural_pass"),
+            "allInferencePass": aggregate.get("all_inference_pass"),
+        }
+
+    @staticmethod
+    def _pipeline_validation_per_scale_summaries(
+        *,
+        summary: dict[str, Any],
+        verdict: dict[str, Any],
+        per_scale_results: dict[str, dict[str, Any]],
+        normalized_summary: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        summary_by_scale = summary.get("per_scale_summary", {})
+        if not isinstance(summary_by_scale, dict):
+            summary_by_scale = {}
+        verdict_by_scale = verdict.get("per_scale", {})
+        if not isinstance(verdict_by_scale, dict):
+            verdict_by_scale = {}
+
+        rows: list[dict[str, Any]] = []
+        for scale in normalized_summary.get("scales", []):
+            summary_row = summary_by_scale.get(scale, {})
+            if not isinstance(summary_row, dict):
+                summary_row = {}
+            verdict_row = verdict_by_scale.get(scale, {})
+            if not isinstance(verdict_row, dict):
+                verdict_row = {}
+            result_row = per_scale_results.get(scale, {})
+            rows.append(
+                {
+                    "scale": scale,
+                    "allPassed": verdict_row.get(
+                        "all_passed",
+                        result_row.get("all_passed"),
+                    ),
+                    "passCount": verdict_row.get("pass_count", result_row.get("pass_count")),
+                    "failCount": verdict_row.get("fail_count", result_row.get("fail_count")),
+                    "structuralPassCount": verdict_row.get(
+                        "structural_pass_count",
+                        result_row.get("structural_pass_count", summary_row.get("structural_pass_count")),
+                    ),
+                    "structuralFailCount": verdict_row.get(
+                        "structural_fail_count",
+                        result_row.get("structural_fail_count", summary_row.get("structural_fail_count")),
+                    ),
+                    "inferencePassCount": verdict_row.get(
+                        "inference_pass_count",
+                        result_row.get("inference_pass_count", summary_row.get("inference_pass_count")),
+                    ),
+                    "inferenceFailCount": verdict_row.get(
+                        "inference_fail_count",
+                        result_row.get("inference_fail_count", summary_row.get("inference_fail_count")),
+                    ),
+                    "phase5InferenceEnabled": verdict_row.get(
+                        "phase5_inference_enabled",
+                        result_row.get("phase5_inference_enabled"),
+                    ),
+                    "phase5ProbeCount": result_row.get(
+                        "phase5_probe_count",
+                        summary_row.get("phase5_probe_count"),
+                    ),
+                    "phase5ProbeSeed": result_row.get(
+                        "phase5_probe_seed",
+                        summary_row.get("phase5_probe_seed"),
+                    ),
+                    "meanLossDelta": result_row.get(
+                        "mean_loss_delta",
+                        summary_row.get("mean_loss_delta"),
+                    ),
+                    "minLossDelta": result_row.get(
+                        "min_loss_delta",
+                        summary_row.get("min_loss_delta"),
+                    ),
+                    "meanPerplexityDelta": result_row.get(
+                        "mean_perplexity_delta",
+                        summary_row.get("mean_perplexity_delta"),
+                    ),
+                    "minPerplexityDelta": result_row.get(
+                        "min_perplexity_delta",
+                        summary_row.get("min_perplexity_delta"),
+                    ),
+                    "modelPath": result_row.get("model_path"),
+                    "datasetPath": result_row.get("dataset_path"),
+                    "evalDatasetPath": result_row.get("eval_dataset_path"),
+                    "trialsRequested": result_row.get("trials_requested"),
+                    "error": verdict_row.get("error", result_row.get("error")),
+                }
+            )
+        return rows
+
+    def _pipeline_validation_worst_case_diagnostics(
+        self,
+        *,
+        summary: dict[str, Any],
+        per_scale_results: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        default_scale = next(iter(per_scale_results)) if len(per_scale_results) == 1 else None
+        diagnostics = summary.get("worst_case_trial_diagnostics")
+        if isinstance(diagnostics, dict) and diagnostics:
+            normalized = {
+                "lowestMinCka": self._pipeline_validation_metric_row(
+                    diagnostics.get("lowest_min_cka"),
+                    value_key="min_cka",
+                    layer_key="min_cka_layer",
+                    output_value_key="minCka",
+                    output_layer_key="minCkaLayer",
+                ),
+                "maxBlindnessRatio": self._pipeline_validation_metric_row(
+                    diagnostics.get("max_blindness_ratio"),
+                    value_key="cka_blindness_ratio",
+                    layer_key="cka_blindness_worst_layer",
+                    output_value_key="ckaBlindnessRatio",
+                    output_layer_key="ckaBlindnessWorstLayer",
+                    extra_keys=("inference_min_cka",),
+                ),
+                "minBehavioralPreservedNullAccessFraction": self._pipeline_validation_metric_row(
+                    diagnostics.get("min_behavioral_preserved_null_access_fraction"),
+                    value_key="fraction",
+                    layer_key="layer",
+                    output_value_key="fraction",
+                    output_layer_key="layer",
+                ),
+                "largestLossDelta": self._pipeline_validation_metric_row(
+                    diagnostics.get("largest_loss_delta"),
+                    value_key="loss_delta",
+                    layer_key=None,
+                    output_value_key="lossDelta",
+                    output_layer_key=None,
+                ),
+                "largestPerplexityDelta": self._pipeline_validation_metric_row(
+                    diagnostics.get("largest_perplexity_delta"),
+                    value_key="perplexity_delta",
+                    layer_key=None,
+                    output_value_key="perplexityDelta",
+                    output_layer_key=None,
+                ),
+            }
+            for row in normalized.values():
+                if isinstance(row, dict) and row.get("scale") is None and default_scale is not None:
+                    row["scale"] = default_scale
+            optional = self._pipeline_validation_optional_diagnostic_rows(per_scale_results)
+            normalized.update(optional)
+            return normalized
+
+        return self._pipeline_validation_fallback_worst_case_diagnostics(per_scale_results)
+
+    def _pipeline_validation_failure_cases(
+        self,
+        *,
+        summary: dict[str, Any],
+        per_scale_results: dict[str, dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        default_scale = next(iter(per_scale_results)) if len(per_scale_results) == 1 else None
+        summary_cases = summary.get("retained_failure_cases")
+        if isinstance(summary_cases, list):
+            return [
+                self._pipeline_validation_failure_case_row(case, scale=default_scale)
+                for case in summary_cases
+            ]
+
+        rows: list[dict[str, Any]] = []
+        for scale, result in per_scale_results.items():
+            counterexamples = result.get("counterexamples", [])
+            if not isinstance(counterexamples, list):
+                continue
+            for case in counterexamples:
+                if not isinstance(case, dict):
+                    continue
+                rows.append(self._pipeline_validation_failure_case_row(case, scale=scale))
+        return rows
+
+    @staticmethod
+    def _pipeline_validation_retention(summary: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "status": summary.get("status"),
+            "retainedArtifacts": list(summary.get("retained_artifacts", [])),
+            "deletedRawArtifacts": list(summary.get("deleted_raw_artifacts", [])),
+            "deletedPhase5AdapterPayload": summary.get("deleted_phase5_adapter_payload"),
+        }
+
+    @staticmethod
+    def _pipeline_validation_manifest(
+        *,
+        normalized_summary: dict[str, Any],
+        summary: dict[str, Any],
+        verdict: dict[str, Any],
+        files: dict[str, str],
+    ) -> dict[str, Any]:
+        return {
+            "workflow": "pipeline_validation",
+            "schema": normalized_summary.get("schema"),
+            "family": normalized_summary.get("family"),
+            "status": normalized_summary.get("status"),
+            "scales": list(normalized_summary.get("scales", [])),
+            "summarySchema": summary.get("schema"),
+            "verdictSchema": verdict.get("schema"),
+            "retainedArtifacts": list(summary.get("retained_artifacts", [])),
+            "perScaleResultFiles": {
+                key.split("result:", 1)[1]: path
+                for key, path in files.items()
+                if key.startswith("result:")
+            },
+        }
+
+    def _build_pipeline_validation_markdown(
+        self,
+        *,
+        summary: dict[str, Any],
+        sections: dict[str, Any],
+    ) -> str:
+        aggregate_verdict = sections.get("aggregateVerdict", {})
+        per_scale_summaries = sections.get("perScaleSummaries", [])
+        worst_case_diagnostics = sections.get("worstCaseDiagnostics", {})
+        failure_cases = sections.get("failureCases", [])
+        retention = sections.get("retention", {})
+
+        lines = [
+            "# Pipeline Validation Family",
+            "",
+            f"- Workflow: `{summary.get('workflow')}`",
+            f"- Family: `{summary.get('family')}`",
+            f"- Status: `{summary.get('status')}`",
+            f"- Trials per model: {summary.get('trialsPerModel')}",
+            f"- Scales: {', '.join(summary.get('scales', []))}",
+            f"- Structural verdict: `{self._pipeline_validation_verdict_text(summary.get('allStructuralPass'))}`",
+            f"- Inference verdict: `{self._pipeline_validation_verdict_text(summary.get('allInferencePass'))}`",
+            f"- Composite verdict: `{self._pipeline_validation_verdict_text(summary.get('allPass'))}`",
+        ]
+
+        if aggregate_verdict.get("controllerMode") or aggregate_verdict.get("optimizerResearchMode"):
+            lines.extend(
+                [
+                    f"- Controller mode: `{aggregate_verdict.get('controllerMode') or 'n/a'}`",
+                    f"- Optimizer mode: `{aggregate_verdict.get('optimizerResearchMode') or 'n/a'}`",
+                ]
+            )
+        if aggregate_verdict.get("benchmarkSuite") is not None:
+            lines.append(f"- Benchmark suite: `{aggregate_verdict.get('benchmarkSuite') or 'none'}`")
+
+        if per_scale_summaries:
+            lines.extend(
+                [
+                    "",
+                    "## Per-Scale Summary",
+                    "",
+                    "| Scale | Structural | Inference | Composite | Structural pass/fail | Inference pass/fail | Composite pass/fail | Mean loss delta | Mean perplexity delta |",
+                    "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+                ]
+            )
+            for row in per_scale_summaries:
+                structural_status = self._pipeline_validation_verdict_text(
+                    row.get("structuralFailCount") == 0 if row.get("structuralFailCount") is not None else None
+                )
+                inference_status = self._pipeline_validation_verdict_text(
+                    row.get("inferenceFailCount") == 0 if row.get("inferenceFailCount") is not None else None
+                )
+                composite_status = self._pipeline_validation_verdict_text(row.get("allPassed"))
+                lines.append(
+                    f"| {row.get('scale')} | {structural_status} | {inference_status} | {composite_status} "
+                    f"| {row.get('structuralPassCount')}/{row.get('structuralFailCount')} "
+                    f"| {row.get('inferencePassCount')}/{row.get('inferenceFailCount')} "
+                    f"| {row.get('passCount')}/{row.get('failCount')} "
+                    f"| {self._pipeline_validation_number_text(row.get('meanLossDelta'))} "
+                    f"| {self._pipeline_validation_number_text(row.get('meanPerplexityDelta'))} |"
+                )
+
+        if worst_case_diagnostics:
+            lines.extend(["", "## Worst-Case Diagnostics", ""])
+            for label, row in (
+                ("Lowest min CKA", worst_case_diagnostics.get("lowestMinCka")),
+                ("Max blindness ratio", worst_case_diagnostics.get("maxBlindnessRatio")),
+                (
+                    "Minimum null-access preserved fraction",
+                    worst_case_diagnostics.get("minBehavioralPreservedNullAccessFraction"),
+                ),
+                ("Largest loss delta", worst_case_diagnostics.get("largestLossDelta")),
+                (
+                    "Largest perplexity delta",
+                    worst_case_diagnostics.get("largestPerplexityDelta"),
+                ),
+                ("Largest repeat delta", worst_case_diagnostics.get("largestRepeatDelta")),
+                ("Largest margin mean delta", worst_case_diagnostics.get("largestMarginMeanDelta")),
+            ):
+                if not row:
+                    continue
+                lines.append(f"- {label}: {self._pipeline_validation_diagnostic_text(row)}")
+
+        if failure_cases:
+            lines.extend(["", "## Failure Cases", ""])
+            for row in failure_cases:
+                lines.append(
+                    f"- `{row.get('scale') or 'n/a'}` trial `{row.get('trialIndex')}` / seed `{row.get('seed')}`: "
+                    f"failure_modes={', '.join(row.get('failureModes', [])) or 'n/a'}; "
+                    f"cooccurrence={row.get('cooccurrenceClass') or 'n/a'}; "
+                    f"stop_reason={row.get('stopReason') or 'n/a'}; "
+                    f"min_cka={self._pipeline_validation_number_text(row.get('minCka'))} "
+                    f"(layer={self._pipeline_validation_number_text(row.get('minCkaLayer'))}); "
+                    f"blindness={self._pipeline_validation_number_text(row.get('ckaBlindnessRatio'))} "
+                    f"(layer={self._pipeline_validation_number_text(row.get('ckaBlindnessWorstLayer'))}); "
+                    f"null_access={self._pipeline_validation_number_text(row.get('nullAccessMinBehavioralPreservedFraction'))} "
+                    f"(layer={self._pipeline_validation_number_text(row.get('nullAccessMinBehavioralPreservedLayer'))}); "
+                    f"online_eval_delta={self._pipeline_validation_number_text(row.get('onlineEvalDeltaCorrect'))}; "
+                    f"repeat_delta={self._pipeline_validation_number_text(row.get('maxNgramRepeatDelta'))}"
+                )
+
+        lines.extend(["", "## Retention", ""])
+        retained_artifacts = retention.get("retainedArtifacts") or []
+        deleted_raw_artifacts = retention.get("deletedRawArtifacts") or []
+        if retained_artifacts:
+            lines.append(f"- Retained artifacts: {', '.join(retained_artifacts)}")
+        if deleted_raw_artifacts:
+            lines.append(f"- Deleted raw artifacts: {', '.join(deleted_raw_artifacts)}")
+        deleted_payload = retention.get("deletedPhase5AdapterPayload")
+        if isinstance(deleted_payload, dict) and deleted_payload:
+            lines.append(
+                "- Deleted phase-5 adapter payload: "
+                f"trials={deleted_payload.get('trial_count')}, "
+                f"total_mb={self._pipeline_validation_number_text(deleted_payload.get('adapter_safetensors_total_mb'))}"
+            )
+
+        lines.append("")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _pipeline_validation_metric_row(
+        row: Any,
+        *,
+        value_key: str,
+        layer_key: str | None,
+        output_value_key: str,
+        output_layer_key: str | None,
+        extra_keys: tuple[str, ...] = (),
+    ) -> dict[str, Any] | None:
+        if not isinstance(row, dict):
+            return None
+        normalized = {
+            "scale": row.get("scale"),
+            "trialIndex": row.get("trial_index"),
+            "seed": row.get("seed"),
+            output_value_key: row.get(value_key),
+        }
+        if layer_key and output_layer_key:
+            normalized[output_layer_key] = row.get(layer_key)
+        for key in extra_keys:
+            camel_key = {
+                "inference_min_cka": "inferenceMinCka",
+            }.get(key, key)
+            normalized[camel_key] = row.get(key)
+        return normalized
+
+    def _pipeline_validation_optional_diagnostic_rows(
+        self,
+        per_scale_results: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        repeat_rows = self._pipeline_validation_trials_with_metric(
+            per_scale_results=per_scale_results,
+            metric_key="max_ngram_repeat_delta",
+        )
+        margin_rows = self._pipeline_validation_counterexamples_with_metric(
+            per_scale_results=per_scale_results,
+            metric_key="margin_mean_delta",
+        )
+        diagnostics: dict[str, Any] = {}
+        if repeat_rows:
+            best = max(repeat_rows, key=lambda row: abs(float(row["value"])))
+            diagnostics["largestRepeatDelta"] = {
+                "scale": best.get("scale"),
+                "trialIndex": best.get("trialIndex"),
+                "seed": best.get("seed"),
+                "maxNgramRepeatDelta": best.get("value"),
+            }
+        if margin_rows:
+            best = max(margin_rows, key=lambda row: abs(float(row["value"])))
+            diagnostics["largestMarginMeanDelta"] = {
+                "scale": best.get("scale"),
+                "trialIndex": best.get("trialIndex"),
+                "seed": best.get("seed"),
+                "marginMeanDelta": best.get("value"),
+            }
+        return diagnostics
+
+    def _pipeline_validation_fallback_worst_case_diagnostics(
+        self,
+        per_scale_results: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        diagnostics: dict[str, Any] = {}
+
+        min_cka_rows = self._pipeline_validation_trials_with_metric(
+            per_scale_results=per_scale_results,
+            metric_key="min_cka",
+            layer_key="min_cka_layer",
+        )
+        if min_cka_rows:
+            best = min(min_cka_rows, key=lambda row: float(row["value"]))
+            diagnostics["lowestMinCka"] = {
+                "scale": best.get("scale"),
+                "trialIndex": best.get("trialIndex"),
+                "seed": best.get("seed"),
+                "minCka": best.get("value"),
+                "minCkaLayer": best.get("layer"),
+            }
+
+        blindness_rows = self._pipeline_validation_counterexamples_with_metric(
+            per_scale_results=per_scale_results,
+            metric_key="cka_blindness_ratio",
+            layer_key="cka_blindness_worst_layer",
+        )
+        if blindness_rows:
+            best = max(blindness_rows, key=lambda row: float(row["value"]))
+            diagnostics["maxBlindnessRatio"] = {
+                "scale": best.get("scale"),
+                "trialIndex": best.get("trialIndex"),
+                "seed": best.get("seed"),
+                "ckaBlindnessRatio": best.get("value"),
+                "ckaBlindnessWorstLayer": best.get("layer"),
+            }
+
+        null_access_rows = self._pipeline_validation_counterexamples_with_metric(
+            per_scale_results=per_scale_results,
+            metric_key="null_access_min_behavioral_preserved_fraction",
+            layer_key="null_access_min_behavioral_preserved_layer",
+        )
+        if null_access_rows:
+            best = min(null_access_rows, key=lambda row: float(row["value"]))
+            diagnostics["minBehavioralPreservedNullAccessFraction"] = {
+                "scale": best.get("scale"),
+                "trialIndex": best.get("trialIndex"),
+                "seed": best.get("seed"),
+                "fraction": best.get("value"),
+                "layer": best.get("layer"),
+            }
+
+        loss_rows = self._pipeline_validation_trials_with_metric(
+            per_scale_results=per_scale_results,
+            metric_key="loss_delta",
+        )
+        if loss_rows:
+            best = max(loss_rows, key=lambda row: float(row["value"]))
+            diagnostics["largestLossDelta"] = {
+                "scale": best.get("scale"),
+                "trialIndex": best.get("trialIndex"),
+                "seed": best.get("seed"),
+                "lossDelta": best.get("value"),
+            }
+
+        perplexity_rows = self._pipeline_validation_trials_with_metric(
+            per_scale_results=per_scale_results,
+            metric_key="perplexity_delta",
+        )
+        if perplexity_rows:
+            best = max(perplexity_rows, key=lambda row: float(row["value"]))
+            diagnostics["largestPerplexityDelta"] = {
+                "scale": best.get("scale"),
+                "trialIndex": best.get("trialIndex"),
+                "seed": best.get("seed"),
+                "perplexityDelta": best.get("value"),
+            }
+
+        diagnostics.update(self._pipeline_validation_optional_diagnostic_rows(per_scale_results))
+        return diagnostics
+
+    @staticmethod
+    def _pipeline_validation_trials_with_metric(
+        *,
+        per_scale_results: dict[str, dict[str, Any]],
+        metric_key: str,
+        layer_key: str | None = None,
+    ) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for scale, result in per_scale_results.items():
+            trial_results = result.get("trial_results", [])
+            if not isinstance(trial_results, list):
+                continue
+            for trial in trial_results:
+                if not isinstance(trial, dict) or trial.get(metric_key) is None:
+                    continue
+                row = {
+                    "scale": scale,
+                    "trialIndex": trial.get("trial_index"),
+                    "seed": trial.get("seed"),
+                    "value": trial.get(metric_key),
+                }
+                if layer_key:
+                    row["layer"] = trial.get(layer_key)
+                rows.append(row)
+        return rows
+
+    @staticmethod
+    def _pipeline_validation_counterexamples_with_metric(
+        *,
+        per_scale_results: dict[str, dict[str, Any]],
+        metric_key: str,
+        layer_key: str | None = None,
+    ) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for scale, result in per_scale_results.items():
+            counterexamples = result.get("counterexamples", [])
+            if not isinstance(counterexamples, list):
+                continue
+            for counterexample in counterexamples:
+                if not isinstance(counterexample, dict) or counterexample.get(metric_key) is None:
+                    continue
+                row = {
+                    "scale": scale,
+                    "trialIndex": counterexample.get("trial_index"),
+                    "seed": counterexample.get("seed"),
+                    "value": counterexample.get(metric_key),
+                }
+                if layer_key:
+                    row["layer"] = counterexample.get(layer_key)
+                rows.append(row)
+        return rows
+
+    @staticmethod
+    def _pipeline_validation_failure_case_row(
+        case: dict[str, Any],
+        *,
+        scale: str | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "scale": case.get("scale", scale),
+            "trialIndex": case.get("trial_index"),
+            "seed": case.get("seed"),
+            "failureModes": list(case.get("failure_modes", [])),
+            "cooccurrenceClass": case.get("cooccurrence_class"),
+            "stopReason": case.get("stop_reason"),
+            "lossDelta": case.get("loss_delta"),
+            "perplexityDelta": case.get("perplexity_delta"),
+            "minCka": case.get("min_cka"),
+            "minCkaLayer": case.get("min_cka_layer"),
+            "onlineEvalDeltaCorrect": case.get("online_eval_delta_correct"),
+            "maxNgramRepeatDelta": case.get("max_4gram_repeat_delta", case.get("max_ngram_repeat_delta")),
+            "nullAccessMinBehavioralPreservedFraction": case.get(
+                "null_access_min_behavioral_preserved_fraction"
+            ),
+            "nullAccessMinBehavioralPreservedLayer": case.get(
+                "null_access_min_behavioral_preserved_layer"
+            ),
+            "ckaBlindnessRatio": case.get("cka_blindness_ratio"),
+            "ckaBlindnessWorstLayer": case.get("cka_blindness_worst_layer"),
+            "marginMeanDelta": case.get("margin_mean_delta"),
+            "degenerationMaxNgramRepeat": case.get("degeneration_max_ngram_repeat"),
+            "degenerationMeanNgramRepeat": case.get("degeneration_mean_ngram_repeat"),
+            "rssFinalCosine": case.get("rss_final_cosine"),
+            "rssFinalSpearman": case.get("rss_final_spearman"),
+            "dimNullRecruitmentFromBaseline": case.get("dim_null_recruitment_from_baseline"),
+            "inferenceMinCka": case.get("inference_min_cka"),
+            "inferenceMinCkaLayer": case.get("inference_min_cka_layer"),
+            "nullObservabilityMaxConditionNumber": case.get(
+                "null_observability_max_condition_number"
+            ),
+            "nullObservabilityMaxConditionLayer": case.get(
+                "null_observability_max_condition_layer"
+            ),
+            "modeConnectivityBarrier": case.get("mode_connectivity_barrier"),
+            "modeConnectivityNormalizedBarrier": case.get(
+                "mode_connectivity_normalized_barrier"
+            ),
+            "modeConnectivityMethod": case.get("mode_connectivity_method"),
+            "moeRouterStability": case.get("moe_router_stability"),
+            "onlineEvalFirstPreDegradedEpoch": case.get("online_eval_first_pre_degraded_epoch"),
+            "onlineEvalFirstPostDegradedEpoch": case.get("online_eval_first_post_degraded_epoch"),
+        }
+
+    @staticmethod
+    def _pipeline_validation_verdict_text(value: Any) -> str:
+        if value is True:
+            return "PASS"
+        if value is False:
+            return "FAIL"
+        return "n/a"
+
+    @staticmethod
+    def _pipeline_validation_number_text(value: Any) -> str:
+        if value is None:
+            return "n/a"
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, int):
+            return str(value)
+        if isinstance(value, float):
+            return f"{value:.6f}".rstrip("0").rstrip(".")
+        return str(value)
+
+    def _pipeline_validation_diagnostic_text(self, row: dict[str, Any]) -> str:
+        parts = []
+        if row.get("scale") is not None:
+            parts.append(f"scale={row['scale']}")
+        if row.get("trialIndex") is not None:
+            parts.append(f"trial={self._pipeline_validation_number_text(row['trialIndex'])}")
+        if row.get("seed") is not None:
+            parts.append(f"seed={self._pipeline_validation_number_text(row['seed'])}")
+        for key in (
+            "minCka",
+            "minCkaLayer",
+            "ckaBlindnessRatio",
+            "ckaBlindnessWorstLayer",
+            "fraction",
+            "layer",
+            "lossDelta",
+            "perplexityDelta",
+            "maxNgramRepeatDelta",
+            "marginMeanDelta",
+            "inferenceMinCka",
+        ):
+            if row.get(key) is not None:
+                parts.append(f"{key}={self._pipeline_validation_number_text(row[key])}")
+        return ", ".join(parts)
 
     @staticmethod
     def _normalize_measurement_atlas_summary(

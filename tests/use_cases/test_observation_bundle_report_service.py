@@ -405,6 +405,192 @@ def _write_measurement_atlas_fixture(
     return bundle_dir
 
 
+def _write_pipeline_validation_fixture(
+    tmp_path: Path,
+    *,
+    bundle_name: str = "pipeline-validation",
+    include_failures: bool = True,
+    include_contract_tags: bool = False,
+    include_report: bool = True,
+) -> Path:
+    bundle_dir = tmp_path / bundle_name
+    bundle_dir.mkdir()
+    scale_dir = bundle_dir / "350M"
+    scale_dir.mkdir()
+
+    verdict_payload = {
+        "timestamp": "2026-04-02T00:00:00+00:00",
+        "git_hash": "deadbeef",
+        "trials_per_model": 5 if include_failures else 20,
+        "controller_mode": "mass_behavioral_probe",
+        "optimizer_research_mode": "adamw_matched_trace",
+        "benchmark_suite": "quick",
+        "scales": ["350M"],
+        "all_pass": not include_failures,
+        "all_structural_pass": True,
+        "all_inference_pass": not include_failures,
+        "per_scale": {
+            "350M": {
+                "all_passed": not include_failures,
+                "pass_count": 3 if include_failures else 20,
+                "fail_count": 2 if include_failures else 0,
+                "structural_pass_count": 5 if include_failures else 20,
+                "structural_fail_count": 0,
+                "inference_pass_count": 3 if include_failures else 20,
+                "inference_fail_count": 2 if include_failures else 0,
+                "phase5_inference_enabled": True,
+                "error": None,
+            }
+        },
+    }
+    summary_payload = {
+        "family": bundle_name,
+        "status": "canonical",
+        "retained_artifacts": [
+            f"results/{bundle_name}/verdict.json",
+            f"results/{bundle_name}/350M/result.json",
+        ],
+        "aggregate_verdict": verdict_payload,
+        "per_scale_summary": {
+            "350M": {
+                "pass_count": 3 if include_failures else 20,
+                "fail_count": 2 if include_failures else 0,
+                "structural_pass_count": 5 if include_failures else 20,
+                "structural_fail_count": 0,
+                "inference_pass_count": 3 if include_failures else 20,
+                "inference_fail_count": 2 if include_failures else 0,
+                "phase5_probe_count": 10,
+                "phase5_probe_seed": 3475334679,
+                "mean_loss_delta": 0.9840814639514399 if include_failures else 0.7889143830883715,
+                "min_loss_delta": 0.5715736496235642 if include_failures else 0.5232124283767878,
+                "mean_perplexity_delta": 12.567903220520218 if include_failures else 10.887178869354896,
+                "min_perplexity_delta": 8.874624862846403 if include_failures else 8.30431945054324,
+            }
+        },
+        "worst_case_trial_diagnostics": {
+            "lowest_min_cka": {
+                "scale": "350M",
+                "trial_index": 0,
+                "seed": 4231027559,
+                "min_cka": 0.9323521445735921 if include_failures else 0.9315346048482969,
+                "min_cka_layer": 15,
+                "mean_cka": 0.9885425762893757,
+            },
+            "max_blindness_ratio": {
+                "scale": "350M",
+                "trial_index": 1 if include_failures else 18,
+                "seed": 4231027560 if include_failures else 4231027577,
+                "cka_blindness_ratio": 17.356273235045485 if include_failures else 55.03113202131845,
+                "cka_blindness_worst_layer": 7,
+                "inference_min_cka": 0.3333333333333333 if include_failures else 0.91,
+            },
+            "min_behavioral_preserved_null_access_fraction": {
+                "scale": "350M",
+                "trial_index": 1,
+                "seed": 4231027560,
+                "fraction": 0.005462362115171986 if include_failures else 0.004797473250492749,
+                "layer": 8,
+            },
+            "largest_loss_delta": {
+                "scale": "350M",
+                "trial_index": 0,
+                "seed": 4231027559,
+                "loss_delta": 1.1657124188826196 if include_failures else 1.0990587783853212,
+            },
+            "largest_perplexity_delta": {
+                "scale": "350M",
+                "trial_index": 0,
+                "seed": 4231027559,
+                "perplexity_delta": 14.030564000954609 if include_failures else 13.592625490301305,
+            },
+        },
+        "retained_failure_cases": (
+            [
+                {
+                    "scale": "350M",
+                    "trial_index": 0,
+                    "seed": 4231027559,
+                    "failure_modes": ["online_eval_degraded", "fourgram_degenerated"],
+                    "cooccurrence_class": "cka_shift_and_inference_degraded",
+                    "stop_reason": "certificate (epoch=10)",
+                    "loss_delta": 1.1657124188826196,
+                    "perplexity_delta": 14.030564000954609,
+                    "min_cka": 0.9323521445735921,
+                    "min_cka_layer": 15,
+                    "online_eval_delta_correct": -1,
+                    "max_4gram_repeat_delta": 0.11228338863836185,
+                    "null_access_min_behavioral_preserved_fraction": 0.006602507612182352,
+                    "null_access_min_behavioral_preserved_layer": 8,
+                    "cka_blindness_ratio": 14.165508425614297,
+                    "cka_blindness_worst_layer": 7,
+                    "margin_mean_delta": 0.6687500000000001,
+                }
+            ]
+            if include_failures
+            else []
+        ),
+        "deleted_raw_artifacts": [f"results/{bundle_name}/350M/phase5_artifacts"],
+        "deleted_phase5_adapter_payload": {
+            "trial_count": 5 if include_failures else 20,
+            "adapter_safetensors_total_mb": 192.79 if include_failures else 771.18,
+        },
+    }
+    if include_contract_tags:
+        verdict_payload["workflow"] = "pipeline_validation"
+        verdict_payload["schema"] = "mc.pipeline_validation.family.v1"
+        summary_payload["workflow"] = "pipeline_validation"
+        summary_payload["schema"] = "mc.pipeline_validation.family.v1"
+
+    result_payload = {
+        "model_path": "/models/LFM2-350M",
+        "dataset_path": "/data/train.jsonl",
+        "eval_dataset_path": "/data/eval.jsonl",
+        "trials_requested": 5 if include_failures else 20,
+        "phase5_inference_enabled": True,
+        "phase5_probe_count": 10,
+        "phase5_probe_seed": 3475334679,
+        "pass_count": 3 if include_failures else 20,
+        "fail_count": 2 if include_failures else 0,
+        "structural_pass_count": 5 if include_failures else 20,
+        "structural_fail_count": 0,
+        "inference_pass_count": 3 if include_failures else 20,
+        "inference_fail_count": 2 if include_failures else 0,
+        "all_passed": not include_failures,
+        "min_loss_delta": 0.5715736496235642 if include_failures else 0.5232124283767878,
+        "mean_loss_delta": 0.9840814639514399 if include_failures else 0.7889143830883715,
+        "min_perplexity_delta": 8.874624862846403 if include_failures else 8.30431945054324,
+        "mean_perplexity_delta": 12.567903220520218 if include_failures else 10.887178869354896,
+        "trial_results": [
+            {
+                "trial_index": 0,
+                "seed": 4231027559,
+                "loss_delta": 1.1657124188826196 if include_failures else 1.0990587783853212,
+                "perplexity_delta": 14.030564000954609 if include_failures else 13.592625490301305,
+                "min_cka": 0.9323521445735921 if include_failures else 0.9377733084427855,
+                "min_cka_layer": 15,
+                "max_ngram_repeat_delta": 0.11228338863836185 if include_failures else -0.08935629587803506,
+            }
+        ],
+        "counterexamples": summary_payload["retained_failure_cases"],
+    }
+
+    (bundle_dir / "verdict.json").write_text(
+        json.dumps(verdict_payload) + "\n",
+        encoding="utf-8",
+    )
+    (bundle_dir / "summary.json").write_text(
+        json.dumps(summary_payload) + "\n",
+        encoding="utf-8",
+    )
+    (scale_dir / "result.json").write_text(
+        json.dumps(result_payload) + "\n",
+        encoding="utf-8",
+    )
+    if include_report:
+        (bundle_dir / "REPORT.md").write_text("# retained pipeline validation report\n", encoding="utf-8")
+    return bundle_dir
+
+
 def test_build_computes_sections_from_rows(tmp_path: Path) -> None:
     bundle_dir = _write_bundle_fixture(tmp_path)
     service = ObservationBundleReportService()
@@ -577,3 +763,128 @@ def test_load_measurement_atlas_legacy_embedding_rows_render_embedding_without_s
 
     assert result.sections["studySummaries"][0]["earliestShiftLocus"] == "embedding"
     assert "-1" not in result.markdown
+
+
+def test_load_pipeline_validation_bundle_builds_expected_sections(tmp_path: Path) -> None:
+    bundle_dir = _write_pipeline_validation_fixture(tmp_path)
+    service = ObservationBundleReportService()
+
+    result = service.load(bundle_dir)
+
+    assert result.summary["workflow"] == "pipeline_validation"
+    assert result.summary["family"] == "pipeline-validation"
+    assert result.summary["schema"] is None
+    assert result.summary["allPass"] is False
+    assert result.summary["allStructuralPass"] is True
+    assert result.summary["allInferencePass"] is False
+    assert result.manifest["workflow"] == "pipeline_validation"
+    assert "aggregateVerdict" in result.sections
+    assert "perScaleSummaries" in result.sections
+    assert "worstCaseDiagnostics" in result.sections
+    assert "failureCases" in result.sections
+    assert "retention" in result.sections
+    assert result.sections["aggregateVerdict"]["controllerMode"] == "mass_behavioral_probe"
+    per_scale = result.sections["perScaleSummaries"][0]
+    assert per_scale["scale"] == "350M"
+    assert per_scale["inferenceFailCount"] == 2
+    worst_case = result.sections["worstCaseDiagnostics"]
+    assert worst_case["lowestMinCka"]["minCka"] == pytest.approx(0.9323521445735921)
+    assert worst_case["maxBlindnessRatio"]["ckaBlindnessWorstLayer"] == 7
+    failure_case = result.sections["failureCases"][0]
+    assert failure_case["cooccurrenceClass"] == "cka_shift_and_inference_degraded"
+    assert failure_case["maxNgramRepeatDelta"] == pytest.approx(0.11228338863836185)
+    assert "# Pipeline Validation Family" in result.markdown
+    assert "## Per-Scale Summary" in result.markdown
+    assert "## Failure Cases" in result.markdown
+    assert "Structural verdict: `PASS`" in result.markdown
+    assert "Inference verdict: `FAIL`" in result.markdown
+
+
+def test_load_pipeline_validation_all_pass_bundle_omits_failure_cases_markdown(
+    tmp_path: Path,
+) -> None:
+    bundle_dir = _write_pipeline_validation_fixture(
+        tmp_path,
+        bundle_name="pipeline-validation-blindness",
+        include_failures=False,
+    )
+    service = ObservationBundleReportService()
+
+    result = service.load(bundle_dir)
+
+    assert result.summary["workflow"] == "pipeline_validation"
+    assert result.summary["allPass"] is True
+    assert result.sections["failureCases"] == []
+    assert "## Failure Cases" not in result.markdown
+    assert "Composite verdict: `PASS`" in result.markdown
+
+
+def test_load_pipeline_validation_rejects_missing_verdict_file(tmp_path: Path) -> None:
+    bundle_dir = _write_pipeline_validation_fixture(tmp_path)
+    (bundle_dir / "verdict.json").unlink()
+    service = ObservationBundleReportService()
+
+    with pytest.raises(ValueError, match="missing required files"):
+        service.load(bundle_dir)
+
+
+def test_load_pipeline_validation_rejects_missing_summary_file(tmp_path: Path) -> None:
+    bundle_dir = _write_pipeline_validation_fixture(tmp_path)
+    (bundle_dir / "summary.json").unlink()
+    service = ObservationBundleReportService()
+
+    with pytest.raises(ValueError, match="missing required files"):
+        service.load(bundle_dir)
+
+
+def test_load_pipeline_validation_rejects_missing_per_scale_result_file(tmp_path: Path) -> None:
+    bundle_dir = _write_pipeline_validation_fixture(tmp_path)
+    (bundle_dir / "350M" / "result.json").unlink()
+    service = ObservationBundleReportService()
+
+    with pytest.raises(ValueError, match="missing required files"):
+        service.load(bundle_dir)
+
+
+def test_load_pipeline_validation_rejects_malformed_summary_json(tmp_path: Path) -> None:
+    bundle_dir = _write_pipeline_validation_fixture(tmp_path)
+    (bundle_dir / "summary.json").write_text("{not-json\n", encoding="utf-8")
+    service = ObservationBundleReportService()
+
+    with pytest.raises(ValueError, match="Malformed JSON in summary.json"):
+        service.load(bundle_dir)
+
+
+def test_load_pipeline_validation_rejects_malformed_verdict_json(tmp_path: Path) -> None:
+    bundle_dir = _write_pipeline_validation_fixture(tmp_path)
+    (bundle_dir / "verdict.json").write_text("{not-json\n", encoding="utf-8")
+    service = ObservationBundleReportService()
+
+    with pytest.raises(ValueError, match="Malformed JSON in verdict.json"):
+        service.load(bundle_dir)
+
+
+def test_load_pipeline_validation_rejects_malformed_result_json(tmp_path: Path) -> None:
+    bundle_dir = _write_pipeline_validation_fixture(tmp_path)
+    (bundle_dir / "350M" / "result.json").write_text("{not-json\n", encoding="utf-8")
+    service = ObservationBundleReportService()
+
+    with pytest.raises(ValueError, match="Malformed JSON in result.json"):
+        service.load(bundle_dir)
+
+
+def test_load_pipeline_validation_infers_single_scale_for_legacy_summary_rows(
+    tmp_path: Path,
+) -> None:
+    bundle_dir = _write_pipeline_validation_fixture(tmp_path)
+    summary_path = bundle_dir / "summary.json"
+    summary_payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary_payload["worst_case_trial_diagnostics"]["lowest_min_cka"].pop("scale", None)
+    summary_payload["retained_failure_cases"][0].pop("scale", None)
+    summary_path.write_text(json.dumps(summary_payload) + "\n", encoding="utf-8")
+    service = ObservationBundleReportService()
+
+    result = service.load(bundle_dir)
+
+    assert result.sections["worstCaseDiagnostics"]["lowestMinCka"]["scale"] == "350M"
+    assert result.sections["failureCases"][0]["scale"] == "350M"

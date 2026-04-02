@@ -109,3 +109,69 @@ def test_build_report_includes_dual_verdict_fields():
     assert "rss_final_cosine=0.987000" in report
     assert "rss_final_spearman=0.945000" in report
     assert "dim_null_recruitment_from_baseline=0.030000" in report
+
+
+def test_machine_readable_payloads_include_workflow_tags():
+    pipeline_validation = _load_pipeline_validation_module()
+
+    all_results = {
+        "350M": {
+            "all_passed": False,
+            "pass_count": 3,
+            "fail_count": 2,
+            "structural_pass_count": 5,
+            "structural_fail_count": 0,
+            "inference_pass_count": 3,
+            "inference_fail_count": 2,
+            "phase5_inference_enabled": True,
+            "phase5_probe_count": 10,
+            "phase5_probe_seed": 3475334679,
+            "mean_loss_delta": 0.9840814639514399,
+            "min_loss_delta": 0.5715736496235642,
+            "mean_perplexity_delta": 12.567903220520218,
+            "min_perplexity_delta": 8.874624862846403,
+            "trial_results": [
+                {
+                    "trial_index": 0,
+                    "seed": 4231027559,
+                    "loss_delta": 1.1657124188826196,
+                    "perplexity_delta": 14.030564000954609,
+                    "min_cka": 0.9323521445735921,
+                    "min_cka_layer": 15,
+                }
+            ],
+            "counterexamples": [
+                {
+                    "trial_index": 0,
+                    "seed": 4231027559,
+                    "failure_modes": ["online_eval_degraded"],
+                    "cka_blindness_ratio": 17.356273235045485,
+                    "cka_blindness_worst_layer": 7,
+                    "null_access_min_behavioral_preserved_fraction": 0.005462362115171986,
+                    "null_access_min_behavioral_preserved_layer": 8,
+                }
+            ],
+        }
+    }
+
+    verdict = pipeline_validation._build_verdict_payload(
+        all_results=all_results,
+        timestamp="2026-04-02T00:00:00+00:00",
+        git_hash="deadbeef",
+        trials=5,
+        scales=["350M"],
+        controller_mode="mass_behavioral_probe",
+        optimizer_research_mode="adamw_matched_trace",
+        benchmark_suite="quick",
+    )
+    summary = pipeline_validation._build_summary_payload(
+        all_results=all_results,
+        verdict=verdict,
+        output_root=Path("/tmp/pipeline_validation_fixture"),
+    )
+
+    assert verdict["workflow"] == "pipeline_validation"
+    assert verdict["schema"] == "mc.pipeline_validation.family.v1"
+    assert summary["workflow"] == "pipeline_validation"
+    assert summary["schema"] == "mc.pipeline_validation.family.v1"
+    assert summary["family"] == "pipeline_validation_fixture"
