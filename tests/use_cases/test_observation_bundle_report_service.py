@@ -142,6 +142,18 @@ def _write_measurement_atlas_fixture(
 ) -> Path:
     bundle_dir = tmp_path / "atlas-bundle"
     bundle_dir.mkdir()
+    long_prompt = (
+        "ALPHA   BETA\n\n"
+        "This prompt keeps going with extra context about casing and reasoning. "
+        "This prompt keeps going with extra context about casing and reasoning. "
+        "This prompt keeps going with extra context about casing and reasoning."
+    )
+    long_generated = (
+        "SUPPORTED\n\n"
+        "This generated explanation keeps going across lines and should be clipped for atlas previews. "
+        "This generated explanation keeps going across lines and should be clipped for atlas previews. "
+        "This generated explanation keeps going across lines and should be clipped for atlas previews."
+    )
 
     if schema_version.endswith(".v2"):
         frozen_surfaces = {
@@ -186,8 +198,8 @@ def _write_measurement_atlas_fixture(
             "studyId": "measurement_atlas_casing",
             "caseId": "case1",
             "variantId": "all_caps",
-            "promptText": "ALPHA BETA",
-            "generatedText": "SUPPORTED",
+            "promptText": long_prompt,
+            "generatedText": long_generated,
             "errors": [],
         },
     ]
@@ -301,6 +313,15 @@ def _write_measurement_atlas_fixture(
                 "variantValue": 0.1,
                 "delta": 0.0,
             },
+            {
+                "mode": "replay",
+                "region": "response",
+                "space": "hidden",
+                "metric": "meanPathLengthRatio",
+                "baselineValue": 1.2,
+                "variantValue": 99.2,
+                "delta": 98.0,
+            },
         ],
         "liveGeneratedFirstDivergenceStep": 1,
         "replayResponseFirstDivergenceStep": 1,
@@ -355,11 +376,10 @@ def _write_measurement_atlas_fixture(
                         "studyId": "measurement_atlas_casing",
                         "caseId": "case1",
                         "variantId": "all_caps",
-                        "baselineVariantId": "control",
-                        "eventType": "first_divergence",
-                        "mode": "replay",
-                        "region": "response",
-                        "stepIndex": 1,
+                        "eventType": "grounded_label_onset",
+                        "mode": "live",
+                        "region": "generated",
+                        "stepIndex": 2,
                     }
                 )
                 + "\n",
@@ -368,10 +388,11 @@ def _write_measurement_atlas_fixture(
                         "studyId": "measurement_atlas_casing",
                         "caseId": "case1",
                         "variantId": "all_caps",
-                        "eventType": "grounded_label_onset",
-                        "mode": "live",
-                        "region": "generated",
-                        "stepIndex": 2,
+                        "baselineVariantId": "control",
+                        "eventType": "first_divergence",
+                        "mode": "replay",
+                        "region": "response",
+                        "stepIndex": 1,
                     }
                 )
                 + "\n",
@@ -455,9 +476,28 @@ def test_load_measurement_atlas_bundle_builds_expected_sections(tmp_path: Path) 
     assert result.sections["surfaces"]["observedReplaySpaces"] == ["hidden", "embedding"]
     assert result.sections["studySummaries"][0]["studyId"] == "measurement_atlas_casing"
     assert result.sections["topSequenceShifts"][0]["metric"] == "meanGeodesicDeviation"
+    assert all(
+        row["metric"] == "meanGeodesicDeviation"
+        for row in result.sections["topSequenceShifts"]
+    )
     assert result.sections["locusChanges"][0]["baselineLocus"] == "layer:1"
-    assert result.sections["exampleComparisons"][0]["promptText"] == "ALPHA BETA"
+    example = result.sections["exampleComparisons"][0]
+    assert "promptText" not in example
+    assert "generatedText" not in example
+    assert example["promptPreview"].startswith("ALPHA BETA This prompt keeps going")
+    assert "\n" not in example["promptPreview"]
+    assert example["promptPreview"].endswith("...")
+    assert example["generatedPreview"].endswith("...")
+    assert example["promptCharCount"] > len(example["promptPreview"])
+    assert example["generatedCharCount"] > len(example["generatedPreview"])
+    assert result.sections["onsetSamples"][0]["eventType"] == "grounded_label_onset"
     assert "# Measurement Atlas Bundle" in result.markdown
+    assert "## Largest Geodesic Shifts" in result.markdown
+    assert "## Largest Sequence Shifts" not in result.markdown
+    assert "biggest movement was in" in result.markdown
+    assert "meanPathLengthRatio" not in result.markdown
+    assert "prompt='ALPHA   BETA" not in result.markdown
+    assert "\\n\\n" not in result.markdown
 
 
 def test_load_measurement_atlas_rejects_missing_required_file(tmp_path: Path) -> None:

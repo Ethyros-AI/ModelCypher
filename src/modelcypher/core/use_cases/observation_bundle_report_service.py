@@ -690,6 +690,8 @@ class ObservationBundleReportService:
         rows: list[dict[str, Any]] = []
         for comparison in comparisons:
             for row in comparison.get("sequenceDeltas", []):
+                if row.get("metric") != "meanGeodesicDeviation":
+                    continue
                 delta = row.get("delta")
                 if delta is None:
                     continue
@@ -750,9 +752,14 @@ class ObservationBundleReportService:
         *,
         limit: int = 10,
     ) -> list[dict[str, Any]]:
+        event_priority = {
+            "grounded_label_onset": 0,
+            "first_divergence": 1,
+        }
         rows = sorted(
             onset_events,
             key=lambda row: (
+                event_priority.get(str(row.get("eventType", "")).strip(), 99),
                 str(row.get("studyId", "")),
                 str(row.get("caseId", "")),
                 str(row.get("variantId", "")),
@@ -805,8 +812,12 @@ class ObservationBundleReportService:
                         "caseId": comparison.get("caseId"),
                         "from": comparison.get("from"),
                         "to": comparison.get("to"),
-                        "promptText": variant_row.get("promptText"),
-                        "generatedText": variant_row.get("generatedText"),
+                        "promptPreview": self._atlas_preview_text(variant_row.get("promptText")),
+                        "generatedPreview": self._atlas_preview_text(
+                            variant_row.get("generatedText")
+                        ),
+                        "promptCharCount": len(str(variant_row.get("promptText", ""))),
+                        "generatedCharCount": len(str(variant_row.get("generatedText", ""))),
                         "liveGeneratedFirstDivergenceStep": comparison.get(
                             "liveGeneratedFirstDivergenceStep"
                         ),
@@ -862,17 +873,17 @@ class ObservationBundleReportService:
             for row in study_summaries:
                 lines.append(
                     f"- `{row['studyId']}`: "
-                    f"region_moved_most={row['regionMovedMost'] or 'n/a'}, "
-                    f"space_moved_most={row['spaceMovedMost'] or 'n/a'}, "
-                    f"earliest_divergence={row['earliestDivergenceStep'] if row['earliestDivergenceStep'] is not None else 'n/a'}, "
-                    f"earliest_shift_locus={row['earliestShiftLocus'] or 'n/a'}, "
-                    f"agreement={row['liveReplayAgreement']}, "
-                    f"grounded_onsets={row['groundedOnsetCount']}, "
-                    f"earliest_grounded_onset={row['earliestGroundedOnsetStep'] if row['earliestGroundedOnsetStep'] is not None else 'n/a'}"
+                    f"biggest movement was in `{row['regionMovedMost'] or 'n/a'}` / "
+                    f"`{row['spaceMovedMost'] or 'n/a'}`; "
+                    f"earliest divergence step was `{row['earliestDivergenceStep'] if row['earliestDivergenceStep'] is not None else 'n/a'}`; "
+                    f"earliest shift locus was `{row['earliestShiftLocus'] or 'n/a'}`; "
+                    f"live/replay agreement was `{row['liveReplayAgreement']}`; "
+                    f"grounded onsets=`{row['groundedOnsetCount']}` "
+                    f"(earliest=`{row['earliestGroundedOnsetStep'] if row['earliestGroundedOnsetStep'] is not None else 'n/a'}`)"
                 )
 
         if top_sequence_shifts:
-            lines.extend(["", "## Largest Sequence Shifts", ""])
+            lines.extend(["", "## Largest Geodesic Shifts", ""])
             for row in top_sequence_shifts:
                 lines.append(
                     f"- `{row['studyId']}` / `{row['caseId']}` / `{row['from']}` -> `{row['to']}`: "
@@ -901,7 +912,8 @@ class ObservationBundleReportService:
             for row in example_comparisons:
                 lines.append(
                     f"- `{row['studyId']}` / `{row['caseId']}` / `{row['from']}` -> `{row['to']}`: "
-                    f"prompt={row['promptText']!r} generated={row['generatedText']!r} "
+                    f"prompt={row['promptPreview']!r} ({row['promptCharCount']} chars) "
+                    f"generated={row['generatedPreview']!r} ({row['generatedCharCount']} chars) "
                     f"live_divergence={row['liveGeneratedFirstDivergenceStep']} "
                     f"replay_divergence={row['replayResponseFirstDivergenceStep']}"
                 )
@@ -1110,3 +1122,14 @@ class ObservationBundleReportService:
         if not spaces:
             return "(none)"
         return ", ".join(spaces)
+
+    @staticmethod
+    def _atlas_preview_text(
+        text: Any,
+        *,
+        limit: int = 160,
+    ) -> str:
+        normalized = " ".join(str(text or "").split())
+        if len(normalized) <= limit:
+            return normalized
+        return normalized[: limit - 3] + "..."

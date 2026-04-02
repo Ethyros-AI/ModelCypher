@@ -74,7 +74,8 @@ Current state (2026-04-02):
 - `mc analyze capture`, `mc analyze family`, and `mc analyze compare` now define
   the canonical workflow surface.
 - `mc analyze report --bundle ...` now closes the read-side loop for existing
-  observation bundles without regenerating artifacts.
+  observation bundles and retained measurement-atlas artifacts without
+  regenerating artifacts.
 - The follow-on research surface for token-level prompt and generation tracing
   now lives in `scripts/run_measurement_atlas.py`, writing
   `results/measurement_atlas/<run_id>/` without promoting a new CLI verb yet.
@@ -91,9 +92,10 @@ Current state (2026-04-02):
   `layer_metrics.jsonl`, `comparisons.jsonl`.
 - Phase 1 scope is inference-first and checkpoint-comparison-first. Live
   training-stream telemetry remains deferred.
-- Remaining atlas work is now contract and evidence polish:
-  keep requested vs observed replay surfaces explicit, improve family-level
-  summaries, and preserve the retained alignment-closure evidence in
+- Remaining atlas work is now presentation and study-pack refinement:
+  keep the retained atlas reports compact and decision-friendly, expand or tune
+  the frozen study pack only when a concrete read-side question needs it, and
+  preserve the retained alignment-closure evidence in
   `results/measurement_atlas/REPORT.md`.
 
 ### R1. Baseline Suite Against Standard Practice

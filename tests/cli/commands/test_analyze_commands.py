@@ -157,6 +157,18 @@ def _write_report_bundle_fixture(tmp_path: Path) -> Path:
 def _write_measurement_atlas_report_fixture(tmp_path: Path) -> Path:
     bundle_dir = tmp_path / "atlas-bundle"
     bundle_dir.mkdir()
+    long_prompt = (
+        "ALPHA   BETA\n\n"
+        "This prompt keeps going with extra context about casing and reasoning. "
+        "This prompt keeps going with extra context about casing and reasoning. "
+        "This prompt keeps going with extra context about casing and reasoning."
+    )
+    long_generated = (
+        "SUPPORTED\n\n"
+        "This generated explanation keeps going across lines and should be clipped for atlas previews. "
+        "This generated explanation keeps going across lines and should be clipped for atlas previews. "
+        "This generated explanation keeps going across lines and should be clipped for atlas previews."
+    )
     (bundle_dir / "run_manifest.json").write_text(
         json.dumps(
             {
@@ -210,8 +222,8 @@ def _write_measurement_atlas_report_fixture(tmp_path: Path) -> Path:
                         "studyId": "measurement_atlas_casing",
                         "caseId": "case1",
                         "variantId": "all_caps",
-                        "promptText": "ALPHA BETA",
-                        "generatedText": "SUPPORTED",
+                        "promptText": long_prompt,
+                        "generatedText": long_generated,
                         "errors": [],
                     }
                 )
@@ -305,6 +317,16 @@ def _write_measurement_atlas_report_fixture(tmp_path: Path) -> Path:
                         "variantValue": 0.7,
                         "delta": 0.4,
                     }
+                    ,
+                    {
+                        "mode": "replay",
+                        "region": "response",
+                        "space": "hidden",
+                        "metric": "meanPathLengthRatio",
+                        "baselineValue": 1.2,
+                        "variantValue": 99.2,
+                        "delta": 98.0,
+                    }
                 ],
                 "locusComparisons": [
                     {
@@ -326,19 +348,35 @@ def _write_measurement_atlas_report_fixture(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     (bundle_dir / "onset_events.jsonl").write_text(
-        json.dumps(
-            {
-                "studyId": "measurement_atlas_casing",
-                "caseId": "case1",
-                "variantId": "all_caps",
-                "baselineVariantId": "control",
-                "eventType": "first_divergence",
-                "mode": "replay",
-                "region": "response",
-                "stepIndex": 1,
-            }
-        )
-        + "\n",
+        "".join(
+            [
+                json.dumps(
+                    {
+                        "studyId": "measurement_atlas_casing",
+                        "caseId": "case1",
+                        "variantId": "all_caps",
+                        "eventType": "grounded_label_onset",
+                        "mode": "live",
+                        "region": "generated",
+                        "stepIndex": 2,
+                    }
+                )
+                + "\n",
+                json.dumps(
+                    {
+                        "studyId": "measurement_atlas_casing",
+                        "caseId": "case1",
+                        "variantId": "all_caps",
+                        "baselineVariantId": "control",
+                        "eventType": "first_divergence",
+                        "mode": "replay",
+                        "region": "response",
+                        "stepIndex": 1,
+                    }
+                )
+                + "\n",
+            ]
+        ),
         encoding="utf-8",
     )
     (bundle_dir / "REPORT.md").write_text("# report\n", encoding="utf-8")
@@ -509,6 +547,41 @@ class TestAnalyzeWorkflowCommands:
         assert payload["summary"]["workflow"] == "measurement_atlas"
         assert "surfaces" in payload["sections"]
         assert "studySummaries" in payload["sections"]
+        assert payload["sections"]["topSequenceShifts"][0]["metric"] == "meanGeodesicDeviation"
+        assert all(
+            row["metric"] == "meanGeodesicDeviation"
+            for row in payload["sections"]["topSequenceShifts"]
+        )
+        example = payload["sections"]["exampleComparisons"][0]
+        assert "promptText" not in example
+        assert "generatedText" not in example
+        assert example["promptPreview"].endswith("...")
+        assert example["generatedPreview"].endswith("...")
+        assert example["promptCharCount"] > len(example["promptPreview"])
+        assert example["generatedCharCount"] > len(example["generatedPreview"])
+
+    def test_report_text_for_measurement_atlas_uses_compact_preview_lines(self, tmp_path):
+        bundle_dir = _write_measurement_atlas_report_fixture(tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "--output",
+                "text",
+                "analyze",
+                "report",
+                "--bundle",
+                str(bundle_dir),
+            ],
+        )
+
+        assert result.exit_code == 0, result.stdout
+        assert "## Largest Geodesic Shifts" in result.stdout
+        assert "## Largest Sequence Shifts" not in result.stdout
+        assert "meanPathLengthRatio" not in result.stdout
+        assert "prompt='ALPHA   BETA" not in result.stdout
+        assert "\\n\\n" not in result.stdout
+        assert "chars)" in result.stdout
 
     def test_report_missing_bundle_directory(self, tmp_path):
         result = runner.invoke(
