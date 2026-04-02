@@ -387,19 +387,22 @@ def analyze_report(
     bundle: str = typer.Option(
         ...,
         "--bundle",
-        help="Observation bundle directory",
+        help="Report bundle directory",
     ),
 ) -> None:
-    """Read an existing observation bundle and render the shared report view."""
+    """Read an existing report bundle and render the shared report view."""
     context = _context(ctx)
     bundle_dir = Path(bundle).expanduser().resolve()
 
     if not bundle_dir.exists() or not bundle_dir.is_dir():
         error = ErrorDetail(
             code="MC-1098",
-            title="Missing observation bundle",
+            title="Missing report bundle",
             detail=f"Bundle directory not found: {bundle_dir}",
-            hint="Point --bundle at a directory created by mc analyze capture/family/compare.",
+            hint=(
+                "Point --bundle at a directory created by mc analyze capture/family/compare "
+                "or scripts/run_measurement_atlas.py."
+            ),
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty, exit_code=EXIT_INPUT)
@@ -411,11 +414,14 @@ def analyze_report(
     except ValueError as exc:
         error = ErrorDetail(
             code="MC-1099",
-            title="Invalid observation bundle",
+            title="Invalid report bundle",
             detail=str(exc),
             hint=(
-                "Check that the bundle contains manifest.json, summary.json, variants.jsonl, "
-                "layer_metrics.jsonl, and comparisons.jsonl."
+                "Check that the bundle contains either the observation-bundle files "
+                "(manifest.json, summary.json, variants.jsonl, layer_metrics.jsonl, comparisons.jsonl) "
+                "or the measurement-atlas files "
+                "(run_manifest.json, summary.json, variants.jsonl, sequence_metrics.jsonl, "
+                "step_metrics.jsonl, space_step_metrics.jsonl, comparisons.jsonl, onset_events.jsonl)."
             ),
             trace_id=context.trace_id,
         )

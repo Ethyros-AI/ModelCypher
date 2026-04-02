@@ -154,6 +154,197 @@ def _write_report_bundle_fixture(tmp_path: Path) -> Path:
     return bundle_dir
 
 
+def _write_measurement_atlas_report_fixture(tmp_path: Path) -> Path:
+    bundle_dir = tmp_path / "atlas-bundle"
+    bundle_dir.mkdir()
+    (bundle_dir / "run_manifest.json").write_text(
+        json.dumps(
+            {
+                "schema": "mc.measurement_atlas.run_manifest.v2",
+                "runId": "atlas-run",
+                "linkedBlocker": "A1",
+                "frozenSurfaces": {
+                    "requestedLiveSpaces": ["hidden"],
+                    "observedLiveSpaces": ["hidden"],
+                    "requestedReplaySpaces": ["hidden", "embedding"],
+                    "observedReplaySpaces": ["hidden", "embedding"],
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (bundle_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "runId": "atlas-run",
+                "linkedBlocker": "A1",
+                "studyCount": 1,
+                "variantCount": 2,
+                "comparisonCount": 1,
+                "onsetEventCount": 1,
+                "errorCount": 0,
+                "spaces": ["embedding", "hidden"],
+                "modes": ["live", "replay"],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (bundle_dir / "variants.jsonl").write_text(
+        "".join(
+            [
+                json.dumps(
+                    {
+                        "studyId": "measurement_atlas_casing",
+                        "caseId": "case1",
+                        "variantId": "control",
+                        "promptText": "alpha beta",
+                        "generatedText": "SUPPORTED",
+                        "errors": [],
+                    }
+                )
+                + "\n",
+                json.dumps(
+                    {
+                        "studyId": "measurement_atlas_casing",
+                        "caseId": "case1",
+                        "variantId": "all_caps",
+                        "promptText": "ALPHA BETA",
+                        "generatedText": "SUPPORTED",
+                        "errors": [],
+                    }
+                )
+                + "\n",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (bundle_dir / "sequence_metrics.jsonl").write_text(
+        "".join(
+            [
+                json.dumps(
+                    {
+                        "studyId": "measurement_atlas_casing",
+                        "caseId": "case1",
+                        "variantId": "control",
+                        "mode": "replay",
+                        "region": "response",
+                        "space": "embedding",
+                        "peakLayer": None,
+                        "peakLocus": "embedding",
+                        "firstBendLayer": None,
+                        "firstBendLocus": "embedding",
+                        "meanEntropy": None,
+                        "meanSpectralEntropy": 0.2,
+                        "meanEffectiveRank": 1.0,
+                        "meanIntrinsicDimension": 2.0,
+                        "meanCurvature": 0.1,
+                        "maxCurvature": 0.2,
+                        "meanGeodesicDeviation": 0.1,
+                        "meanPathLengthRatio": 1.1,
+                    }
+                )
+                + "\n",
+                json.dumps(
+                    {
+                        "studyId": "measurement_atlas_casing",
+                        "caseId": "case1",
+                        "variantId": "all_caps",
+                        "mode": "replay",
+                        "region": "response",
+                        "space": "hidden",
+                        "peakLayer": 3,
+                        "peakLocus": "layer:3",
+                        "firstBendLayer": 2,
+                        "firstBendLocus": "layer:2",
+                        "meanEntropy": 0.5,
+                        "meanSpectralEntropy": 0.5,
+                        "meanEffectiveRank": 1.5,
+                        "meanIntrinsicDimension": 2.5,
+                        "meanCurvature": 0.8,
+                        "maxCurvature": 1.0,
+                        "meanGeodesicDeviation": 0.7,
+                        "meanPathLengthRatio": 1.5,
+                    }
+                )
+                + "\n",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (bundle_dir / "step_metrics.jsonl").write_text(
+        json.dumps({"studyId": "measurement_atlas_casing", "stepIndex": 0}) + "\n",
+        encoding="utf-8",
+    )
+    (bundle_dir / "space_step_metrics.jsonl").write_text(
+        json.dumps({"studyId": "measurement_atlas_casing", "space": "hidden", "stepIndex": 0})
+        + "\n",
+        encoding="utf-8",
+    )
+    (bundle_dir / "comparisons.jsonl").write_text(
+        json.dumps(
+            {
+                "studyId": "measurement_atlas_casing",
+                "caseId": "case1",
+                "from": "control",
+                "to": "all_caps",
+                "alignmentMode": "step_index_min_prefix",
+                "sharedStepCount": 1,
+                "sequenceLengthDeltas": [],
+                "scalarDeltas": {
+                    "replay.response.hidden.meanGeodesicDeviation": 0.4,
+                },
+                "sequenceDeltas": [
+                    {
+                        "mode": "replay",
+                        "region": "response",
+                        "space": "hidden",
+                        "metric": "meanGeodesicDeviation",
+                        "baselineValue": 0.3,
+                        "variantValue": 0.7,
+                        "delta": 0.4,
+                    }
+                ],
+                "locusComparisons": [
+                    {
+                        "mode": "replay",
+                        "region": "response",
+                        "space": "hidden",
+                        "metric": "peak",
+                        "baselineLocus": "layer:1",
+                        "variantLocus": "layer:3",
+                        "changed": True,
+                    }
+                ],
+                "liveGeneratedFirstDivergenceStep": 1,
+                "replayResponseFirstDivergenceStep": 1,
+                "firstGeneratedShiftAgreement": True,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (bundle_dir / "onset_events.jsonl").write_text(
+        json.dumps(
+            {
+                "studyId": "measurement_atlas_casing",
+                "caseId": "case1",
+                "variantId": "all_caps",
+                "baselineVariantId": "control",
+                "eventType": "first_divergence",
+                "mode": "replay",
+                "region": "response",
+                "stepIndex": 1,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (bundle_dir / "REPORT.md").write_text("# report\n", encoding="utf-8")
+    return bundle_dir
+
+
 class TestAnalyzeCommandHelp:
     """Test that analyze commands have proper help text."""
 
@@ -297,6 +488,28 @@ class TestAnalyzeWorkflowCommands:
         assert "observedSpaces" in payload["sections"]
         assert "topScalarShifts" in payload["sections"]
 
+    def test_report_reads_existing_measurement_atlas_bundle(self, tmp_path):
+        bundle_dir = _write_measurement_atlas_report_fixture(tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "--output",
+                "json",
+                "analyze",
+                "report",
+                "--bundle",
+                str(bundle_dir),
+            ],
+        )
+
+        assert result.exit_code == 0, result.stdout
+        payload = json.loads(result.stdout)
+        assert payload["bundleDir"] == str(bundle_dir.resolve())
+        assert payload["summary"]["workflow"] == "measurement_atlas"
+        assert "surfaces" in payload["sections"]
+        assert "studySummaries" in payload["sections"]
+
     def test_report_missing_bundle_directory(self, tmp_path):
         result = runner.invoke(
             app,
@@ -313,6 +526,7 @@ class TestAnalyzeWorkflowCommands:
         assert result.exit_code != 0
         payload = json.loads(result.stdout)
         assert payload["error"]["code"] == "MC-1098"
+        assert payload["error"]["title"] == "Missing report bundle"
 
     def test_report_missing_required_files(self, tmp_path):
         bundle_dir = tmp_path / "bundle"
@@ -334,6 +548,28 @@ class TestAnalyzeWorkflowCommands:
         assert result.exit_code != 0
         payload = json.loads(result.stdout)
         assert payload["error"]["code"] == "MC-1099"
+        assert payload["error"]["title"] == "Invalid report bundle"
+
+    def test_report_missing_required_atlas_files(self, tmp_path):
+        bundle_dir = _write_measurement_atlas_report_fixture(tmp_path)
+        (bundle_dir / "onset_events.jsonl").unlink()
+
+        result = runner.invoke(
+            app,
+            [
+                "--output",
+                "json",
+                "analyze",
+                "report",
+                "--bundle",
+                str(bundle_dir),
+            ],
+        )
+
+        assert result.exit_code != 0
+        payload = json.loads(result.stdout)
+        assert payload["error"]["code"] == "MC-1099"
+        assert payload["error"]["title"] == "Invalid report bundle"
 
 
 class TestSafetyAdapterProbe:

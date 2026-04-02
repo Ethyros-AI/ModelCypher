@@ -25,6 +25,7 @@ poetry run mc analyze capture --model /path/to/model --prompt "Explain geodesics
 poetry run mc analyze family --model /path/to/model --manifest data/probes/prompt_family_minimal_pairs.json
 poetry run mc analyze compare --left-model /path/to/base --right-model /path/to/base --right-adapter /path/to/adapter --manifest data/probes/prompt_family_minimal_pairs.json
 poetry run mc analyze report --bundle /path/to/bundle
+poetry run mc analyze report --bundle results/measurement_atlas/<run_id>
 poetry run python scripts/run_measurement_atlas.py --model /path/to/model --manifest data/probes/measurement_atlas_casing.json --manifest data/probes/measurement_atlas_profanity_tone.json --manifest data/probes/measurement_atlas_grounded_hallucination.json --output-root results/measurement_atlas
 ```
 
@@ -61,7 +62,9 @@ The retained replay-alignment closure for the shipped 350M atlas pack lives in
 Current observed atlas surfaces are `replay={hidden, embedding}` and
 `live={hidden}`; `run_manifest.json` now records requested vs observed
 surfaces separately so the bundle does not overclaim unsupported replay space
-coverage.
+coverage. `mc analyze report --bundle ...` can now read both the standard
+`mc analyze` bundles and these atlas artifact directories, while atlas
+generation itself remains research-only in `scripts/run_measurement_atlas.py`.
 
 ## Train When You Want To Act On The Measurements
 
@@ -119,6 +122,9 @@ poetry run mc analyze family --model /path/to/model --manifest data/probes/promp
 
 # Re-read an existing bundle and print the shared report view
 poetry run mc analyze report --bundle /path/to/bundle
+
+# Re-read a retained measurement-atlas artifact through the same report path
+poetry run mc analyze report --bundle results/measurement_atlas/<run_id>
 
 # Layer-wise intrinsic dimension profile
 poetry run mc analyze dimension-profile --model /path/to/model --samples 50

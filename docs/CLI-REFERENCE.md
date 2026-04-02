@@ -20,6 +20,7 @@ poetry run mc analyze capture --model /path/to/model --prompt "Explain geodesics
 poetry run mc analyze family --model /path/to/model --manifest data/probes/prompt_family_minimal_pairs.json
 poetry run mc analyze compare --left-model /path/to/base --right-model /path/to/base --right-adapter /path/to/adapter --manifest data/probes/prompt_family_minimal_pairs.json
 poetry run mc analyze report --bundle /path/to/bundle
+poetry run mc analyze report --bundle results/measurement_atlas/<run_id>
 ```
 
 The training workflow remains available when you want to turn measurements into an adapter workflow:
@@ -220,10 +221,15 @@ poetry run mc analyze capture --model /path/to/model --prompt "Explain geodesics
 poetry run mc analyze family --model /path/to/model --manifest data/probes/prompt_family_minimal_pairs.json
 poetry run mc analyze compare --left-model /path/to/base --right-model /path/to/base --right-adapter /path/to/adapter --manifest data/probes/prompt_family_minimal_pairs.json
 poetry run mc analyze report --bundle /path/to/bundle
+poetry run mc analyze report --bundle results/measurement_atlas/<run_id>
 poetry run mc analyze probe calibrate --model /path/to/model --prompt "Hello." --output-file /tmp/calibration.json
 poetry run mc analyze reasoning-flow --model /path/to/model --prompt "Prove that sqrt(2) is irrational."
 poetry run mc analyze lora-svd /path/to/adapter --base /path/to/model
 ```
+
+`mc analyze report --bundle ...` reads both standard observation bundles and
+retained measurement-atlas artifact directories. Atlas generation itself
+remains research-only in `scripts/run_measurement_atlas.py`.
 
 ## `mc merge`
 

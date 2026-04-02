@@ -157,6 +157,10 @@ in `results/measurement_atlas/REPORT.md`. Use that family-level report before
 starting new atlas work so the replay-token boundary fix does not get
 re-litigated from memory.
 
+`mc analyze report --bundle ...` is now also the read-side entrypoint for
+those atlas artifact directories. Atlas generation stays in
+`scripts/run_measurement_atlas.py`; only the read-side is shared.
+
 `capture` builds a synthetic manifest under the hood. Each prompt becomes a
 case with `variant_id="capture"`.
 
@@ -172,6 +176,12 @@ Every `capture`, `family`, and `compare` run writes the same file set:
 | `variants.jsonl` | One row per executed prompt variant |
 | `layer_metrics.jsonl` | Per-layer measurements across the observed spaces |
 | `comparisons.jsonl` | Pairwise deltas within one target or across two targets |
+
+The same report command can also read measurement-atlas artifacts under
+`results/measurement_atlas/<run_id>/`. Those runs use `run_manifest.json`
+instead of `manifest.json` and include atlas-specific JSONL files such as
+`sequence_metrics.jsonl`, `step_metrics.jsonl`, `space_step_metrics.jsonl`,
+and `onset_events.jsonl`.
 
 ### What Shows Up In `REPORT.md`
 
