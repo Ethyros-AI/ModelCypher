@@ -490,6 +490,7 @@ class ActivationProvider(Protocol):
         model: Any,
         tokenizer: Any,
         texts: list[str],
+        token_ids_batch: list[list[int] | None] | None = None,
     ) -> "TrajectoryActivations":
         """
         Collect full trajectory activations for geometric manifold mapping.
@@ -509,6 +510,9 @@ class ActivationProvider(Protocol):
             model: The loaded model.
             tokenizer: The tokenizer for encoding texts.
             texts: List of text inputs to process in a single forward pass.
+            token_ids_batch: Optional pre-tokenized inputs aligned 1:1 with
+                ``texts``. When provided, implementations should use these token
+                IDs instead of re-tokenizing the corresponding text.
 
         Returns:
             TrajectoryActivations containing:

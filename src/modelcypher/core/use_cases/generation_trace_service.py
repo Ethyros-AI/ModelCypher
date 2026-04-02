@@ -84,6 +84,11 @@ class ReplayTraceRegion:
     name: str
     text: str
     token_ids: tuple[int, ...]
+    source_name: str
+    source_text: str
+    source_token_ids: tuple[int, ...] | None = None
+    slice_start: int = 0
+    slice_end: int | None = None
     prompt_boundary_index: int | None = None
 
 
@@ -146,7 +151,6 @@ class GenerationTraceService:
         space_step_metrics: list[dict[str, Any]] = []
         token_streams: list[GenerationTraceTokenStream] = []
 
-        prompt_token_ids = tuple(self._encode_tokens(tokenizer, prompt))
         live_result: LiveGenerationTraceResult | None = None
         generated_text = ""
 
@@ -176,7 +180,16 @@ class GenerationTraceService:
                 errors.append(f"generate:{exc}")
                 generated_text = ""
 
-        response_token_ids = tuple(self._encode_tokens(tokenizer, generated_text))
+        prompt_token_ids = (
+            live_result.prompt_token_ids
+            if live_result is not None
+            else tuple(self._encode_tokens(tokenizer, prompt))
+        )
+        response_token_ids = self._response_token_ids(
+            tokenizer=tokenizer,
+            generated_text=generated_text,
+            live_result=live_result,
+        )
         full_token_ids = prompt_token_ids + response_token_ids
         # Decode the realized token path so the replay/full region preserves the prompt boundary.
         full_text = self._decode_tokens(tokenizer, full_token_ids)
@@ -185,16 +198,29 @@ class GenerationTraceService:
                 name="prompt",
                 text=prompt,
                 token_ids=prompt_token_ids,
+                source_name="prompt",
+                source_text=prompt,
+                source_token_ids=prompt_token_ids,
+                slice_end=len(prompt_token_ids),
             ),
             ReplayTraceRegion(
                 name="response",
                 text=generated_text,
                 token_ids=response_token_ids,
+                source_name="full",
+                source_text=full_text,
+                source_token_ids=full_token_ids,
+                slice_start=len(prompt_token_ids),
+                slice_end=len(full_token_ids),
             ),
             ReplayTraceRegion(
                 name="full",
                 text=full_text,
                 token_ids=full_token_ids,
+                source_name="full",
+                source_text=full_text,
+                source_token_ids=full_token_ids,
+                slice_end=len(full_token_ids),
                 prompt_boundary_index=len(prompt_token_ids),
             ),
         )
@@ -275,15 +301,26 @@ class GenerationTraceService:
         space_step_metrics: list[dict[str, Any]] = []
         sequence_metrics: list[dict[str, Any]] = []
 
-        ordered_regions = [region for region in regions if region.text]
+        ordered_regions = [region for region in regions if region.source_text]
         if not ordered_regions:
             return errors, token_streams, step_metrics, space_step_metrics, sequence_metrics
+
+        source_specs: dict[str, tuple[str, tuple[int, ...] | None]] = {}
+        for region in ordered_regions:
+            source_specs.setdefault(
+                region.source_name,
+                (region.source_text, region.source_token_ids),
+            )
 
         try:
             trajectory = self._activation_provider.collect_trajectory_batch(
                 model,
                 tokenizer,
-                [region.text for region in ordered_regions],
+                [text for text, _token_ids in source_specs.values()],
+                token_ids_batch=[
+                    list(token_ids) if token_ids is not None else None
+                    for _text, token_ids in source_specs.values()
+                ],
             )
         except Exception as exc:
             errors.append(f"replay_trace:{exc}")
@@ -291,13 +328,23 @@ class GenerationTraceService:
 
         offsets: dict[str, tuple[int, int]] = {}
         cursor = 0
-        for region, length in zip(ordered_regions, trajectory.text_lengths, strict=False):
+        for source_name, length in zip(source_specs, trajectory.text_lengths, strict=False):
             next_cursor = cursor + int(length)
-            offsets[region.name] = (cursor, next_cursor)
+            offsets[source_name] = (cursor, next_cursor)
             cursor = next_cursor
 
         for region in ordered_regions:
-            start, end = offsets[region.name]
+            if region.source_name not in offsets:
+                errors.append(f"replay_region_missing:{region.name}")
+                continue
+            source_start, source_end = offsets[region.source_name]
+            start = source_start + region.slice_start
+            end = source_start + (
+                region.slice_end if region.slice_end is not None else source_end - source_start
+            )
+            if end > source_end or start < source_start or end < start:
+                errors.append(f"replay_region_bounds:{region.name}")
+                continue
             token_ids = region.token_ids
             if token_ids:
                 token_texts = tuple(self._decode_token_texts(tokenizer, token_ids))
@@ -341,12 +388,6 @@ class GenerationTraceService:
             sequence_metrics.extend(region_sequence_rows)
             space_step_metrics.extend(region_space_rows)
             errors.extend(region_errors)
-
-        missing_regions = [
-            region.name for region in regions if region.text and region.name not in offsets
-        ]
-        for region in missing_regions:
-            errors.append(f"replay_region_missing:{region}")
 
         return errors, token_streams, step_metrics, space_step_metrics, sequence_metrics
 
@@ -694,6 +735,18 @@ class GenerationTraceService:
             normalized = normalized[len(prompt) :]
         return normalized
 
+    def _response_token_ids(
+        self,
+        *,
+        tokenizer: Any,
+        generated_text: str,
+        live_result: LiveGenerationTraceResult | None,
+    ) -> tuple[int, ...]:
+        if live_result is not None and live_result.generated_token_ids:
+            return live_result.generated_token_ids
+        encoded = tuple(self._encode_tokens(tokenizer, generated_text))
+        return self._strip_continuation_prefix(tokenizer, encoded)
+
     def _encode_tokens(self, tokenizer: Any, text: str) -> list[int]:
         if not text:
             return []
@@ -704,6 +757,23 @@ class GenerationTraceService:
         if not token_ids:
             return ""
         return self._backend.decode_tokens(tokenizer, list(token_ids))
+
+    def _strip_continuation_prefix(
+        self,
+        tokenizer: Any,
+        token_ids: tuple[int, ...],
+    ) -> tuple[int, ...]:
+        if not token_ids:
+            return token_ids
+        bos_id = getattr(tokenizer, "bos_token_id", None)
+        if bos_id is None:
+            bos_id = getattr(tokenizer, "eos_token_id", None)
+        if bos_id is None:
+            empty_ids = self._encode_tokens(tokenizer, "")
+            bos_id = empty_ids[0] if empty_ids else None
+        if bos_id is not None and token_ids[0] == int(bos_id):
+            return token_ids[1:]
+        return token_ids
 
     def _decode_token_texts(self, tokenizer: Any, token_ids: tuple[int, ...]) -> list[str]:
         texts: list[str] = []

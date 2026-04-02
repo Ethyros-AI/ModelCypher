@@ -318,6 +318,7 @@ class ActivationProviderAdapter:
         model: Any,
         tokenizer: Any,
         texts: list[str],
+        token_ids_batch: list[list[int] | None] | None = None,
     ):
         """Collect full trajectory activations for geometric manifold mapping.
 
@@ -346,8 +347,12 @@ class ActivationProviderAdapter:
         # Tokenize all texts and concatenate
         all_token_ids: list[list[int]] = []
         text_lengths: list[int] = []
-        for text in texts:
-            tokens = tokenizer.encode(text)
+        if token_ids_batch is not None and len(token_ids_batch) != len(texts):
+            raise ValueError("token_ids_batch must align 1:1 with texts in collect_trajectory_batch")
+
+        for index, text in enumerate(texts):
+            provided_tokens = token_ids_batch[index] if token_ids_batch is not None else None
+            tokens = tokenizer.encode(text) if provided_tokens is None else provided_tokens
             if isinstance(tokens, list):
                 all_token_ids.append(tokens)
             else:

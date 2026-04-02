@@ -16,6 +16,7 @@ class _StubTokenizer:
     def __init__(self) -> None:
         self._token_to_id: dict[str, int] = {}
         self._id_to_token: dict[int, str] = {}
+        self._next_token_id = 1
 
     def encode(self, text: str) -> list[int]:
         if not text:
@@ -23,14 +24,37 @@ class _StubTokenizer:
         token_ids: list[int] = []
         for token in text.split():
             if token not in self._token_to_id:
-                token_id = len(self._token_to_id) + 1
+                token_id = self._next_token_id
                 self._token_to_id[token] = token_id
                 self._id_to_token[token_id] = token
+                self._next_token_id += 1
             token_ids.append(self._token_to_id[token])
         return token_ids
 
     def decode(self, token_ids: list[int]) -> str:
         return " ".join(self._id_to_token[token_id] for token_id in token_ids if token_id in self._id_to_token)
+
+
+class _BosTokenizer(_StubTokenizer):
+    bos_token_id = 1
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._token_to_id["<|startoftext|>"] = self.bos_token_id
+        self._id_to_token[self.bos_token_id] = "<|startoftext|>"
+        self._next_token_id = 2
+
+    def encode(self, text: str) -> list[int]:
+        if not text:
+            return []
+        return [self.bos_token_id, *super().encode(text)]
+
+    def decode(self, token_ids: list[int]) -> str:
+        return " ".join(
+            self._id_to_token[token_id]
+            for token_id in token_ids
+            if token_id in self._id_to_token and token_id != self.bos_token_id
+        )
 
 
 class _StubBackend:
@@ -57,8 +81,17 @@ class _StubActivationProvider:
     def __init__(self, tokenizer: _StubTokenizer) -> None:
         self._tokenizer = tokenizer
 
-    def collect_trajectory_batch(self, _model, _tokenizer, texts: list[str]):
-        text_lengths = [len(self._tokenizer.encode(text)) for text in texts]
+    def collect_trajectory_batch(
+        self,
+        _model,
+        _tokenizer,
+        texts: list[str],
+        token_ids_batch: list[list[int] | None] | None = None,
+    ):
+        text_lengths = [
+            len(token_ids_batch[index]) if token_ids_batch and token_ids_batch[index] is not None else len(self._tokenizer.encode(text))
+            for index, text in enumerate(texts)
+        ]
         total_tokens = sum(text_lengths)
         layers = {
             0: np.array([[index + 1.0, index + 1.5] for index in range(total_tokens)], dtype=float),
@@ -161,6 +194,48 @@ def _service() -> tuple[_CheapTraceService, _StubTokenizer]:
         model_loader=_StubModelLoader(),
         activation_provider=_StubActivationProvider(tokenizer),
         live_trace_runner=_live_trace_runner,
+    )
+    return service, tokenizer
+
+
+def _bos_live_trace_runner(_model, tokenizer: _BosTokenizer, prompt: str, _max_tokens: int):
+    prompt_ids = tuple(tokenizer.encode(prompt))
+    generated_ids = tuple(tokenizer.encode("SUPPORTED because")[1:])
+    steps = (
+        LiveTraceStep(
+            step_index=0,
+            token_id=generated_ids[0],
+            token_text="SUPPORTED",
+            hidden_by_layer={0: np.array([1.0, 1.5]), 1: np.array([2.0, 2.5])},
+            logit_entropy=0.2,
+            logit_margin=0.9,
+        ),
+        LiveTraceStep(
+            step_index=1,
+            token_id=generated_ids[1],
+            token_text="because",
+            hidden_by_layer={0: np.array([1.1, 1.6]), 1: np.array([2.1, 2.6])},
+            logit_entropy=0.3,
+            logit_margin=0.8,
+        ),
+    )
+    return LiveGenerationTraceResult(
+        prompt_token_ids=prompt_ids,
+        generated_token_ids=generated_ids,
+        generated_text="SUPPORTED because",
+        stop_reason="eos",
+        steps=steps,
+    )
+
+
+def _bos_service() -> tuple[_CheapTraceService, _BosTokenizer]:
+    tokenizer = _BosTokenizer()
+    backend = _StubBackend()
+    service = _CheapTraceService(
+        backend=backend,
+        model_loader=_StubModelLoader(),
+        activation_provider=_StubActivationProvider(tokenizer),
+        live_trace_runner=_bos_live_trace_runner,
     )
     return service, tokenizer
 
@@ -273,3 +348,35 @@ def test_trace_variant_preserves_full_region_split_without_leading_whitespace() 
     assert not result.generated_text.startswith(" ")
     assert full_stream.token_texts == ("alpha", "beta", "SUPPORTED", "because")
     assert full_stream.token_ids == result.prompt_token_ids + result.response_token_ids
+
+
+def test_trace_variant_uses_continuation_tokens_for_replay_response_with_bos_tokenizer() -> None:
+    service, tokenizer = _bos_service()
+    result = service.trace_variant(
+        model={"model": "stub"},
+        tokenizer=tokenizer,
+        prompt="alpha beta",
+        spaces=("hidden", "embedding"),
+        max_tokens=4,
+    )
+
+    response_stream = next(
+        stream
+        for stream in result.token_streams
+        if stream.mode == "replay" and stream.region == "response"
+    )
+    full_stream = next(
+        stream
+        for stream in result.token_streams
+        if stream.mode == "replay" and stream.region == "full"
+    )
+    response_rows = [
+        row for row in result.step_metrics
+        if row["mode"] == "replay" and row["region"] == "response"
+    ]
+
+    assert result.live_generated_token_ids == result.response_token_ids
+    assert response_stream.token_ids == result.live_generated_token_ids
+    assert response_rows[0]["tokenText"] == "SUPPORTED"
+    assert full_stream.token_ids == result.prompt_token_ids + result.live_generated_token_ids
+    assert "<|startoftext|>" not in full_stream.token_texts[full_stream.prompt_boundary_index :]
