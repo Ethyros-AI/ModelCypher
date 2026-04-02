@@ -143,13 +143,13 @@ def _write_measurement_atlas_fixture(
     bundle_dir = tmp_path / "atlas-bundle"
     bundle_dir.mkdir()
     long_prompt = (
-        "ALPHA   BETA\n\n"
+        "ALPHA\\nBETA\n\n"
         "This prompt keeps going with extra context about casing and reasoning. "
         "This prompt keeps going with extra context about casing and reasoning. "
         "This prompt keeps going with extra context about casing and reasoning."
     )
     long_generated = (
-        "SUPPORTED\n\n"
+        "SUPPORTED\\n\\n"
         "This generated explanation keeps going across lines and should be clipped for atlas previews. "
         "This generated explanation keeps going across lines and should be clipped for atlas previews. "
         "This generated explanation keeps going across lines and should be clipped for atlas previews."
@@ -486,6 +486,8 @@ def test_load_measurement_atlas_bundle_builds_expected_sections(tmp_path: Path) 
     assert "generatedText" not in example
     assert example["promptPreview"].startswith("ALPHA BETA This prompt keeps going")
     assert "\n" not in example["promptPreview"]
+    assert "\\n" not in example["promptPreview"]
+    assert "\\n" not in example["generatedPreview"]
     assert example["promptPreview"].endswith("...")
     assert example["generatedPreview"].endswith("...")
     assert example["promptCharCount"] > len(example["promptPreview"])
@@ -496,7 +498,8 @@ def test_load_measurement_atlas_bundle_builds_expected_sections(tmp_path: Path) 
     assert "## Largest Sequence Shifts" not in result.markdown
     assert "biggest movement was in" in result.markdown
     assert "meanPathLengthRatio" not in result.markdown
-    assert "prompt='ALPHA   BETA" not in result.markdown
+    assert "prompt='ALPHA" not in result.markdown
+    assert "prompt=`ALPHA BETA" in result.markdown
     assert "\\n\\n" not in result.markdown
 
 

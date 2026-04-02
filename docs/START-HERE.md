@@ -13,12 +13,12 @@ collection just to ask questions like:
 - where does an adapter change the chain profile?
 - what changed below token level when behavior changed above it?
 
-## Current Reality (2026-03-26)
+## Current Reality (2026-04-02)
 
 - `mc analyze` is now the clearest entrypoint for workflow-first model observation.
 - `mc analyze capture`, `mc analyze family`, and `mc analyze compare` create
   observation bundles you can inspect or hand to another agent.
-- `mc analyze report --bundle ...` is the read-side companion for existing bundles.
+- `mc analyze report --bundle ...` is the shared read-side for both observation bundles and retained measurement-atlas artifact directories.
 - Training remains shipped and useful, but it is a downstream workflow rather
   than the headline.
 - The repo still does **not** claim benchmark superiority for its training path.
@@ -116,6 +116,15 @@ poetry run mc analyze report --bundle /path/to/bundle
 
 Use this when you already have a bundle directory and want the shared report
 view without opening files manually.
+
+That same command also reads retained measurement-atlas artifact directories:
+
+```bash
+poetry run mc analyze report --bundle results/measurement_atlas/<run-id>
+```
+
+Atlas generation remains research-only in `scripts/run_measurement_atlas.py`,
+but the read-side is now shared.
 
 ### 6. Drop Into Expert Metrics
 

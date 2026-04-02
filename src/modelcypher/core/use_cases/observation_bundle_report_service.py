@@ -912,8 +912,10 @@ class ObservationBundleReportService:
             for row in example_comparisons:
                 lines.append(
                     f"- `{row['studyId']}` / `{row['caseId']}` / `{row['from']}` -> `{row['to']}`: "
-                    f"prompt={row['promptPreview']!r} ({row['promptCharCount']} chars) "
-                    f"generated={row['generatedPreview']!r} ({row['generatedCharCount']} chars) "
+                    f"prompt=`{self._atlas_markdown_preview(row['promptPreview'])}` "
+                    f"({row['promptCharCount']} chars) "
+                    f"generated=`{self._atlas_markdown_preview(row['generatedPreview'])}` "
+                    f"({row['generatedCharCount']} chars) "
                     f"live_divergence={row['liveGeneratedFirstDivergenceStep']} "
                     f"replay_divergence={row['replayResponseFirstDivergenceStep']}"
                 )
@@ -1129,7 +1131,14 @@ class ObservationBundleReportService:
         *,
         limit: int = 160,
     ) -> str:
-        normalized = " ".join(str(text or "").split())
+        normalized = str(text or "")
+        for escaped_whitespace in ("\\n", "\\r", "\\t"):
+            normalized = normalized.replace(escaped_whitespace, " ")
+        normalized = " ".join(normalized.split())
         if len(normalized) <= limit:
             return normalized
         return normalized[: limit - 3] + "..."
+
+    @staticmethod
+    def _atlas_markdown_preview(text: str) -> str:
+        return text.replace("`", "'")

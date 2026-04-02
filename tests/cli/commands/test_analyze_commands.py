@@ -158,13 +158,13 @@ def _write_measurement_atlas_report_fixture(tmp_path: Path) -> Path:
     bundle_dir = tmp_path / "atlas-bundle"
     bundle_dir.mkdir()
     long_prompt = (
-        "ALPHA   BETA\n\n"
+        "ALPHA\\nBETA\n\n"
         "This prompt keeps going with extra context about casing and reasoning. "
         "This prompt keeps going with extra context about casing and reasoning. "
         "This prompt keeps going with extra context about casing and reasoning."
     )
     long_generated = (
-        "SUPPORTED\n\n"
+        "SUPPORTED\\n\\n"
         "This generated explanation keeps going across lines and should be clipped for atlas previews. "
         "This generated explanation keeps going across lines and should be clipped for atlas previews. "
         "This generated explanation keeps going across lines and should be clipped for atlas previews."
@@ -579,7 +579,8 @@ class TestAnalyzeWorkflowCommands:
         assert "## Largest Geodesic Shifts" in result.stdout
         assert "## Largest Sequence Shifts" not in result.stdout
         assert "meanPathLengthRatio" not in result.stdout
-        assert "prompt='ALPHA   BETA" not in result.stdout
+        assert "prompt='ALPHA" not in result.stdout
+        assert "prompt=`ALPHA BETA" in result.stdout
         assert "\\n\\n" not in result.stdout
         assert "chars)" in result.stdout
 

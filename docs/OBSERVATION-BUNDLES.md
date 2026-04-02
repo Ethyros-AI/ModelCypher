@@ -183,6 +183,25 @@ instead of `manifest.json` and include atlas-specific JSONL files such as
 `sequence_metrics.jsonl`, `step_metrics.jsonl`, `space_step_metrics.jsonl`,
 and `onset_events.jsonl`.
 
+### Atlas Read-Side Sections
+
+When `mc analyze report --bundle ...` points at a measurement-atlas artifact
+directory, the shared reader keeps the same outer payload shape but swaps in
+atlas-specific sections:
+
+| Section | Purpose |
+| --- | --- |
+| `Surfaces` | Requested vs observed live/replay spaces from `run_manifest.json` |
+| `Study Summaries` | Which region and space moved most, earliest divergence step, earliest shift locus, and live/replay agreement |
+| `Largest Geodesic Shifts` | Headline `meanGeodesicDeviation` shifts only, without mixing in unrelated path-ratio outliers |
+| `Locus Changes` | Peak and first-bend locus changes, including legacy fallback for retained pre-cleanup bundles |
+| `Onset Samples` | Grounded-label onsets and divergence onsets, with grounded-label events shown first |
+| `Example Comparisons` | Compact prompt/generated previews plus character counts, without dumping full raw text into the report view |
+
+Use `variants.jsonl` as the source of truth when you need full prompt or
+generation text. The report view intentionally compresses those rows into
+previews so atlas runs stay quick to scan.
+
 ### What Shows Up In `REPORT.md`
 
 The report is meant to answer the first-pass questions quickly:
