@@ -144,6 +144,19 @@ Those manifests use `mc.analyze.prompt_family.v2` so they can carry explicit
 `annotations` for grounded-label and perturbation studies without creating a
 second study-file format.
 
+The current atlas contract is narrower than `SUPPORTED_ANALYSIS_SPACES`:
+
+- observed replay spaces: `hidden`, `embedding`
+- observed live spaces: `hidden`
+- requested vs observed surfaces are recorded separately in
+  `run_manifest.json` so the bundle does not imply that deeper replay spaces
+  were captured when they were only requested or are still future work
+
+The retained alignment-closure evidence and old-vs-fixed bundle comparison live
+in `results/measurement_atlas/REPORT.md`. Use that family-level report before
+starting new atlas work so the replay-token boundary fix does not get
+re-litigated from memory.
+
 `capture` builds a synthetic manifest under the hood. Each prompt becomes a
 case with `variant_id="capture"`.
 

@@ -17,16 +17,16 @@ from modelcypher.core.use_cases.measurement_atlas_report_service import (
     MeasurementAtlasReportService,
 )
 from modelcypher.core.use_cases.observation_service import (
-    PROMPT_FAMILY_MANIFEST_VERSION_V2,
     PromptFamilyManifest,
-    SUPPORTED_ANALYSIS_SPACES,
 )
 
 
-RUN_MANIFEST_VERSION = "mc.measurement_atlas.run_manifest.v1"
+RUN_MANIFEST_VERSION = "mc.measurement_atlas.run_manifest.v2"
 DEFAULT_OUTPUT_ROOT = Path("results/measurement_atlas")
 LINKED_BLOCKER = "A1"
 DEFAULT_MAX_TOKENS = 128
+ATLAS_REQUESTED_REPLAY_SPACES = ("hidden", "embedding")
+ATLAS_REQUESTED_LIVE_SPACES = ("hidden",)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -82,7 +82,7 @@ def run_measurement_atlas(
     )
 
     manifests = [PromptFamilyManifest.from_json_path(path) for path in manifest_paths]
-    study_space_set = tuple(SUPPORTED_ANALYSIS_SPACES)
+    study_space_set = ATLAS_REQUESTED_REPLAY_SPACES
 
     timestamp = timestamp_utc or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     run_id = _run_id_from_timestamp(timestamp)
@@ -117,6 +117,8 @@ def run_measurement_atlas(
             )
 
     command = _format_command(model_path, manifest_paths, output_root, max_tokens)
+    observed_replay_spaces = _observed_spaces(executions, mode="replay")
+    observed_live_spaces = _observed_spaces(executions, mode="live")
     run_manifest = _build_run_manifest(
         run_id=run_id,
         timestamp_utc=timestamp,
@@ -126,6 +128,10 @@ def run_measurement_atlas(
         manifests=manifests,
         command=command,
         max_tokens=max_tokens,
+        requested_replay_spaces=ATLAS_REQUESTED_REPLAY_SPACES,
+        observed_replay_spaces=observed_replay_spaces,
+        requested_live_spaces=ATLAS_REQUESTED_LIVE_SPACES,
+        observed_live_spaces=observed_live_spaces,
     )
     build_result = resolved_report_service.build(
         run_id=run_id,
@@ -137,12 +143,18 @@ def run_measurement_atlas(
             "trajectories in measurable ways across prompt, response, and generated "
             "representation spaces."
         ),
-        mutable_surface="scripts/run_measurement_atlas.py + measurement_atlas_v1_artifact_schema",
+        mutable_surface="scripts/run_measurement_atlas.py + measurement_atlas_v2_artifact_schema",
         frozen_surfaces=(
             f"model={Path(model_path).expanduser().resolve()};"
             f"manifests={','.join(str(Path(path).expanduser().resolve()) for path in manifest_paths)};"
-            "decode=greedy;live_spaces=hidden;replay_spaces="
-            + ",".join(study_space_set)
+            "decode=greedy;requested_live_spaces="
+            + ",".join(ATLAS_REQUESTED_LIVE_SPACES)
+            + ";observed_live_spaces="
+            + ",".join(observed_live_spaces)
+            + ";requested_replay_spaces="
+            + ",".join(ATLAS_REQUESTED_REPLAY_SPACES)
+            + ";observed_replay_spaces="
+            + ",".join(observed_replay_spaces)
             + f";max_tokens={max_tokens}"
         ),
         command=command,
@@ -185,6 +197,10 @@ def _build_run_manifest(
     manifests: list[PromptFamilyManifest],
     command: str,
     max_tokens: int,
+    requested_replay_spaces: tuple[str, ...],
+    observed_replay_spaces: list[str],
+    requested_live_spaces: tuple[str, ...],
+    observed_live_spaces: list[str],
 ) -> dict[str, Any]:
     return {
         "schema": RUN_MANIFEST_VERSION,
@@ -209,8 +225,10 @@ def _build_run_manifest(
             "model": str(Path(model_path).expanduser().resolve()),
             "decodePolicy": "greedy",
             "maxTokens": max_tokens,
-            "replaySpaces": list(SUPPORTED_ANALYSIS_SPACES),
-            "liveSpaces": ["hidden"],
+            "requestedReplaySpaces": list(requested_replay_spaces),
+            "observedReplaySpaces": observed_replay_spaces,
+            "requestedLiveSpaces": list(requested_live_spaces),
+            "observedLiveSpaces": observed_live_spaces,
             "artifactDir": str(output_dir),
         },
         "baselineCommand": command,
@@ -251,6 +269,33 @@ def _format_command(
         f"--output-root {Path(output_root).expanduser().resolve()} "
         f"--max-tokens {max_tokens}"
     ).strip()
+
+
+def _observed_spaces(
+    executions: list[MeasurementAtlasExecution],
+    *,
+    mode: str,
+) -> list[str]:
+    observed: set[str] = set()
+    decode_key = f"{mode}Spaces"
+    for execution in executions:
+        decode_spaces = execution.trace.decode.get(decode_key, [])
+        if isinstance(decode_spaces, list):
+            observed.update(
+                str(space).strip()
+                for space in decode_spaces
+                if str(space).strip()
+            )
+        for row in execution.trace.sequence_metrics:
+            if str(row.get("mode", "")).strip() != mode:
+                continue
+            space = str(row.get("space", "")).strip()
+            if space:
+                observed.add(space)
+    ordered = [space for space in ATLAS_REQUESTED_REPLAY_SPACES if space in observed]
+    if mode == "live":
+        ordered = [space for space in ATLAS_REQUESTED_LIVE_SPACES if space in observed]
+    return ordered
 
 
 def _run_id_from_timestamp(timestamp_utc: str) -> str:

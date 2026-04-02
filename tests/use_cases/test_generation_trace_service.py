@@ -120,6 +120,14 @@ class _CheapTraceService(GenerationTraceService):
             if not mapping:
                 continue
             token_count = self._first_dim(next(iter(mapping.values())))
+            peak_layer_value, peak_locus = self._normalize_layer_metric(
+                space=space,
+                layer_value=max(mapping.keys()),
+            )
+            first_bend_layer_value, first_bend_locus = self._normalize_layer_metric(
+                space=space,
+                layer_value=min(mapping.keys()),
+            )
             sequence_metrics.append(
                 {
                     "mode": mode,
@@ -134,8 +142,10 @@ class _CheapTraceService(GenerationTraceService):
                     "maxCurvature": 0.4,
                     "meanGeodesicDeviation": 0.5,
                     "meanPathLengthRatio": 1.1,
-                    "peakLayer": max(mapping.keys()),
-                    "firstBendLayer": min(mapping.keys()),
+                    "peakLayer": peak_layer_value,
+                    "peakLocus": peak_locus,
+                    "firstBendLayer": first_bend_layer_value,
+                    "firstBendLocus": first_bend_locus,
                 }
             )
             for layer_idx, positions in mapping.items():
@@ -154,6 +164,23 @@ class _CheapTraceService(GenerationTraceService):
                         }
                     )
         return sequence_metrics, space_step_metrics, []
+
+
+class _ReplayVisibleSpaceTraceService(_CheapTraceService):
+    def _summarize_region(self, *, model, tokenizer, mode, region, region_text, space_positions):
+        filtered_positions = {
+            space: mapping
+            for space, mapping in space_positions.items()
+            if space in {"hidden", "embedding"}
+        }
+        return super()._summarize_region(
+            model=model,
+            tokenizer=tokenizer,
+            mode=mode,
+            region=region,
+            region_text=region_text,
+            space_positions=filtered_positions,
+        )
 
 
 def _live_trace_runner(_model, tokenizer: _StubTokenizer, prompt: str, _max_tokens: int):
@@ -240,6 +267,18 @@ def _bos_service() -> tuple[_CheapTraceService, _BosTokenizer]:
     return service, tokenizer
 
 
+def _replay_visible_space_service() -> tuple[_ReplayVisibleSpaceTraceService, _StubTokenizer]:
+    tokenizer = _StubTokenizer()
+    backend = _StubBackend()
+    service = _ReplayVisibleSpaceTraceService(
+        backend=backend,
+        model_loader=_StubModelLoader(),
+        activation_provider=_StubActivationProvider(tokenizer),
+        live_trace_runner=_live_trace_runner,
+    )
+    return service, tokenizer
+
+
 def test_prompt_family_manifest_supports_v2_annotations_round_trip() -> None:
     manifest = PromptFamilyManifest.from_data(
         {
@@ -301,6 +340,8 @@ def test_trace_variant_emits_replay_and_live_regions_with_boundaries() -> None:
     assert ("replay", "response") in regions
     assert ("replay", "full") in regions
     assert ("live", "generated") in regions
+    assert result.decode["liveSpaces"] == ["hidden"]
+    assert result.decode["replaySpaces"] == ["hidden", "embedding"]
 
 
 def test_live_trace_rows_include_logit_stats_and_hidden_space_metrics() -> None:
@@ -380,3 +421,48 @@ def test_trace_variant_uses_continuation_tokens_for_replay_response_with_bos_tok
     assert response_rows[0]["tokenText"] == "SUPPORTED"
     assert full_stream.token_ids == result.prompt_token_ids + result.live_generated_token_ids
     assert "<|startoftext|>" not in full_stream.token_texts[full_stream.prompt_boundary_index :]
+
+
+def test_trace_variant_decode_spaces_reflect_observed_rows_not_requested_enum() -> None:
+    service, tokenizer = _replay_visible_space_service()
+    result = service.trace_variant(
+        model={"model": "stub"},
+        tokenizer=tokenizer,
+        prompt="alpha beta",
+        spaces=("hidden", "embedding", "q", "k"),
+        max_tokens=4,
+    )
+
+    assert result.decode["liveSpaces"] == ["hidden"]
+    assert result.decode["replaySpaces"] == ["hidden", "embedding"]
+
+
+def test_trace_variant_emits_explicit_locus_fields_without_embedding_sentinels() -> None:
+    service, tokenizer = _replay_visible_space_service()
+    result = service.trace_variant(
+        model={"model": "stub"},
+        tokenizer=tokenizer,
+        prompt="alpha beta",
+        spaces=("hidden", "embedding"),
+        max_tokens=4,
+    )
+
+    embedding_row = next(
+        row
+        for row in result.sequence_metrics
+        if row["mode"] == "replay" and row["region"] == "full" and row["space"] == "embedding"
+    )
+    hidden_row = next(
+        row
+        for row in result.sequence_metrics
+        if row["mode"] == "replay" and row["region"] == "full" and row["space"] == "hidden"
+    )
+
+    assert embedding_row["peakLayer"] is None
+    assert embedding_row["firstBendLayer"] is None
+    assert embedding_row["peakLocus"] == "embedding"
+    assert embedding_row["firstBendLocus"] == "embedding"
+    assert hidden_row["peakLayer"] == 1
+    assert hidden_row["firstBendLayer"] == 0
+    assert hidden_row["peakLocus"] == "layer:1"
+    assert hidden_row["firstBendLocus"] == "layer:0"

@@ -69,7 +69,7 @@ This is the shortest path from "interesting geometry" to "a usable measurement
 workbench." It closes whether users and agents can actually run controlled
 prompt and target studies without stitching together one-off expert commands.
 
-Current state (2026-03-26):
+Current state (2026-04-02):
 
 - `mc analyze capture`, `mc analyze family`, and `mc analyze compare` now define
   the canonical workflow surface.
@@ -78,6 +78,11 @@ Current state (2026-03-26):
 - The follow-on research surface for token-level prompt and generation tracing
   now lives in `scripts/run_measurement_atlas.py`, writing
   `results/measurement_atlas/<run_id>/` without promoting a new CLI verb yet.
+- The retained 350M atlas rerun at
+  `results/measurement_atlas/20260402T150954Z-measurement-atlas/` closes the
+  live/replay replay-alignment bug from `20260402T145540Z`. Agreement improved
+  from `0/4 -> 4/4`, `0/2 -> 2/2`, and `1/4 -> 4/4` across the shipped study
+  pack while keeping `errorCount = 0`.
 - The prompt-family manifest is explicit rather than transform-driven:
   `case_id`, `variant_id`, `text`, optional `tags`, optional
   `comparison_to`, and optional `annotations` for research studies.
@@ -86,9 +91,10 @@ Current state (2026-03-26):
   `layer_metrics.jsonl`, `comparisons.jsonl`.
 - Phase 1 scope is inference-first and checkpoint-comparison-first. Live
   training-stream telemetry remains deferred.
-- The remaining work is downstream polish rather than blocker closure:
-  richer summaries, curated manifests, and bundle-reading ergonomics on top of
-  the now-stable observation contract.
+- Remaining atlas work is now contract and evidence polish:
+  keep requested vs observed replay surfaces explicit, improve family-level
+  summaries, and preserve the retained alignment-closure evidence in
+  `results/measurement_atlas/REPORT.md`.
 
 ### R1. Baseline Suite Against Standard Practice
 

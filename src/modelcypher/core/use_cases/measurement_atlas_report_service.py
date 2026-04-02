@@ -239,6 +239,7 @@ class MeasurementAtlasReportService:
 
                 sequence_deltas: list[dict[str, Any]] = []
                 scalar_deltas: dict[str, float] = {}
+                locus_comparisons: list[dict[str, Any]] = []
                 sequence_length_deltas: list[dict[str, Any]] = []
                 for stream in execution.trace.token_streams:
                     baseline_stream = self._token_stream(
@@ -281,8 +282,6 @@ class MeasurementAtlasReportService:
                         "maxCurvature",
                         "meanGeodesicDeviation",
                         "meanPathLengthRatio",
-                        "peakLayer",
-                        "firstBendLayer",
                     ):
                         baseline_value = baseline_row.get(metric)
                         variant_value = comparison_row.get(metric)
@@ -300,6 +299,60 @@ class MeasurementAtlasReportService:
                                 "baselineValue": baseline_value,
                                 "variantValue": variant_value,
                                 "delta": delta,
+                            }
+                        )
+                    for metric, layer_key, locus_key in (
+                        ("peak", "peakLayer", "peakLocus"),
+                        ("firstBend", "firstBendLayer", "firstBendLocus"),
+                    ):
+                        baseline_layer_value = self._numeric_layer_value(
+                            baseline_row,
+                            layer_key=layer_key,
+                            locus_key=locus_key,
+                        )
+                        variant_layer_value = self._numeric_layer_value(
+                            comparison_row,
+                            layer_key=layer_key,
+                            locus_key=locus_key,
+                        )
+                        if baseline_layer_value is not None and variant_layer_value is not None:
+                            delta = float(variant_layer_value) - float(baseline_layer_value)
+                            metric_key = f"{mode}.{region}.{space}.{layer_key}"
+                            scalar_deltas[metric_key] = delta
+                            sequence_deltas.append(
+                                {
+                                    "mode": mode,
+                                    "region": region,
+                                    "space": space,
+                                    "metric": layer_key,
+                                    "baselineValue": baseline_layer_value,
+                                    "variantValue": variant_layer_value,
+                                    "delta": delta,
+                                }
+                            )
+                            continue
+
+                        baseline_locus = self._row_locus(
+                            baseline_row,
+                            layer_key=layer_key,
+                            locus_key=locus_key,
+                        )
+                        variant_locus = self._row_locus(
+                            comparison_row,
+                            layer_key=layer_key,
+                            locus_key=locus_key,
+                        )
+                        if baseline_locus is None and variant_locus is None:
+                            continue
+                        locus_comparisons.append(
+                            {
+                                "mode": mode,
+                                "region": region,
+                                "space": space,
+                                "metric": metric,
+                                "baselineLocus": baseline_locus,
+                                "variantLocus": variant_locus,
+                                "changed": baseline_locus != variant_locus,
                             }
                         )
 
@@ -331,6 +384,7 @@ class MeasurementAtlasReportService:
                         "sequenceLengthDeltas": sequence_length_deltas,
                         "scalarDeltas": scalar_deltas,
                         "sequenceDeltas": sequence_deltas,
+                        "locusComparisons": locus_comparisons,
                         "liveGeneratedFirstDivergenceStep": live_divergence,
                         "replayResponseFirstDivergenceStep": replay_divergence,
                         "firstGeneratedShiftAgreement": (
@@ -450,7 +504,7 @@ class MeasurementAtlasReportService:
             region_move = self._top_delta_axis(study_comparisons, axis="region")
             space_move = self._top_delta_axis(study_comparisons, axis="space")
             earliest_divergence = self._earliest_divergence(study_comparisons)
-            earliest_layer = self._earliest_shift_layer(study_executions)
+            earliest_locus = self._earliest_shift_locus(study_executions)
             agreement = self._agreement_summary(study_comparisons)
             grounded_events = [
                 event for event in study_onsets if event["eventType"] == "grounded_label_onset"
@@ -467,7 +521,7 @@ class MeasurementAtlasReportService:
                     f"- Region moved most: `{region_move or 'n/a'}`",
                     f"- Space moved most: `{space_move or 'n/a'}`",
                     f"- Earliest divergence step: `{earliest_divergence if earliest_divergence is not None else 'n/a'}`",
-                    f"- Earliest high-curvature/high-deviation layer: `{earliest_layer if earliest_layer is not None else 'n/a'}`",
+                    f"- Earliest high-curvature/high-deviation locus: `{earliest_locus if earliest_locus is not None else 'n/a'}`",
                     f"- Live/replay first generated-token agreement: `{agreement}`",
                     f"- Grounded hallucination onsets: `{len(grounded_events)}`",
                     f"- Earliest grounded onset step: `{earliest_grounded if earliest_grounded is not None else 'n/a'}`",
@@ -633,19 +687,76 @@ class MeasurementAtlasReportService:
         return min(candidates) if candidates else None
 
     @staticmethod
-    def _earliest_shift_layer(executions: list[MeasurementAtlasExecution]) -> int | None:
-        layers: list[int] = []
+    def _earliest_shift_locus(executions: list[MeasurementAtlasExecution]) -> str | None:
+        best: tuple[int, str] | None = None
         for execution in executions:
             if execution.variant_id == "control":
                 continue
             for row in execution.trace.sequence_metrics:
-                first_bend = row.get("firstBendLayer")
-                peak_layer = row.get("peakLayer")
-                if first_bend is not None:
-                    layers.append(int(first_bend))
-                elif peak_layer is not None:
-                    layers.append(int(peak_layer))
-        return min(layers) if layers else None
+                candidate = MeasurementAtlasReportService._row_locus_candidate(row)
+                if candidate is not None and (best is None or candidate[0] < best[0]):
+                    best = candidate
+        return best[1] if best is not None else None
+
+    @staticmethod
+    def _numeric_layer_value(
+        row: dict[str, Any],
+        *,
+        layer_key: str,
+        locus_key: str,
+    ) -> int | None:
+        layer_value = row.get(layer_key)
+        if layer_value is None:
+            return None
+        locus = MeasurementAtlasReportService._row_locus(
+            row,
+            layer_key=layer_key,
+            locus_key=locus_key,
+        )
+        if locus is None or not locus.startswith("layer:"):
+            return None
+        return int(layer_value)
+
+    @staticmethod
+    def _row_locus(
+        row: dict[str, Any],
+        *,
+        layer_key: str,
+        locus_key: str,
+    ) -> str | None:
+        raw_locus = row.get(locus_key)
+        if isinstance(raw_locus, str):
+            locus = raw_locus.strip()
+            if locus:
+                return locus
+        layer_value = row.get(layer_key)
+        if layer_value is None:
+            return None
+        layer_index = int(layer_value)
+        space = str(row.get("space", "")).strip()
+        if space == "embedding" or layer_index < 0:
+            return "embedding"
+        return f"layer:{layer_index}"
+
+    @staticmethod
+    def _row_locus_candidate(row: dict[str, Any]) -> tuple[int, str] | None:
+        for layer_key, locus_key in (
+            ("firstBendLayer", "firstBendLocus"),
+            ("peakLayer", "peakLocus"),
+        ):
+            locus = MeasurementAtlasReportService._row_locus(
+                row,
+                layer_key=layer_key,
+                locus_key=locus_key,
+            )
+            if not locus:
+                continue
+            if locus == "embedding":
+                return (-1, "embedding")
+            if locus.startswith("layer:"):
+                layer_index = int(locus.split(":", 1)[1])
+                return (layer_index, f"layer {layer_index}")
+        return None
 
     @staticmethod
     def _agreement_summary(comparisons: list[dict[str, Any]]) -> str:

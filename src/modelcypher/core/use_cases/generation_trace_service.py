@@ -250,14 +250,16 @@ class GenerationTraceService:
         step_metrics.extend(live_step_metrics)
         space_step_metrics.extend(live_space_metrics)
         sequence_metrics.extend(live_sequence)
+        observed_live_spaces = self._observed_spaces(sequence_metrics, mode="live")
+        observed_replay_spaces = self._observed_spaces(sequence_metrics, mode="replay")
 
         decode = {
             "policy": "greedy",
             "maxTokens": max_tokens,
             "generationSource": "live" if live_result is not None else "backend_generate",
             "liveTraceCaptured": live_result is not None,
-            "liveSpaces": ["hidden"] if live_result is not None else [],
-            "replaySpaces": list(spaces),
+            "liveSpaces": list(observed_live_spaces),
+            "replaySpaces": list(observed_replay_spaces),
             "liveGeneratedTokenCount": len(live_result.generated_token_ids) if live_result else 0,
         }
         if live_result is not None:
@@ -588,6 +590,14 @@ class GenerationTraceService:
             }
             peak_layer = getattr(geodesic_profile, "peak_deviation_layer", None)
             first_bend_layer = getattr(geodesic_profile, "inflection_layer", None)
+            peak_layer_value, peak_locus = self._normalize_layer_metric(
+                space=space,
+                layer_value=peak_layer,
+            )
+            first_bend_layer_value, first_bend_locus = self._normalize_layer_metric(
+                space=space,
+                layer_value=first_bend_layer,
+            )
             sequence_metrics.append(
                 {
                     "mode": mode,
@@ -617,8 +627,10 @@ class GenerationTraceService:
                         geodesic_rows,
                         "path_length_ratio",
                     ),
-                    "peakLayer": peak_layer,
-                    "firstBendLayer": first_bend_layer,
+                    "peakLayer": peak_layer_value,
+                    "peakLocus": peak_locus,
+                    "firstBendLayer": first_bend_layer_value,
+                    "firstBendLocus": first_bend_locus,
                 }
             )
 
@@ -729,6 +741,19 @@ class GenerationTraceService:
             return DEFAULT_ANALYSIS_SPACES
         return tuple(normalized)
 
+    def _observed_spaces(
+        self,
+        sequence_metrics: list[dict[str, Any]],
+        *,
+        mode: str,
+    ) -> tuple[str, ...]:
+        observed = {
+            str(row.get("space", "")).strip()
+            for row in sequence_metrics
+            if str(row.get("mode", "")).strip() == mode and str(row.get("space", "")).strip()
+        }
+        return tuple(space for space in SUPPORTED_ANALYSIS_SPACES if space in observed)
+
     def _normalize_generated_text(self, *, prompt: str, generated_text: str) -> str:
         normalized = generated_text or ""
         if prompt and normalized.startswith(prompt):
@@ -800,6 +825,19 @@ class GenerationTraceService:
         if not values:
             return None
         return sum(values) / len(values)
+
+    @staticmethod
+    def _normalize_layer_metric(
+        *,
+        space: str,
+        layer_value: Any,
+    ) -> tuple[int | None, str | None]:
+        if layer_value is None:
+            return None, None
+        layer_index = int(layer_value)
+        if space == "embedding":
+            return None, "embedding"
+        return layer_index, f"layer:{layer_index}"
 
     @staticmethod
     def _mean_metric_from_mapping(mapping: dict[int, Any], attribute: str) -> float | None:

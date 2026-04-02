@@ -7,7 +7,7 @@ builders. It gives humans and frontier AI a clear way to inspect geometry,
 entropy, curvature, chain structure, and adapter-induced changes through
 workflow-first CLI surfaces instead of ad hoc activation scripts.
 
-Current evidence state (2026-03-26): `mc analyze` is the clearest public
+Current evidence state (2026-04-02): `mc analyze` is the clearest public
 entrypoint for prompt capture, prompt-family studies, and checkpoint or
 adapter comparison. `mc train run` remains shipped and geometry-derived, but
 the repo has not yet closed the promotable same-model same-data same-eval
@@ -55,6 +55,13 @@ family artifact under `results/measurement_atlas/<run_id>/` with:
 - `space_step_metrics.jsonl`
 - `comparisons.jsonl`
 - `onset_events.jsonl`
+
+The retained replay-alignment closure for the shipped 350M atlas pack lives in
+[`results/measurement_atlas/REPORT.md`](results/measurement_atlas/REPORT.md).
+Current observed atlas surfaces are `replay={hidden, embedding}` and
+`live={hidden}`; `run_manifest.json` now records requested vs observed
+surfaces separately so the bundle does not overclaim unsupported replay space
+coverage.
 
 ## Train When You Want To Act On The Measurements
 

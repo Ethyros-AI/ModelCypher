@@ -103,7 +103,9 @@ class _StubTraceService:
                     "meanGeodesicDeviation": 0.5,
                     "meanPathLengthRatio": 1.1,
                     "peakLayer": 3,
+                    "peakLocus": "layer:3",
                     "firstBendLayer": 2,
+                    "firstBendLocus": "layer:2",
                 },
             ),
             step_metrics=(
@@ -133,7 +135,11 @@ class _StubTraceService:
                     "stepDeviation": None,
                 },
             ),
-            decode={"policy": "greedy"},
+            decode={
+                "policy": "greedy",
+                "liveSpaces": ["hidden"],
+                "replaySpaces": ["hidden"],
+            },
             errors=(),
         )
 
@@ -215,3 +221,21 @@ def test_fixture_run_writes_required_artifact_family(tmp_path: Path) -> None:
     assert "command" in ledger_lines[0]
     assert "artifact_dir" in ledger_lines[0]
     assert "next_falsifier" in ledger_lines[0]
+
+    sequence_row = json.loads(
+        (output_dir / "sequence_metrics.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert sequence_row["peakLayer"] == 3
+    assert sequence_row["peakLocus"] == "layer:3"
+    assert sequence_row["firstBendLayer"] == 2
+    assert sequence_row["firstBendLocus"] == "layer:2"
+
+    run_manifest = json.loads((output_dir / "run_manifest.json").read_text(encoding="utf-8"))
+    assert run_manifest["schema"] == "mc.measurement_atlas.run_manifest.v2"
+    frozen_surfaces = run_manifest["frozenSurfaces"]
+    assert frozen_surfaces["requestedReplaySpaces"] == ["hidden", "embedding"]
+    assert frozen_surfaces["observedReplaySpaces"] == ["hidden"]
+    assert frozen_surfaces["requestedLiveSpaces"] == ["hidden"]
+    assert frozen_surfaces["observedLiveSpaces"] == ["hidden"]
+    assert "replaySpaces" not in frozen_surfaces
+    assert "liveSpaces" not in frozen_surfaces
