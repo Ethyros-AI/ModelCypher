@@ -20,7 +20,9 @@ poetry run mc analyze capture --model /path/to/model --prompt "Explain geodesics
 poetry run mc analyze family --model /path/to/model --manifest data/probes/prompt_family_minimal_pairs.json
 poetry run mc analyze compare --left-model /path/to/base --right-model /path/to/base --right-adapter /path/to/adapter --manifest data/probes/prompt_family_minimal_pairs.json
 poetry run mc analyze report --bundle /path/to/bundle
+poetry run mc analyze report --bundle results/measurement_atlas
 poetry run mc analyze report --bundle results/measurement_atlas/<run_id>
+poetry run mc analyze report --bundle results/pipeline_validation
 ```
 
 The training workflow remains available when you want to turn measurements into an adapter workflow:
@@ -221,6 +223,7 @@ poetry run mc analyze capture --model /path/to/model --prompt "Explain geodesics
 poetry run mc analyze family --model /path/to/model --manifest data/probes/prompt_family_minimal_pairs.json
 poetry run mc analyze compare --left-model /path/to/base --right-model /path/to/base --right-adapter /path/to/adapter --manifest data/probes/prompt_family_minimal_pairs.json
 poetry run mc analyze report --bundle /path/to/bundle
+poetry run mc analyze report --bundle results/measurement_atlas
 poetry run mc analyze report --bundle results/measurement_atlas/<run_id>
 poetry run mc analyze report --bundle results/pipeline_validation
 poetry run mc analyze probe calibrate --model /path/to/model --prompt "Hello." --output-file /tmp/calibration.json
@@ -228,9 +231,10 @@ poetry run mc analyze reasoning-flow --model /path/to/model --prompt "Prove that
 poetry run mc analyze lora-svd /path/to/adapter --base /path/to/model
 ```
 
-`mc analyze report --bundle ...` reads standard observation bundles, retained
-measurement-atlas artifact directories, and retained pipeline-validation
-families such as `results/pipeline_validation` and
+`mc analyze report --bundle ...` reads standard observation bundles, the
+retained `results/measurement_atlas` family root, individual measurement-atlas
+artifact directories, and retained pipeline-validation families such as
+`results/pipeline_validation` and
 `results/pipeline_validation_blindness_350M_t20`. Atlas generation itself
 remains research-only in `scripts/run_measurement_atlas.py`.
 

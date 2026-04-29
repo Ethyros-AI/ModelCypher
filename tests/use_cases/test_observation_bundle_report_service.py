@@ -405,6 +405,79 @@ def _write_measurement_atlas_fixture(
     return bundle_dir
 
 
+def _write_measurement_atlas_family_fixture(tmp_path: Path) -> Path:
+    bundle_dir = tmp_path / "measurement-atlas-family"
+    bundle_dir.mkdir()
+    report_text = "# Retained Measurement Atlas Family\n\nCurated family report.\n"
+    (bundle_dir / "REPORT.md").write_text(report_text, encoding="utf-8")
+
+    def write_run(
+        *,
+        directory_name: str,
+        run_id: str,
+        schema: str,
+        linked_blocker: str,
+        error_count: int,
+    ) -> None:
+        run_dir = bundle_dir / directory_name
+        run_dir.mkdir()
+        if schema.endswith(".v2"):
+            frozen_surfaces = {
+                "requestedLiveSpaces": ["hidden"],
+                "observedLiveSpaces": ["hidden"],
+                "requestedReplaySpaces": ["hidden", "embedding"],
+                "observedReplaySpaces": ["hidden", "embedding"],
+            }
+        else:
+            frozen_surfaces = {
+                "liveSpaces": ["hidden"],
+                "replaySpaces": ["hidden", "embedding", "intermediate"],
+            }
+        (run_dir / "run_manifest.json").write_text(
+            json.dumps(
+                {
+                    "schema": schema,
+                    "runId": run_id,
+                    "linkedBlocker": linked_blocker,
+                    "frozenSurfaces": frozen_surfaces,
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        (run_dir / "summary.json").write_text(
+            json.dumps(
+                {
+                    "runId": run_id,
+                    "linkedBlocker": linked_blocker,
+                    "studyCount": 1,
+                    "variantCount": 2,
+                    "comparisonCount": 1,
+                    "onsetEventCount": 1,
+                    "errorCount": error_count,
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    write_run(
+        directory_name="20260402T150954Z-measurement-atlas",
+        run_id="atlas-run-v2",
+        schema="mc.measurement_atlas.run_manifest.v2",
+        linked_blocker="A1",
+        error_count=0,
+    )
+    write_run(
+        directory_name="20260402T145540Z-measurement-atlas",
+        run_id="atlas-run-v1",
+        schema="mc.measurement_atlas.run_manifest.v1",
+        linked_blocker="A1",
+        error_count=1,
+    )
+    return bundle_dir
+
+
 def _write_pipeline_validation_fixture(
     tmp_path: Path,
     *,
@@ -763,6 +836,77 @@ def test_load_measurement_atlas_legacy_embedding_rows_render_embedding_without_s
 
     assert result.sections["studySummaries"][0]["earliestShiftLocus"] == "embedding"
     assert "-1" not in result.markdown
+
+
+def test_load_measurement_atlas_family_root_reads_retained_report_and_runs(
+    tmp_path: Path,
+) -> None:
+    bundle_dir = _write_measurement_atlas_family_fixture(tmp_path)
+    service = ObservationBundleReportService()
+
+    result = service.load(bundle_dir)
+
+    assert result.summary["workflow"] == "measurement_atlas_family"
+    assert result.summary["family"] == "measurement-atlas-family"
+    assert result.summary["runCount"] == 2
+    assert result.summary["errorCount"] == 1
+    assert result.markdown == (bundle_dir / "REPORT.md").read_text(encoding="utf-8")
+    assert result.manifest == {
+        "workflow": "measurement_atlas_family",
+        "family": "measurement-atlas-family",
+        "runCount": 2,
+        "report": str((bundle_dir / "REPORT.md").resolve()),
+        "perRunSummaryFiles": {
+            "atlas-run-v1": str(
+                (bundle_dir / "20260402T145540Z-measurement-atlas" / "summary.json").resolve()
+            ),
+            "atlas-run-v2": str(
+                (bundle_dir / "20260402T150954Z-measurement-atlas" / "summary.json").resolve()
+            ),
+        },
+    }
+    runs = result.sections["runs"]
+    assert [row["runId"] for row in runs] == ["atlas-run-v1", "atlas-run-v2"]
+    assert runs[0]["schema"] == "mc.measurement_atlas.run_manifest.v1"
+    assert runs[0]["surfaces"]["observedReplaySpaces"] is None
+    assert runs[1]["schema"] == "mc.measurement_atlas.run_manifest.v2"
+    assert runs[1]["surfaces"]["observedReplaySpaces"] == ["hidden", "embedding"]
+
+
+def test_load_measurement_atlas_family_root_rejects_malformed_child_manifest(
+    tmp_path: Path,
+) -> None:
+    bundle_dir = _write_measurement_atlas_family_fixture(tmp_path)
+    child_manifest = bundle_dir / "20260402T150954Z-measurement-atlas" / "run_manifest.json"
+    child_manifest.write_text("{not-json\n", encoding="utf-8")
+    service = ObservationBundleReportService()
+
+    with pytest.raises(ValueError, match="Malformed JSON in run_manifest.json"):
+        service.load(bundle_dir)
+
+
+def test_load_measurement_atlas_family_root_rejects_missing_child_summary(
+    tmp_path: Path,
+) -> None:
+    bundle_dir = _write_measurement_atlas_family_fixture(tmp_path)
+    child_summary = bundle_dir / "20260402T150954Z-measurement-atlas" / "summary.json"
+    child_summary.unlink()
+    service = ObservationBundleReportService()
+
+    with pytest.raises(ValueError, match="missing required summary.json"):
+        service.load(bundle_dir)
+
+
+def test_load_measurement_atlas_family_root_rejects_malformed_child_summary(
+    tmp_path: Path,
+) -> None:
+    bundle_dir = _write_measurement_atlas_family_fixture(tmp_path)
+    child_summary = bundle_dir / "20260402T150954Z-measurement-atlas" / "summary.json"
+    child_summary.write_text("{not-json\n", encoding="utf-8")
+    service = ObservationBundleReportService()
+
+    with pytest.raises(ValueError, match="Malformed JSON in summary.json"):
+        service.load(bundle_dir)
 
 
 def test_load_pipeline_validation_bundle_builds_expected_sections(tmp_path: Path) -> None:

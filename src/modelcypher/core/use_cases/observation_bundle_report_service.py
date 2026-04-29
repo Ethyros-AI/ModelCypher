@@ -65,6 +65,8 @@ class ObservationBundleReportService:
             raise ValueError(f"Report bundle path is not a directory: {resolved_dir}")
 
         bundle_family = self._detect_bundle_family(resolved_dir)
+        if bundle_family == "measurement_atlas_family":
+            return self._load_measurement_atlas_family_bundle(resolved_dir)
         if bundle_family == "measurement_atlas":
             return self._load_measurement_atlas_bundle(resolved_dir)
         if bundle_family == "pipeline_validation":
@@ -146,6 +148,78 @@ class ObservationBundleReportService:
             markdown=markdown,
         )
 
+    def _load_measurement_atlas_family_bundle(
+        self,
+        bundle_dir: Path,
+    ) -> ObservationBundleReportResult:
+        files = self._resolve_measurement_atlas_family_files(bundle_dir)
+        markdown = Path(files["report"]).read_text(encoding="utf-8")
+        runs = self._measurement_atlas_family_runs(bundle_dir)
+        run_rows: list[dict[str, Any]] = []
+        per_run_summary_files: dict[str, str] = {}
+        for run_dir in runs:
+            manifest_path = run_dir / "run_manifest.json"
+            summary_path = run_dir / "summary.json"
+            if not summary_path.exists():
+                raise ValueError(
+                    "Measurement-atlas family run is missing required summary.json: "
+                    f"{run_dir}"
+                )
+            manifest = self._load_json(manifest_path)
+            summary = self._load_json(summary_path)
+            run_id = str(manifest.get("runId") or summary.get("runId") or run_dir.name)
+            per_run_summary_files[run_id] = str(summary_path.resolve())
+            run_rows.append(
+                {
+                    "runId": run_id,
+                    "directory": str(run_dir.resolve()),
+                    "schema": manifest.get("schema"),
+                    "linkedBlocker": manifest.get("linkedBlocker"),
+                    "studyCount": summary.get("studyCount"),
+                    "variantCount": summary.get("variantCount"),
+                    "comparisonCount": summary.get("comparisonCount"),
+                    "onsetEventCount": summary.get("onsetEventCount"),
+                    "errorCount": summary.get("errorCount"),
+                    "surfaces": self._atlas_surface_summary(manifest),
+                }
+            )
+
+        summary = {
+            "workflow": "measurement_atlas_family",
+            "family": bundle_dir.name,
+            "runCount": len(run_rows),
+            "linkedBlockers": sorted(
+                {
+                    str(row["linkedBlocker"])
+                    for row in run_rows
+                    if row.get("linkedBlocker") is not None
+                }
+            ),
+            "errorCount": sum(
+                int(row["errorCount"])
+                for row in run_rows
+                if row.get("errorCount") is not None
+            ),
+        }
+        sections = {
+            "runs": run_rows,
+        }
+        manifest = {
+            "workflow": "measurement_atlas_family",
+            "family": bundle_dir.name,
+            "runCount": len(run_rows),
+            "report": files["report"],
+            "perRunSummaryFiles": per_run_summary_files,
+        }
+        return ObservationBundleReportResult(
+            bundle_dir=str(bundle_dir.expanduser().resolve()),
+            manifest=manifest,
+            summary=summary,
+            sections=sections,
+            files=files,
+            markdown=markdown,
+        )
+
     def _load_pipeline_validation_bundle(
         self,
         bundle_dir: Path,
@@ -217,6 +291,9 @@ class ObservationBundleReportService:
             if schema.startswith(MEASUREMENT_ATLAS_MANIFEST_PREFIX):
                 return "measurement_atlas"
 
+        if self._measurement_atlas_family_paths(bundle_dir):
+            return "measurement_atlas_family"
+
         if observation_manifest_path.exists():
             manifest = self._load_json(observation_manifest_path)
             bundle_version = str(manifest.get("bundleVersion", "")).strip()
@@ -237,6 +314,7 @@ class ObservationBundleReportService:
 
         raise ValueError(
             "Report bundle directory must contain manifest.json, run_manifest.json, "
+            "a measurement-atlas family REPORT.md with atlas run subdirectories, "
             "or pipeline-validation files (verdict.json, summary.json, <scale>/result.json): "
             f"{bundle_dir}"
         )
@@ -328,6 +406,49 @@ class ObservationBundleReportService:
                 f"{missing_text}"
             )
         return {key: str(path.resolve()) for key, path in file_map.items() if path.exists()}
+
+    @classmethod
+    def _resolve_measurement_atlas_family_files(cls, bundle_dir: Path) -> dict[str, str]:
+        report_path = bundle_dir / "REPORT.md"
+        if not report_path.exists():
+            raise ValueError(
+                "Report bundle is missing required files for measurement-atlas families: "
+                "REPORT.md"
+            )
+        runs = cls._measurement_atlas_family_runs(bundle_dir)
+        if not runs:
+            raise ValueError(
+                "Report bundle is missing required measurement-atlas run directories: "
+                "*/run_manifest.json"
+            )
+        files = {"report": str(report_path.resolve())}
+        for run_dir in runs:
+            run_key = run_dir.name
+            files[f"runManifest:{run_key}"] = str((run_dir / "run_manifest.json").resolve())
+            summary_path = run_dir / "summary.json"
+            if summary_path.exists():
+                files[f"summary:{run_key}"] = str(summary_path.resolve())
+        return files
+
+    @classmethod
+    def _measurement_atlas_family_paths(cls, bundle_dir: Path) -> list[Path]:
+        if not (bundle_dir / "REPORT.md").exists():
+            return []
+        return [
+            child
+            for child in sorted(bundle_dir.iterdir(), key=lambda path: path.name)
+            if child.is_dir() and (child / "run_manifest.json").exists()
+        ]
+
+    @classmethod
+    def _measurement_atlas_family_runs(cls, bundle_dir: Path) -> list[Path]:
+        runs: list[Path] = []
+        for child in cls._measurement_atlas_family_paths(bundle_dir):
+            manifest = cls._load_json(child / "run_manifest.json")
+            schema = str(manifest.get("schema", "")).strip()
+            if schema.startswith(MEASUREMENT_ATLAS_MANIFEST_PREFIX):
+                runs.append(child)
+        return runs
 
     @staticmethod
     def _pipeline_validation_result_paths(bundle_dir: Path) -> dict[str, Path]:

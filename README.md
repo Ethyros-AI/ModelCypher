@@ -25,7 +25,9 @@ poetry run mc analyze capture --model /path/to/model --prompt "Explain geodesics
 poetry run mc analyze family --model /path/to/model --manifest data/probes/prompt_family_minimal_pairs.json
 poetry run mc analyze compare --left-model /path/to/base --right-model /path/to/base --right-adapter /path/to/adapter --manifest data/probes/prompt_family_minimal_pairs.json
 poetry run mc analyze report --bundle /path/to/bundle
+poetry run mc analyze report --bundle results/measurement_atlas
 poetry run mc analyze report --bundle results/measurement_atlas/<run_id>
+poetry run mc analyze report --bundle results/pipeline_validation
 poetry run python scripts/run_measurement_atlas.py --model /path/to/model --manifest data/probes/measurement_atlas_casing.json --manifest data/probes/measurement_atlas_profanity_tone.json --manifest data/probes/measurement_atlas_grounded_hallucination.json --output-root results/measurement_atlas
 ```
 
@@ -63,8 +65,9 @@ Current observed atlas surfaces are `replay={hidden, embedding}` and
 `live={hidden}`; `run_manifest.json` now records requested vs observed
 surfaces separately so the bundle does not overclaim unsupported replay space
 coverage. `mc analyze report --bundle ...` can now read both the standard
-`mc analyze` bundles and these atlas artifact directories, while atlas
-generation itself remains research-only in `scripts/run_measurement_atlas.py`.
+`mc analyze` bundles, the retained atlas family root, individual atlas artifact
+directories, and retained pipeline-validation families. Atlas generation itself
+remains research-only in `scripts/run_measurement_atlas.py`.
 
 ## Train When You Want To Act On The Measurements
 
@@ -123,8 +126,12 @@ poetry run mc analyze family --model /path/to/model --manifest data/probes/promp
 # Re-read an existing bundle and print the shared report view
 poetry run mc analyze report --bundle /path/to/bundle
 
-# Re-read a retained measurement-atlas artifact through the same report path
+# Re-read the retained measurement-atlas family root or one atlas run
+poetry run mc analyze report --bundle results/measurement_atlas
 poetry run mc analyze report --bundle results/measurement_atlas/<run_id>
+
+# Re-read the retained pipeline-validation family
+poetry run mc analyze report --bundle results/pipeline_validation
 
 # Layer-wise intrinsic dimension profile
 poetry run mc analyze dimension-profile --model /path/to/model --samples 50

@@ -383,6 +383,50 @@ def _write_measurement_atlas_report_fixture(tmp_path: Path) -> Path:
     return bundle_dir
 
 
+def _write_measurement_atlas_family_report_fixture(tmp_path: Path) -> Path:
+    bundle_dir = tmp_path / "measurement-atlas-family"
+    bundle_dir.mkdir()
+    run_dir = bundle_dir / "20260402T160859Z-measurement-atlas"
+    run_dir.mkdir()
+    (bundle_dir / "REPORT.md").write_text(
+        "# Measurement Atlas Family Report\n\nCurated family report.\n",
+        encoding="utf-8",
+    )
+    (run_dir / "run_manifest.json").write_text(
+        json.dumps(
+            {
+                "schema": "mc.measurement_atlas.run_manifest.v2",
+                "runId": "atlas-family-run",
+                "linkedBlocker": "A1",
+                "frozenSurfaces": {
+                    "requestedLiveSpaces": ["hidden"],
+                    "observedLiveSpaces": ["hidden"],
+                    "requestedReplaySpaces": ["hidden", "embedding"],
+                    "observedReplaySpaces": ["hidden", "embedding"],
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (run_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "runId": "atlas-family-run",
+                "linkedBlocker": "A1",
+                "studyCount": 3,
+                "variantCount": 6,
+                "comparisonCount": 3,
+                "onsetEventCount": 2,
+                "errorCount": 0,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return bundle_dir
+
+
 def _write_pipeline_validation_report_fixture(
     tmp_path: Path,
     *,
@@ -715,6 +759,34 @@ class TestAnalyzeWorkflowCommands:
         assert example["promptCharCount"] > len(example["promptPreview"])
         assert example["generatedCharCount"] > len(example["generatedPreview"])
 
+    def test_report_reads_existing_measurement_atlas_family_root(self, tmp_path):
+        bundle_dir = _write_measurement_atlas_family_report_fixture(tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "--output",
+                "json",
+                "analyze",
+                "report",
+                "--bundle",
+                str(bundle_dir),
+            ],
+        )
+
+        assert result.exit_code == 0, result.stdout
+        payload = json.loads(result.stdout)
+        assert payload["bundleDir"] == str(bundle_dir.resolve())
+        assert payload["summary"]["workflow"] == "measurement_atlas_family"
+        assert payload["summary"]["runCount"] == 1
+        assert payload["manifest"]["report"] == str((bundle_dir / "REPORT.md").resolve())
+        assert "runs" in payload["sections"]
+        assert payload["sections"]["runs"][0]["runId"] == "atlas-family-run"
+        assert payload["sections"]["runs"][0]["surfaces"]["observedReplaySpaces"] == [
+            "hidden",
+            "embedding",
+        ]
+
     def test_report_text_for_measurement_atlas_uses_compact_preview_lines(self, tmp_path):
         bundle_dir = _write_measurement_atlas_report_fixture(tmp_path)
 
@@ -738,6 +810,29 @@ class TestAnalyzeWorkflowCommands:
         assert "prompt=`ALPHA BETA" in result.stdout
         assert "\\n\\n" not in result.stdout
         assert "chars)" in result.stdout
+
+    def test_report_text_for_measurement_atlas_family_root_uses_retained_report(
+        self,
+        tmp_path,
+    ):
+        bundle_dir = _write_measurement_atlas_family_report_fixture(tmp_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "--output",
+                "text",
+                "analyze",
+                "report",
+                "--bundle",
+                str(bundle_dir),
+            ],
+        )
+
+        assert result.exit_code == 0, result.stdout
+        assert "# Measurement Atlas Family Report" in result.stdout
+        assert "Curated family report." in result.stdout
+        assert "# Measurement Atlas Bundle" not in result.stdout
 
     def test_report_reads_existing_pipeline_validation_bundle(self, tmp_path):
         bundle_dir = _write_pipeline_validation_report_fixture(tmp_path)
