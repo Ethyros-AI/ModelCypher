@@ -133,9 +133,17 @@ def _resolve_layer_mask(layer, numeric_mask):
       - attention layers expect the string ``"causal"``
       - conv layers expect ``None``
     Standard transformers lack this attribute and use a numeric causal mask.
+
+    Qwen3.5 hybrid layers expose ``is_linear`` for GatedDeltaNet blocks. Those
+    blocks are causal by recurrence and interpret ``mask`` as a padding mask
+    with shape [batch, seq]. Passing a standard [seq, seq] causal attention mask
+    broadcasts the hidden state into [seq, seq, hidden], so linear blocks must
+    receive ``None`` when there is no padding to mask.
     """
     if hasattr(layer, "is_attention_layer"):
         return "causal" if layer.is_attention_layer else None
+    if getattr(layer, "is_linear", False):
+        return None
     return numeric_mask
 
 

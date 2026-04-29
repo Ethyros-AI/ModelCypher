@@ -19,7 +19,7 @@
 
 from __future__ import annotations
 
-from hypothesis import assume, given, settings
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from modelcypher.core.use_cases.quantization_utils import (
@@ -31,6 +31,14 @@ from modelcypher.core.use_cases.quantization_utils import (
 
 _bits = st.sampled_from([2, 4, 8, 16])
 _group_size = st.sampled_from([16, 32, 64])
+_valid_quantized_layouts = [
+    (bits, group_size, weight_last_dim, weight_out_dim)
+    for bits in (2, 4, 8, 16)
+    for group_size in (16, 32, 64)
+    for weight_last_dim in range(1, 17)
+    for weight_out_dim in range(1, 17)
+    if (weight_last_dim * (32 // bits)) % group_size == 0
+]
 
 
 @settings(max_examples=10, deadline=None)
@@ -73,22 +81,16 @@ def test_quantization_plan_override(
 
 @settings(max_examples=10, deadline=None)
 @given(
-    bits=_bits,
-    group_size=_group_size,
-    weight_last_dim=st.integers(min_value=1, max_value=16),
-    weight_out_dim=st.integers(min_value=1, max_value=16),
+    layout=st.sampled_from(_valid_quantized_layouts),
     biases_present=st.booleans(),
 )
 def test_resolve_quantization_from_hint(
-    bits: int,
-    group_size: int,
-    weight_last_dim: int,
-    weight_out_dim: int,
+    layout: tuple[int, int, int, int],
     biases_present: bool,
 ) -> None:
+    bits, group_size, weight_last_dim, weight_out_dim = layout
     packing_factor = 32 // bits
     original_in_dim = weight_last_dim * packing_factor
-    assume(original_in_dim % group_size == 0)
     scales_last_dim = original_in_dim // group_size
 
     hint = QuantizationHint(bits=bits, group_size=group_size, mode=None)

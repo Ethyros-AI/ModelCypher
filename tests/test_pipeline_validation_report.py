@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import importlib.util
+import logging
 import sys
 from pathlib import Path
 
@@ -111,6 +112,31 @@ def test_build_report_includes_dual_verdict_fields():
     assert "dim_null_recruitment_from_baseline=0.030000" in report
 
 
+def test_build_report_keeps_error_rows_table_shaped():
+    pipeline_validation = _load_pipeline_validation_module()
+    result = pipeline_validation._blocked_result_payload(
+        config=pipeline_validation.ModelConfig(
+            scale="350M",
+            model_path="/missing/model",
+            train_data="/tmp/train.jsonl",
+            eval_data="/tmp/eval.jsonl",
+        ),
+        trials=5,
+        error="Model path not found: /missing/model",
+    )
+
+    report = pipeline_validation._build_report(
+        all_results={"350M": result},
+        timestamp="2026-04-02T00:00:00+00:00",
+        git_hash="deadbeef",
+        trials=5,
+    )
+
+    error_row = next(line for line in report.splitlines() if line.startswith("| 350M | ERROR"))
+    assert len(error_row.split("|")[1:-1]) == 17
+    assert "error: Model path not found: /missing/model" in error_row
+
+
 def test_machine_readable_payloads_include_workflow_tags():
     pipeline_validation = _load_pipeline_validation_module()
 
@@ -175,3 +201,80 @@ def test_machine_readable_payloads_include_workflow_tags():
     assert summary["workflow"] == "pipeline_validation"
     assert summary["schema"] == "mc.pipeline_validation.family.v1"
     assert summary["family"] == "pipeline_validation_fixture"
+
+
+def test_error_payload_makes_structural_and_inference_verdicts_fail():
+    pipeline_validation = _load_pipeline_validation_module()
+    result = pipeline_validation._blocked_result_payload(
+        config=pipeline_validation.ModelConfig(
+            scale="350M",
+            model_path="/missing/model",
+            train_data="/tmp/train.jsonl",
+            eval_data="/tmp/eval.jsonl",
+        ),
+        trials=3,
+        error="Model path not found: /missing/model",
+    )
+
+    verdict = pipeline_validation._build_verdict_payload(
+        all_results={"350M": result},
+        timestamp="2026-04-02T00:00:00+00:00",
+        git_hash="deadbeef",
+        trials=3,
+        scales=["350M"],
+        controller_mode="mass_behavioral_probe",
+        optimizer_research_mode="adamw_matched_trace",
+        benchmark_suite=None,
+    )
+
+    assert verdict["all_pass"] is False
+    assert verdict["all_structural_pass"] is False
+    assert verdict["all_inference_pass"] is False
+    assert verdict["per_scale"]["350M"]["structural_fail_count"] == 3
+    assert verdict["per_scale"]["350M"]["inference_fail_count"] == 3
+
+
+def test_config_with_overrides_applies_train_eval_without_model_override(tmp_path: Path):
+    pipeline_validation = _load_pipeline_validation_module()
+    train_data = tmp_path / "train.jsonl"
+    eval_data = tmp_path / "eval.jsonl"
+    train_data.write_text("{}\n", encoding="utf-8")
+    eval_data.write_text("{}\n", encoding="utf-8")
+
+    config = pipeline_validation._config_with_overrides(
+        pipeline_validation.MODEL_CONFIGS["350M"],
+        train_data=train_data,
+        eval_data=eval_data,
+    )
+
+    assert config.model_path == pipeline_validation.MODEL_CONFIGS["350M"].model_path
+    assert config.train_data == str(train_data.resolve())
+    assert config.eval_data == str(eval_data.resolve())
+
+
+def test_run_validation_writes_result_for_missing_model(tmp_path: Path):
+    pipeline_validation = _load_pipeline_validation_module()
+    train_data = tmp_path / "train.jsonl"
+    eval_data = tmp_path / "eval.jsonl"
+    train_data.write_text("{}\n", encoding="utf-8")
+    eval_data.write_text("{}\n", encoding="utf-8")
+    output_dir = tmp_path / "350M"
+    config = pipeline_validation.ModelConfig(
+        scale="350M",
+        model_path=str(tmp_path / "missing-model"),
+        train_data=str(train_data),
+        eval_data=str(eval_data),
+    )
+
+    result = pipeline_validation._run_validation(
+        config=config,
+        trials=2,
+        output_dir=output_dir,
+        log=logging.getLogger("test_pipeline_validation_missing_model"),
+    )
+
+    result_path = output_dir / "result.json"
+    assert result_path.exists()
+    assert result["all_passed"] is False
+    assert result["fail_count"] == 2
+    assert "Model path not found" in result["error"]

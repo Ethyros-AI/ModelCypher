@@ -57,6 +57,9 @@ class VerificationDepthMode(str, Enum):
 def safety_dimension_profile(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model", help="Path to model directory"),
+    adapter: str | None = typer.Option(
+        None, "--adapter", help="Optional adapter directory to load before profiling"
+    ),
     probes: str | None = typer.Option(
         None, "--probes", help="Path to file with probe texts (one per line)"
     ),
@@ -102,6 +105,18 @@ def safety_dimension_profile(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
+    adapter_path = Path(adapter) if adapter else None
+    if adapter_path is not None and not adapter_path.exists():
+        error = ErrorDetail(
+            code="MC-3023",
+            title="Adapter not found",
+            detail=f"Adapter path does not exist: {adapter}",
+            hint="Provide a valid adapter directory or omit --adapter.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
     # Load probe texts if provided
     probe_texts: list[str] | None = None
     if probes:
@@ -131,7 +146,10 @@ def safety_dimension_profile(
 
         # Load model
         loader = ModelLoader()
-        loaded_model, tokenizer = loader.load_model(str(model_path))
+        loaded_model, tokenizer = loader.load_model(
+            str(model_path),
+            adapter_path=str(adapter_path) if adapter_path is not None else None,
+        )
 
         # Default probes - diverse topics to sample the representation space
         if probe_texts is None:
@@ -257,6 +275,7 @@ def safety_dimension_profile(
 
     payload = {
         "modelPath": str(model_path),
+        "adapterPath": str(adapter_path) if adapter_path is not None else None,
         "numLayers": num_layers,
         "hiddenDim": hidden_dim,
         "probeCount": len(probe_texts),
@@ -276,6 +295,7 @@ def safety_dimension_profile(
         lines = [
             "DIMENSION PROFILE (Semantic Highway Detection)",
             f"Model: {model_path}",
+            f"Adapter: {adapter_path}" if adapter_path is not None else "",
             f"Layers: {num_layers}",
             f"Hidden Dim: {hidden_dim}",
             f"Probes: {len(probe_texts)}",

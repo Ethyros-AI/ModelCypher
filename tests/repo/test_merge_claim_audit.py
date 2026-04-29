@@ -33,17 +33,21 @@ def _load_merge_claims() -> dict[str, dict]:
     }
 
 
+def _claim_status(claim: dict) -> str | None:
+    return claim.get("status") or claim.get("current_status")
+
+
 def test_merge_claims_are_downgraded_until_portability_bundle_exists() -> None:
     merge_claims = _load_merge_claims()
-    assert merge_claims["CR-MRG-001"]["status"] == "[EXPLORATORY]"
-    assert merge_claims["CR-MRG-002"]["status"] == "[MEASUREMENT_INVALID]"
+    assert _claim_status(merge_claims["CR-MRG-001"]) == "[EXPLORATORY]"
+    assert _claim_status(merge_claims["CR-MRG-002"]) == "[MEASUREMENT_INVALID]"
 
 
 def test_validated_merge_claims_require_full_claim_form_fields() -> None:
     merge_claims = _load_merge_claims()
     violations: list[str] = []
     for claim_id, claim in merge_claims.items():
-        if claim.get("status") != "[VALIDATED]":
+        if _claim_status(claim) != "[VALIDATED]":
             continue
         for field_name in REQUIRED_CLAIM_FIELDS:
             if not claim.get(field_name):

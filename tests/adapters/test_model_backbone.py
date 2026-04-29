@@ -19,6 +19,12 @@ class _FakeStandardLayer:
     pass
 
 
+class _FakeQwen35LinearLayer:
+    """Qwen3.5 GatedDeltaNet layer — recurrent causal, padding mask only."""
+
+    is_linear = True
+
+
 _NUMERIC_MASK = [[1.0, 0.0], [1.0, 1.0]]
 
 
@@ -38,3 +44,9 @@ def test_resolve_mask_standard_transformer() -> None:
     """Standard transformer layer (no is_attention_layer) gets numeric mask."""
     mask = _resolve_layer_mask(_FakeStandardLayer(), _NUMERIC_MASK)
     assert mask is _NUMERIC_MASK
+
+
+def test_resolve_mask_qwen35_linear_layer() -> None:
+    """Qwen3.5 linear-attention layers must not receive causal matrix masks."""
+    mask = _resolve_layer_mask(_FakeQwen35LinearLayer(), _NUMERIC_MASK)
+    assert mask is None

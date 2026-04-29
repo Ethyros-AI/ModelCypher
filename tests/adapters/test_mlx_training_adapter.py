@@ -21,7 +21,7 @@ from modelcypher.core.domain.training.geometric_lora import (
     select_target_modules,
 )
 
-_MODEL_CACHE: dict[str, tuple[object, object, object]] = {}
+_BACKEND_CACHE: dict[str, object] = {}
 
 
 def _get_backend_or_fail(backend_name: str):
@@ -116,16 +116,11 @@ class _ToyMoEModel(nn.Module):
 
 
 def _load_model_and_tokenizer(backend_name: str) -> tuple[object, object, object]:
-    cached = _MODEL_CACHE.get(backend_name)
-    if cached is not None:
-        return cached
-
-    backend = _get_backend_or_fail(backend_name)
-    model = _ToyModel()
-    tokenizer = _ToyTokenizer()
-    payload = (backend, model, tokenizer)
-    _MODEL_CACHE[backend_name] = payload
-    return payload
+    backend = _BACKEND_CACHE.get(backend_name)
+    if backend is None:
+        backend = _get_backend_or_fail(backend_name)
+        _BACKEND_CACHE[backend_name] = backend
+    return backend, _ToyModel(), _ToyTokenizer()
 
 
 @pytest.mark.parametrize("backend_name", ["mlx"])
@@ -559,6 +554,7 @@ def test_streaming_geometry_randomized(backend_name) -> None:
 def test_memory_safe_micro_batch_probes_safe_side_first(monkeypatch) -> None:
     import mlx.core as mx
     import mlx_lm.tuner.trainer as trainer
+
     import modelcypher.backends._mlx_training_adapter_diagnostics_mixin as diag_mixin
 
     backend = _get_backend_or_fail("mlx")
@@ -649,6 +645,7 @@ def test_memory_safe_micro_batch_no_catastrophic_jump(monkeypatch) -> None:
     """
     import mlx.core as mx
     import mlx_lm.tuner.trainer as trainer
+
     import modelcypher.backends._mlx_training_adapter_diagnostics_mixin as diag_mixin
 
     backend = _get_backend_or_fail("mlx")
@@ -711,6 +708,7 @@ def test_memory_safe_micro_batch_non_power_of_two_logical_batch(monkeypatch) -> 
     """
     import mlx.core as mx
     import mlx_lm.tuner.trainer as trainer
+
     import modelcypher.backends._mlx_training_adapter_diagnostics_mixin as diag_mixin
 
     backend = _get_backend_or_fail("mlx")

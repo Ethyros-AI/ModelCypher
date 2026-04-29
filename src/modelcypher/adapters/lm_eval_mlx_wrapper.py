@@ -21,10 +21,10 @@ from __future__ import annotations
 
 import gc
 
-import transformers
+from mlx_lm.evaluate import MLXLM
 from transformers.utils.import_utils import _LazyModule
 
-from mlx_lm.evaluate import MLXLM
+from modelcypher.backends import get_backend
 
 _ORIGINAL_LAZY_GETATTR = _LazyModule.__getattr__
 
@@ -64,10 +64,8 @@ class MLXModelWrapper(MLXLM):
         The repo test harness documents that Python references must be collected
         before clearing the MLX cache to avoid use-after-free issues.
         """
-        import mlx.core as mx
-
         for attr in ("_model", "model", "tokenizer"):
             if hasattr(self, attr):
                 delattr(self, attr)
         gc.collect()
-        mx.clear_cache()
+        get_backend("mlx").clear_cache()

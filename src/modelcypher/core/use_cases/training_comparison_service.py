@@ -20,7 +20,6 @@
 from __future__ import annotations
 
 import json
-import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -28,8 +27,8 @@ from typing import TYPE_CHECKING, Any
 from modelcypher.core.domain.agent_protocol import (
     AgentDiagnostics,
     AgentEnvelope,
-    NextAction,
     AgentRecommendation,
+    NextAction,
     make_metadata,
 )
 
@@ -388,7 +387,7 @@ class TrainingComparisonService:
         """Check if two results are commensurable based on identity metadata.
 
         Returns (commensurable, mismatch_observations).
-        Results without metadata are treated as commensurable (backward compat).
+        Results without metadata are treated as commensurable for older artifacts.
         """
         observations: list[str] = []
         commensurable = True
@@ -400,12 +399,12 @@ class TrainingComparisonService:
             "benchmark_suite": "benchmark suite",
         }
 
-        for field, label in identity_fields.items():
-            val_a = meta_a.get(field)
-            val_b = meta_b.get(field)
+        for field_name, label in identity_fields.items():
+            val_a = meta_a.get(field_name)
+            val_b = meta_b.get(field_name)
             if val_a is not None and val_b is not None and val_a != val_b:
                 observations.append(
-                    f"Results use different {label} — comparison may not be meaningful"
+                    f"Results use different {label} - comparison may not be meaningful"
                 )
                 commensurable = False
 

@@ -201,6 +201,72 @@ def _check_data_files(config: ModelConfig) -> None:
             sys.exit(2)
 
 
+def _config_with_overrides(
+    config: ModelConfig,
+    *,
+    model_path: Path | None = None,
+    train_data: Path | None = None,
+    eval_data: Path | None = None,
+) -> ModelConfig:
+    return ModelConfig(
+        scale=config.scale,
+        model_path=(
+            str(model_path.expanduser().resolve())
+            if model_path is not None
+            else config.model_path
+        ),
+        train_data=(
+            str(train_data.expanduser().resolve())
+            if train_data is not None
+            else config.train_data
+        ),
+        eval_data=(
+            str(eval_data.expanduser().resolve())
+            if eval_data is not None
+            else config.eval_data
+        ),
+    )
+
+
+def _blocked_result_payload(
+    *,
+    config: ModelConfig,
+    trials: int,
+    error: str,
+) -> dict[str, Any]:
+    return {
+        "scale": config.scale,
+        "model_path": config.model_path,
+        "dataset_path": config.train_data,
+        "eval_dataset_path": config.eval_data,
+        "trials_requested": trials,
+        "pass_count": 0,
+        "fail_count": trials,
+        "structural_pass_count": 0,
+        "structural_fail_count": trials,
+        "inference_pass_count": 0,
+        "inference_fail_count": trials,
+        "phase5_inference_enabled": False,
+        "all_passed": False,
+        "trial_results": [],
+        "counterexamples": [],
+        "error": error,
+    }
+
+
+def _write_result_payload(
+    *,
+    result_dict: dict[str, Any],
+    output_dir: Path,
+    log: logging.Logger,
+) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    result_path = output_dir / "result.json"
+    result_path.write_text(json.dumps(result_dict, indent=2), encoding="utf-8")
+    log.info("Wrote %s", result_path)
+    return result_path
+
+
 def _run_validation(
     config: ModelConfig,
     trials: int,
@@ -211,11 +277,6 @@ def _run_validation(
     optimizer_research_mode: str = "cayley_stiefel_mass",
 ) -> dict[str, Any]:
     """Run validation for a single model and return the result dict."""
-    from modelcypher.cli.composition import get_backend, get_dataset_training_service
-    from modelcypher.core.use_cases.derived_training_validation_service import (
-        DerivedTrainingValidationService,
-    )
-
     log.info("=" * 72)
     log.info("Validating %s", config.scale)
     log.info("  Model:      %s", config.model_path)
@@ -232,11 +293,18 @@ def _run_validation(
     model_path = Path(config.model_path).expanduser().resolve()
     if not model_path.exists():
         log.error("Model path does not exist: %s", model_path)
-        return {
-            "scale": config.scale,
-            "error": f"Model path not found: {model_path}",
-            "all_passed": False,
-        }
+        result_dict = _blocked_result_payload(
+            config=config,
+            trials=trials,
+            error=f"Model path not found: {model_path}",
+        )
+        _write_result_payload(result_dict=result_dict, output_dir=output_dir, log=log)
+        return result_dict
+
+    from modelcypher.cli.composition import get_backend, get_dataset_training_service
+    from modelcypher.core.use_cases.derived_training_validation_service import (
+        DerivedTrainingValidationService,
+    )
 
     validator = DerivedTrainingValidationService(
         dataset_training_service=get_dataset_training_service(),
@@ -256,12 +324,7 @@ def _run_validation(
     )
 
     result_dict = result.to_dict()
-
-    # Write per-model result
-    output_dir.mkdir(parents=True, exist_ok=True)
-    result_path = output_dir / "result.json"
-    result_path.write_text(json.dumps(result_dict, indent=2), encoding="utf-8")
-    log.info("Wrote %s", result_path)
+    _write_result_payload(result_dict=result_dict, output_dir=output_dir, log=log)
 
     # Log summary
     log.info(
@@ -343,8 +406,24 @@ def _build_report(
             continue
         r = all_results[scale]
         if "error" in r:
+            pass_count = int(r.get("pass_count", 0))
+            fail_count = int(r.get("fail_count", trials))
+            error_text = str(r["error"]).replace("\n", " ")
             lines.append(
-                f"| {scale} | ERROR | - | - | - | - | - | - | - | - | {r['error']} |",
+                f"| {scale} | ERROR | ERROR | FAIL "
+                f"| 0/{fail_count} "
+                f"| 0/{fail_count} "
+                f"| {pass_count}/{fail_count} "
+                f"| n/a "
+                f"| n/a "
+                f"| error: {error_text} "
+                f"| n/a "
+                f"| n/a "
+                f"| n/a "
+                f"| n/a "
+                f"| n/a "
+                f"| n/a "
+                f"| n/a |",
             )
             continue
 
@@ -729,10 +808,12 @@ def _build_verdict_payload(
 ) -> dict[str, Any]:
     all_pass = all(r.get("all_passed", False) for r in all_results.values())
     all_structural_pass = all(
-        int(r.get("structural_fail_count", 0)) == 0 for r in all_results.values()
+        not r.get("error") and int(r.get("structural_fail_count", 0)) == 0
+        for r in all_results.values()
     )
     all_inference_pass = all(
-        int(r.get("inference_fail_count", 0)) == 0 for r in all_results.values()
+        not r.get("error") and int(r.get("inference_fail_count", 0)) == 0
+        for r in all_results.values()
     )
     return {
         "workflow": "pipeline_validation",
@@ -891,14 +972,19 @@ def _build_summary_payload(
 def main() -> None:
     args = _parse_args()
 
-    if args.model_path is None:
-        _check_volume()
-    elif args.model_scale is None:
+    has_config_override = any(
+        value is not None
+        for value in (args.model_path, args.train_data, args.eval_data)
+    )
+    if has_config_override and args.model_scale is None:
         print(
-            "ERROR: --model-path requires --model-scale so the overridden run stays labeled.",
+            "ERROR: --model-path, --train-data, and --eval-data require "
+            "--model-scale so the overridden run stays labeled.",
             file=sys.stderr,
         )
         sys.exit(2)
+    if args.model_path is None:
+        _check_volume()
 
     output_root = args.output_root.expanduser().resolve()
     output_root.mkdir(parents=True, exist_ok=True)
@@ -927,18 +1013,12 @@ def main() -> None:
     all_results: dict[str, dict[str, Any]] = {}
 
     for scale in scales:
-        config = MODEL_CONFIGS[scale]
-        if args.model_path is not None:
-            config = ModelConfig(
-                scale=scale,
-                model_path=str(args.model_path.expanduser().resolve()),
-                train_data=str(
-                    (args.train_data or Path(config.train_data)).expanduser().resolve()
-                ),
-                eval_data=str(
-                    (args.eval_data or Path(config.eval_data)).expanduser().resolve()
-                ),
-            )
+        config = _config_with_overrides(
+            MODEL_CONFIGS[scale],
+            model_path=args.model_path,
+            train_data=args.train_data,
+            eval_data=args.eval_data,
+        )
         scale_dir = output_root / scale
         try:
             result_dict = _run_validation(
@@ -953,11 +1033,20 @@ def main() -> None:
             all_results[scale] = result_dict
         except Exception:
             log.exception("FAILED: %s", scale)
-            all_results[scale] = {
-                "scale": scale,
-                "error": "exception during validation (see run.log)",
-                "all_passed": False,
-            }
+            result_dict = _blocked_result_payload(
+                config=config,
+                trials=args.trials,
+                error="exception during validation (see run.log)",
+            )
+            try:
+                _write_result_payload(
+                    result_dict=result_dict,
+                    output_dir=scale_dir,
+                    log=log,
+                )
+            except Exception:
+                log.exception("FAILED to write blocked result payload: %s", scale)
+            all_results[scale] = result_dict
 
     # Write machine-readable family payloads
     verdict = _build_verdict_payload(
@@ -997,7 +1086,7 @@ def main() -> None:
     for scale in scales:
         r = all_results.get(scale, {})
         if "error" in r:
-            print(f"  {scale}: ERROR — {r['error']}")
+            print(f"  {scale}: ERROR - {r['error']}")
         elif r.get("all_passed"):
             print(f"  {scale}: PASS ({r.get('pass_count', 0)}/{args.trials} trials)")
         else:

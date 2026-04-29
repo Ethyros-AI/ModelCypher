@@ -77,6 +77,14 @@ def _first_armed_trace(
     raise ValueError("No armed closed_loop_decision found in controller_trace.")
 
 
+def _first_counterexample(report: dict[str, Any]) -> dict[str, Any]:
+    counterexamples = report.get("counterexamples")
+    if not isinstance(counterexamples, list) or not counterexamples:
+        return {}
+    first = counterexamples[0]
+    return dict(first) if isinstance(first, dict) else {}
+
+
 def _transport_entries(
     behavioral_state: dict[str, Any],
 ) -> tuple[list[tuple[str, float]], float]:
@@ -116,6 +124,91 @@ def _share(value: float | None, total: float) -> float | None:
     return float(value) / float(total)
 
 
+def _unarmed_postmortem(
+    *,
+    report: dict[str, Any],
+    train_result: dict[str, Any],
+    controller_trace: list[dict[str, Any]],
+    report_path: Path,
+    train_result_path: Path,
+) -> dict[str, Any]:
+    decision = {}
+    if controller_trace:
+        candidate = controller_trace[0].get("closed_loop_decision")
+        if isinstance(candidate, dict):
+            decision = candidate
+    counterexample = _first_counterexample(report)
+    next_targets = [
+        "trace why the closed-loop controller did not arm on the retained artifact before analyzing actuator effects",
+        "separate no-arm artifacts from armed counterexamples in future retained summaries",
+        "rerun only after the trigger observable and arm preconditions are recorded in the artifact contract",
+    ]
+    return {
+        "schema": "r2_closed_loop_postmortem_v1",
+        "created_at_utc": _utc_now(),
+        "inputs": {
+            "report_path": str(report_path),
+            "train_result_path": str(train_result_path),
+        },
+        "classification": {
+            "status": "MECHANISM_NOT_ENGAGED",
+            "counterexample_confirmed": False,
+            "temporal_blind_spot": False,
+            "target_selection_fallback": "not_armed",
+            "target_misaligned_with_transport": False,
+            "freeze_applied": False,
+            "off_surface_inference_divergence": False,
+        },
+        "arm_event": {
+            "armed": False,
+            "epoch": decision.get("epoch"),
+            "trigger_reasons": list(decision.get("trigger_reasons") or []),
+            "target_layer": decision.get("target_layer"),
+            "adapter_rank_at_arm": None,
+            "online_eval_accuracy_delta_at_arm": None,
+            "available_ordering_metric_counts": {key: 0 for key in _ORDER_KEYS},
+            "ordering_metrics_all_null": True,
+            "margin_points_available_at_arm": 0,
+            "stable_rank_points_available_at_arm": 0,
+            "stable_rank_concentration_observable_available": False,
+        },
+        "transport_at_arm": {
+            "total_behavioral_transport": 0.0,
+            "target_layer_transport": None,
+            "target_layer_transport_share": None,
+            "target_layer_transport_rank": None,
+            "top3_transport_share": None,
+            "top5_transport_share": None,
+            "top_layers": [],
+        },
+        "freeze_effectiveness": {
+            "freeze_applied": False,
+            "objective_components_after_arm": [],
+            "target_layer_parameter_update_norm_after_arm": None,
+        },
+        "divergence": {
+            "training_probe_min_cka": _float_or_none(train_result.get("min_cka")),
+            "training_probe_min_cka_layer": train_result.get("min_cka_layer"),
+            "inference_probe_min_cka": _float_or_none(train_result.get("inference_min_cka")),
+            "inference_probe_min_cka_layer": train_result.get("inference_min_cka_layer"),
+            "inference_probe_min_cka_layer_on_adaptation_surface": None,
+            "cka_blindness_ratio": _float_or_none(counterexample.get("cka_blindness_ratio")),
+        },
+        "behavioral_outcome": {
+            "online_eval_delta_correct": counterexample.get("online_eval_delta_correct"),
+            "benchmark_overall_delta": _float_or_none(
+                counterexample.get("benchmark_overall_delta"),
+            ),
+            "margin_mean_delta": _float_or_none(counterexample.get("margin_mean_delta")),
+            "degeneration_max_ngram_repeat": _float_or_none(
+                counterexample.get("degeneration_max_ngram_repeat"),
+            ),
+            "stop_reason": train_result.get("stop_reason"),
+        },
+        "next_derivation_targets": next_targets,
+    }
+
+
 def build_postmortem(
     *,
     report_path: Path = DEFAULT_REPORT_PATH,
@@ -128,7 +221,18 @@ def build_postmortem(
     if not controller_trace:
         raise ValueError("train_result.json is missing controller_trace.")
 
-    armed_index, armed_trace, armed_decision = _first_armed_trace(controller_trace)
+    try:
+        armed_index, armed_trace, armed_decision = _first_armed_trace(controller_trace)
+    except ValueError:
+        return _unarmed_postmortem(
+            report=report,
+            train_result=train_result,
+            controller_trace=controller_trace,
+            report_path=report_path,
+            train_result_path=train_result_path,
+        )
+
+    counterexample = _first_counterexample(report)
     armed_state = dict(armed_trace.get("behavioral_state") or {})
     target_layer = armed_decision.get("target_layer")
     ordering_metrics = {
@@ -238,6 +342,7 @@ def build_postmortem(
             ),
         },
         "arm_event": {
+            "armed": True,
             "epoch": arm_epoch,
             "trigger_reasons": list(armed_decision.get("trigger_reasons") or []),
             "target_layer": target_layer,
@@ -282,16 +387,16 @@ def build_postmortem(
             "inference_probe_min_cka_layer_on_adaptation_surface": (
                 inference_layer_on_adaptation_surface
             ),
-            "cka_blindness_ratio": _float_or_none(report["counterexamples"][0].get("cka_blindness_ratio")),
+            "cka_blindness_ratio": _float_or_none(counterexample.get("cka_blindness_ratio")),
         },
         "behavioral_outcome": {
-            "online_eval_delta_correct": report["counterexamples"][0].get("online_eval_delta_correct"),
+            "online_eval_delta_correct": counterexample.get("online_eval_delta_correct"),
             "benchmark_overall_delta": _float_or_none(
-                report["counterexamples"][0].get("benchmark_overall_delta"),
+                counterexample.get("benchmark_overall_delta"),
             ),
-            "margin_mean_delta": _float_or_none(report["counterexamples"][0].get("margin_mean_delta")),
+            "margin_mean_delta": _float_or_none(counterexample.get("margin_mean_delta")),
             "degeneration_max_ngram_repeat": _float_or_none(
-                report["counterexamples"][0].get("degeneration_max_ngram_repeat"),
+                counterexample.get("degeneration_max_ngram_repeat"),
             ),
             "stop_reason": train_result.get("stop_reason"),
         },
@@ -312,7 +417,11 @@ def render_markdown(postmortem: dict[str, Any]) -> str:
         "",
         "## Classification",
         f"- Status: `{classification['status']}`",
-        "- Counterexample confirmed: the controller armed, the freeze applied, and behavior still collapsed.",
+        (
+            "- Counterexample confirmed: the controller armed, the freeze applied, and behavior still collapsed."
+            if classification["counterexample_confirmed"]
+            else "- Counterexample confirmed: `False`; no closed-loop arm event was recorded in the retained artifact."
+        ),
         f"- Temporal blind spot: `{classification['temporal_blind_spot']}`",
         f"- Target selection fallback: `{classification['target_selection_fallback']}`",
         f"- Target misaligned with transport: `{classification['target_misaligned_with_transport']}`",
@@ -339,6 +448,8 @@ def render_markdown(postmortem: dict[str, Any]) -> str:
         lines.append(
             f"  - `{item['layer']}` transport={item['transport']} share={item['share']}"
         )
+    if not top_layers:
+        lines.append("  - n/a")
 
     lines.extend(
         [
