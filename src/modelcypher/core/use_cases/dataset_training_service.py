@@ -70,6 +70,7 @@ from modelcypher.core.domain.training.geometric_optimizer import (
 )
 from modelcypher.core.domain.training.identity import (
     GEOMETRIC_LORA_CONTROLLER,
+    GEOMETRIC_LORA_INIT_METHOD_CAYLEY,
     GEOMETRIC_LORA_INIT_METHOD,
     GEOMETRIC_LORA_METHOD,
     GEOMETRIC_LORA_OPTIMIZER,
@@ -2566,6 +2567,13 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             training_objective = "ce_eos_excluded"
         if answer_masked_train:
             training_objective = "ce_answer_masked"
+        if use_bilm_margin:
+            training_objective = "ce_bilm_margin"
+        init_method = (
+            GEOMETRIC_LORA_INIT_METHOD_CAYLEY
+            if optimizer_research_mode == OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS
+            else GEOMETRIC_LORA_INIT_METHOD
+        )
 
         # 12. Save if requested
         saved_adapter_path: str | None = None
@@ -2580,7 +2588,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 "train_iters": str(train_iters),
                 "type": GEOMETRIC_LORA_METHOD,
                 "method": GEOMETRIC_LORA_METHOD,
-                "init_method": GEOMETRIC_LORA_INIT_METHOD,
+                "init_method": init_method,
                 "optimizer": (
                     resolve_geometric_lora_optimizer_name(
                         optimizer_research_mode,
@@ -2763,7 +2771,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             dim_final_null_fraction=dim_final_null_fraction,
             dim_null_recruitment_from_baseline=dim_null_recruitment_from_baseline,
             method=GEOMETRIC_LORA_METHOD,
-            init_method=GEOMETRIC_LORA_INIT_METHOD,
+            init_method=init_method,
             optimizer=(
                 resolve_geometric_lora_optimizer_name(
                     optimizer_research_mode,

@@ -890,11 +890,12 @@ def _apply_attention_rank_coupling(
             continue
         parts = key.split(".")
         try:
-            layer_idx = int(parts[2])
+            layers_pos = parts.index("layers")
+            layer_idx = int(parts[layers_pos + 1])
         except (IndexError, ValueError):
             logger.warning(
                 "Cannot parse layer index from attention key '%s' "
-                "(expected model.layers.{idx}.self_attn.{proj}.weight); "
+                "(expected ...layers.{idx}.self_attn.{proj}.weight); "
                 "rank coupling skipped for this key",
                 key,
             )

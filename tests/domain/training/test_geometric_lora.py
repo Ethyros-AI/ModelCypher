@@ -277,6 +277,26 @@ class TestCoupledRanks:
         assert ranks["model.layers.0.self_attn.q_proj.weight"] == 200
         assert ranks["model.layers.0.self_attn.k_proj.weight"] == 200
 
+    def test_qwen_language_model_prefix_is_coupled(self):
+        """Qwen MLX keys may include model.language_model.layers.N."""
+        geoms = {
+            "model.language_model.layers.19.self_attn.q_proj.weight": _geometry(
+                "model.language_model.layers.19.self_attn.q_proj.weight",
+                tail_dims=500,
+                shape=(2048, 2048),
+            ),
+            "model.language_model.layers.19.self_attn.k_proj.weight": _geometry(
+                "model.language_model.layers.19.self_attn.k_proj.weight",
+                tail_dims=64,
+                shape=(512, 2048),
+            ),
+        }
+        targets = list(geoms.keys())
+        ranks = compute_coupled_ranks(geoms, targets)
+
+        assert ranks["model.language_model.layers.19.self_attn.q_proj.weight"] == 64
+        assert ranks["model.language_model.layers.19.self_attn.k_proj.weight"] == 64
+
     def test_q_already_smaller_than_k_no_change(self):
         """When q tail_dims <= k tail_dims, no capping needed."""
         geoms = {

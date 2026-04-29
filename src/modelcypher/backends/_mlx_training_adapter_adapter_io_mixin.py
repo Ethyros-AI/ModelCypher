@@ -318,7 +318,7 @@ class _MLXTrainingAdapterAdapterIOMixin:
             # LoRA forward: x @ lora_a @ lora_b
             # Weight delta for [out, in] weight layout: lora_b^T @ lora_a^T
             delta = mx.matmul(mx.transpose(lora_b), mx.transpose(lora_a))
-            delta = mx.astype(delta, linear.weight.dtype)
+            delta = delta.astype(linear.weight.dtype)
             linear.weight = linear.weight + delta
             mx.eval(linear.weight)
             merged_layers += 1

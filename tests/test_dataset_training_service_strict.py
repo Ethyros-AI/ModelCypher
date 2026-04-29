@@ -1555,6 +1555,8 @@ def test_train_from_dataset_bilm_margin_uses_topology_dataset_and_cayley(
     assert calls["inject_nb"] == 1
     assert calls["inject_pissa"] == 0
     assert calls["train_loop"]["bilm_margin_config"] == config
+    assert result.init_method == "cayley"
+    assert result.training_objective == "ce_bilm_margin"
 
 
 
