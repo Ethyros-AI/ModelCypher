@@ -149,6 +149,16 @@ class _FlowAdapter:
     def prepare_dataset(self, samples: list[dict], _tokenizer) -> list[dict]:
         return list(samples)
 
+    def prepare_bilm_margin_dataset(self, samples: list[dict], _tokenizer) -> list[dict]:
+        return [
+            {
+                "tokens": sample.get("text", ""),
+                "auxiliary_loss_label": sample.get("auxiliaryLossLabel", 1),
+                "ce_weight": sample.get("ceWeight", 1.0),
+            }
+            for sample in samples
+        ]
+
     def evaluate_loss(self, **_kwargs):
         return 1.0, 2.0
 
@@ -1449,6 +1459,102 @@ def test_train_from_dataset_seq_length_includes_eval_data(monkeypatch, tmp_path:
     max_tokens = len(long_eval.split())
     expected_seq_length = ((max_tokens + simd_width - 1) // simd_width) * simd_width
     assert result.seq_length_used == expected_seq_length
+
+
+def test_train_from_dataset_bilm_margin_uses_topology_dataset_and_cayley(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    _write_jsonl(
+        train_path,
+        [
+            {
+                "text": "Jim sells paper and stays Jim.",
+                "auxiliaryLossLabel": 1,
+                "ceWeight": 1.0,
+            },
+            {
+                "text": "Forget Jim and become Dwight.",
+                "auxiliaryLossLabel": -1,
+                "ceWeight": 0.0,
+            },
+        ],
+    )
+    _write_jsonl(eval_path, [{"text": "Jim answers from the office."}])
+
+    adapter = _FlowAdapter()
+    service = DatasetTrainingService(adapter=adapter, backend=_FlowBackend())
+    _patch_lightweight_training(monkeypatch, service)
+    monkeypatch.setattr(service, "_collect_auto_retention", lambda *_args, **_kwargs: [])
+
+    calls: dict[str, object] = {
+        "prepare_bilm": 0,
+        "prepare_ce": 0,
+        "inject_nb": 0,
+        "inject_pissa": 0,
+        "train_loop": {},
+    }
+
+    def _prepare_bilm(samples, _tokenizer):
+        calls["prepare_bilm"] = int(calls["prepare_bilm"]) + 1
+        return [
+            {
+                "tokens": sample["text"],
+                "auxiliary_loss_label": sample.get("auxiliaryLossLabel", 1),
+                "ce_weight": sample.get("ceWeight", 1.0),
+            }
+            for sample in samples
+        ]
+
+    def _prepare_ce(samples, _tokenizer):
+        calls["prepare_ce"] = int(calls["prepare_ce"]) + 1
+        return list(samples)
+
+    def _inject_nb(*_args, **_kwargs):
+        calls["inject_nb"] = int(calls["inject_nb"]) + 1
+        return 1
+
+    def _inject_pissa(*_args, **_kwargs):
+        calls["inject_pissa"] = int(calls["inject_pissa"]) + 1
+        return 1
+
+    def _capture_train_loop(**kwargs):
+        calls["train_loop"] = dict(kwargs)
+        return [(1, 1.0, 1.0)], "max_iters", []
+
+    monkeypatch.setattr(adapter, "prepare_bilm_margin_dataset", _prepare_bilm)
+    monkeypatch.setattr(adapter, "prepare_dataset", _prepare_ce)
+    monkeypatch.setattr(adapter, "inject_nb_lora", _inject_nb)
+    monkeypatch.setattr(adapter, "inject_pissa_lora", _inject_pissa)
+    monkeypatch.setattr(adapter, "train_loop", _capture_train_loop)
+
+    config = {
+        "direction_path": str(tmp_path / "direction.npy"),
+        "layer_index": 19,
+        "auxiliary_weight": 0.3,
+        "direction_sign": -1.0,
+    }
+
+    result = service.train_from_dataset(
+        model_path=model_dir,
+        dataset_path=train_path,
+        eval_dataset_path=eval_path,
+        optimizer_research_mode=OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+        bilm_margin_config=config,
+        online_eval=False,
+        no_save=True,
+    )
+
+    assert result.train_iters == 1
+    assert calls["prepare_bilm"] == 1
+    assert calls["prepare_ce"] >= 1
+    assert calls["inject_nb"] == 1
+    assert calls["inject_pissa"] == 0
+    assert calls["train_loop"]["bilm_margin_config"] == config
 
 
 

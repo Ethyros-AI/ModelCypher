@@ -1247,6 +1247,8 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         enable_offline_replay: bool = True,
         # External gradient hook — composed with any internal format-projection hook
         gradient_hook: "Callable | None" = None,
+        # Internal research objective: CE plus BiLM-direction topology margin.
+        bilm_margin_config: dict[str, Any] | None = None,
         # AdamW-decoupled weight decay (research variable, default 0.0)
         weight_decay: float = 0.0,
         plan: DerivedTrainingPlan | None = None,
@@ -1552,6 +1554,12 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 len(answer_masked_val) if answer_masked_val else 0,
             )
 
+        use_bilm_margin = bilm_margin_config is not None
+        if use_bilm_margin and answer_mask:
+            raise ValueError("BiLM-margin topology loss cannot be combined with answer-masked CE")
+        if use_bilm_margin and vl_samples_present:
+            raise ValueError("BiLM-margin topology loss is text-only and cannot be combined with VL data")
+
         if vl_samples_present:
             if not vl_model:
                 raise ValueError(
@@ -1569,6 +1577,15 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             )
             logger.info(
                 "Prepared VL datasets: %d train / %d eval (image-conditioned)",
+                len(train_dataset), len(eval_dataset),
+            )
+        elif use_bilm_margin:
+            train_dataset = self._adapter.prepare_bilm_margin_dataset(
+                train_samples, tokenizer,
+            )
+            eval_dataset = self._adapter.prepare_dataset(eval_samples, tokenizer)
+            logger.info(
+                "Prepared BiLM-margin dataset: %d train topology rows / %d eval CE rows",
                 len(train_dataset), len(eval_dataset),
             )
         else:
@@ -1789,15 +1806,27 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                         "Pre-training routing collection failed", exc_info=True,
                     )
 
-        # 6. Inject geometry-derived LoRA using PiSSA initialization.
-        logger.info(
-            "Injecting geometry-derived LoRA (init=pissa) into %d target modules...",
-            len(target_modules),
-        )
-        n_lora_layers = self._adapter.inject_pissa_lora(
-            model, geometries, target_modules,
-            rank_overrides=final_ranks,
-        )
+        # 6. Inject geometry-derived LoRA.  The default production path remains
+        # PiSSA; the explicit Cayley research optimizer uses NB-LoRA so the
+        # Stiefel/Cayley geometry is present in the trained adapter itself.
+        if optimizer_research_mode == OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS:
+            logger.info(
+                "Injecting geometry-derived LoRA (init=cayley) into %d target modules...",
+                len(target_modules),
+            )
+            n_lora_layers = self._adapter.inject_nb_lora(
+                model, geometries, target_modules,
+                rank_overrides=final_ranks,
+            )
+        else:
+            logger.info(
+                "Injecting geometry-derived LoRA (init=pissa) into %d target modules...",
+                len(target_modules),
+            )
+            n_lora_layers = self._adapter.inject_pissa_lora(
+                model, geometries, target_modules,
+                rank_overrides=final_ranks,
+            )
         if n_lora_layers <= 0:
             raise ValueError("No geometry-derived LoRA layers were injected")
         logger.info("Geometry-derived LoRA injection complete: %d layers", n_lora_layers)
@@ -2209,6 +2238,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
             template_groups=template_groups,
             geometric_reshape=use_geometric_reshape,
             gradient_hook=gradient_hook,
+            bilm_margin_config=bilm_margin_config,
             entropy_regularization=entropy_regularization,
             online_eval_problems=eval_problems,
             online_eval_baseline_ids=eval_baseline_correct_ids,

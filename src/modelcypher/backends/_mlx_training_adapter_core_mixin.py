@@ -94,6 +94,37 @@ class _MLXTrainingAdapterCoreMixin:
             dataset.append((mx.array(tokens, dtype=mx.int32), 0))
         return dataset
 
+    def prepare_bilm_margin_dataset(
+        self,
+        samples: list[dict[str, Any]],
+        tokenizer,
+    ) -> list[dict[str, Any]]:
+        """Tokenize samples while preserving BiLM-margin labels and CE weights."""
+        eos_id = getattr(tokenizer, "eos_token_id", None)
+        dataset: list[dict[str, Any]] = []
+        for sample in samples:
+            text = sample.get("text")
+            if not isinstance(text, str):
+                continue
+            tokens = tokenizer.encode(text)
+            if eos_id is not None and (not tokens or tokens[-1] != eos_id):
+                tokens.append(eos_id)
+            if len(tokens) < 2:
+                continue
+            label = float(sample.get("auxiliaryLossLabel", 1.0))
+            if label >= 0:
+                label = 1.0
+            else:
+                label = -1.0
+            dataset.append({
+                "tokens": mx.array(tokens, dtype=mx.int32),
+                "auxiliary_loss_label": label,
+                "ce_weight": float(sample.get("ceWeight", 1.0)),
+                "source": sample.get("source"),
+                "polarity": sample.get("polarity"),
+            })
+        return dataset
+
     def prepare_masked_dataset(
         self, samples: list[dict[str, Any]], tokenizer
     ) -> list[tuple[Any, Any, int]]:

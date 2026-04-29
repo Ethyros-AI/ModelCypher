@@ -371,6 +371,8 @@ class _MLXTrainingAdapterTrainMixin:
         geometric_reshape: bool = False,
         # Optional gradient hook: applied to gradient before optimizer step
         gradient_hook: "Callable | None" = None,
+        # Optional BiLM-direction topology auxiliary loss.
+        bilm_margin_config: dict[str, Any] | None = None,
         # Anti-degeneration: entropy floor regularization
         entropy_regularization: bool = False,
         # Online correctness evaluation at epoch boundaries
@@ -505,12 +507,22 @@ class _MLXTrainingAdapterTrainMixin:
             and "tokens" in train_dataset[0]
             and "pixel_values" in train_dataset[0]
         )
+        use_bilm_margin = (
+            bilm_margin_config is not None
+            and isinstance(train_dataset, list)
+            and len(train_dataset) > 0
+            and isinstance(train_dataset[0], dict)
+            and "tokens" in train_dataset[0]
+            and "auxiliary_loss_label" in train_dataset[0]
+        )
         if use_vl and grad_accum_steps > 1:
             logger.info(
                 "VL path disables gradient accumulation (variable-size visual tensors). "
                 "Using grad_accum_steps=1."
             )
             grad_accum_steps = 1
+        if use_bilm_margin and use_vl:
+            raise ValueError("BiLM-margin topology loss is text-only and cannot be combined with VL batches")
 
         if geometric_reshape and paired_dataset is not None:
             # Determine target layers for geometric reshaping.
@@ -618,6 +630,38 @@ class _MLXTrainingAdapterTrainMixin:
                 image_token_id,
                 video_token_id,
             )
+        elif use_bilm_margin:
+            import numpy as np
+
+            direction_path = bilm_margin_config.get("direction_path")
+            if not direction_path:
+                raise ValueError("bilm_margin_config requires direction_path")
+            direction_np = np.load(str(direction_path)).astype("float32")
+            if direction_np.ndim == 2:
+                direction_np = direction_np[0]
+            if direction_np.ndim != 1:
+                raise ValueError(
+                    f"BiLM direction must be 1-D or [n,d], got shape {direction_np.shape}"
+                )
+            direction_sign = float(bilm_margin_config.get("direction_sign", 1.0))
+            direction_np = direction_np * direction_sign
+            loss_fn = make_bilm_margin_loss(
+                layer_index=int(bilm_margin_config.get("layer_index", 19)),
+                direction=mx.array(direction_np, dtype=mx.float32),
+                auxiliary_weight=float(bilm_margin_config.get("auxiliary_weight", 0.1)),
+                margin=float(bilm_margin_config.get("margin", 1.0)),
+                normalize_direction=bool(bilm_margin_config.get("normalize_direction", True)),
+            )
+            loss_value_and_grad = nn.value_and_grad(model, loss_fn)
+            logger.info(
+                "BiLM topology margin: layer=%d lambda=%.4f margin=%.4f "
+                "direction_dim=%d direction_sign=%.1f",
+                int(bilm_margin_config.get("layer_index", 19)),
+                float(bilm_margin_config.get("auxiliary_weight", 0.1)),
+                float(bilm_margin_config.get("margin", 1.0)),
+                int(direction_np.shape[0]),
+                direction_sign,
+            )
         else:
             if entropy_regularization:
                 # Measure baseline entropy to derive the floor
@@ -694,6 +738,8 @@ class _MLXTrainingAdapterTrainMixin:
                 components.append("entropy_regularization")
             if use_vl:
                 components.append("vision_language")
+            if use_bilm_margin:
+                components.append("bilm_margin")
             return components
 
         def _freeze_param_names_for_layer(layer_key: str) -> tuple[str, ...]:
@@ -1007,6 +1053,15 @@ class _MLXTrainingAdapterTrainMixin:
                     train_dataset, batch_size, seq_length, loop=False, seed=seed,
                 ))
             )
+        elif use_bilm_margin:
+            batch_iter = iterate_bilm_margin_batches(
+                train_dataset, batch_size, seq_length, loop=True, seed=seed,
+            )
+            n_batches_per_epoch = len(
+                list(iterate_bilm_margin_batches(
+                    train_dataset, batch_size, seq_length, loop=False, seed=seed,
+                ))
+            )
         else:
             # Gradient accumulation: use smaller micro-batches for forward/backward
             # to avoid OOM, accumulate grad_accum_steps micro-batches per optimizer step.
@@ -1209,6 +1264,11 @@ class _MLXTrainingAdapterTrainMixin:
                 batch, lengths, pixel_values_batch, position_ids_batch = next(batch_iter)
                 (loss, ntoks), grad = loss_value_and_grad(
                     model, batch, lengths, pixel_values_batch, position_ids_batch,
+                )
+            elif use_bilm_margin:
+                batch, lengths, aux_labels, ce_weights = next(batch_iter)
+                (loss, ntoks), grad = loss_value_and_grad(
+                    model, batch, lengths, aux_labels, ce_weights,
                 )
             else:
                 if grad_accum_steps <= 1:

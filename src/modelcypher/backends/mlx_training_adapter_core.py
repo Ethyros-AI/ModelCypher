@@ -642,6 +642,174 @@ def iterate_vl_batches(
 
 
 # =============================================================================
+# BiLM-margin Batch Iterator and Loss (topology auxiliary training)
+# =============================================================================
+
+
+def iterate_bilm_margin_batches(
+    dataset: list[dict[str, Any]],
+    batch_size: int,
+    max_seq_length: int,
+    *,
+    loop: bool = False,
+    seed: int | None = None,
+):
+    """Yield token batches plus topology labels and CE weights.
+
+    Dataset rows come from ``prepare_bilm_margin_dataset`` and preserve:
+      - ``auxiliary_loss_label``: +1 in-character, -1 forbidden
+      - ``ce_weight``: 1.0 for normal SFT CE, 0.0 for negative-only topology rows
+    """
+    import numpy as np
+
+    if len(dataset) < batch_size:
+        raise ValueError(
+            f"Dataset must have at least batch_size={batch_size}"
+            f" examples but only has {len(dataset)}."
+        )
+
+    idx = sorted(range(len(dataset)), key=lambda i: int(dataset[i]["tokens"].shape[0]))
+    batch_idx = [
+        idx[i: i + batch_size]
+        for i in range(0, len(idx) - batch_size + 1, batch_size)
+    ]
+    if seed is not None:
+        np.random.seed(seed)
+
+    while True:
+        for i in np.random.permutation(len(batch_idx)):
+            batch_samples = [dataset[j] for j in batch_idx[i]]
+            lengths = [min(int(s["tokens"].shape[0]), max_seq_length) for s in batch_samples]
+
+            if max(lengths) > max_seq_length:
+                print(
+                    f"[WARNING] Some sequences are longer than {max_seq_length} tokens. "
+                    f"The longest sentence {max(lengths)} will be truncated to {max_seq_length}. "
+                    "Consider pre-splitting your data to save memory."
+                )
+
+            pad_to = 32
+            max_length_in_batch = 1 + pad_to * ((max(lengths) + pad_to - 1) // pad_to)
+            max_length_in_batch = min(max_length_in_batch, max_seq_length)
+            batch_arr = np.zeros((batch_size, max_length_in_batch), np.int32)
+            labels = np.zeros((batch_size,), np.float32)
+            ce_weights = np.zeros((batch_size,), np.float32)
+
+            for j, sample in enumerate(batch_samples):
+                toks = sample["tokens"].tolist()[: lengths[j]]
+                batch_arr[j, : lengths[j]] = np.array(toks, dtype=np.int32)
+                labels[j] = float(sample.get("auxiliary_loss_label", 1.0))
+                ce_weights[j] = float(sample.get("ce_weight", 1.0))
+
+            yield (
+                mx.array(batch_arr, dtype=mx.int32),
+                mx.array([[0, length] for length in lengths], dtype=mx.int32),
+                mx.array(labels, dtype=mx.float32),
+                mx.array(ce_weights, dtype=mx.float32),
+            )
+
+        if not loop:
+            break
+
+
+def _model_layers_for_bilm_margin(model: Any) -> Any:
+    if hasattr(model, "layers"):
+        return model.layers
+    if hasattr(model, "model") and hasattr(model.model, "layers"):
+        return model.model.layers
+    if hasattr(model, "language_model") and hasattr(model.language_model, "layers"):
+        return model.language_model.layers
+    raise AttributeError("Unable to locate transformer layers for BiLM margin loss")
+
+
+class _BiLMMarginLayerCaptureProxy:
+    """Captures a layer residual while preserving the wrapped layer behavior."""
+
+    def __init__(self, layer: Any, capture: list[Any]) -> None:
+        self._layer = layer
+        self._capture = capture
+
+    def __call__(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        out = self._layer(*args, **kwargs)
+        residual = out[0] if isinstance(out, tuple) else out
+        self._capture.append(residual)
+        return out
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._layer, name)
+
+
+def make_bilm_margin_loss(
+    *,
+    layer_index: int,
+    direction: Any,
+    auxiliary_weight: float,
+    margin: float = 1.0,
+    normalize_direction: bool = True,
+):
+    """Create CE + BiLM-direction hinge loss for topology-aware training."""
+    direction = direction.astype(mx.float32)
+    if normalize_direction:
+        direction_norm = mx.sqrt(mx.sum(direction * direction))
+        direction = direction / mx.maximum(direction_norm, mx.array(_SQRT_EPS_F32, dtype=mx.float32))
+    auxiliary_weight_f = float(auxiliary_weight)
+    margin_f = float(margin)
+
+    component_metrics: dict[str, float] = {}
+
+    def _loss(model, batch, lengths, aux_labels, ce_weights):
+        inputs = batch[:, :-1]
+        targets = batch[:, 1:]
+
+        layers = _model_layers_for_bilm_margin(model)
+        resolved_layer_index = min(max(int(layer_index), 0), len(layers) - 1)
+        original_layer = layers[resolved_layer_index]
+        capture: list[Any] = []
+        layers[resolved_layer_index] = _BiLMMarginLayerCaptureProxy(original_layer, capture)
+        try:
+            logits = model(inputs)
+        finally:
+            layers[resolved_layer_index] = original_layer
+
+        logits = logits.astype(mx.float32)
+        steps = mx.arange(1, targets.shape[1] + 1)
+        token_mask = mx.logical_and(steps >= lengths[:, 0:1], steps <= lengths[:, 1:])
+        token_mask = token_mask.astype(mx.float32)
+        weighted_mask = token_mask * ce_weights[:, None]
+        ntoks = weighted_mask.sum()
+        per_token_ce = nn.losses.cross_entropy(logits, targets) * weighted_mask
+        ce_loss = per_token_ce.astype(mx.float32).sum() / mx.maximum(ntoks, mx.array(1.0, dtype=mx.float32))
+
+        if not capture:
+            aux_loss = mx.array(0.0, dtype=mx.float32)
+        else:
+            residual = capture[-1].astype(mx.float32)
+            positions = mx.minimum(lengths[:, 1] - 2, residual.shape[1] - 1)
+            positions = mx.maximum(positions, mx.array(0, dtype=positions.dtype))
+            batch_idx = mx.arange(residual.shape[0])
+            selected = residual[batch_idx, positions, :]
+            projections = mx.sum(selected * direction, axis=-1)
+            aux_loss = mx.mean(mx.maximum(
+                mx.array(0.0, dtype=mx.float32),
+                margin_f - aux_labels * projections,
+            ))
+
+        total_loss = ce_loss + auxiliary_weight_f * aux_loss
+        component_metrics["ce_loss"] = mx.stop_gradient(ce_loss)
+        component_metrics["bilm_margin_loss"] = mx.stop_gradient(aux_loss)
+        return total_loss, mx.maximum(ntoks, mx.array(1.0, dtype=mx.float32))
+
+    _loss.component_metrics = component_metrics  # type: ignore[attr-defined]
+    _loss.bilm_margin_config = {  # type: ignore[attr-defined]
+        "layer_index": int(layer_index),
+        "auxiliary_weight": auxiliary_weight_f,
+        "margin": margin_f,
+        "normalize_direction": bool(normalize_direction),
+    }
+    return _loss
+
+
+# =============================================================================
 # Answer-Masked Batch Iterator (for answer-span CE training)
 # =============================================================================
 

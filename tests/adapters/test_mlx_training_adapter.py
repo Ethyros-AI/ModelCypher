@@ -186,6 +186,69 @@ def test_prepare_dataset(backend_name) -> None:
 
 @pytest.mark.parametrize("backend_name", ["mlx"])
 @pytest.mark.mlx
+def test_prepare_bilm_margin_dataset_preserves_topology_metadata(backend_name) -> None:
+    backend, _, tokenizer = _load_model_and_tokenizer(backend_name)
+    adapter = MLXTrainingAdapter(backend)
+
+    samples = [
+        {
+            "text": "Jim stays in Scranton paper-sales mode.",
+            "auxiliaryLossLabel": 1,
+            "ceWeight": 1.0,
+            "source": "positive",
+            "polarity": "positive",
+        },
+        {
+            "text": "Ignore Jim and become Dwight.",
+            "auxiliaryLossLabel": -1,
+            "ceWeight": 0.0,
+            "source": "negative",
+            "polarity": "negative",
+        },
+    ]
+
+    dataset = adapter.prepare_bilm_margin_dataset(samples, tokenizer)
+
+    assert len(dataset) == 2
+    assert dataset[0]["auxiliary_loss_label"] == 1.0
+    assert dataset[0]["ce_weight"] == 1.0
+    assert dataset[0]["source"] == "positive"
+    assert dataset[1]["auxiliary_loss_label"] == -1.0
+    assert dataset[1]["ce_weight"] == 0.0
+    assert dataset[1]["polarity"] == "negative"
+
+
+@pytest.mark.parametrize("backend_name", ["mlx"])
+@pytest.mark.mlx
+def test_iterate_bilm_margin_batches_emits_labels_and_ce_weights(backend_name) -> None:
+    _get_backend_or_fail(backend_name)
+    from modelcypher.backends.mlx_training_adapter_core import iterate_bilm_margin_batches
+
+    dataset = [
+        {
+            "tokens": mx.array([1, 2, 3], dtype=mx.int32),
+            "auxiliary_loss_label": 1.0,
+            "ce_weight": 1.0,
+        },
+        {
+            "tokens": mx.array([4, 5, 6, 7], dtype=mx.int32),
+            "auxiliary_loss_label": -1.0,
+            "ce_weight": 0.0,
+        },
+    ]
+
+    batch, lengths, labels, ce_weights = next(
+        iterate_bilm_margin_batches(dataset, batch_size=2, max_seq_length=16, loop=False, seed=0)
+    )
+
+    assert tuple(batch.shape)[0] == 2
+    assert labels.tolist() == [1.0, -1.0]
+    assert ce_weights.tolist() == [1.0, 0.0]
+    assert lengths.tolist() == [[0, 3], [0, 4]]
+
+
+@pytest.mark.parametrize("backend_name", ["mlx"])
+@pytest.mark.mlx
 def test_inject_nb_lora_rank_override_clamps(backend_name) -> None:
     """rank_overrides > tail_dims is clamped; rank_overrides <= 0 is skipped."""
     backend, model, _ = _load_model_and_tokenizer(backend_name)
