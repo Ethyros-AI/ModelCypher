@@ -186,6 +186,23 @@ def test_prepare_dataset(backend_name) -> None:
 
 @pytest.mark.parametrize("backend_name", ["mlx"])
 @pytest.mark.mlx
+def test_standard_lora_export_key_base_normalizes_qwen_runtime_prefix(backend_name) -> None:
+    backend = _get_backend_or_fail(backend_name)
+    adapter = MLXTrainingAdapter(backend)
+
+    key = "model.language_model.layers.19.self_attn.o_proj.weight"
+    assert (
+        adapter._standard_lora_export_key_base(key)
+        == "language_model.model.layers.19.self_attn.o_proj"
+    )
+    assert (
+        adapter._standard_lora_export_key_base("model.layers.0.mlp.up_proj.weight")
+        == "model.layers.0.mlp.up_proj"
+    )
+
+
+@pytest.mark.parametrize("backend_name", ["mlx"])
+@pytest.mark.mlx
 def test_prepare_bilm_margin_dataset_preserves_topology_metadata(backend_name) -> None:
     backend, _, tokenizer = _load_model_and_tokenizer(backend_name)
     adapter = MLXTrainingAdapter(backend)

@@ -38,6 +38,22 @@ from modelcypher.core.domain.training.identity import (
 
 
 class _MLXTrainingAdapterAdapterIOMixin:
+    def _standard_lora_export_key_base(self, layer_key: str) -> str:
+        """Return the key base expected by mlx-lm's standard LoRA loader.
+
+        ModelCypher's Qwen3.5 training wrapper exposes text modules under
+        ``model.language_model.layers``. The public ``mlx_lm.load(...,
+        adapter_path=...)`` runtime expects those modules under
+        ``language_model.model.layers``. Exporting the internal namespace
+        creates valid files that load as no-ops, so normalize this prefix.
+        """
+        key_base = layer_key.replace(".weight", "")
+        if key_base.startswith("model.language_model.layers."):
+            return "language_model.model.layers." + key_base.removeprefix(
+                "model.language_model.layers.",
+            )
+        return key_base
+
     def verify_bounds(self, model) -> tuple[bool, float, list[dict[str, Any]]]:
         """Verify spectral bounds post-training.
 
@@ -128,13 +144,13 @@ class _MLXTrainingAdapterAdapterIOMixin:
             rank = int(lora.lora_a.shape[1])
             discovered_ranks.append(rank)
 
-            key_base = name.replace(".weight", "")
+            key_base = self._standard_lora_export_key_base(name)
             adapter_weights[f"{key_base}.lora_a"] = lora.lora_a
             adapter_weights[f"{key_base}.lora_b"] = lora.lora_b
             # PiSSA residual base weight — needed for correct reconstruction
             adapter_weights[f"{key_base}.linear.weight"] = lora.linear.weight
             target_modules.add(self._module_name_from_layer_key(name))
-            per_layer_rank_map[name] = rank
+            per_layer_rank_map[f"{key_base}.weight"] = rank
 
         if not adapter_weights:
             raise ValueError("No PiSSA-LoRA layers found to export")
@@ -214,11 +230,11 @@ class _MLXTrainingAdapterAdapterIOMixin:
             rank = int(lora_a.shape[1])
             discovered_ranks.append(rank)
 
-            key_base = name.replace(".weight", "")
+            key_base = self._standard_lora_export_key_base(name)
             adapter_weights[f"{key_base}.lora_a"] = lora_a
             adapter_weights[f"{key_base}.lora_b"] = lora_b
             target_modules.add(self._module_name_from_layer_key(name))
-            per_layer_rank_map[name] = rank
+            per_layer_rank_map[f"{key_base}.weight"] = rank
 
         if not adapter_weights:
             raise ValueError("No NB-LoRA layers found to export")
