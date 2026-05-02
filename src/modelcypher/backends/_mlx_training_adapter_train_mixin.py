@@ -1266,9 +1266,9 @@ class _MLXTrainingAdapterTrainMixin:
                     model, batch, lengths, pixel_values_batch, position_ids_batch,
                 )
             elif use_bilm_margin:
-                batch, lengths, aux_labels, ce_weights = next(batch_iter)
+                batch, lengths, aux_labels, ce_weights, auxiliary_weights = next(batch_iter)
                 (loss, ntoks), grad = loss_value_and_grad(
-                    model, batch, lengths, aux_labels, ce_weights,
+                    model, batch, lengths, aux_labels, ce_weights, auxiliary_weights,
                 )
             else:
                 if grad_accum_steps <= 1:

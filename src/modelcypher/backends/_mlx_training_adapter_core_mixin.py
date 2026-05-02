@@ -99,7 +99,7 @@ class _MLXTrainingAdapterCoreMixin:
         samples: list[dict[str, Any]],
         tokenizer,
     ) -> list[dict[str, Any]]:
-        """Tokenize samples while preserving BiLM-margin labels and CE weights."""
+        """Tokenize samples while preserving BiLM-margin labels and weights."""
         eos_id = getattr(tokenizer, "eos_token_id", None)
         dataset: list[dict[str, Any]] = []
         for sample in samples:
@@ -116,9 +116,16 @@ class _MLXTrainingAdapterCoreMixin:
                 label = 1.0
             else:
                 label = -1.0
+            auxiliary_weight = float(
+                sample.get(
+                    "auxiliaryLossWeight",
+                    sample.get("auxiliaryWeight", sample.get("auxiliary_loss_weight", 1.0)),
+                )
+            )
             dataset.append({
                 "tokens": mx.array(tokens, dtype=mx.int32),
                 "auxiliary_loss_label": label,
+                "auxiliary_loss_weight": max(0.0, auxiliary_weight),
                 "ce_weight": float(sample.get("ceWeight", 1.0)),
                 "source": sample.get("source"),
                 "polarity": sample.get("polarity"),

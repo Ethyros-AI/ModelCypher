@@ -424,6 +424,7 @@ class DerivedTrainingPlan:
     rank_overrides: dict[str, int]
     rank_ceiling_source: str
     signal_rank_results: dict[int, Any]
+    rank_capacity_sample_count: int
     sigma_k_min: float
     sigma_max: float
     estimated_trainable_params: int
@@ -505,6 +506,7 @@ class DerivedTrainingPlan:
                 "seq_length_source": self.seq_length_source,
                 "split_method": self.validation_split.get("method"),
                 "n_train": int(len(self.train_samples)),
+                "rank_capacity_sample_count": int(self.rank_capacity_sample_count),
                 "n_eval": int(len(self.eval_samples)),
                 "validation_split": self.validation_split,
             },
@@ -681,6 +683,25 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
         self._backend = backend
         self._progress_reporter: Any | None = None
         self._runtime_coordinator: Any | None = None
+
+    @staticmethod
+    def _capacity_weight(sample: dict[str, Any]) -> float:
+        """Weight a row's contribution to data-derived LoRA rank capacity.
+
+        Most rows represent independent training evidence and count as 1.0.
+        CE-only replay/preservation rows may set capacityWeight=0.0 so they can
+        stabilize the language-model surface without widening the adapter's
+        rank budget.
+        """
+        raw = sample.get("capacityWeight", sample.get("capacity_weight", 1.0))
+        try:
+            return max(0.0, float(raw))
+        except (TypeError, ValueError):
+            return 1.0
+
+    @classmethod
+    def _rank_capacity_sample_count(cls, samples: list[dict[str, Any]]) -> int:
+        return max(1, int(round(sum(cls._capacity_weight(sample) for sample in samples))))
 
     def _capture_runtime_status(
         self,
@@ -1059,9 +1080,10 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 geometries,
                 target_modules,
             )
+            rank_capacity_sample_count = self._rank_capacity_sample_count(train_samples)
             data_capped_ranks = apply_data_rank_ceiling(
                 budgeted_ranks,
-                n_samples=len(train_samples),
+                n_samples=rank_capacity_sample_count,
             )
             signal_rank_results = compute_per_layer_signal_ranks(
                 base_activations,
@@ -1115,6 +1137,7 @@ class DatasetTrainingService(_DatasetTrainingServiceHelperMixin):
                 },
                 rank_ceiling_source=ceiling_label,
                 signal_rank_results=signal_rank_results,
+                rank_capacity_sample_count=rank_capacity_sample_count,
                 sigma_k_min=float(sigma_k_min),
                 sigma_max=float(sigma_max),
                 estimated_trainable_params=int(estimated_trainable_params),

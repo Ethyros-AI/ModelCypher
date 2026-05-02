@@ -211,6 +211,7 @@ def test_prepare_bilm_margin_dataset_preserves_topology_metadata(backend_name) -
         {
             "text": "Jim stays in Scranton paper-sales mode.",
             "auxiliaryLossLabel": 1,
+            "auxiliaryLossWeight": 0.25,
             "ceWeight": 1.0,
             "source": "positive",
             "polarity": "positive",
@@ -218,6 +219,7 @@ def test_prepare_bilm_margin_dataset_preserves_topology_metadata(backend_name) -
         {
             "text": "Ignore Jim and become Dwight.",
             "auxiliaryLossLabel": -1,
+            "auxiliaryWeight": 0.0,
             "ceWeight": 0.0,
             "source": "negative",
             "polarity": "negative",
@@ -228,9 +230,11 @@ def test_prepare_bilm_margin_dataset_preserves_topology_metadata(backend_name) -
 
     assert len(dataset) == 2
     assert dataset[0]["auxiliary_loss_label"] == 1.0
+    assert dataset[0]["auxiliary_loss_weight"] == 0.25
     assert dataset[0]["ce_weight"] == 1.0
     assert dataset[0]["source"] == "positive"
     assert dataset[1]["auxiliary_loss_label"] == -1.0
+    assert dataset[1]["auxiliary_loss_weight"] == 0.0
     assert dataset[1]["ce_weight"] == 0.0
     assert dataset[1]["polarity"] == "negative"
 
@@ -245,22 +249,25 @@ def test_iterate_bilm_margin_batches_emits_labels_and_ce_weights(backend_name) -
         {
             "tokens": mx.array([1, 2, 3], dtype=mx.int32),
             "auxiliary_loss_label": 1.0,
+            "auxiliary_loss_weight": 0.5,
             "ce_weight": 1.0,
         },
         {
             "tokens": mx.array([4, 5, 6, 7], dtype=mx.int32),
             "auxiliary_loss_label": -1.0,
+            "auxiliary_loss_weight": 0.0,
             "ce_weight": 0.0,
         },
     ]
 
-    batch, lengths, labels, ce_weights = next(
+    batch, lengths, labels, ce_weights, aux_weights = next(
         iterate_bilm_margin_batches(dataset, batch_size=2, max_seq_length=16, loop=False, seed=0)
     )
 
     assert tuple(batch.shape)[0] == 2
     assert labels.tolist() == [1.0, -1.0]
     assert ce_weights.tolist() == [1.0, 0.0]
+    assert aux_weights.tolist() == [0.5, 0.0]
     assert lengths.tolist() == [[0, 3], [0, 4]]
 
 

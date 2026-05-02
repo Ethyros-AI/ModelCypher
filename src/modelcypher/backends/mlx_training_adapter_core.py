@@ -658,6 +658,7 @@ def iterate_bilm_margin_batches(
 
     Dataset rows come from ``prepare_bilm_margin_dataset`` and preserve:
       - ``auxiliary_loss_label``: +1 in-character, -1 forbidden
+      - ``auxiliary_loss_weight``: per-row weight for the BiLM hinge term
       - ``ce_weight``: 1.0 for normal SFT CE, 0.0 for negative-only topology rows
     """
     import numpy as np
@@ -694,18 +695,21 @@ def iterate_bilm_margin_batches(
             batch_arr = np.zeros((batch_size, max_length_in_batch), np.int32)
             labels = np.zeros((batch_size,), np.float32)
             ce_weights = np.zeros((batch_size,), np.float32)
+            auxiliary_weights = np.ones((batch_size,), np.float32)
 
             for j, sample in enumerate(batch_samples):
                 toks = sample["tokens"].tolist()[: lengths[j]]
                 batch_arr[j, : lengths[j]] = np.array(toks, dtype=np.int32)
                 labels[j] = float(sample.get("auxiliary_loss_label", 1.0))
                 ce_weights[j] = float(sample.get("ce_weight", 1.0))
+                auxiliary_weights[j] = max(0.0, float(sample.get("auxiliary_loss_weight", 1.0)))
 
             yield (
                 mx.array(batch_arr, dtype=mx.int32),
                 mx.array([[0, length] for length in lengths], dtype=mx.int32),
                 mx.array(labels, dtype=mx.float32),
                 mx.array(ce_weights, dtype=mx.float32),
+                mx.array(auxiliary_weights, dtype=mx.float32),
             )
 
         if not loop:
@@ -757,7 +761,7 @@ def make_bilm_margin_loss(
 
     component_metrics: dict[str, float] = {}
 
-    def _loss(model, batch, lengths, aux_labels, ce_weights):
+    def _loss(model, batch, lengths, aux_labels, ce_weights, auxiliary_weights=None):
         inputs = batch[:, :-1]
         targets = batch[:, 1:]
 
@@ -789,10 +793,18 @@ def make_bilm_margin_loss(
             batch_idx = mx.arange(residual.shape[0])
             selected = residual[batch_idx, positions, :]
             projections = mx.sum(selected * direction, axis=-1)
-            aux_loss = mx.mean(mx.maximum(
+            if auxiliary_weights is None:
+                auxiliary_weights = mx.ones(aux_labels.shape, dtype=mx.float32)
+            auxiliary_weights = auxiliary_weights.astype(mx.float32)
+            hinge = mx.maximum(
                 mx.array(0.0, dtype=mx.float32),
                 margin_f - aux_labels * projections,
-            ))
+            )
+            aux_weight_sum = mx.maximum(
+                mx.sum(auxiliary_weights),
+                mx.array(1.0, dtype=mx.float32),
+            )
+            aux_loss = mx.sum(hinge * auxiliary_weights) / aux_weight_sum
 
         total_loss = ce_loss + auxiliary_weight_f * aux_loss
         component_metrics["ce_loss"] = mx.stop_gradient(ce_loss)
