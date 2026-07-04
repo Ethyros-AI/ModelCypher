@@ -42,11 +42,11 @@ Instead, we observe:
 | # | Claim | Status | Key Result |
 |---|-------|--------|------------|
 | 1 | Geometric structure convergence | [EMPIRICAL] | CKA ≥ 0.96 across 3 families |
-| 2 | Coordinate system invariance | [VALIDATED] | Raw 0.32 → Aligned 0.97 |
+| 2 | Coordinate system invariance | [EMPIRICAL] | Raw 0.32 → Aligned 0.97 |
 | 3 | Cross-architecture merging | [EXPLORATORY] | Probe-aligned feasibility only |
 | 4 | expansion_ratio correlation with correctness | [EMPIRICAL] | Model-dependent |
-| 5 | Null-space projection preserves behavior | [VALIDATED] | 94%+ preservation |
-| 6 | Scale invariance | [VALIDATED] | CKA = 1.0 across scales |
+| 5 | Null-space projection preserves behavior | [EMPIRICAL] | 94%+ preservation |
+| 6 | Scale invariance | [EMPIRICAL] | CKA = 1.0 across scales |
 
 ---
 
@@ -89,7 +89,7 @@ Different architectures (LFM2 liquid vs Qwen transformer vs SmolLM) achieve CKA 
 - Raw CKA varies widely (0.32 to 0.99) - confirming coordinate differences
 - After alignment, all pairs approach CKA ≈ 1.0 - confirming same manifold
 
-### Verdict: [VALIDATED]
+### Verdict: [EMPIRICAL]
 
 The 40-193% improvement after alignment proves raw CKA gaps reflect coordinate differences, not structural differences.
 
@@ -173,7 +173,7 @@ Expansion ratio correlates with correctness **in some models** (LFM2-350M) but n
 | Synthetic | 0.000002 | 99.9998% |
 | Real model | 0.058 | 94.2% |
 
-### Verdict: [VALIDATED]
+### Verdict: [EMPIRICAL]
 
 ---
 
@@ -194,7 +194,7 @@ Expansion ratio correlates with correctness **in some models** (LFM2-350M) but n
 - All pairs ≥ 0.90: **Yes**
 - Condition numbers: κ < 6 (well-conditioned)
 
-### Verdict: [VALIDATED]
+### Verdict: [EMPIRICAL]
 
 Geometric structure is perfectly preserved across model scales. Alignment learned on small models applies to larger ones.
 

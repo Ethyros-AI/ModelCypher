@@ -465,6 +465,16 @@ Minimum rules:
 4. keep an append-only ledger for every run, including crashes and invalid measurements
 5. advance only when the predicted observable survives its falsifier and no hard guardrail is violated
 
+Retention rule for benchmark efficacy families:
+
+- raw per-seed `gates.json`, `train_result.json`, and benchmark result JSON
+  files may not be deleted until the aggregate verdict is computed and
+  committed
+- efficacy claims must report seed count; `[VALIDATED-EFF]` requires at least
+  3 seeds with pooled effect outside 2*SE
+- code, memory, artifact, and mechanics checks use `[VALIDATED-ENG]`; a
+  single engineering run does not imply benchmark efficacy
+
 For any new canonical research family, require all of:
 
 1. `REPORT.md`

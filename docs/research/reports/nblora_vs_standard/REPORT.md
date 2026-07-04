@@ -74,7 +74,8 @@ Active data:
 The active rank derivation now uses:
 
 - adaptation-budget rank from weight geometry,
-- data-rank ceiling,
+- data-rank ceiling `[VALIDATED-ENG]` (mechanical surface-size control only;
+  no benchmark-efficacy claim),
 - activation effective-rank ceiling,
 - RMT signal-rank ceiling.
 

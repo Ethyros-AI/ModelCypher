@@ -4,12 +4,13 @@ Standard for tagging claims across all ModelCypher documentation.
 
 ---
 
-## The 8-Label System
+## The 9-Label System
 
 | Label | Meaning | Required Evidence |
 |-------|---------|-------------------|
 | `[PROVEN]` | Theorem-level result. Mathematical proof with assumptions stated, or standard published theorem with citation. | Proof or peer-reviewed citation |
-| `[VALIDATED]` | Null-hypothesis tested, reproduced across multiple settings or models. Falsification was attempted and failed. | p-values, CIs, multi-model/multi-seed reproduction, pre-registered criteria met |
+| `[VALIDATED-ENG]` | Engineering/mechanics validation. Code path, memory behavior, artifact shape, or mechanical invariant worked under the declared environment. | Direct run artifact, command, or test; one successful run is acceptable if the claim is only engineering/mechanical |
+| `[VALIDATED-EFF]` | Benchmark efficacy validation. The method improved or preserved the declared task metric under pre-registered criteria. | At least 3 seeds, seed count reported, pooled effect outside 2*SE, retained per-seed artifacts, and aggregate verdict committed |
 | `[EMPIRICAL]` | Measured and reproducible, but not subjected to formal falsification testing. Single-model observations, correlations without controls, results not yet tested for generalization. | Measurement data, reproduction script |
 | `[EXPLORATORY]` | Early-stage observation or hypothesis where the claim form is incomplete (missing mechanism terms, operator validity, or falsifier). | Raw observation plus explicit missing-field declaration |
 | `[CONJECTURAL]` | Theoretically motivated hypothesis with insufficient evidence. Untested predictions, proposed mechanisms, claims awaiting measurement. | Theoretical motivation stated |
@@ -24,14 +25,21 @@ Standard for tagging claims across all ModelCypher documentation.
 - `[EXPLORATORY]` -> `[CONJECTURAL]`: Claim form completed with mechanism terms and falsifier.
 - `[EXPLORATORY]` -> `[EMPIRICAL]`: Reproducible measurements exist and measurement operator is declared.
 - `[CONJECTURAL]` -> `[EMPIRICAL]`: Reproducible measurements exist.
-- `[EMPIRICAL]` -> `[VALIDATED]`: Falsification attempted (null-hypothesis testing, multi-model audit, pre-registered pass/fail) and claim survived.
-- `[VALIDATED]` -> `[PROVEN]`: Mathematical proof exists (not just strong empirical evidence).
+- `[EMPIRICAL]` -> `[VALIDATED-ENG]`: A code, memory, artifact, or mechanics claim survived its declared engineering check.
+- `[EMPIRICAL]` -> `[VALIDATED-EFF]`: A benchmark-efficacy claim survived pre-registered testing across at least 3 seeds, with pooled effect outside 2*SE and the seed count stated.
+- `[VALIDATED-ENG]` -> `[VALIDATED-EFF]`: A mechanical result is later shown to produce benchmark efficacy under the efficacy rule above.
+- `[VALIDATED-ENG]` or `[VALIDATED-EFF]` -> `[PROVEN]`: Mathematical proof exists (not just strong empirical evidence).
 - `[EMPIRICAL]` -> `[MEASUREMENT_INVALID]`: Measurement operator shown non-commensurable or degenerate in declared comparison scope.
 - `[EMPIRICAL]` -> `[MECHANISM_UNDERSPECIFIED]`: Mixed outcomes appear and required architecture/scale terms were not pre-registered.
 - `[MEASUREMENT_INVALID]` -> `[EMPIRICAL]`: Operator repaired, commensurability proven, measurements reproduced.
 - `[MECHANISM_UNDERSPECIFIED]` -> `[CONJECTURAL]`: Claim rewritten with explicit mechanism terms and awaits new tests.
 - Any label -> `[DISPROVEN]`: Rejection condition met. Immediate. No silent reinterpretation.
-- `[VALIDATED]` -> `[EMPIRICAL]`: Claim fails on a new model or setting. Add scope qualifier.
+- `[VALIDATED-ENG]` or `[VALIDATED-EFF]` -> `[EMPIRICAL]`: Claim fails on a new model or setting. Add scope qualifier.
+
+Efficacy claims must carry an explicit seed count, even when the label is lower
+than `[VALIDATED-EFF]`. A single-seed efficacy result is `[EMPIRICAL]` at most.
+Data-rank ceiling and gradient-accumulation checks are `[VALIDATED-ENG]` unless
+and until a separate efficacy claim clears the 3-seed pooled-effect rule.
 
 ---
 
@@ -72,7 +80,7 @@ Strikethrough the claim text, then tag:
 ### Machine-Parseable Regex
 
 ```
-\[(PROVEN|VALIDATED|EMPIRICAL|EXPLORATORY|CONJECTURAL|MEASUREMENT_INVALID|MECHANISM_UNDERSPECIFIED|DISPROVEN)(?::([^\]]+))?\]
+\[(PROVEN|VALIDATED-ENG|VALIDATED-EFF|EMPIRICAL|EXPLORATORY|CONJECTURAL|MEASUREMENT_INVALID|MECHANISM_UNDERSPECIFIED|DISPROVEN)(?::([^\]]+))?\]
 ```
 
 ---
@@ -100,7 +108,8 @@ Archival banner format:
 
 | Old Label | New Label | Notes |
 |-----------|-----------|-------|
-| `SUPPORTED` | `[VALIDATED]` | Equivalent semantics |
+| `[VALIDATED]` | `[VALIDATED-ENG]` or `[VALIDATED-EFF]` | Legacy umbrella label. Choose ENG for code/memory/mechanics and EFF only for benchmark efficacy with seed count and pooled effect outside 2*SE. |
+| `SUPPORTED` | `[VALIDATED-ENG]` or `[VALIDATED-EFF]` | Choose by claim type; do not preserve the old umbrella semantics. |
 | `OPEN` | `[CONJECTURAL]` | More descriptive |
 | `CONJECTURE` | `[CONJECTURAL]` | Normalize spelling |
 | `FALSIFIED` | `[DISPROVEN]` | Parallel construction |

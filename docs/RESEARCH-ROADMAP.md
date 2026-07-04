@@ -184,6 +184,18 @@ Current state:
 This item stays active because "works on any model" is still untrue without
 pre-registered multi-seed 8B closure.
 
+### Validation Tag And Retention Policy
+
+- `[VALIDATED-ENG]` is for code, memory, artifact, and mechanical checks. One
+  successful run may close only that engineering claim.
+- `[VALIDATED-EFF]` is for benchmark efficacy. It requires at least 3 seeds, a
+  reported seed count, a pooled effect outside 2*SE, retained per-seed artifacts,
+  and a committed aggregate verdict.
+- Data-rank ceiling and gradient-accumulation support are `[VALIDATED-ENG]`
+  unless a separate benchmark-efficacy claim clears the `[VALIDATED-EFF]` rule.
+- Raw per-seed `gates.json`, `train_result.json`, and benchmark result JSON must
+  be retained until the aggregate verdict is computed and committed.
+
 ### R4. Quantization Frontier Law
 
 Current state:
