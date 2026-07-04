@@ -65,8 +65,9 @@ family artifact under `results/measurement_atlas/<run_id>/` with:
 - `comparisons.jsonl`
 - `onset_events.jsonl`
 
-The retained replay-alignment closure for the shipped 350M atlas pack lives in
-[`results/measurement_atlas/REPORT.md`](results/measurement_atlas/REPORT.md).
+The retained replay-alignment closure for the shipped 350M atlas pack has a
+tracked report copy at
+[`docs/research/reports/measurement_atlas/REPORT.md`](docs/research/reports/measurement_atlas/REPORT.md).
 Current observed atlas surfaces are `replay={hidden, embedding}` and
 `live={hidden}`; `run_manifest.json` now records requested vs observed
 surfaces separately so the bundle does not overclaim unsupported replay space

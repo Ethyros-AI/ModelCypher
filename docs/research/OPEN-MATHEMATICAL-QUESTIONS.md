@@ -25,7 +25,7 @@ field positioning, it does not belong here.
 ### Q1. What operator predicts behavioral failure when structural safety still passes?
 
 **Roadmap link:** `R2`
-**Canonical handoff:** `results/nblora_vs_standard/REPORT.md` (single entry point for R1/R2 work)
+**Canonical handoff:** `docs/research/reports/nblora_vs_standard/REPORT.md` (single entry point for R1/R2 work)
 **Historical work log:** `docs/research/r2_closed_loop_controller_log.md`
 
 **Why this is open**
@@ -60,9 +60,9 @@ behavioral preservation.
 
 **Next falsifier**
 
-See `results/nblora_vs_standard/REPORT.md` § Exact Next Falsifier for the
-current active command. The artifact-only saturation timing check described
-below is superseded by the 96-step MASS diagnostic in REPORT.md, which
+See `docs/research/reports/nblora_vs_standard/REPORT.md` § Exact Next
+Falsifier for the current active command. The artifact-only saturation timing
+check described below is superseded by the 96-step MASS diagnostic in REPORT.md, which
 directly measures the budget trajectory that the artifact-only check would
 have inferred.
 

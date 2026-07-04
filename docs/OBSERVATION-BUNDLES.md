@@ -155,10 +155,11 @@ The current atlas contract is narrower than `SUPPORTED_ANALYSIS_SPACES`:
   `run_manifest.json` so the bundle does not imply that deeper replay spaces
   were captured when they were only requested or are still future work
 
-The retained alignment-closure evidence and old-vs-fixed bundle comparison live
-in `results/measurement_atlas/REPORT.md`. Use that family-level report before
-starting new atlas work so the replay-token boundary fix does not get
-re-litigated from memory.
+The retained alignment-closure evidence and old-vs-fixed bundle comparison have
+a tracked report copy at
+`docs/research/reports/measurement_atlas/REPORT.md`. Use that family-level
+report before starting new atlas work so the replay-token boundary fix does not
+get re-litigated from memory.
 
 `mc analyze report --bundle results/measurement_atlas` reads the retained
 family-level `REPORT.md` and returns JSON sections listing child runs.

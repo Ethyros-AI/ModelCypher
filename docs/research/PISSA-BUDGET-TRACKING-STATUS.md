@@ -72,7 +72,7 @@ Reports: `/tmp/r1_default.json`, `/tmp/r1_mass.json`, `/tmp/r1_mass_diagnostic_9
 
 ## Next Steps
 
-**Canonical next action lives in `results/nblora_vs_standard/REPORT.md`
+**Canonical next action lives in `docs/research/reports/nblora_vs_standard/REPORT.md`
 § Exact Next Falsifier.** This file documents the PiSSA budget tracking
 implementation; the spend decision and run commands are centralized in
 REPORT.md to avoid competing pointers.

@@ -96,7 +96,7 @@ Current state (2026-04-02):
   keep the retained atlas reports compact and decision-friendly, expand or tune
   the frozen study pack only when a concrete read-side question needs it, and
   preserve the retained alignment-closure evidence in
-  `results/measurement_atlas/REPORT.md`.
+  `docs/research/reports/measurement_atlas/REPORT.md`.
 
 ### R1. Baseline Suite Against Standard Practice
 
@@ -110,7 +110,7 @@ Current state (2026-03-12):
   against every surface-matched baseline on the old benchmark pair, so seed
   expansion remains deferred.
 - Fresh-session handoff for the active local 350M R1 thread lives at
-  [results/nblora_vs_standard/REPORT.md](/Users/jasonkempf/ModelCypher/results/nblora_vs_standard/REPORT.md).
+  [docs/research/reports/nblora_vs_standard/REPORT.md](research/reports/nblora_vs_standard/REPORT.md).
   Use that file as the single re-entry point before starting new work on this
   blocker.
 - The old benchmark pair
@@ -146,7 +146,7 @@ measurement and training path really preserves behavior."
 
 Current state (2026-03-26):
 
-Use [results/nblora_vs_standard/REPORT.md](/Users/jasonkempf/ModelCypher/results/nblora_vs_standard/REPORT.md)
+Use [docs/research/reports/nblora_vs_standard/REPORT.md](research/reports/nblora_vs_standard/REPORT.md)
 as the source of truth for this thread. The older geometry-collapse summary
 below has been superseded there by a data-format and arithmetic-granularity
 mechanism.
@@ -168,7 +168,8 @@ inference-manifold CKA collapses (min 0.13). The adapter memorizes training
 format while destroying inference geometry. This persists across all optimizer,
 loop, and schedule configurations tested.
 
-Next falsifier and exact command: see `results/nblora_vs_standard/REPORT.md`
+Next falsifier and exact command: see
+`docs/research/reports/nblora_vs_standard/REPORT.md`
 § Exact Next Falsifier. That file is the single canonical handoff for all
 R1/R2 work.
 

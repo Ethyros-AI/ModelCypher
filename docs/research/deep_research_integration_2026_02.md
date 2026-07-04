@@ -57,7 +57,7 @@ External-paper identifiers retained where already present in repository docs:
 | Imported claim | Evidence label | ModelCypher status | Mapped file/module | Decision |
 |---|---|---|---|---|
 | Public frontier labs show a geometric-mechanism turn | `[CONJECTURAL]` | Contextual landscape, not direct mechanism proof in this repo | `docs/research/field_map_external_methods.md` | Adopt (context only) |
-| ~~`beta_1` / `delta_beta_1` can index reasoning reliability~~ | `[DISPROVEN]` | Falsification protocol (6 tests, n=50, LFM2-350M) failed 3/6: metric robustness, held-out replication, subsample stability. See `results/beta1_falsification/full/LFM2-350M/FALSIFICATION_REPORT.md` | `docs/research/topological_fingerprints.md` | Disproven |
+| ~~`beta_1` / `delta_beta_1` can index reasoning reliability~~ | `[DISPROVEN]` | Falsification protocol (6 tests, n=50, LFM2-350M) failed 3/6: metric robustness, held-out replication, subsample stability. See `docs/research/reports/beta1_falsification/full/LFM2-350M/FALSIFICATION_REPORT.md` | `docs/research/topological_fingerprints.md` | Disproven |
 | Inference-time exact PH is expensive; graph-cycle proxy is practical | `[EMPIRICAL]` | Computationally aligned with current topology implementation limits | `docs/research/topological_fingerprints.md` | Adopt |
 | Global HVP-Lipschitz LR is brittle for nonsmooth stochastic training | `[VALIDATED]` | Already observed in repo ablations; MASS already implemented | `docs/research/lr_derivation_analysis.md`, `src/modelcypher/backends/mlx_training_adapter.py` | Adopt (consistency cleanup) |
 | Retraction-based Armijo + measured step conditions outperform fixed-L logic | `[EMPIRICAL]` | Already partly implemented in training adapter | `src/modelcypher/backends/mlx_training_adapter.py` (comments/docs only this pass) | Adopt (documentation) |
@@ -167,4 +167,3 @@ Documentation updates linked to this integration pass:
 - New CLI surface for report-specific diagnostics
 - New benchmark datasets or artifact generation in this pass
 - Bulk bibliography ingestion of every external citation from source reports
-

@@ -94,8 +94,8 @@ No phase-decision closeout artifacts are available yet:
 
 - `results/reinforce_unlock_cycle_u1_lfm25/e1_gate_stage/h1_decision.json`
 - `results/reinforce_unlock_cycle_u1_lfm25/e2_credit_targeting/h2_decision.json`
-- `results/reinforce_unlock_cycle_u1_lfm25/e3_unlock_confirmation/REPORT.md`
-- `results/reinforce_unlock_cycle_u1_lfm25/REPORT.md`
+- `docs/research/reports/reinforce_unlock_cycle_u1_lfm25/e3_unlock_confirmation/REPORT.md`
+- `docs/research/reports/reinforce_unlock_cycle_u1_lfm25/REPORT.md`
 
 Those will only be interpretable after the cycle completes.
 
@@ -112,8 +112,8 @@ Those will only be interpretable after the cycle completes.
 2. Read the artifacts in order:
    - `results/reinforce_unlock_cycle_u1_lfm25/e1_gate_stage/h1_decision.json`
    - `results/reinforce_unlock_cycle_u1_lfm25/e2_credit_targeting/h2_decision.json`
-   - `results/reinforce_unlock_cycle_u1_lfm25/e3_unlock_confirmation/REPORT.md`
-   - `results/reinforce_unlock_cycle_u1_lfm25/REPORT.md`
+   - `docs/research/reports/reinforce_unlock_cycle_u1_lfm25/e3_unlock_confirmation/REPORT.md`
+   - `docs/research/reports/reinforce_unlock_cycle_u1_lfm25/REPORT.md`
 3. Inspect the winning force-arm `train.log` files for:
    - `REINFORCE vs CE cosine`
    - `orth_frac`
