@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import svd_rank_threshold
-from modelcypher.util.math_utils import compute_coefficient_of_variation
+from modelcypher.utils.math import compute_coefficient_of_variation
 
 if TYPE_CHECKING:
     from modelcypher.backends.array import Array

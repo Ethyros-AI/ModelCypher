@@ -41,9 +41,9 @@ research optimizer modes.
 | 10 | LoRA scale | `derived+shipped-default` | Adapter scale budget and saturation telemetry are enforced during training. | Per-layer effective delta violates the stated spectral bound or the bound fails to predict behavior. |
 | 11 | LoRA rank | `derived+shipped-default` | Per-module ranks derive from tail dimensions and data capacity samples. | Derived ranks underperform fixed-rank baselines outside the tie band. |
 | 12 | Target modules | `derived+shipped-default` | Target surface derives from layer spectral geometry. | Spectral target selection loses to fixed `q+v` or measured behavioral damage is not predicted. |
-| 13 | Dropout | `formula-exists-unwired` | `compute_geometric_dropout` can appear in config payloads; the training adapter does not apply it as runtime dropout. | Runtime dropout is wired and validated, or the row remains unwired. |
-| 14 | Weight init | `formula-exists-unwired` | Default init is PiSSA; the older spectral-normalized-to-`sigma_k` init is not the shipped default. | The documented init and the runtime init are unified, with retained benchmark evidence. |
-| 15 | Residual scaling | `dead-code` | `residual_scaling.py` has no shipped training-path consumer. | A shipped consumer appears with a derivation and tests, or the code is deleted. |
+| 13 | Dropout | `removed` | The unwired `compute_geometric_dropout` formula was deleted; canonical runtime dropout remains `0.0`. | A new dropout law must be re-derived against a shipped adapter path before reintroduction. |
+| 14 | Weight init | `removed` | Default init is PiSSA; the older spectral-normalized-to-`sigma_k` helper was deleted. | A replacement must beat or preserve the PiSSA path under retained closure benchmarks. |
+| 15 | Residual scaling | `removed` | `residual_scaling.py` was deleted because no shipped training path consumed it. | A new residual-scaling hook must identify the exact runtime insertion point and falsifier first. |
 
 ## Canonical Links
 

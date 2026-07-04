@@ -298,7 +298,7 @@ v_proj/k_proj have 100x more room for perturbation than q_proj/o_proj. The stand
 
 **Industry**: `0.1`, arbitrary.
 
-**Historical formula**: Product of two spectral ratios:
+**Historical formula (removed)**: Product of two spectral ratios:
 
 ```
 dropout = redundancy * adapter_fraction
@@ -309,11 +309,11 @@ Where:
 - `adapter_fraction = rank / full_rank` (how much of the weight's space LoRA occupies)
 - `shannon_eff_rank = exp(H(sigma^2))` (Roy & Vetterli 2007)
 
-Current status: this formula can appear in generated config payloads, but the
-shipped training adapter does not apply it as runtime dropout. Treat the row as
-unwired, not validated.
+Current status: the formula and its validator script were deleted because the
+shipped training adapter did not consume them. Canonical runtime dropout remains
+`0.0`.
 
-**Code**: `geometric_lora.py:283` (`compute_geometric_dropout`)
+**Code**: removed in WS1.4.
 
 **Deep Dive**: `training_heuristics_analysis.md`, Experiment 5
 
@@ -323,7 +323,7 @@ unwired, not validated.
 
 **Industry**: Random A (Gaussian), zeros B (Hu et al. 2021). Product B @ A starts at zero and must "grow into" the budget during training.
 
-**Historical geometric formula**: Spectral normalized initialization:
+**Historical geometric formula (removed)**: Spectral normalized initialization:
 
 ```
 ||A||_spectral = sqrt(sigma_k)
@@ -331,22 +331,22 @@ unwired, not validated.
 ||B @ A||_spectral = sigma_k
 ```
 
-**Current status**: The runtime default is PiSSA. The spectral-normalized
-`sigma_k` initialization is not the shipped default and should not be described
-as the active weight-init derivation.
+**Current status**: The runtime default is PiSSA. The unshipped
+spectral-normalized `sigma_k` helper was deleted and should not be described as
+the active weight-init derivation.
 
-**Code**: `spectral_init.py:162` (`spectral_normalized_lora_init`)
+**Code**: removed in WS1.4.
 
 ---
 
-### 15. Residual Connection Scaling `[DERIVED-FORMULA-DEAD-CODE]`
+### 15. Residual Connection Scaling `[REMOVED]`
 
 **Industry**: `alpha = 1` (no scaling, standard residual `output = x + f(x)`).
 
-**Geometric formula**: `alpha_i = sigma_max(x) / sigma_max(f(x))` per layer.
-The standalone formula exists, but no shipped training path consumes it.
+**Historical formula**: `alpha_i = sigma_max(x) / sigma_max(f(x))` per layer.
+The standalone formula was deleted because no shipped training path consumed it.
 
-**Code**: `residual_scaling.py:184` (`compute_residual_scale`), `:39` (`spectral_norm_power_iteration`)
+**Code**: removed in WS1.4.
 
 ---
 
@@ -358,6 +358,9 @@ The standalone formula exists, but no shipped training path consumes it.
 | Warmup | No separate warmup control on the canonical CLI | Default still uses calibrated AdamW/cosine, so this is not a fully replaced knob |
 | Adam / Momentum | Default adopts AdamW betas; research modes use Fisher/MASS state | Promotion requires closure benchmark evidence |
 | Per-layer LR heuristics | Replaced in research modes by MASS controller + Weyl bounds | `sigma_k/sigma_max`, `1/sigma_max`, `sigma_k/sigma_max^2` were guesses, not measured controls |
+| Dropout derivation | Removed because no shipped training adapter consumed it | Reintroduce only with runtime wiring and a falsifier |
+| Spectral-normalized LoRA init | Removed because the shipped initializer is PiSSA | Reintroduce only if it replaces or beats PiSSA under retained closure benchmarks |
+| Residual scaling | Removed because no shipped path consumed the formula | Reintroduce only with an exact runtime insertion point and direct validation |
 
 ---
 
@@ -367,8 +370,6 @@ The standalone formula exists, but no shipped training path consumes it.
 |---|---|---|---|
 | Adam epsilon | `max(sigma_k^2, sqrt(eps) * sigma_max^2)` | `compute_geometric_epsilon()` | Unit-consistent Adam `v_t` derivation and runtime wiring |
 | Weight Decay | `sigma_k / sigma_max` | `compute_decay_scale()` | Canonical runtime wiring and closure benchmark evidence |
-| Dropout | `redundancy * adapter_fraction` | `compute_geometric_dropout()` | Adapter-runtime dropout application and validation |
-| Residual scaling | `sigma_max(x) / sigma_max(f(x))` | `residual_scaling.py` | A shipped consumer or deletion |
 
 ---
 

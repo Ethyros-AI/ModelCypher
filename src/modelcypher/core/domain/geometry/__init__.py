@@ -44,7 +44,6 @@ _SUBMODULES = {
     "statistics",
     "decomposition",
     "alignment",
-    "spectral_init",
     "validation",
     # Cross-modal and LoRA synthesis
     "affine_bridge",

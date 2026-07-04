@@ -108,9 +108,9 @@ Need extra instrumentation? Use flags on the same command path, such as
 | 10 | LoRA scale | derived+shipped-default | adapter scale budget and saturation telemetry are enforced during training | `geometric_lora.py`, `_mlx_training_adapter_train_mixin.py` |
 | 11 | LoRA rank | derived+shipped-default | per-module ranks derive from tail dimensions and rank-capacity samples | `geometric_lora.py`, `DatasetTrainingService.build_training_plan` |
 | 12 | Target modules | derived+shipped-default | target surface derives from layer spectral geometry | `select_target_modules`, `DatasetTrainingService.build_training_plan` |
-| 13 | Dropout | formula-exists-unwired | formula is generated for config payloads but not applied by the shipped training adapter | `compute_geometric_dropout` runtime references=2 |
-| 14 | Weight init | formula-exists-unwired | default init is PiSSA; the documented spectral-normalized init is not the shipped default | `spectral_normalized_lora_init` runtime references=3 |
-| 15 | Residual scaling | dead-code | standalone residual-scaling formula exists with no shipped training-path consumer | `residual_scaling.py`; runtime references=0 |
+| 13 | Dropout | removed | derived dropout formula was deleted because no shipped training adapter consumed it | `compute_geometric_dropout` runtime references=0 |
+| 14 | Weight init | removed | default init is PiSSA; the unshipped spectral-normalized helper was deleted | `spectral_normalized_lora_init` runtime references=0 |
+| 15 | Residual scaling | removed | standalone residual-scaling formula was deleted because no shipped path consumed it | `residual_scaling.py`; runtime references=0 |
 
 <!-- END GENERATED KNOB MATRIX -->
 

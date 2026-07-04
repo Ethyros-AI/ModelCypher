@@ -286,22 +286,22 @@ def build_rows(facts: RuntimeFacts) -> list[MatrixRow]:
         MatrixRow(
             13,
             "Dropout",
-            "formula-exists-unwired",
-            "formula is generated for config payloads but not applied by the shipped training adapter",
+            "removed",
+            "derived dropout formula was deleted because no shipped training adapter consumed it",
             f"`compute_geometric_dropout` runtime references={facts.geometric_dropout_runtime_hits}",
         ),
         MatrixRow(
             14,
             "Weight init",
-            "formula-exists-unwired",
-            "default init is PiSSA; the documented spectral-normalized init is not the shipped default",
+            "removed",
+            "default init is PiSSA; the unshipped spectral-normalized helper was deleted",
             f"`spectral_normalized_lora_init` runtime references={facts.spectral_init_runtime_hits}",
         ),
         MatrixRow(
             15,
             "Residual scaling",
-            "dead-code",
-            "standalone residual-scaling formula exists with no shipped training-path consumer",
+            "removed",
+            "standalone residual-scaling formula was deleted because no shipped path consumed it",
             f"`residual_scaling.py`; runtime references={facts.residual_scaling_runtime_hits}",
         ),
     ]

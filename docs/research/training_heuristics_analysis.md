@@ -520,19 +520,21 @@ Geometric interpretation: with this dropout, the expected active LoRA dimensions
 | Llama 3.2 3B | 10 | 0.0008-0.1110 | 4-364 |
 | SmolLM3 3B | 9 | 0.0000-0.0730 | 1-154 |
 
-Key behaviors:
+Historical observed behaviors:
 - **Small-rank layers (2-6 dims):** Near-zero dropout (0.001-0.003). Every dimension matters when the adapter is tiny.
 - **Medium-rank layers (10-40 dims):** Light dropout (0.004-0.04). Proportional to both redundancy and adapter size.
 - **Large-rank layers (150-364 dims):** Higher dropout (0.04-0.11). Large null-space adapters get meaningful regularization.
 - **Rank-1 layers:** Exactly 0.0. Can't drop the only dimension.
 
-The formula naturally produces the right scale because dropout is self-calibrating: layers with more null-space capacity get both higher rank AND higher dropout. The two ratios multiply to give values that scale correctly with the geometry.
+The formula was removed from production code because no shipped training adapter
+consumed it. These observations remain historical context only and must not be
+cited as runtime validation.
 
 **NB-LoRA Exemption:** When using Cayley-parameterized NB-LoRA, dropout = 0.0. The spectral norm bound (`||W_lora||_2 ≤ 2 × max(S) ≤ σ_k`) is a strictly tighter constraint than dropout's implicit nuclear norm regularization. The Cayley transform already prevents the co-adaptation that dropout addresses.
 
-**Implementation:** `geometric_lora.py:compute_geometric_dropout()`
+**Implementation:** removed in WS1.4.
 
-**Validation:** 15 tests pass covering:
+**Historical validation before deletion:** synthetic tests covered:
 - Flat spectrum → 0.0 dropout
 - Steep spectrum → dropout scales with redundancy × adapter_fraction
 - Monotonicity (higher utilization → lower dropout)
@@ -646,11 +648,12 @@ should_stop = loss_stable or budget_exhausted
 - All thresholds are dtype-derived (√ε, 1-√ε) or geometry-derived (Weyl crossing)
 - Integrated into runtime training loop via `LoRAMemoryService.train()`
 
-### Residual Connection Scaling `[EMPIRICAL]`
+### Residual Connection Scaling `[REMOVED]`
 
 **Problem:** Standard residual: `output = x + f(x)` with α=1. When σ_max(f(x))/σ_max(x) varies across layers, gradient flow becomes uneven.
 
-**Implementation:** `residual_scaling.py:ResidualScalingHook`
+**Implementation:** removed in WS1.4 because no shipped training path consumed
+the formula.
 
 **Formula:**
 ```

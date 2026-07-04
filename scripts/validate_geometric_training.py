@@ -5,9 +5,7 @@ Proves that spectral geometry → LoRA config → optimizer → actual learning
 with zero arbitrary constants. Every parameter is a theorem or measurement:
 
   - Per-layer LoRA rank: from null-space capacity (tail_dims via Shannon eff rank)
-  - LoRA scale: 1.0 (neutral multiplier; bound via spectral init + monitoring)
-  - Spectral init: ||BA||_spectral = 0.5 * σ_k from step 0
-  - Per-layer dropout: from spectral redundancy × adapter fraction
+  - LoRA scale: 1.0 (neutral multiplier; bound via monitoring)
   - Learning rate: η = 1/L where L = λ_max(Hessian) (measured via power iteration)
   - ScaledGD: grad_A @ (BBᵀ+εI)⁻¹, (AᵀA+εI)⁻¹ @ grad_B (Riemannian GD)
   - Per-layer decay: σ_k/σ_max (condition ratio)
@@ -54,6 +52,13 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from modelcypher.core.domain.training.geometric_early_stopping import check_loss_stable
+from modelcypher.core.domain.training.spectral_budget import (
+    DTYPE_THRESHOLD_F32,
+    compute_budget_ratios,
+    is_budget_exhausted,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -168,28 +173,19 @@ def inject_geometric_lora(model, configs, backend):
     Uses mlx-lm's native LoRALinear.from_base() for proper forward-pass
     integration. Each layer gets its own rank and dropout from geometry.
 
-    After injection, replaces default B=zeros initialization with spectral
-    init so that ||BA||_spectral = 0.5 * sigma_k from step 0. This gives
-    the adapter immediate contribution at 50% of its geometric budget.
-
-    Scale is set to 1.0 (neutral multiplier). The geometric constraint
-    ||BA||_spectral <= sigma_k is enforced through initialization and
-    spectral budget monitoring, not through the scale parameter.
+    This historical script does not override initialization. The canonical
+    `mc train run` path owns the shipped PiSSA initialization and spectral
+    budget monitoring.
 
     Args:
         model: mlx-lm model (has model.model.layers[...])
         configs: list of LoRALayerConfig from derive_lora_configs()
-        backend: Backend for spectral init computation.
+        backend: retained for the historical script signature.
 
     Returns:
         Number of layers successfully injected.
     """
-    import mlx.core as mx
     from mlx_lm.tuner.lora import LoRALinear
-
-    from modelcypher.core.domain.geometry.spectral_init import (
-        spectral_normalized_lora_init,
-    )
 
     injected = 0
 
@@ -219,22 +215,6 @@ def inject_geometric_lora(model, configs, backend):
                 scale=1.0,  # Neutral multiplier. Bound is on ||BA||, not scale.
             )
 
-            # Replace default B=zeros with spectral init at 50% of budget.
-            # spectral_init returns A: [rank, in], B: [out, rank]
-            # LoRALinear stores lora_a: [in, rank], lora_b: [rank, out]
-            # Fuse delta = scale * lora_b.T @ lora_a.T = B @ A
-            # So: lora_a = A.T, lora_b = B.T
-            A_init, B_init = spectral_normalized_lora_init(
-                in_features=cfg.in_features,
-                out_features=cfg.out_features,
-                rank=cfg.rank,
-                sigma_k=cfg.sigma_k,  # Full geometric budget (Weyl threshold handles stopping)
-                backend=backend,
-            )
-            lora.lora_a = A_init.T
-            lora.lora_b = B_init.T
-            mx.eval(lora.lora_a, lora.lora_b)
-
             setattr(obj, attr_name, lora)
             injected += 1
 
@@ -255,7 +235,6 @@ def inject_geometric_lora(model, configs, backend):
 def evaluate_loss(model, dataset, tokenizer, batch_size, seq_length, n_batches):
     """Compute average loss and perplexity on a dataset."""
     import mlx.core as mx
-    import mlx.nn as nn
     from mlx_lm.tuner.trainer import default_loss, iterate_batches
 
     total_loss = 0.0
@@ -415,6 +394,8 @@ def measure_lipschitz_constant(model, dataset, batch_size, seq_length, seed,
 
     from modelcypher.core.domain.training.hessian_estimator import (
         Config as HessianConfig,
+    )
+    from modelcypher.core.domain.training.hessian_estimator import (
         top_eigenvalue,
     )
 
@@ -467,18 +448,6 @@ def measure_lipschitz_constant(model, dataset, batch_size, seq_length, seed,
     return eta, L
 
 
-# ============================================================================
-# Geometric early stopping (delegated to domain module)
-# ============================================================================
-
-from modelcypher.core.domain.training.geometric_early_stopping import check_loss_stable  # noqa: E402
-from modelcypher.core.domain.training.spectral_budget import (  # noqa: E402
-    DTYPE_THRESHOLD_F32,
-    compute_budget_ratios,
-    is_budget_exhausted,
-)
-
-
 def check_budget_exhausted(model, configs, opt_config=None) -> tuple[bool, float]:
     """Check if spectral budget is exhausted.
 
@@ -489,8 +458,6 @@ def check_budget_exhausted(model, configs, opt_config=None) -> tuple[bool, float
     thresholds (gap_k / (2 * sigma_k)). Otherwise falls back to the
     dtype-derived threshold (1 - sqrt(eps_f32)).
     """
-    import mlx.core as mx
-
     from modelcypher.core.domain._backend import get_default_backend
 
     backend = get_default_backend()
@@ -627,6 +594,7 @@ def train(model, train_dataset, batch_size, seq_length, max_iters, seed,
         max_iters, n_batches_per_epoch,
     )
 
+    t_step = t_start
     for it in range(max_iters):
         batch, lengths = next(batch_iter)
 
@@ -945,7 +913,6 @@ def main():
 
 def _iter_trainable(model):
     """Iterate over trainable parameters as (name, array) pairs."""
-    import mlx.nn as nn
     # model.trainable_parameters() returns nested dict in mlx-lm
     def _flatten(prefix, tree):
         if hasattr(tree, 'shape'):
