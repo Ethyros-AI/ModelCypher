@@ -242,7 +242,11 @@ All geometric computations are framework-agnostic. Backend selection is automati
 
 ## Test Suite
 
-6,809 tests. Includes Hypothesis property-based tests for numerical invariants (CKA symmetry, spectral bounds, null-space orthogonality).
+<!-- TEST-COUNT:START -->
+7,735 collected tests. This count is generated from `pytest --collect-only`; refresh it with `poetry run python scripts/update_test_count.py --write`.
+<!-- TEST-COUNT:END -->
+
+Includes Hypothesis property-based tests for numerical invariants (CKA symmetry, spectral bounds, null-space orthogonality).
 
 ```bash
 poetry run pytest                              # Standard run

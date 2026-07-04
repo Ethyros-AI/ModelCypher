@@ -1,6 +1,6 @@
 # ModelCypher TODO
 
-**Updated:** 2026-03-01
+**Updated:** 2026-07-04
 
 ---
 
@@ -18,7 +18,7 @@
 ### ModelCypher Core
 
 **Open:**
-- [ ] G5: Complete credibility proof (Qwen3-8B) — pre-training benchmark complete (GSM8K 70%, ARC-Easy 100%, BoolQ 100%, overall 90%), training run in progress with gradient accumulation + degeneration stopping
+- [ ] G5: Complete credibility proof (Qwen3-8B) — owner rerun required on Apple Silicon. The 2026-03-01 CLI credibility run did not complete: `results/cli_credibility_2026-03-01/train_result.json.tmp` is a 0-byte tmp file. Do not report G5 as complete until a non-tmp `train_result.json`, pre/post benchmark JSON, degeneration trace, and gates are present.
 - [ ] Entropy reg + answer-mask mutual exclusivity fix — currently in `else` branch, needs refactor to apply independently
 
 **Recently completed (2026-02-25 through 2026-03-01):**
@@ -31,8 +31,8 @@
 - ActivationProviderAdapter delegation fix (4 methods)
 - `mc quantize correct` CLI promotion
 - bf16 SVD guard for `compute_per_layer_signal_ranks`
-- Delegation contract tests (9 new, total 6809 tests)
-- K-FAC removed (gain ≈ 1.03, not worth complexity)
+- Delegation contract tests for ActivationProviderAdapter. Current test collection count is generated in `README.md` by `scripts/update_test_count.py`.
+- K-FAC removed after its validation path failed to justify product complexity; see `docs/research/REFUTATION-LEDGER.md`
 
 **Previously completed (2026-02-20):**
 - Data-rank ceiling: `min(tail_dims, n_train_samples)` — 8B params 2.76B → 927M (2.91x reduction) [VALIDATED]

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "modelcypher"
-version = "1.0.0"
+version = "1.0.1"
 description = "Geometry-first diagnostic toolkit for LLM representations: intrinsic dimension, CKA, spectral analysis, Procrustes alignment, LoRA adapter training and geometry on Apple Silicon (MLX)"
 authors = ["Jason Kempf <jason@ethyros.ai>"]
 readme = "README.md"
