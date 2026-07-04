@@ -50,7 +50,7 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_norms,
 )
 from modelcypher.core.domain.geometry.rmt_signal_separation import (
-    compute_rmt_null_space_weights,
+    compute_rmt_null_space_projection,
 )
 
 if TYPE_CHECKING:
@@ -199,6 +199,8 @@ class GeodesicNullSpaceBasis:
     k_neighbors: int
     mean_geodesic_distance: float
     regularization: float
+    projection: Any | None = None
+    keep_weights: Any | None = None
 
 
 class GeodesicNullSpaceFilter:
@@ -315,28 +317,12 @@ class GeodesicNullSpaceFilter:
             source_activations=source_activations,
         )
 
-        # Step 4: Compute tangent space projection matrix (GPU)
-        # The tangent vectors span the "occupied" directions on the manifold.
-        # We project delta onto the orthogonal complement (geodesic null space).
-        #
-        # Projection onto column space of T: P_T = T @ pinv(T)
-        # Projection onto orthogonal complement: P_null = I - P_T
-        #
-        # Uses native b.pinv() for EXACT pseudo-inverse computation on GPU.
-
-        # =====================================================================
-        # VARIANCE-WEIGHTED PROJECTION (replaces binary Q @ Q^T)
-        # =====================================================================
-        # Q now contains variance_weights [d, 1] where:
-        #   weight[i] = normalized variance of dimension i
-        #   High weight = dense direction = project out more
-        #   Low weight = sparse direction = keep more delta
-        #
-        # Formula: delta_safe = delta * (1 - variance_weights)
-        # This keeps delta in sparse directions, removes in dense directions.
-        # =====================================================================
+        # Step 4: apply the RMT noise-subspace projector in feature space.
+        # Rows of delta are row vectors, so projection is delta @ P_noise.
+        # TODO(owner): validate on real model per WS2.3.
         reg = basis.regularization
-        Q = basis.Q  # Contains variance_weights [d, 1]
+        projection = basis.projection
+        Q = basis.Q  # Compatibility diagnostic: occupied fraction [d, 1].
 
         delta_dtype = backend.dtype(delta_matrix)
         proj_dtype = precision_dtype(backend, reference=delta_matrix)
@@ -347,9 +333,17 @@ class GeodesicNullSpaceFilter:
         if str(backend.dtype(Q)) != str(proj_dtype):
             Q = backend.astype(Q, proj_dtype)
             backend.eval(Q)
+        if projection is not None and str(backend.dtype(projection)) != str(proj_dtype):
+            projection = backend.astype(projection, proj_dtype)
+            backend.eval(projection)
 
-        # Extract variance weights and compute keep weights
-        combined_weights = backend.squeeze(Q)  # [d]
+        keep_weights = basis.keep_weights
+        if keep_weights is None:
+            combined_weights = backend.squeeze(Q)  # [d]
+            keep_weights = 1.0 - combined_weights
+        elif str(backend.dtype(keep_weights)) != str(proj_dtype):
+            keep_weights = backend.astype(keep_weights, proj_dtype)
+        backend.eval(keep_weights)
         if occupancy_weights is not None:
             occ = occupancy_weights
             if not hasattr(occ, "shape"):
@@ -357,17 +351,14 @@ class GeodesicNullSpaceFilter:
             occ = backend.astype(occ, proj_dtype)
             if int(backend.shape(occ)[0]) == d:
                 occ = backend.clip(occ, 0.0, 1.0)
-                combined_weights = 1.0 - (1.0 - combined_weights) * (1.0 - occ)
-                backend.eval(combined_weights)
+                keep_weights = keep_weights * (1.0 - occ)
+                backend.eval(keep_weights)
             else:
                 logger.warning(
                     "Occupancy weights dim mismatch: expected %d, got %d - ignoring",
                     d,
                     int(backend.shape(occ)[0]),
                 )
-        keep_weights = 1.0 - combined_weights  # [d] - high in sparse, low in dense
-        backend.eval(keep_weights)
-
         # Log occupancy stats
         mean_keep = float(backend.to_scalar(backend.mean(keep_weights)))
         if occupancy_weights is not None:
@@ -379,13 +370,14 @@ class GeodesicNullSpaceFilter:
         else:
             logger.debug("NULL-SPACE: dim=%d, mean_keep=%.3f (no prior occupancy)", d, mean_keep)
 
-        # Apply variance-weighted projection
-        # delta_safe = delta * keep_weights (per-dimension scaling)
-        int(delta_proj.shape[0])
-        keep_weights_row = backend.reshape(keep_weights, (1, d))
-
-        # SOFT WEIGHTS: Continuous [0, 1] scaling derived from geometry
-        delta_safe = delta_proj * keep_weights_row
+        if projection is not None:
+            delta_safe = backend.matmul(delta_proj, projection)
+            if occupancy_weights is not None:
+                keep_weights_row = backend.reshape(keep_weights, (1, d))
+                delta_safe = delta_safe * keep_weights_row
+        else:
+            keep_weights_row = backend.reshape(keep_weights, (1, d))
+            delta_safe = delta_proj * keep_weights_row
         backend.eval(delta_safe)
 
         if str(proj_dtype) != str(delta_dtype):
@@ -527,21 +519,6 @@ class GeodesicNullSpaceFilter:
         else:
             mean_geo = 0.0
 
-        # Compute Fréchet mean and tangent space (GPU)
-        frechet_result = self._riemannian.frechet_mean(
-            prior_activations,
-            k_neighbors=actual_k,
-            geo_result=geo_result,
-        )
-        frechet_mean = frechet_result.mean
-        backend.eval(frechet_mean)
-
-        # Log map: tangent vectors from mean to each activation
-        tangent_vectors = self._riemannian.log_map(
-            prior_activations, frechet_mean, geo_result=geo_result
-        )
-        backend.eval(tangent_vectors)
-
         reg = regularization_epsilon(backend, prior_activations)
 
         # =================================================================
@@ -564,28 +541,38 @@ class GeodesicNullSpaceFilter:
         #   - If no source: transfer weight = target_noise
         # =================================================================
 
-        # Compute target noise fraction using RMT
-        target_keep_weights, target_mp = compute_rmt_null_space_weights(
+        # Compute target noise projector using RMT.
+        target_projection = compute_rmt_null_space_projection(
             prior_activations, backend=backend
         )
-        backend.eval(target_keep_weights)
+        target_keep_weights = target_projection.keep_weights
+        transfer_projection = target_projection.noise_projection
+        backend.eval(target_keep_weights, transfer_projection)
 
         if source_activations is not None:
-            # Compute source signal fraction using RMT
+            # Compute source signal subspace using RMT.
             if not hasattr(source_activations, "shape"):
                 source_activations = backend.array(source_activations)
             backend.eval(source_activations)
 
-            source_keep_weights, source_mp = compute_rmt_null_space_weights(
+            source_projection = compute_rmt_null_space_projection(
                 source_activations, backend=backend
             )
-            backend.eval(source_keep_weights)
+            source_keep_weights = source_projection.keep_weights
+            backend.eval(source_keep_weights, source_projection.signal_projection)
 
             # Source signal = 1 - source_noise (dimensions where source has knowledge)
             source_signal = 1.0 - source_keep_weights
             backend.eval(source_signal)
 
-            # Transfer = target_noise × source_signal
+            # Row-vector transfer: keep source signal, then target noise.
+            transfer_projection = backend.matmul(
+                source_projection.signal_projection,
+                target_projection.noise_projection,
+            )
+            backend.eval(transfer_projection)
+
+            # Coordinate diagnostic = target_noise × source_signal.
             # High where target has room AND source has knowledge
             keep_weights = target_keep_weights * source_signal
             backend.eval(keep_weights)
@@ -623,6 +610,8 @@ class GeodesicNullSpaceFilter:
             k_neighbors=actual_k,
             mean_geodesic_distance=mean_geo,
             regularization=reg,
+            projection=transfer_projection,
+            keep_weights=keep_weights,
         )
         elapsed_ms = (time.perf_counter() - start) * 1000
         if cache_enabled:

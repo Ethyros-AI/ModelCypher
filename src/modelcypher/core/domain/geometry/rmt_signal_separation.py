@@ -92,6 +92,23 @@ class MPSignalNoiseResult:
     signal_variance_fraction: float
 
 
+@dataclass
+class RMTNullSpaceProjection:
+    """Feature-space RMT projections for null-space filtering."""
+
+    # Per-coordinate diagnostic fraction of each coordinate in the noise subspace.
+    keep_weights: "Array"
+
+    # Orthogonal projector onto MP-bulk eigenvectors: V_noise @ V_noise.T.
+    noise_projection: "Array"
+
+    # Orthogonal projector onto MP-signal eigenvectors: V_signal @ V_signal.T.
+    signal_projection: "Array"
+
+    # MP bulk separation diagnostics.
+    mp_result: MPSignalNoiseResult
+
+
 def marchenko_pastur_edges(
     n_samples: int,
     n_features: int,
@@ -396,22 +413,22 @@ def separate_signal_noise(
     )
 
 
-def compute_rmt_null_space_weights(
+def compute_rmt_null_space_projection(
     activations: "Array",
     backend: "Backend | None" = None,
-) -> tuple["Array", MPSignalNoiseResult]:
-    """Compute per-dimension weights for null-space projection using RMT.
+) -> RMTNullSpaceProjection:
+    """Compute RMT feature-space projectors for null-space filtering.
 
-    This is the direct replacement for variance-based heuristics. Instead of
-    normalizing variance to [0, 1] and using (1 - variance) as keep weights,
-    we use the Marchenko-Pastur distribution to determine which directions
-    are truly signal vs noise.
+    This is the direct replacement for coordinate-wise variance heuristics.
+    Instead of scaling each feature independently, use the Marchenko-Pastur
+    distribution to identify signal/noise eigenvector subspaces and build the
+    orthogonal projector onto the noise subspace.
 
     Algorithm:
         1. Compute covariance eigenvectors
         2. Separate signal from noise using MP distribution
-        3. Project variance onto eigenvector basis
-        4. Weight dimensions by their contribution to noise vs signal
+        3. Build P_noise = V_noise @ V_noise.T
+        4. Report diag(P_noise)-equivalent keep weights for diagnostics
 
     For each dimension d:
         - If d's variance projects mainly onto noise eigenvectors: keep_weight ≈ 1
@@ -422,8 +439,7 @@ def compute_rmt_null_space_weights(
         backend: Optional backend for computation.
 
     Returns:
-        (keep_weights, mp_result) where keep_weights[i] ∈ [0, 1] indicates
-        how much of dimension i is available for transfer.
+        RMTNullSpaceProjection with projector matrices and MP diagnostics.
     """
     b = backend or get_default_backend()
 
@@ -469,6 +485,14 @@ def compute_rmt_null_space_weights(
     noise_mask = b.arange(n_eigs) >= n_signal  # Eigenvectors after signal are noise
     noise_mask = b.astype(noise_mask, eigenvectors.dtype)
     b.eval(noise_mask)
+    signal_mask = 1.0 - noise_mask
+    b.eval(signal_mask)
+
+    noise_vectors = eigenvectors * b.reshape(noise_mask, (1, -1))
+    signal_vectors = eigenvectors * b.reshape(signal_mask, (1, -1))
+    noise_projection = b.matmul(noise_vectors, b.transpose(noise_vectors))
+    signal_projection = b.matmul(signal_vectors, b.transpose(signal_vectors))
+    b.eval(noise_projection, signal_projection)
 
     # Compute per-dimension projection onto noise vs signal subspace
     # Each dimension's "noise fraction" = sum of squared loadings on noise eigenvectors
@@ -505,7 +529,26 @@ def compute_rmt_null_space_weights(
         n_noise,
     )
 
-    return keep_weights, mp_result
+    return RMTNullSpaceProjection(
+        keep_weights=keep_weights,
+        noise_projection=noise_projection,
+        signal_projection=signal_projection,
+        mp_result=mp_result,
+    )
+
+
+def compute_rmt_null_space_weights(
+    activations: "Array",
+    backend: "Backend | None" = None,
+) -> tuple["Array", MPSignalNoiseResult]:
+    """Compute per-dimension diagnostic weights for null-space projection.
+
+    The production filter should use ``compute_rmt_null_space_projection`` so
+    rotated signal subspaces remain rotated. This wrapper is retained for
+    callers and tests that need the historical coordinate diagnostics.
+    """
+    projection = compute_rmt_null_space_projection(activations, backend=backend)
+    return projection.keep_weights, projection.mp_result
 
 
 @dataclass
