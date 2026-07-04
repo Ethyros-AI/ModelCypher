@@ -30,7 +30,7 @@ research optimizer modes.
 | # | Control | Evidence state | Current runtime truth | Falsifier before promotion |
 |---|---|---|---|---|
 | 1 | Learning rate | `derived+research-mode-only` | Default path is calibrated AdamW `2e-4` with cosine; MASS is research-mode only. | Same-model same-data closure benchmark shows MASS path beats calibrated AdamW outside the pre-registered tie band. |
-| 2 | Adam epsilon | `formula-exists-unwired` | `compute_geometric_epsilon` has weight-singular-value units; shipped AdamW does not consume it. | Units are matched to Adam second-moment state and wired, or the claim stays removed from shipped docs. |
+| 2 | Adam epsilon | `removed` | No Adam epsilon derivation is claimed. `compute_geometric_epsilon` is ScaledGD regularization in weight-spectrum units, while Adam epsilon must match `sqrt(v_t)` units. | Units are matched to measured Adam second-moment state and wired, or the claim stays removed from shipped docs. |
 | 3 | Momentum | `derived+research-mode-only` | Default path uses AdamW betas `0.9/0.999`; Fisher/MASS moment logic is research-only. | Research-mode moment law beats AdamW betas under the frozen benchmark without task losses outside the tie band. |
 | 4 | Weight decay | `formula-exists-unwired` | Condition-ratio formula exists; default runtime passes `weight_decay=0.0`. | Formula is wired and improves or preserves the closure benchmark against `0.0` and recipe decay. |
 | 5 | Gradient clipping | `derived+research-mode-only` | No canonical geometric clipper; MASS research modes bound updates through controller terms. | Controller-bound updates replace clipping on the default path and logged bounds predict avoided failures. |

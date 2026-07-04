@@ -97,7 +97,7 @@ Need extra instrumentation? Use flags on the same command path, such as
 | # | Training control | Runtime status | Current code truth | Code source |
 |---|---|---|---|---|
 | 1 | Learning rate | derived+research-mode-only | default: calibrated AdamW 2e-4 cosine; MASS on research modes | `_mlx_training_adapter_train_mixin.py` + `mass_step_size.py` |
-| 2 | Adam epsilon | formula-exists-unwired | formula exists in `compute_geometric_epsilon`; shipped AdamW path does not consume it | `geometric_optimizer.py` |
+| 2 | Adam epsilon | removed | no Adam epsilon derivation is claimed; `compute_geometric_epsilon` is ScaledGD regularization in weight-spectrum units | `geometric_optimizer.py` |
 | 3 | Momentum | derived+research-mode-only | default: AdamW betas 0.9/0.999; Fisher/MASS moments only in research modes | `_mlx_training_adapter_train_mixin.py` + `diagonal_fisher_preconditioner.py` |
 | 4 | Weight decay | formula-exists-unwired | condition-ratio formula exists; shipped `mc train run` default passes `weight_decay=0.0` | `geometric_optimizer.py`, `dataset_training_service.py` |
 | 5 | Gradient clipping | derived+research-mode-only | MASS bounds updates in research modes; canonical AdamW path has no geometric clipper | `mass_step_size.py` |

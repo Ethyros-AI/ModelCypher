@@ -209,8 +209,8 @@ def build_rows(facts: RuntimeFacts) -> list[MatrixRow]:
         MatrixRow(
             2,
             "Adam epsilon",
-            "formula-exists-unwired",
-            "formula exists in `compute_geometric_epsilon`; shipped AdamW path does not consume it",
+            "removed",
+            "no Adam epsilon derivation is claimed; `compute_geometric_epsilon` is ScaledGD regularization in weight-spectrum units",
             "`geometric_optimizer.py`",
         ),
         MatrixRow(

@@ -37,7 +37,7 @@ honest.
 |---|---|---|---|---|---|
 | | **Optimizer** | | | | |
 | 1 | Learning Rate | `1e-4` (grid search) | MASS step-size controller on research modes; default path is calibrated AdamW `2e-4` cosine | `eta_step = min(eta_ceiling, eta_sps, eta_weyl)` | derived |
-| 2 | Adam Epsilon | `1e-8` (never questioned) | Precision floor formula exists but has unresolved Adam-units mismatch | `max(sigma_k^2, sqrt(eps) * sigma_max^2)` | convention |
+| 2 | Adam Epsilon | `1e-8` (industry default) | Removed as a ModelCypher Adam claim; ScaledGD regularization has different units | `max(sigma_k^2, sqrt(eps) * sigma_max^2)` for ScaledGD only | removed |
 | 3 | Adam/Momentum | `0.9 / 0.999` | Default path adopts AdamW betas; research modes use Fisher/MASS moment logic | AdamW betas or Fisher/MASS state | adopted |
 | 4 | Weight Decay | `0.01` (uniform) | Condition-aware formula exists; default `mc train run` passes `weight_decay=0.0` | `sigma_k / sigma_max` | derived |
 | 5 | Gradient Clipping | `clip=1.0` | Removed from canonical path; MASS research modes bound updates | controller-bound displacement | derived |
@@ -100,7 +100,7 @@ history.
 
 ---
 
-### 2. Adam Epsilon `[CONVENTION]`
+### 2. Adam Epsilon `[REMOVED]`
 
 **Industry**: `1e-8`, the default from Kingma & Ba (2014). Never questioned.
 
@@ -110,12 +110,13 @@ Two floors, take the larger:
 - `sigma_k^2`: the noise floor of the weight's eigenspectrum
 - `sqrt(eps_mach) * sigma_max^2`: the numerical precision floor
 
-**Current status**: This is not a shipped optimizer claim. Adam epsilon is added
-to `sqrt(v_t)`, so its units must match the measured second-moment state. The
-weight-singular-value-squared formula is a precision convention until that unit
-chain is derived and wired.
+**Current status**: Removed as an Adam-epsilon claim. Adam epsilon is added to
+`sqrt(v_t)`, so its units must match the measured gradient second-moment state.
+The weight-singular-value-squared formula remains only as ScaledGD
+regularization in weight-spectrum units.
 
-**Code**: `geometric_optimizer.py:129` (`compute_geometric_epsilon`)
+**Code**: `geometric_optimizer.py:129` (`compute_geometric_epsilon`, ScaledGD
+regularization only)
 
 ---
 
@@ -137,7 +138,9 @@ This simultaneously satisfies three proven requirements:
 - **Mu & Klabjan (Dec 2025)**: Step size must scale as `1/(L × ||adapters||²)`. ScaledGD satisfies this — as one factor grows, the preconditioner shrinks the effective step for the other.
 - **Condition-number-free convergence** (Tong et al.): No momentum or adaptive methods needed; the preconditioning normalizes the optimization landscape.
 
-The ε regularization in the inverse uses the geometric epsilon `max(σ_k², √ε_mach × σ_max²)` — the same value computed for numerical stability throughout the pipeline.
+The ε regularization in the inverse uses the ScaledGD weight-spectrum floor
+`max(σ_k², √ε_mach × σ_max²)`. This is not Adam epsilon and is not a shipped
+optimizer claim.
 
 **Code**: `scripts/validate_geometric_training.py` (`apply_scaled_gd`)
 
@@ -368,7 +371,7 @@ The standalone formula was deleted because no shipped training path consumed it.
 
 | Heuristic | Formula | What Exists | What's Missing |
 |---|---|---|---|
-| Adam epsilon | `max(sigma_k^2, sqrt(eps) * sigma_max^2)` | `compute_geometric_epsilon()` | Unit-consistent Adam `v_t` derivation and runtime wiring |
+| Adam epsilon | Removed as an Adam claim; ScaledGD regularization uses `max(sigma_k^2, sqrt(eps) * sigma_max^2)` | `compute_geometric_epsilon()` | Unit-consistent Adam `v_t` derivation and runtime wiring before any re-promotion |
 | Weight Decay | `sigma_k / sigma_max` | `compute_decay_scale()` | Canonical runtime wiring and closure benchmark evidence |
 
 ---

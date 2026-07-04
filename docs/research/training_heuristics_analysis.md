@@ -597,7 +597,7 @@ Following Phase 2 experiments, we identified four additional high-priority heuri
 
 | Heuristic | Industry Standard | Geometric Alternative | Status |
 |-----------|------------------|----------------------|--------|
-| Adam β₁/β₂/ε | β₁=0.9, β₂=0.999, ε=1e-8 | REMOVED (pure SGD); ε = max(σ_k², √ε×σ_max²) | ✅ COMPLETE |
+| Adam β₁/β₂/ε | β₁=0.9, β₂=0.999, ε=1e-8 | Adam ε claim removed; ScaledGD ε remains weight-spectrum regularization only | Removed as shipped claim |
 | Weight init scale | Xavier/Kaiming | σ_max(W_init) = target (spectral normalized) | ✅ COMPLETE |
 | Early stopping | Validation loss patience | Loss stability + spectral budget | ✅ COMPLETE |
 | Residual scaling | None (α=1) | α = σ_max(x) / σ_max(f(x)) | ✅ COMPLETE |
