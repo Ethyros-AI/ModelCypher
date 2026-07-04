@@ -52,7 +52,6 @@ Changelog = "https://github.com/Ethyros-AI/ModelCypher/blob/main/CHANGELOG.md"
 python = ">=3.11,<3.15"
 typer = "^0.21.0"
 PyYAML = "^6.0.3"
-huggingface-hub = "^1.2.3"
 mlx-lm = "^0.30.7"
 numpy = ">=2.0.0,<2.3.0"
 scipy = "^1.16.3"
@@ -70,27 +69,21 @@ python-pptx = { version = "^1.0.2", optional = true }
 torch = { version = "^2.9.1", optional = true }
 jax = { version = "^0.8.2", optional = true }
 jaxlib = { version = "^0.8.2", optional = true }
-scikit-learn = "^1.8.0"
-lm-eval = "^0.4.9.2"
+lm-eval = { version = "^0.4.9.2", optional = true }
 plotly = { version = "^6.5.0", optional = true }
-tenacity = "^9.1.2"
 xxhash = "^3.6.0"
 mlx = "^0.31.0"
 pillow = "^12.1.0"
-matplotlib = "^3.10.8"
-openai-whisper = "^20250625"
-gwpy = "^3.0.14"
-gwosc = "^0.8.1"
-geoopt = "^0.5.1"
-ripser = "^0.6.14"
+matplotlib = { version = "^3.10.8", optional = true }
 
 [tool.poetry.extras]
 docs = ["pypdf", "python-docx", "beautifulsoup4", "openpyxl", "python-pptx"]
 cuda = ["torch"]
 jax = ["jax", "jaxlib"]
+eval = ["lm-eval"]
 embeddings = ["mlx-embeddings"]
 vlm = ["mlx-vlm"]
-viz = ["plotly"]
+viz = ["matplotlib", "plotly"]
 
 [tool.poetry.scripts]
 mc = "modelcypher.cli.app:app"

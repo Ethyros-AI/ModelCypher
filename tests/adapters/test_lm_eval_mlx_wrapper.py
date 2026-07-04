@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+pytest.importorskip("lm_eval.api.model")
+
 from lm_eval.api.model import LM
 from mlx_lm.evaluate import MLXLM
 
