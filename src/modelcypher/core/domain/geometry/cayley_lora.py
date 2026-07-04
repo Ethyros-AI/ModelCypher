@@ -82,6 +82,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_UNDERIVED_INIT_SCALE_FRACTION = 0.5
+
 
 # =============================================================================
 # Data Classes
@@ -365,7 +367,8 @@ class NBLoRAConfig:
         out_features: Output dimension
         rank: LoRA rank (r)
         scale_bound: Maximum value for diagonal S (sigma_k from base weight)
-        init_scale: Initial scale for S (default: 0.5 * scale_bound)
+        init_scale: Initial scale for S. When omitted, the legacy engineering
+            warm start uses 0.5 * scale_bound; this is not a derived bound.
     """
 
     in_features: int
@@ -376,7 +379,8 @@ class NBLoRAConfig:
 
     def __post_init__(self) -> None:
         if self.init_scale is None:
-            self.init_scale = 0.5 * self.scale_bound
+            # TODO: derive from measured adapter warm-start ablations.
+            self.init_scale = _UNDERIVED_INIT_SCALE_FRACTION * self.scale_bound
 
 
 class NBLoRALayer:
@@ -437,8 +441,12 @@ class NBLoRALayer:
         b.eval(self.B_tilde)
 
         # S_raw: raw scale values (will be clamped to [0, scale_bound])
-        # Initialize to init_scale
-        init_s = config.init_scale or (0.5 * config.scale_bound)
+        # Initialize to the configured scale.
+        init_s = (
+            config.init_scale
+            if config.init_scale is not None
+            else _UNDERIVED_INIT_SCALE_FRACTION * config.scale_bound
+        )
         self.S_raw = b.ones((r,)) * init_s
         b.eval(self.S_raw)
 
@@ -736,8 +744,9 @@ def create_nb_lora_from_base_weight(
     # total capacity, not per-step safety.  Using σ_max instead of σ_k
     # removes the redundant preservation constraint that was the binding
     # limit on learning capacity.
-    # Margin defaults to dtype-derived numerical significance headroom.
-    default_margin = max(0.0, 1.0 - math.sqrt(eps))
+    # Default margin is no extra shrinkage. Callers may pass a measured
+    # safety_margin; dtype headroom is not a behavioral-capacity derivation.
+    default_margin = 1.0
     margin = default_margin if safety_margin is None else float(safety_margin)
     if not (0.0 < margin <= 1.0):
         raise ValueError(

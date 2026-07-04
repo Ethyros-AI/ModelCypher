@@ -1800,8 +1800,15 @@ class _MLXTrainingAdapterTrainMixin(_MLXTrainingAdapterBudgetMixin):
                 # 7c''. Margin collapse stop (P2)
                 if not disable_early_stopping and len(margin_history) >= 2 and tokenizer is not None:
                     vocab_size = getattr(tokenizer, "vocab_size", 32000)
+                    baseline_margin_values = (
+                        list(baseline_margins.values())
+                        if baseline_margins is not None
+                        else None
+                    )
                     margin_collapsed, margin_threshold = check_margin_collapse(
-                        margin_history, vocab_size,
+                        margin_history,
+                        vocab_size,
+                        baseline_margin_history=baseline_margin_values,
                     )
                     if margin_collapsed:
                         if closed_loop_intervention_applied:

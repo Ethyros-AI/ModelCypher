@@ -450,7 +450,7 @@ class TestNBLoRAConfig:
     """Tests for NBLoRAConfig dataclass."""
 
     def test_default_init_scale(self):
-        """Default init_scale is 0.5 * scale_bound."""
+        """Default init_scale keeps the legacy underived half-bound warm start."""
         config = NBLoRAConfig(
             in_features=16, out_features=32, rank=4, scale_bound=0.1
         )
@@ -557,8 +557,8 @@ class TestNBLoRALayer:
         layer = self._make_layer(backend, scale_bound=0.123)
         assert layer.scale_bound == pytest.approx(0.123)
 
-    def test_init_S_at_half_bound(self, backend):
-        """S_raw is initialized at init_scale (default 0.5 * scale_bound)."""
+    def test_init_S_at_legacy_half_bound(self, backend):
+        """S_raw is initialized at the explicit legacy warm-start scale."""
         layer = self._make_layer(backend, scale_bound=0.1)
         s_list = backend.tolist(layer.S_raw)
         for s in s_list:
@@ -829,7 +829,7 @@ class TestCreateFromBaseWeight:
         assert tuple(backend.shape(layer.S_raw)) == (4,)
 
     def test_scale_bound_derived_from_sigma_max(self, backend):
-        """Scale bound derived from σ_max (not σ_k). Default margin is dtype-derived."""
+        """Scale bound derives from σ_max (not σ_k); default margin is none."""
         _m, _n = 32, 16
         # Create W with known spectrum via diagonal
         S_vals = backend.array([1.0, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01, 0.005])
@@ -842,17 +842,16 @@ class TestCreateFromBaseWeight:
         # Use D as a square weight (16x16)
         layer = create_nb_lora_from_base_weight(D, rank=4, backend=backend)
 
-        # sigma_max = 1.0 (largest SV). Scale bound = σ_max/2 × margin.
+        # sigma_max = 1.0 (largest SV). Scale bound = σ_max/2.
         # Per-step safety comes from MASS (eta_weyl), not from S clamp.
-        expected_margin = 1.0 - math.sqrt(float(backend.finfo().eps))
         assert layer.scale_bound > 0.0
-        assert layer.scale_bound == pytest.approx(1.0 * 0.5 * expected_margin, rel=1e-5)
+        assert layer.scale_bound == pytest.approx(1.0 * 0.5, rel=1e-5)
         # The spectral norm guarantee should hold
         spectral = layer.get_spectral_norm()
         assert spectral <= 2.0 * layer.scale_bound * 1.05
 
     def test_custom_margin_override(self, backend):
-        """Explicit safety_margin overrides the dtype-derived default."""
+        """Explicit safety_margin overrides the no-shrinkage default."""
         m, n = 32, 16
         W = backend.random_normal((m, n))
         backend.eval(W)
