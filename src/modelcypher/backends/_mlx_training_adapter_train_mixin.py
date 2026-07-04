@@ -64,6 +64,7 @@ from modelcypher.core.domain.training.mass_step_size import (
     ClosedLoopControlDecision,
     ControllerStepTrace,
     DerivedClosedLoopLaw,
+    derive_ce_sps_floor,
     evaluate_closed_loop_law,
     validate_controller_mode,
     validate_optimizer_research_mode,
@@ -175,7 +176,8 @@ class _MLXTrainingAdapterTrainMixin(_MLXTrainingAdapterBudgetMixin):
 
         MASS (Measured-Adaptive Step Size) — three-layer system:
         1. Spectral ceiling: eta_ceiling = sigma_k_min / sigma_max (Weyl 1912, static)
-        2. Per-step SPS: eta_sps = f(x_t) / ||d_t||^2 (Loizou et al. 2020)
+        2. Per-step SPS: eta_sps = max(0, f(x_t) - f*) / ||d_t||^2
+           (Loizou et al. 2020); CE f* is the best measured validation loss.
         3. Per-step Weyl: eta_weyl = sigma_k_min / ||d_t|| (displacement bound)
         Combined: eta_step = min(eta_sps, eta_weyl, eta_ceiling)
 
@@ -440,6 +442,7 @@ class _MLXTrainingAdapterTrainMixin(_MLXTrainingAdapterBudgetMixin):
             )
         max_effective_gain_this_epoch: float = 0.0
         max_disp_to_remaining_this_epoch: float = 0.0
+        ce_sps_floor: float = 0.0
 
         for it in range(max_iters):
             # Snapshot params at epoch start
@@ -640,10 +643,16 @@ class _MLXTrainingAdapterTrainMixin(_MLXTrainingAdapterBudgetMixin):
                 # PiSSA: amortize budget over remaining steps (sqrt model).
                 # NB-LoRA: amortization_steps=1 (budget enforced by Cayley).
                 _amort = max(1, max_iters - it) if use_pissa_lora else 1
+                sps_f_star = (
+                    ce_sps_floor
+                    if objective_components in (["ce"], ["ce_answer_masked"])
+                    else 0.0
+                )
                 eta_step, eta_sps_val, eta_weyl_val, displacement_val, eta_margin_val = (
                     compute_per_step_rates(
                         loss_float, d_norm_val, sigma_k_min, eta_ceiling,
                         remaining_budget=remaining_budget,
+                        f_star=sps_f_star,
                         g_dot_d=g_dot_d_float,
                         amortization_steps=_amort,
                     )
@@ -867,7 +876,9 @@ class _MLXTrainingAdapterTrainMixin(_MLXTrainingAdapterBudgetMixin):
                         seq_length=seq_length,
                         n_batches=eval_batches,
                     )
+                if v_loss is not None:
                     val_losses.append(v_loss)
+                    ce_sps_floor = derive_ce_sps_floor(val_losses)
                     # Record baseline val loss from first evaluation
                     if val_loss_baseline is None:
                         val_loss_baseline = v_loss

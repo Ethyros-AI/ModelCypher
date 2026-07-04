@@ -766,6 +766,34 @@ def compute_conformal_margin_rate(
     return remaining_budget / (d_norm * sqrt_n)
 
 
+def derive_ce_sps_floor(
+    validation_losses: Sequence[float],
+    *,
+    token_entropy_floor: float | None = None,
+) -> float:
+    """Derive the CE irreducible floor used by SPS.
+
+    Cross-entropy does not generally have optimum zero on held-out language
+    data. The first available measured floor is the best validation CE observed
+    so far. A token-entropy lower bound can seed the same floor when validation
+    has not produced a finite positive measurement yet.
+    """
+    measured_losses = [
+        float(loss)
+        for loss in validation_losses
+        if math.isfinite(float(loss)) and float(loss) > 0.0
+    ]
+    if measured_losses:
+        return min(measured_losses)
+    if (
+        token_entropy_floor is not None
+        and math.isfinite(token_entropy_floor)
+        and token_entropy_floor > 0.0
+    ):
+        return float(token_entropy_floor)
+    return 0.0
+
+
 def compute_per_step_rates(
     loss: float,
     d_norm: float,
@@ -799,6 +827,8 @@ def compute_per_step_rates(
             f_star = initial_loss × (1 - mean_sv_frac), where sv_frac is the
             mean signal_variance_fraction from RMT analysis of E_q. The MP
             noise floor bounds the loss achievable by any low-rank corrector.
+            For CE, derive from measured validation CE via derive_ce_sps_floor;
+            language cross-entropy has a nonzero irreducible floor.
             Default 0.0 preserves original SPS behavior.
         g_dot_d: Dot product of raw gradient and update direction (g^T d).
             Required for correct SPS when d ≠ g (e.g., Fisher/Adam preconditioning).
