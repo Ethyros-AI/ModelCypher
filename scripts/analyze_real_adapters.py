@@ -24,15 +24,8 @@ from modelcypher.backends import initialize_default_backend
 initialize_default_backend()
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.adapters.adapter_weights_loader import AutoAdapterWeightsLoader
 from modelcypher.experimental.lora_geometry.measurements import (
     collect_layer_measurements,
-    LayerMeasurement,
-)
-from modelcypher.experimental.lora_isometry import (
-    compute_spectral_selectivity,
-    compute_weyl_utilization,
-    compute_isometry_metrics,
 )
 
 
@@ -119,7 +112,7 @@ def analyze_adapter(adapter_path: Path, base_model_path: Path, backend, cached_b
         base_weights = load_base_weights(base_model_path, backend)
 
     if not base_weights:
-        log(f"  ERROR: Could not load base weights")
+        log("  ERROR: Could not load base weights")
         return None
 
     # Analyze each layer
@@ -211,7 +204,7 @@ def analyze_adapter(adapter_path: Path, base_model_path: Path, backend, cached_b
             log(f"  WARNING: Failed to measure {adapter_key}: {e}")
 
     if not measurements:
-        log(f"  ERROR: No measurements collected")
+        log("  ERROR: No measurements collected")
         return None
 
     # Aggregate statistics
@@ -306,15 +299,15 @@ def main():
         all_weyls = [r["mean_weyl_utilization"] for r in results]
         all_norms = [r["total_frobenius_norm"] for r in results]
 
-        log(f"\nAmplification CV:")
+        log("\nAmplification CV:")
         log(f"  Mean: {sum(all_cvs)/len(all_cvs):.4f}")
         log(f"  Range: {min(all_cvs):.4f} - {max(all_cvs):.4f}")
 
-        log(f"\nWeyl Utilization:")
+        log("\nWeyl Utilization:")
         log(f"  Mean: {sum(all_weyls)/len(all_weyls):.4f}")
         log(f"  Range: {min(all_weyls):.4f} - {max(all_weyls):.4f}")
 
-        log(f"\nTotal Frobenius Norm:")
+        log("\nTotal Frobenius Norm:")
         log(f"  Mean: {sum(all_norms)/len(all_norms):.2f}")
         log(f"  Range: {min(all_norms):.2f} - {max(all_norms):.2f}")
 
@@ -322,20 +315,20 @@ def main():
         log(f"\n{'='*60}")
         log("COMPARISON TO SYNTHETIC RANDOM BASELINE")
         log(f"{'='*60}")
-        log(f"\nSynthetic Random (from Exp 2):")
-        log(f"  Amplification CV: 0.2599")
-        log(f"  Weyl Utilization: 0.0541")
-        log(f"\nReal Adapters:")
+        log("\nSynthetic Random (from Exp 2):")
+        log("  Amplification CV: 0.2599")
+        log("  Weyl Utilization: 0.0541")
+        log("\nReal Adapters:")
         log(f"  Amplification CV: {sum(all_cvs)/len(all_cvs):.4f}")
         log(f"  Weyl Utilization: {sum(all_weyls)/len(all_weyls):.4f}")
 
         if sum(all_cvs)/len(all_cvs) > 0.2599:
-            log(f"\n✓ Real adapters show HIGHER selectivity than random")
-            log(f"  This suggests trained adapters are more selective in which")
-            log(f"  directions they amplify - a sign of meaningful structure.")
+            log("\n✓ Real adapters show HIGHER selectivity than random")
+            log("  This suggests trained adapters are more selective in which")
+            log("  directions they amplify - a sign of meaningful structure.")
         else:
-            log(f"\n✗ Real adapters show LOWER selectivity than random")
-            log(f"  This is unexpected and warrants investigation.")
+            log("\n✗ Real adapters show LOWER selectivity than random")
+            log("  This is unexpected and warrants investigation.")
 
         # Save results
         output_path = Path("results/real_adapter_analysis.json")

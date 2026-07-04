@@ -79,7 +79,6 @@ EXPERIMENTAL STATUS: scripts/ only, NOT CLI (AGENTS.md:695)
 """
 from __future__ import annotations
 
-import json
 import math
 import sys
 from pathlib import Path
@@ -434,7 +433,7 @@ def run_experiment(model_name: str, model_path: str) -> dict:
             print(f"    L{l:2d}: Δθ = {delta_theta[l]:+.6f}")
 
     # ===== PHASE 4: Statistical analysis =====
-    print(f"\n--- Phase 4: Statistical analysis ---")
+    print("\n--- Phase 4: Statistical analysis ---")
 
     # For each M > 1, compute correlation between ΔH and Δθ across layers
     attn_layers = sorted(attn_matrices.keys())

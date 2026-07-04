@@ -902,7 +902,6 @@ def analyze_model(data: dict, b6_1_norm_sign: str | None) -> dict:
 
     # --- Falsifiers ---
     r_sigma1_core = correlations["sigma1_core"]["spearman_r"]
-    r_sigma1_mlp = correlations["sigma1_mlp"]["spearman_r"]
     r_delta_core = correlations["delta_core"]["spearman_r"]
     sigma1_core_sign = correlations["sigma1_core"]["sign"]
 

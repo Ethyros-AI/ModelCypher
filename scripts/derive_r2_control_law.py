@@ -31,9 +31,9 @@ from typing import Any
 from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 from modelcypher.core.domain.training.mass_step_size import (
     CONTROLLER_MODE_BEHAVIORAL_CLOSED_LOOP,
-    DerivedClosedLoopLaw,
     OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
     BehavioralStateMeasurement,
+    DerivedClosedLoopLaw,
     compute_closed_loop_trigger_reasons,
 )
 

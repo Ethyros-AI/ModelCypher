@@ -20,7 +20,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -478,7 +477,7 @@ def run_analysis(samples: list[Sample], output_dir: Path) -> dict[str, Any]:
         print("2. Correct reasoning doesn't have a distinctive geometric signature")
         print("3. The metrics are too coarse - need finer-grained analysis")
     elif strongest_auroc < 0.65:
-        print(f"CONCLUSION: WEAK SIGNAL DETECTED")
+        print("CONCLUSION: WEAK SIGNAL DETECTED")
         print()
         print(f"Best metric: {strongest_metric} (AUROC = {strongest_auroc:.3f})")
         print()
@@ -486,7 +485,7 @@ def run_analysis(samples: list[Sample], output_dir: Path) -> dict[str, Any]:
         print("reliable prediction. The signal might be real but confounded by")
         print("other factors, or it might be noise.")
     else:
-        print(f"CONCLUSION: POTENTIAL MECHANISM DETECTED")
+        print("CONCLUSION: POTENTIAL MECHANISM DETECTED")
         print()
         print(f"Best metric: {strongest_metric} (AUROC = {strongest_auroc:.3f})")
         print()

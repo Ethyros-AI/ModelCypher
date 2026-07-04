@@ -293,7 +293,7 @@ def main():
         for item in val_data:
             f.write(json.dumps(item) + "\n")
 
-    print(f"\nOutput:")
+    print("\nOutput:")
     print(f"  Train: {train_path} ({len(train_data)} samples)")
     print(f"  Val:   {val_path} ({len(val_data)} samples)")
 

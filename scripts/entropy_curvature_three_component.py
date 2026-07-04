@@ -279,8 +279,6 @@ def analyze_model(data: dict) -> dict:
     # --- D3 prediction checks ---
     r_delta = correlations["Y_delta"]["spearman_r"]
     r_sin = correlations["Y_sin"]["spearman_r"]
-    r_num = correlations["Y_num"]["spearman_r"]
-
     d3_checks = {
         "D3.1_centroid_reduction": {
             "prediction": "r(H, log(||δ||²)) < 0",

@@ -527,11 +527,6 @@ def main():
             "Swapping to Polyak-averaged parameters (averaged over %d iterates)",
             len(losses),
         )
-        # Save final-iterate params for comparison
-        final_params = {
-            name: mx.array(p) for name, p
-            in mlx.utils.tree_flatten(q_model.trainable_parameters())
-        }
         q_model.load_weights(list(avg_params.items()), strict=False)
         mx.eval(q_model.parameters())
         # Re-clamp scales on averaged adapter (average may violate bounds)

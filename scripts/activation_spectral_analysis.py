@@ -166,9 +166,9 @@ def analyze_model(model_path: str, model_tag: str, probe_groups: dict[str, list]
 
     logger.info("Loading model: %s", model_tag)
 
-    from modelcypher.backends import initialize_default_backend
-    from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.adapters.model_backbone import resolve_model_backbone
+    from modelcypher.adapters.model_loader import ModelLoader
+    from modelcypher.backends import initialize_default_backend
     from modelcypher.core.domain.geometry.spectral_capacity import (
         compute_full_energy_curve,
         find_energy_inflection_points,
@@ -299,7 +299,7 @@ def print_summary(results: dict[str, dict]) -> None:
                 top3_ranks = [ip["rank"] for ip in top3]
                 print(f"    Top 3 inflection ranks: {top3_ranks}")
 
-                print(f"    Domain rank alignment:")
+                print("    Domain rank alignment:")
                 for rank_key, overlay in ld["domainRankOverlay"].items():
                     if not overlay.get("withinSpectrum"):
                         print(f"      rank {rank_key} ({overlay['domain']}): outside spectrum")

@@ -105,11 +105,11 @@ def geodesic_profile(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
+    from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.cli.composition import (
         get_activation_provider,
         get_backend,
     )
-    from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.core.use_cases.geodesic_trajectory_service import (
         GeodesicTrajectoryService,
     )

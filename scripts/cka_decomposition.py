@@ -370,7 +370,6 @@ def m3_signal_null_decomposition(
     We project Δh onto V_signal (signal input space) and V_tail (tail input space).
     The orthogonal complement of V in R^in is the true null space of W.
     """
-    import mlx.core as mx
 
     from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.core.domain.training.geometric_lora import compute_layer_geometry
@@ -827,7 +826,7 @@ def build_markdown_report(result: DecompositionResult) -> str:
     # Q1: Does CKA decrease monotonically with depth?
     if result.per_layer:
         cka_vals = [(m.layer_idx, m.cka) for m in result.per_layer]
-        lines.append(f"**Q1. Does CKA decrease monotonically with depth?**")
+        lines.append("**Q1. Does CKA decrease monotonically with depth?**")
         monotonic = all(
             cka_vals[i][1] >= cka_vals[i + 1][1] - 1e-6
             for i in range(len(cka_vals) - 1)
@@ -836,21 +835,21 @@ def build_markdown_report(result: DecompositionResult) -> str:
         lines.append("")
 
     # Q2: Does perturbation accumulate through depth?
-    lines.append(f"**Q2. Does perturbation accumulate monotonically through depth?**")
+    lines.append("**Q2. Does perturbation accumulate monotonically through depth?**")
     lines.append(f"  {'Yes' if result.perturbation_monotonic_with_depth else 'No'}.")
     lines.append("")
 
     # Q3: Is the CKA drop from null-space or signal-space?
-    lines.append(f"**Q3. Is the CKA drop at worst layer from null-space addition or signal-space leakage?**")
+    lines.append("**Q3. Is the CKA drop at worst layer from null-space addition or signal-space leakage?**")
     if result.max_signal_energy_at_worst is not None:
         sig = result.max_signal_energy_at_worst * 100
         nul = result.max_null_energy_at_worst * 100 if result.max_null_energy_at_worst else 0
         if nul > 80:
             lines.append(f"  **Null-space dominant.** Signal={sig:.1f}%, Null={nul:.1f}%.")
-            lines.append(f"  The CKA drop is expected null-space learning.")
+            lines.append("  The CKA drop is expected null-space learning.")
         elif sig > 50:
             lines.append(f"  **Signal-space leakage.** Signal={sig:.1f}%, Null={nul:.1f}%.")
-            lines.append(f"  The adapter is perturbing existing features.")
+            lines.append("  The adapter is perturbing existing features.")
         else:
             lines.append(f"  **Mixed.** Signal={sig:.1f}%, Null={nul:.1f}%.")
     else:
@@ -858,12 +857,12 @@ def build_markdown_report(result: DecompositionResult) -> str:
     lines.append("")
 
     # Q4: Are all perturbation theory bounds consistent?
-    lines.append(f"**Q4. Are all theoretical CKA bounds consistent (actual ≥ bound)?**")
+    lines.append("**Q4. Are all theoretical CKA bounds consistent (actual ≥ bound)?**")
     lines.append(f"  {'Yes' if result.all_bounds_consistent else 'No — destructive interference detected'}.")
     lines.append("")
 
     # Q5: What should the CKA gate threshold be?
-    lines.append(f"**Q5. What should the CKA gate threshold be?**")
+    lines.append("**Q5. What should the CKA gate threshold be?**")
     if result.all_bounds_consistent and result.worst_cka_value is not None:
         worst_bound = None
         for m in result.per_layer:
@@ -871,13 +870,13 @@ def build_markdown_report(result: DecompositionResult) -> str:
                 worst_bound = m.cka_lower_bound
                 break
         if worst_bound is not None:
-            lines.append(f"  Current threshold: 1.0 - sqrt(eps) ≈ 0.9997")
+            lines.append("  Current threshold: 1.0 - sqrt(eps) ≈ 0.9997")
             lines.append(f"  Theoretical minimum at worst layer: {worst_bound:.6f}")
             lines.append(f"  Actual at worst layer: {result.worst_cka_value:.6f}")
             if result.max_null_energy_at_worst is not None and result.max_null_energy_at_worst > 0.8:
-                lines.append(f"  **Recommendation:** The CKA drop is geometrically expected.")
-                lines.append(f"  Threshold should be derived from the Gram perturbation bound,")
-                lines.append(f"  not from machine epsilon.")
+                lines.append("  **Recommendation:** The CKA drop is geometrically expected.")
+                lines.append("  Threshold should be derived from the Gram perturbation bound,")
+                lines.append("  not from machine epsilon.")
     lines.append("")
 
     return "\n".join(lines) + "\n"

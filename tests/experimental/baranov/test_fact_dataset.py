@@ -14,7 +14,6 @@ from modelcypher.experimental.baranov.fact_dataset import (
 )
 from modelcypher.experimental.baranov.models import FactTriple
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

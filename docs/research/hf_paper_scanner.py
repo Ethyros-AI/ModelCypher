@@ -16,9 +16,8 @@ Output: research/paper_reviews/YYYY-MM-DD_geometric_review.md
 import json
 import re
 import sys
-import os
-import urllib.request
 import urllib.error
+import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional

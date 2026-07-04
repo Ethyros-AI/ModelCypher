@@ -26,7 +26,6 @@ import numpy as np
 
 from modelcypher.core.domain.moe.topology import MoETopology, detect_expert_format
 
-
 # ---------------------------------------------------------------------------
 # detect_expert_format
 # ---------------------------------------------------------------------------

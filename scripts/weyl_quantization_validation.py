@@ -88,7 +88,6 @@ def _extract_layer_weights_streaming(
     Returns a dict mapping layer_key -> dequantized weight array.
     Weights are NOT released here — caller is responsible.
     """
-    import mlx.core as mx
 
     base = getattr(model, "model", model)
     if not hasattr(base, "layers"):

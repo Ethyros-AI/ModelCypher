@@ -24,7 +24,7 @@ def _parse_args() -> argparse.Namespace:
 def run_scale_experiment(model_info: dict, capacity_service) -> dict:
     """Run capacity geometry analysis for a specific scale."""
     print(f"Running geometric capacity telemetry for {model_info['name']}...")
-    
+
     try:
         report = capacity_service.analyze(model_path=model_info["path"])
         hidden_dim = report.layer_reports[0].weight_shape[0] if report.layer_reports else 1024
@@ -51,9 +51,9 @@ def main() -> None:
 
     initialize_default_backend()
     capacity_service = get_capacity_analysis_service()
-    
-    print(f"=== Starting Experiment 4 (Cross-Scale Validation) ===")
-    
+
+    print("=== Starting Experiment 4 (Cross-Scale Validation) ===")
+
     results = []
     for model in MODELS_TO_TEST:
         try:
@@ -61,16 +61,16 @@ def main() -> None:
             results.append(res)
         except Exception as e:
             print(f"Failed to run scale {model['name']}: {e}")
-            
+
     if len(results) == 2:
         ratio_350m = results[0]["normalized_depletion_rate"]
         ratio_1_2b = results[1]["normalized_depletion_rate"]
-        
+
         if ratio_350m is not None and ratio_1_2b is not None and min(ratio_350m, ratio_1_2b) > 0:
             invariance_factor = max(ratio_350m, ratio_1_2b) / min(ratio_350m, ratio_1_2b)
         else:
             invariance_factor = None
-        
+
         # H4 judgment is deferred: statistical significance requires variance
         # across seeds.  We record the invariance factor for downstream analysis.
         summary = {
@@ -80,7 +80,7 @@ def main() -> None:
         }
     else:
         summary = {"scale_results": results, "error": "Could not compare scales."}
-        
+
     out_file = output_root / "exp4_cross_scale_results.json"
     out_file.write_text(json.dumps(summary, indent=2))
     print(f"Saved results to {out_file}")

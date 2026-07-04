@@ -32,7 +32,6 @@ from modelcypher.core.use_cases.curriculum.benchmark_loader import (
     BenchmarkSample,
 )
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_TRAIN_OUTPUT = REPO_ROOT / "data" / "training" / "r1_quick_aligned_train.jsonl"
 DEFAULT_EVAL_OUTPUT = REPO_ROOT / "data" / "training" / "r1_quick_aligned_val.jsonl"

@@ -436,7 +436,8 @@ def _compute_functional_fractions(
             logger.warning("  eigh failed for layer %d: %s, skipping", layer_idx, exc)
             h = layer(h)
             mx.eval(h)
-            del X, XtX
+            X = None
+            XtX = None
             gc.collect()
             continue
 

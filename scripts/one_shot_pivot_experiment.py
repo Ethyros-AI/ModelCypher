@@ -24,7 +24,6 @@ import argparse
 import json
 import logging
 import sys
-import tempfile
 import time
 from pathlib import Path
 

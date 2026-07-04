@@ -611,10 +611,6 @@ def test_predictions(measurements: list[dict], model_name: str) -> dict:
         mlp_gain_cv = float("nan")
     p4_varies = mlp_gain_cv > 0.1 if not math.isnan(mlp_gain_cv) else None
 
-    # P5: Value alignment (requires V weights — deferred to separate analysis)
-    # Mark as not tested in this script
-    p5_result = None
-
     # P6: MLP gain variance explains residual variance
     r_h_gain, p_h_gain = safe_spearman(H, mlp_gain)
 

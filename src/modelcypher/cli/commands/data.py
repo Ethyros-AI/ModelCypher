@@ -27,8 +27,8 @@ from pathlib import Path
 import typer
 
 from modelcypher.cli.context import CLIContext
-from modelcypher.cli.exit_codes import EXIT_INPUT, EXIT_RUNTIME
-from modelcypher.cli.output import write_agent_output, write_error, write_output
+from modelcypher.cli.exit_codes import EXIT_RUNTIME
+from modelcypher.cli.output import write_agent_output, write_error
 from modelcypher.utils.errors import ErrorDetail
 
 data_app = typer.Typer(no_args_is_help=True)

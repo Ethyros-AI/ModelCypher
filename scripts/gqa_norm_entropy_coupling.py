@@ -16,7 +16,6 @@ Reference: docs/research/entropy-curvature-derivation.md, Hypothesis B5.
 import argparse
 import json
 import math
-import sys
 from itertools import permutations
 from pathlib import Path
 
@@ -209,7 +208,7 @@ def main():
         print(f"Permutation p: {gqa_test['permutation_p']:.4f} ({gqa_test['n_permutations']} perms)")
         print(f"Log-linear slope: {gqa_test['log_linear_slope']:.4f} (R²={gqa_test['log_linear_r_sq']:.3f})")
         print(f"Fisher z slope: {gqa_test['fisher_z_slope']:.4f} (R²={gqa_test['fisher_z_r_sq']:.3f})")
-        print(f"\nSorted by GQA:")
+        print("\nSorted by GQA:")
         for row in gqa_test["sorted_table"]:
             print(f"  GQA={row['gqa']:2d}  R²={row['r_sq_den']:.3f}  ({row['model']})")
 
@@ -228,7 +227,7 @@ def main():
         print(f"\nResults saved to {args.output}")
     else:
         # Print JSON to stdout
-        print(f"\n--- Full Results (JSON) ---\n")
+        print("\n--- Full Results (JSON) ---\n")
         print(json.dumps(output, indent=2))
 
 

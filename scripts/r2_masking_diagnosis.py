@@ -494,6 +494,7 @@ def main() -> None:
     t_start = time.time()
 
     import mlx.core as mx
+
     from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.backends import initialize_default_backend
 
@@ -779,8 +780,6 @@ def build_analysis(results: dict) -> str:
     lines.extend(["## Diagnostic Interpretation", ""])
 
     c1_min = summaries.get("C1_train_bidir", (0, 0))[0]
-    c1_mean = summaries.get("C1_train_bidir", (0, 0))[1]
-
     if c1_min < 0.85:
         lines.append("**WARNING:** C1 did not reproduce healthy training CKA (min < 0.85).")
         lines.append("This may indicate probe derivation mismatch. Interpret cautiously.")

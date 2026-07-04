@@ -29,8 +29,8 @@ from typing import Any
 from modelcypher.backends.mlx_training_adapter_core import *  # noqa: F403
 from modelcypher.core.domain.training.identity import (
     GEOMETRIC_LORA_CONTROLLER,
-    GEOMETRIC_LORA_INIT_METHOD_CAYLEY,
     GEOMETRIC_LORA_INIT_METHOD,
+    GEOMETRIC_LORA_INIT_METHOD_CAYLEY,
     GEOMETRIC_LORA_METHOD,
     GEOMETRIC_LORA_OPTIMIZER,
     GEOMETRIC_LORA_STOPPING,
@@ -133,7 +133,6 @@ class _MLXTrainingAdapterAdapterIOMixin:
         (W_residual). The cleanest output is fused weights — add the trained
         LoRA product back into the residual base weight.
         """
-        from mlx_lm.tuner.lora import LoRALinear  # noqa: PLC0415
 
         adapter_weights: dict[str, Any] = {}
         target_modules: set[str] = set()

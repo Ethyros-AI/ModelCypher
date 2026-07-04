@@ -47,6 +47,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import datetime as dt_module
 import gc
 import json
 import logging
@@ -57,10 +58,13 @@ import shutil
 import statistics
 import sys
 import time
-import datetime as dt_module
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from modelcypher.core.use_cases.dataset_training_types import NBTargetSurface
 
 # ---------------------------------------------------------------------------
 # Path setup
@@ -71,7 +75,6 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 # ---------------------------------------------------------------------------
 # Fix lm-eval / transformers 5.x incompatibility
 # ---------------------------------------------------------------------------
-import transformers
 from transformers.utils.import_utils import _LazyModule
 
 _original_lazy_getattr = _LazyModule.__getattr__
@@ -653,6 +656,7 @@ def train_nb_lora(
 ) -> dict:
     """Train NB-LoRA using geometry-derived everything. Returns training metadata."""
     import mlx.core as mx
+
     from modelcypher.backends import initialize_default_backend
     from modelcypher.cli.composition import get_dataset_training_service
 
@@ -766,8 +770,8 @@ def train_pissa(
     from mlx_lm import load as mlx_load
     from mlx_lm.lora import (
         TrainingArgs,
-        load_dataset,
         linear_to_lora_layers,
+        load_dataset,
         save_config,
         train,
     )
@@ -1077,7 +1081,6 @@ def _fuse_lora_into_base(model) -> dict:
     After fusion, LoRA-specific keys are dropped and LoRALinear/DoRALinear's
     nested 'linear.weight' is remapped to 'weight'.
     """
-    import mlx.core as mx
     from mlx.utils import tree_flatten as _tf
 
     try:
@@ -1127,7 +1130,6 @@ def _snapshot_fused_weights(model) -> dict:
     unchanged after this call.
     """
     import mlx.core as mx
-    from mlx.utils import tree_flatten as _tf
 
     try:
         from mlx_lm.tuner.dora import DoRALinear
@@ -1187,7 +1189,6 @@ def train_pissa_init_only(
     cycle has a numerical precision issue.
     """
     import mlx.core as mx
-    from mlx.utils import tree_flatten as _tf
     from mlx_lm import load as mlx_load
 
     mx.random.seed(seed)
@@ -1758,17 +1759,17 @@ def first_step_probe(
     loss_pre_val = float(loss_pre)
 
     # ── One step (MASS/Fisher for both — isolates parameterization) ──
-    from modelcypher.core.domain.training.mass_step_size import (
-        compute_per_step_rates,
-        derive_spectral_ceiling,
-    )
+    from modelcypher.backends import initialize_default_backend
+    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.training.diagonal_fisher_preconditioner import (
         init_fisher_state,
         precondition_gradient,
         update_fisher_state,
     )
-    from modelcypher.backends import initialize_default_backend
-    from modelcypher.core.domain._backend import get_default_backend
+    from modelcypher.core.domain.training.mass_step_size import (
+        compute_per_step_rates,
+        derive_spectral_ceiling,
+    )
     initialize_default_backend()
     backend = get_default_backend()
 
@@ -1942,7 +1943,6 @@ def train_geometric_pissa(
     When rank_overrides is provided, injects LoRA on those exact modules
     with per-module ranks (NB surface mode) instead of all linears.
     """
-    import math
 
     import mlx.core as mx
     import mlx.nn as nn
@@ -2409,8 +2409,8 @@ def train_eva(
     from mlx_lm import load as mlx_load
     from mlx_lm.lora import (
         TrainingArgs,
-        load_dataset,
         linear_to_lora_layers,
+        load_dataset,
         save_config,
         train,
     )
@@ -2789,8 +2789,8 @@ def generate_inference_responses(
 ) -> list[dict]:
     """Generate greedy responses for inference test prompts."""
     import mlx.core as mx
-    from mlx_lm import load as mlx_load
     from mlx_lm import generate
+    from mlx_lm import load as mlx_load
     from mlx_lm.sample_utils import make_sampler
 
     logger.info(f"  Inference: generating {len(prompts)} responses ({label})...")
@@ -3229,7 +3229,6 @@ def run_model_experiment(
         from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.use_cases.dataset_training_service import (
             DatasetTrainingService,
-            NBTargetSurface,
         )
         initialize_default_backend()
         backend = get_default_backend()
@@ -3774,7 +3773,7 @@ def print_comparison(
         print(row)
 
     # Training stats
-    print(f"\n  Training:")
+    print("\n  Training:")
     for m in methods:
         t = training.get(m, {})
         if t.get("n_runs", 0) == 0:
@@ -3787,7 +3786,7 @@ def print_comparison(
 
     # Head-to-head
     if h2h:
-        print(f"\n  Head-to-Head (NB-LoRA vs each):")
+        print("\n  Head-to-Head (NB-LoRA vs each):")
         for key, h in h2h.items():
             opponent = key.replace("nb_vs_", "")
             label = METHOD_DISPLAY.get(opponent, opponent)
@@ -3808,7 +3807,7 @@ def print_comparison(
     # WD falsification
     wdf = comparison.get("weight_decay_falsification")
     if wdf:
-        print(f"\n  WD Falsification:")
+        print("\n  WD Falsification:")
         print(f"    Prediction: {wdf['prediction']}")
         print(f"    WD derived: {wdf['wd_derived']:.6f} "
               f"({wdf['wd_derivation']['formula']})")
@@ -4083,7 +4082,6 @@ def run_diagnostic_experiment(
                     pissa_init_eval.get(task, {}).get("acc", 0))
                 delta = abs(base_score - init_score) if isinstance(base_score, (int, float)) and isinstance(init_score, (int, float)) else None
                 if delta is not None:
-                    level = "WARNING" if delta > 0.01 else "INFO"
                     logger.log(
                         logging.WARNING if delta > 0.01 else logging.INFO,
                         f"  {task}: base={base_score:.3f} init={init_score:.3f} "
@@ -4250,9 +4248,9 @@ def run_diagnostic_experiment(
     report_lines = [
         f"# Diagnostic Report: {model_name}",
         "",
-        f"**Blocker:** R2 / Q1 (behavioral failure operator)",
+        "**Blocker:** R2 / Q1 (behavioral failure operator)",
         f"**Seed:** {seed}",
-        f"**Status:** Exploratory mechanism investigation (not R1 closure)",
+        "**Status:** Exploratory mechanism investigation (not R1 closure)",
         "",
         "## Results Summary",
         "",
@@ -4555,9 +4553,9 @@ def main():
 
     logger.info(f"\nTotal experiment time: {total_time:.1f}s")
     logger.info(f"Results saved to: {output_dir}")
-    logger.info(f"  summary.json — cross-model summary")
-    logger.info(f"  full_results.json — all raw data")
-    logger.info(f"  <model>/comparison.json — per-model comparison")
+    logger.info("  summary.json — cross-model summary")
+    logger.info("  full_results.json — all raw data")
+    logger.info("  <model>/comparison.json — per-model comparison")
 
 
 if __name__ == "__main__":

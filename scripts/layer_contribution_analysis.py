@@ -108,16 +108,16 @@ def main():
         print("-" * 50)
         print(f"Layers: {result['n_layers']}, Tasks: {result['n_tasks']}")
 
-        print(f"\nLayer roles:")
+        print("\nLayer roles:")
         print(f"  Always expand: {result['always_expand']}")
         print(f"  Always compress: {result['always_compress']}")
         print(f"  Mixed behavior: {result['mixed']}")
 
-        print(f"\nTop expansion contributors:")
+        print("\nTop expansion contributors:")
         for layer, delta in result['top_expansion_layers']:
             print(f"  L{layer:02d}: {delta:+.3f} relative units")
 
-        print(f"\nTop compression contributors:")
+        print("\nTop compression contributors:")
         for layer, delta in result['top_compression_layers']:
             print(f"  L{layer:02d}: {delta:+.3f} relative units")
 

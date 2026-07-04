@@ -29,7 +29,6 @@ from modelcypher.experimental.merge.falsifier_contract import (
     validate_merge_portability_bundle,
 )
 
-
 DEFAULT_RESULTS_ROOT = Path("results") / "merge_portability_falsifier"
 
 

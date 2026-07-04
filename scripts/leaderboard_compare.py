@@ -15,7 +15,6 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from leaderboard_baseline import (
-    PRIMARY_SCORE_METRICS,
     SUITE_NAME,
     build_metadata,
     check_for_active_gpu_processes,

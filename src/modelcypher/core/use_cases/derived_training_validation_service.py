@@ -35,22 +35,22 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
-from modelcypher.core.domain.star.problem_generator import StarProblem, StarProblemGenerator
+from modelcypher.core.domain.star.problem_generator import StarProblem
 from modelcypher.core.domain.training.mass_step_size import (
     CONTROLLER_MODE_STRUCTURAL_OBSERVE,
-    DerivedClosedLoopLaw,
     OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+    DerivedClosedLoopLaw,
     validate_controller_mode,
     validate_optimizer_research_mode,
-)
-from modelcypher.core.domain.training.pipeline_gate import (
-    PipelineGateInput,
-    evaluate_pipeline_gate,
 )
 from modelcypher.core.domain.training.online_eval import (
     OnlineEvalResult,
     create_eval_problem_set,
     evaluate_correctness,
+)
+from modelcypher.core.domain.training.pipeline_gate import (
+    PipelineGateInput,
+    evaluate_pipeline_gate,
 )
 
 
@@ -1471,8 +1471,10 @@ class DerivedTrainingValidationService:
                     )
             max_logit_delta_inf = max_delta
 
-        del model
-        del tokenizer
+        # Clear closure cells before collecting so the loaded model can be
+        # released without leaving the nested callables with deleted cells.
+        model = None
+        tokenizer = None
         gc.collect()
         self._clear_backend_cache()
 

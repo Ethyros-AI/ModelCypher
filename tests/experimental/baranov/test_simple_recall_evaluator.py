@@ -13,11 +13,10 @@ from modelcypher.experimental.baranov.recall_evaluator import (
 from modelcypher.experimental.baranov.simple_recall_evaluator import (
     SimpleRecallEvaluator,
     _build_chat_prompt,
-    _normalize_relation_text,
     _build_raw_prompt,
     _check_recall,
+    _normalize_relation_text,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

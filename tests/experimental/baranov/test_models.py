@@ -7,13 +7,12 @@ import dataclasses
 import pytest
 
 from modelcypher.experimental.baranov.models import (
+    VALID_TRANSITIONS,
     ConsolidationStage,
     EditState,
     EditStatus,
     FactTriple,
-    VALID_TRANSITIONS,
 )
-
 
 # ---------------------------------------------------------------------------
 # FactTriple

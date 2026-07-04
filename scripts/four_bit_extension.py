@@ -31,7 +31,6 @@ import json
 import logging
 import random
 import statistics
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -126,6 +125,7 @@ def _analyze_pair_rmt(
 ) -> dict[str, Any]:
     """Run RMT decomposition on a model pair (same as rmt_quantization_error.py)."""
     import mlx.core as mx
+
     from modelcypher.core.domain.geometry.rmt_signal_separation import (
         compute_signal_rank_from_singular_values,
     )

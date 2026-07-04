@@ -48,7 +48,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -91,7 +90,7 @@ def main() -> None:
 
     model_path = args.model
 
-    print(f"Initializing backend...")
+    print("Initializing backend...")
     _init_backend()
 
     from modelcypher.adapters.curriculum_eval_adapter import evaluate_skill_mastery

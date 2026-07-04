@@ -631,7 +631,6 @@ def run_a7_tests(
                 results[layer_idx][head_idx] = mono
                 continue
 
-            dLds = mono["dLds"]
             grad_over_alpha = mono["grad_over_alpha"]
             alpha = mono["alpha"]
 
@@ -991,7 +990,7 @@ def main():
         "A7 Assumption Validation Results",
         f"ε = {_EPSILON:.6e} (sqrt(eps_bf16), IEEE 754)",
         f"α = {_PRE_REGISTERED_ALPHA}",
-        f"Acceptance: ≥80% of (layer, head) pairs pass both tests",
+        "Acceptance: ≥80% of (layer, head) pairs pass both tests",
         "",
     ]
     for r in results:

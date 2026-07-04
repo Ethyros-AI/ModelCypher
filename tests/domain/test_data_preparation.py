@@ -39,7 +39,6 @@ from modelcypher.core.use_cases.data_preparation_service import (
     DataPreparationService,
 )
 
-
 # ---------------------------------------------------------------------------
 # Format detection
 # ---------------------------------------------------------------------------

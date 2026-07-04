@@ -30,13 +30,12 @@ import json
 import logging
 import math
 import os
-import time
 from datetime import datetime
 from pathlib import Path
 
 import numpy as np
-from scipy import stats as sp_stats
 import validate_gqa_falsifier_artifacts as artifact_validator
+from scipy import stats as sp_stats
 
 logging.basicConfig(
     level=logging.INFO,
@@ -890,11 +889,10 @@ def adjudicate_falsifiers(
             gqa_values = [r["GQA"] for r in lfm2_sorted]
 
             if len(z_values) >= 3:
-                spearman_r, spearman_p = sp_stats.spearmanr(gqa_values, z_values)
+                spearman_r, _ = sp_stats.spearmanr(gqa_values, z_values)
             else:
                 # Only 2 points: sign comparison
                 spearman_r = -1.0 if z_values[1] < z_values[0] else 1.0
-                spearman_p = 1.0  # Cannot compute p for n=2
 
             # Depth-controlled Pearson: already computed as z_couple (which is depth-residualized)
             # Prediction: z_couple decreases with GQA → negative trend

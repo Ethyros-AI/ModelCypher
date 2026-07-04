@@ -368,7 +368,7 @@ def main() -> None:
     if delta > 0:
         print(f"\n  RESULT: Accuracy IMPROVED by {delta:.1%}")
     elif delta == 0:
-        print(f"\n  RESULT: No change in accuracy")
+        print("\n  RESULT: No change in accuracy")
     else:
         print(f"\n  RESULT: Accuracy DEGRADED by {abs(delta):.1%}")
 

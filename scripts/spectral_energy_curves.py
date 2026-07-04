@@ -182,7 +182,7 @@ def print_summary(results: dict[str, dict]) -> None:
                         print(f"        rank {ip['rank']:>4}: d2E={ip['d2E']:>+.6f}  |d2E|={ip['abs_d2E']:.6f}  E={ip['energy_at_rank']:.4f}")
 
                 # Domain rank overlay
-                print(f"      Domain rank alignment:")
+                print("      Domain rank alignment:")
                 for rank_key, overlay in w["domainRankOverlay"].items():
                     if not overlay.get("withinSpectrum"):
                         print(f"        rank {rank_key} ({overlay['domain']}): outside spectrum")

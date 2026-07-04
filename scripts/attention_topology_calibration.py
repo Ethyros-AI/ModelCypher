@@ -30,9 +30,8 @@ import json
 import logging
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from modelcypher.core.domain.geometry.attention_topology import (
     AttentionTopologySignal,
@@ -341,8 +340,8 @@ class AttentionTopologyExperiment:
             logger.info(f"Accuracy: {len(correct)/len(results)*100:.1f}%")
 
         report_lines = [
-            f"# Attention Topology Calibration Report",
-            f"",
+            "# Attention Topology Calibration Report",
+            "",
             f"**Model:** {self.model_name}",
             f"**Samples:** {len(results)}",
             f"**Correct:** {len(correct)}",
@@ -350,14 +349,14 @@ class AttentionTopologyExperiment:
             f"**Degenerate:** {len(degenerate)}",
             f"**Accuracy:** {len(correct)/len(results)*100:.1f}%"
             if results else "N/A",
-            f"",
-            f"---",
-            f"",
-            f"## Per-Metric Discriminative Power (correct vs incorrect)",
-            f"",
-            f"All measurements are direct from persistence diagram birth/death pairs.",
-            f"Cohen's d is reported without threshold — the data speaks for itself.",
-            f"",
+            "",
+            "---",
+            "",
+            "## Per-Metric Discriminative Power (correct vs incorrect)",
+            "",
+            "All measurements are direct from persistence diagram birth/death pairs.",
+            "Cohen's d is reported without threshold — the data speaks for itself.",
+            "",
         ]
 
         # Per-metric Cohen's d — report values, no threshold gating
@@ -397,9 +396,9 @@ class AttentionTopologyExperiment:
             )
 
         # Cross-layer evolution correlation with correctness
-        report_lines.append(f"")
-        report_lines.append(f"## Cross-Layer Wasserstein Evolution")
-        report_lines.append(f"")
+        report_lines.append("")
+        report_lines.append("## Cross-Layer Wasserstein Evolution")
+        report_lines.append("")
         if results and results[0].signal.cross_layer_wasserstein:
             n_transitions = len(results[0].signal.cross_layer_wasserstein)
             for t in range(n_transitions):

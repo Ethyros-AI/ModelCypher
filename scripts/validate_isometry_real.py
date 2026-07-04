@@ -178,8 +178,6 @@ def load_weight_map(model_path: Path) -> dict[str, str]:
     # Single-file model
     single = model_path / "model.safetensors"
     if single.exists():
-        # For single file, we need to get all keys
-        weights = {}  # Lazily loaded
         return {"__single_file__": str(single)}
     return {}
 

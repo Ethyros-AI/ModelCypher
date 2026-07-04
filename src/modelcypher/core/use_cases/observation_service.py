@@ -10,13 +10,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.use_cases.observation_bundle_report_service import (
-    ObservationBundleReportService,
-)
 from modelcypher.core.use_cases.behavioral_analyzer import BehavioralAnalyzer
 from modelcypher.core.use_cases.chain_analysis_service import ChainAnalysisService
 from modelcypher.core.use_cases.geodesic_trajectory_service import GeodesicTrajectoryService
 from modelcypher.core.use_cases.geometry_analysis_service import GeometryAnalysisService
+from modelcypher.core.use_cases.observation_bundle_report_service import (
+    ObservationBundleReportService,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable

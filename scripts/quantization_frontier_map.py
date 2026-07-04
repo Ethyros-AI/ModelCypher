@@ -152,7 +152,6 @@ def _load_correction_data() -> dict[str, dict]:
         with open(path) as f:
             data = json.load(f)
 
-        config = data.get("config", {})
         baseline = data.get("baseline", {})
         post = data.get("post_correction", {})
         deltas = data.get("deltas", {})

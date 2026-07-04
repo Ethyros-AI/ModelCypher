@@ -4,7 +4,6 @@ import json
 import subprocess
 import sys
 from dataclasses import dataclass
-from pathlib import Path
 
 from modelcypher.core.use_cases.export_service import ExportRequest
 

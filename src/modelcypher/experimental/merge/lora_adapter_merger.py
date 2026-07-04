@@ -25,13 +25,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-logger = logging.getLogger(__name__)
-
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.backend_matrix_utils import BackendMatrixUtils
 from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
 from modelcypher.experimental.merge.exceptions import MergeError
 from modelcypher.ports.adapter_weights import AdapterWeightsLoader
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend

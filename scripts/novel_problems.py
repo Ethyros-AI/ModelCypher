@@ -39,7 +39,6 @@ import re
 from dataclasses import dataclass, field
 from typing import Callable
 
-
 # ---------------------------------------------------------------------------
 # Shared verification helpers (used by test_bootstrap_feasibility.py too)
 # ---------------------------------------------------------------------------
@@ -511,7 +510,7 @@ def _self_test(count: int = 10, seed: int = 42) -> None:
     print("FORM DISTRIBUTION:")
     for form, cnt in sorted(form_counts.items()):
         print(f"  {form}: {cnt}")
-    print(f"\nDOMAIN DISTRIBUTION:")
+    print("\nDOMAIN DISTRIBUTION:")
     for domain, cnt in sorted(domain_counts.items()):
         print(f"  {domain}: {cnt}")
     print(f"\nTotal combinations available: "

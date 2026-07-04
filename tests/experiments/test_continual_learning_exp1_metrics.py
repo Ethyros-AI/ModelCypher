@@ -28,10 +28,9 @@ from exp1_sequential_forgetting import (  # noqa: E402
     _cumulative_utilization_by_layer,
     _precompute_tail_bases,
     _rank_eps,
-    _spectral_norm,
     _read_quant_config,
+    _spectral_norm,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -188,13 +187,6 @@ def test_precompute_tail_bases_float_weight() -> None:
     backend = _get_backend()
     eps = float(backend.finfo().eps)
 
-    # 4×4 identity: rank=4, tail_dims=0 (fully used)
-    W = backend.array(
-        [[1.0, 0.0, 0.0, 0.0],
-         [0.0, 1.0, 0.0, 0.0],
-         [0.0, 0.0, 1.0, 0.0],
-         [0.0, 0.0, 0.0, 1.0]], dtype="float32"
-    )
     # Use a rank-deficient weight so we get tail_dims > 0
     W_rank2 = backend.array(
         [[1.0, 0.0, 0.0, 0.0],
@@ -250,7 +242,8 @@ def test_precompute_tail_bases_quantized_weight() -> None:
     if biases is not None:
         weights["layer.biases"] = biases
 
-    import json, tempfile
+    import json
+    import tempfile
     quant_cfg = {"bits": 4, "group_size": 64, "mode": "affine"}
     with tempfile.TemporaryDirectory() as tmp:
         cfg_path = Path(tmp) / "config.json"
@@ -342,7 +335,8 @@ def test_compute_sigma_k_ref_quantized_matches_dequantized_weight() -> None:
     if biases is not None:
         weights["layer.biases"] = biases
 
-    import json, tempfile
+    import json
+    import tempfile
     with tempfile.TemporaryDirectory() as tmp:
         cfg_path = Path(tmp) / "config.json"
         cfg_path.write_text(

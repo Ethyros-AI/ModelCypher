@@ -32,7 +32,6 @@ from modelcypher.experimental.merge.stages.weight_stitcher import (
     stitch_weight,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

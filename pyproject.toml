@@ -41,6 +41,8 @@ packages = [{ include = "modelcypher", from = "src" }]
 include = [
   { path = "src/modelcypher/data/*.json", format = "sdist" },
   { path = "src/modelcypher/data/*.json", format = "wheel" },
+  { path = "src/modelcypher/data/*.yaml", format = "sdist" },
+  { path = "src/modelcypher/data/*.yaml", format = "wheel" },
 ]
 
 [tool.poetry.urls]
@@ -131,6 +133,7 @@ build-backend = "poetry.core.masonry.api"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+extend-exclude = ["plasma"]  # WS4.7: de-orbited, pending owner relocation.
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
@@ -149,6 +152,10 @@ ignore = ["E501"]
 "src/modelcypher/core/use_cases/*" = ["E402", "E741"]
 "src/modelcypher/cli/app.py" = ["E402"]
 "src/modelcypher/core/domain/safety/*" = ["E741"]
+# Standalone research scripts bootstrap local imports and use l for layer index.
+"scripts/*" = ["E402", "E741"]
+"scripts/**/*" = ["E402", "E741"]
+"scripts/novel_problems.py" = ["E731"]
 # Test files often have conditional imports and mathematical variable names
 "tests/*" = ["E402", "E741", "F401"]
 

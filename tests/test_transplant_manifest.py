@@ -34,7 +34,6 @@ from modelcypher.experimental.merge.stages.manifest import (
     WeightTransformRecord,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

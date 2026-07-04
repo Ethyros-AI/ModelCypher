@@ -26,8 +26,8 @@ import json
 import math
 from pathlib import Path
 
-from modelcypher.backends import initialize_default_backend
 from modelcypher.adapters.model_loader import ModelLoader
+from modelcypher.backends import initialize_default_backend
 from modelcypher.cli.composition import (
     get_capacity_analysis_service,
     get_dataset_training_service,

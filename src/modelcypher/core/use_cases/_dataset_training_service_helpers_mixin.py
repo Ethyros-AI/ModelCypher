@@ -966,8 +966,8 @@ class _DatasetTrainingServiceHelperMixin:
     def _load_moe_topology(self, model_path: Path):
         """Load MoE topology from model config, if available."""
         try:
-            from modelcypher.ports.model_architecture_factory import load_config
             from modelcypher.core.domain.moe.topology import MoETopology
+            from modelcypher.ports.model_architecture_factory import load_config
 
             config = load_config(model_path)
             return MoETopology.from_config(config)

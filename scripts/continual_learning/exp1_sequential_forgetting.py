@@ -7,8 +7,8 @@ import math
 import random
 from pathlib import Path
 
-from modelcypher.backends import initialize_default_backend
 from modelcypher.adapters.model_loader import ModelLoader
+from modelcypher.backends import initialize_default_backend
 from modelcypher.cli.composition import (
     get_capacity_analysis_service,
     get_dataset_training_service,
@@ -753,7 +753,7 @@ def main() -> None:
     # ---------------------------------------------------------------------------
     # Post-loop telemetry
     # ---------------------------------------------------------------------------
-    print(f"\n=== Final Telemetry Summary ===")
+    print("\n=== Final Telemetry Summary ===")
     depletion_rate = cpu_metrics.null_space_depletion_rate(task_remaining_null)
     cka_stability = cpu_metrics.cka_stability(cka_matrix)
 

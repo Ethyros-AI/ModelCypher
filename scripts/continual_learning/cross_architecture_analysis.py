@@ -15,7 +15,7 @@ def summarize_model(data: dict) -> dict:
     """Group layers by projection type and compute aggregate stats."""
     report = data["capacity_report"]
     layers = report["layers"]
-    
+
     groups: dict[str, dict] = {}
     for layer in layers:
         name = layer["layerName"]
@@ -44,13 +44,13 @@ def summarize_model(data: dict) -> dict:
             t = "lm_head"
         else:
             t = "other"
-        
+
         if t not in groups:
             groups[t] = {"null_dims": [], "utils": [], "shapes": []}
         groups[t]["null_dims"].append(layer["nullSpaceDimF32"])
         groups[t]["utils"].append(layer["capacityUtilization"])
         groups[t]["shapes"].append(tuple(layer["weightShape"]))
-    
+
     return {
         "analyzed_layers": report["analyzed_layers"],
         "analyzed_parameters": report["analyzed_parameters"],
@@ -79,14 +79,14 @@ def print_model_summary(label: str, summary: dict) -> None:
 
 def main() -> None:
     results_dir = Path("results/continual_learning")
-    
+
     # Discover all exp2 results
     result_dirs = sorted(results_dir.glob("exp2*/seed42/exp2_results.json"))
-    
+
     if not result_dirs:
         print("No Exp2 results found.")
         sys.exit(1)
-    
+
     models: dict[str, dict] = {}
     for path in result_dirs:
         data = load_result(str(path))
@@ -94,31 +94,27 @@ def main() -> None:
         # Use directory name as short label
         short = path.parent.parent.name.replace("exp2_", "").replace("exp2", "base")
         models[short] = summarize_model(data)
-    
+
     # Print individual summaries
     for label, summary in models.items():
         print_model_summary(label, summary)
-    
+
     # Cross-architecture comparison table
     print(f"\n{'=' * 80}")
     print("  CROSS-ARCHITECTURE COMPARISON")
     print(f"{'=' * 80}")
-    
+
     # Collect all layer types across all models
     all_types = set()
     for s in models.values():
         all_types.update(s["groups"].keys())
-    
-    # For common attention types, compare
-    common_attn = {"q_proj", "k_proj", "v_proj", "o_proj"}
-    common_ffn = {"gate_proj", "down_proj", "up_proj"}
-    
+
     header = f"  {'Type':15s}"
     for label in models:
         header += f" | {label:>12s} util  null"
     print(header)
     print("  " + "-" * (len(header) - 2))
-    
+
     for t in sorted(all_types):
         row = f"  {t:15s}"
         for label, summary in models.items():
@@ -130,7 +126,7 @@ def main() -> None:
             else:
                 row += f" | {'—':>12s} {'—':>5s}"
         print(row)
-    
+
     # Output structured JSON
     output = {}
     for label, summary in models.items():
@@ -144,7 +140,7 @@ def main() -> None:
                 "dim": g["shapes"][0][0],
             }
         output[label] = model_out
-    
+
     out_file = results_dir / "cross_architecture_comparison.json"
     out_file.write_text(json.dumps(output, indent=2))
     print(f"\nSaved to {out_file}")

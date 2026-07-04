@@ -31,12 +31,12 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
+from modelcypher.core.domain.geometry.null_space import compute_numerical_rank
 from modelcypher.core.domain.geometry.numerical_stability import (
     _promote_precision,
     machine_epsilon,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.null_space import compute_numerical_rank
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.atlas.unified_atlas import AtlasProbe

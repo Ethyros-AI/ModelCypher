@@ -71,8 +71,6 @@ def validate_layer(
     # Create NB-LoRA layer with geometry-derived bounds
     layer = create_nb_lora_from_base_weight(W, rank=rank, backend=backend)
 
-    # Get the effective delta
-    delta = layer.get_effective_delta()
     actual_spectral = layer.get_spectral_norm()
 
     # Verify per-direction bounds

@@ -468,7 +468,7 @@ def compute_deltas(bf16: object, q4: object, path: str = "") -> dict:
     elif bf16 is None and q4 is None:
         pass  # both null, no delta
 
-    elif type(bf16) != type(q4):
+    elif type(bf16) is not type(q4):
         result = {"bf16": str(bf16), "q4": str(q4), "type_mismatch": True}
 
     return result

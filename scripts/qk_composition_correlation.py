@@ -234,9 +234,8 @@ def main() -> None:
     # --- Phase 4: Correlation analysis ---
     logger.info("=== Phase 4: Correlation analysis ===")
 
-    # Per-layer mean QK product change (quantized → corrected)
+    # Per-layer mean QK product change (full precision versus corrected)
     fp_heads = results["fp_qk"]["per_head"]
-    q_heads = results["q_qk"]["per_head"]
     corr_heads = results["corrected_qk"]["per_head"]
 
     # Compute per-layer aggregates

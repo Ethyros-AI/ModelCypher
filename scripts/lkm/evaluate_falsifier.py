@@ -105,8 +105,6 @@ def compute_verdict(arms: dict[str, dict]) -> dict:
     em_r4_s1500 = arms["B0-r4-s1500"]["em"]
     em_r4_s4500 = arms["B0-r4-s4500"]["em"]
     em_r16_s1500 = arms["B0-r16-s1500"]["em"]
-    em_r16_s4500 = arms["B0-r16-s4500"]["em"]
-
     delta_em_rank = em_r16_s1500 - em_r4_s1500
     delta_em_opt = em_r4_s4500 - em_r4_s1500
 

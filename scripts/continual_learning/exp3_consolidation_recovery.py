@@ -25,11 +25,11 @@ def main() -> None:
     seed_dir = output_root / f"seed{args.seed}"
     seed_dir.mkdir(parents=True, exist_ok=True)
 
-    backend = initialize_default_backend()
+    initialize_default_backend()
     capacity_service = get_capacity_analysis_service()
-    
+
     print(f"=== Starting Experiment 3 (Consolidation Recovery) | Seed: {args.seed} ===")
-    
+
     # 1. Measure Pre-Consolidation Capacity
     print(f"Measuring capacity of base model pre-merge: {args.model_path}")
     pre_report = capacity_service.analyze(model_path=str(args.model_path))
@@ -37,18 +37,18 @@ def main() -> None:
         sum(r.null_space_dim_f32 for r in pre_report.layer_reports)
         / max(1, len(pre_report.layer_reports)) if pre_report.layer_reports else 0
     )
-    
+
     # 2. Consolidate (Merge) Adapter into Base Weights
     print(f"Consolidating adapter {args.adapter_path} into {args.model_path} ...")
     merged_model_path = seed_dir / "merged_model"
-    
+
     merger = get_merge_service()
     merger.merge(
         source_path=str(args.adapter_path),
         target_path=str(args.model_path),
         output_dir=str(merged_model_path),
     )
-    
+
     # 3. Measure Post-Consolidation Capacity
     print(f"Measuring capacity of consolidated model: {merged_model_path}")
     post_report = capacity_service.analyze(model_path=str(merged_model_path))
@@ -61,7 +61,7 @@ def main() -> None:
     # We use min_dim as the proxy for max rank (e.g. 1024)
     first_layer_dim = post_report.layer_reports[0].weight_shape[0] if post_report.layer_reports else 1024
     recovery_ratio = post_merge_capacity / float(first_layer_dim)
-    
+
     output = {
         "seed": args.seed,
         "target_model": args.model_path,
@@ -71,7 +71,7 @@ def main() -> None:
         "recovery_ratio": recovery_ratio,
         "h3_passed": recovery_ratio > 0.0 # Testing strictly > 0 per the updated H3 document
     }
-    
+
     out_file = seed_dir / "exp3_results.json"
     out_file.write_text(json.dumps(output, indent=2))
     print(f"Saved results to {out_file}")

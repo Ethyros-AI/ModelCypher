@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from modelcypher.experimental.baranov.decision import (
-    ModeVerdict,
     ModelVerdict,
+    ModeVerdict,
     NoiseFloor,
     TrackADecision,
     compute_mode_verdict,
@@ -14,7 +14,6 @@ from modelcypher.experimental.baranov.decision import (
     compute_noise_floor,
     compute_track_a_decision,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

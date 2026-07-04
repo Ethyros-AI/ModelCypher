@@ -25,8 +25,8 @@ from pathlib import Path
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.training.online_eval import OnlineEvalResult
 from modelcypher.core.domain.training.mass_step_size import DerivedClosedLoopLaw
+from modelcypher.core.domain.training.online_eval import OnlineEvalResult
 from modelcypher.core.use_cases.derived_training_validation_service import (
     DerivedTrainingValidationService,
     _Phase5Context,

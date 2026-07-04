@@ -34,7 +34,6 @@ from modelcypher.core.use_cases.training_comparison_service import (
     TrainingComparisonService,
 )
 
-
 # ---------------------------------------------------------------------------
 # MetricDelta dataclass
 # ---------------------------------------------------------------------------

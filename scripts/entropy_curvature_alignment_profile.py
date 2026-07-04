@@ -886,11 +886,6 @@ def analyze_model(data: dict, b6_1_norm_sign: str | None) -> dict:
     r_align_total = correlations["alignment_total"]["spearman_r"]
     r_delta_norm_sq = correlations["delta_norm_sq"]["spearman_r"]
     r_cum_alignment = correlations["cumulative_alignment"]["spearman_r"]
-    r_dir_align_core = correlations["dir_align_core"]["spearman_r"]
-    r_delta_core_norm = correlations["delta_core_norm"]["spearman_r"]
-    r_dir_align_mlp = correlations["dir_align_mlp"]["spearman_r"]
-    r_delta_mlp_norm = correlations["delta_mlp_norm"]["spearman_r"]
-
     cum_alignment_sign = correlations["cumulative_alignment"]["sign"]
 
     # F1: Alignment explains norm change

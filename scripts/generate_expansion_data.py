@@ -18,9 +18,7 @@ import argparse
 import itertools
 import json
 import random
-import sys
 from pathlib import Path
-
 
 # =============================================================================
 # Generator 1: Multi-Constraint Logic
@@ -124,13 +122,11 @@ def _gen_constraint_logic(rng: random.Random, difficulty: int) -> dict | None:
 
     if len(constraints) >= 2:
         reasoning += (
-            f"Try assigning the remaining people greedily.\n"
+            "Try assigning the remaining people greedily.\n"
         )
         # Show partial assignment attempt
         remaining_names = [n for n in names if n != greedy_name]
         remaining_colors = [c for c in colors if c != greedy_color]
-        remaining_numbers = list(sorted(numbers))
-
         # Attempt that hits a constraint
         attempted = rng.choice(remaining_names)
         attempted_color = rng.choice(remaining_colors)
@@ -155,8 +151,8 @@ def _gen_constraint_logic(rng: random.Random, difficulty: int) -> dict | None:
                     break
             else:
                 reasoning += (
-                    f"This doesn't immediately violate a constraint, "
-                    f"but let's check if it's consistent with all constraints together.\n\n"
+                    "This doesn't immediately violate a constraint, "
+                    "but let's check if it's consistent with all constraints together.\n\n"
                 )
 
         reasoning += (
@@ -403,7 +399,7 @@ def _gen_verified_math(rng: random.Random, difficulty: int) -> dict | None:
                 problem += f"  - Sells {count} items at ${price} each ({markup}% markup)\n"
             else:
                 problem += f"  - Sells {count} items at ${price} each ({abs(markup)}% discount)\n"
-        problem += f"\nWhat is the total profit or loss?\n\n"
+        problem += "\nWhat is the total profit or loss?\n\n"
 
         reasoning = "Step by step:\n\n"
         running_revenue = 0
@@ -530,7 +526,7 @@ def _gen_verified_math(rng: random.Random, difficulty: int) -> dict | None:
             largest_cat = max(allocations, key=lambda x: x[2])
 
             reasoning = (
-                f"Initial allocation:\n"
+                "Initial allocation:\n"
             )
             for cat, pct, amt in allocations:
                 reasoning += f"  {cat}: {pct}% = ${amt}\n"
@@ -574,7 +570,7 @@ def _gen_verified_math(rng: random.Random, difficulty: int) -> dict | None:
             )
             savings_amt = next((a for c, _, a in allocations if c == "savings"), 0)
             reasoning = (
-                f"Initial allocation:\n"
+                "Initial allocation:\n"
             )
             for cat, pct, amt in allocations:
                 reasoning += f"  {cat}: {pct}% = ${amt}\n"

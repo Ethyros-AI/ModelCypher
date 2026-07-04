@@ -1,7 +1,12 @@
 # Copyright (C) 2026 EthyrosAI LLC / Jason Kempf
 
 import pytest
-from modelcypher.core.domain.continual_learning_metrics import ContinualLearningMetrics, BackendContinualLearningMetrics
+
+from modelcypher.core.domain.continual_learning_metrics import (
+    BackendContinualLearningMetrics,
+    ContinualLearningMetrics,
+)
+
 
 class MockFInfo:
     eps = 1e-7
@@ -53,16 +58,16 @@ def test_standard_cl_metrics():
         [0.6, 0.7, 0.9]  # task 2
     ]
     summary = ContinualLearningMetrics.standard_cl_metrics(acc_matrix)
-    
+
     # avg_acc
     assert summary.average_accuracy == pytest.approx((0.6 + 0.7 + 0.9) / 3.0)
-    
+
     # BWT
     # 0 = N-1 (2) - 0 (0) -> acc_matrix[2][0] - acc_matrix[0][0] = 0.6 - 0.9 = -0.3
     # 1 -> acc_matrix[2][1] - acc_matrix[1][1] = 0.7 - 0.9 = -0.2
     # BWT = (-0.3 - 0.2) / 2 = -0.25
     assert summary.backward_transfer == pytest.approx(-0.25)
-    
+
     # Forgetting
     # max task 0 = max(0.9, 0.8) = 0.9. Diff = 0.9 - 0.6 = 0.3
     # max task 1 = max(0.9) = 0.9. Diff = 0.9 - 0.7 = 0.2
@@ -76,12 +81,12 @@ def test_standard_cl_metrics():
     # task 2: acc_matrix[1][2] (0.5) - baselines[2] (0.3) = 0.2
     # FWT = (0.3 + 0.2) / 2 = 0.25
     assert summary_fwt.forward_transfer == pytest.approx(0.25)
-    
+
 def test_edge_cases():
     # Empty inputs
     assert ContinualLearningMetrics.null_space_depletion_rate([]) is None
     assert ContinualLearningMetrics.cka_stability([])["min"] is None
-    
+
     summary = ContinualLearningMetrics.standard_cl_metrics([])
     assert summary.average_accuracy is None
 
@@ -94,27 +99,27 @@ def test_edge_cases():
 def test_to_scalar_robustness():
     backend = MockBackend()
     metrics = BackendContinualLearningMetrics(backend)
-    
+
     assert metrics._to_scalar([5.0]) == 5.0
-    
+
     with pytest.raises(ValueError):
         metrics._to_scalar("not_a_number")
 
 def test_backend_spectral_budget_trajectory():
     backend = MockBackend()
     metrics = BackendContinualLearningMetrics(backend)
-    
+
     # Two tasks. Mock backend returns 2.0 and 3.0 for norm.
     sigma_k = 0.5
     deltas = ["dummy1", "dummy2"]
-    
+
     traj = metrics.spectral_budget_trajectory(deltas, sigma_k)
     assert traj == [4.0, 6.0]  # 2.0 / 0.5, 3.0 / 0.5
 
 def test_backend_weyl_accumulation():
     backend = MockBackend()
     metrics = BackendContinualLearningMetrics(backend)
-    
+
     deltas = ["dummy1", "dummy2"]
     accum = metrics.weyl_accumulation(deltas)
     assert accum == 5.0  # 2.0 + 3.0

@@ -35,9 +35,9 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.training.diagonal_fisher_preconditioner import (
-    DiagonalFisherState,
     _DEFAULT_BETA2,
     _SQRT_EPS_F32,
+    DiagonalFisherState,
     derive_beta1,
     init_fisher_state,
     precondition_gradient,

@@ -242,7 +242,7 @@ def compute_readout_spectral_norm(
     backend.eval(w_out_f32)
 
     # Power iteration for σ_max (same method as spectral_budget.py)
-    n_rows, n_cols = int(w_out_f32.shape[0]), int(w_out_f32.shape[1])
+    n_cols = int(w_out_f32.shape[1])
     v = backend.random_normal((n_cols, 1))
     v = backend.astype(v, "float32")
     backend.eval(v)
@@ -361,8 +361,6 @@ def compute_logit_perturbation_bound(
     """
     base = getattr(model, "model", model)
     n_layers = len(base.layers)
-    all_layer_indices = sorted(layer_lipschitz.keys())
-
     if not perturbed_layers:
         return LogitPerturbationBound(
             bound=0.0,

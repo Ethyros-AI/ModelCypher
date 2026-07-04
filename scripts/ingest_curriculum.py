@@ -77,7 +77,7 @@ def main() -> None:
         sys.exit(1)
 
     # Print summary
-    print(f"\nCurriculum ingested successfully.")
+    print("\nCurriculum ingested successfully.")
     print(f"  Skills: {result.skill_count}")
     print(f"  DAG depth: {result.max_dag_depth}")
     print(f"  Branches: {', '.join(result.branch_names)}")

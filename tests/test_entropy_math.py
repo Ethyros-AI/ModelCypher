@@ -25,7 +25,6 @@ import pytest
 
 from modelcypher.core.domain.entropy.entropy_math import EntropyMath
 
-
 # ---------------------------------------------------------------------------
 # EM1: Empty Trajectory
 # ---------------------------------------------------------------------------

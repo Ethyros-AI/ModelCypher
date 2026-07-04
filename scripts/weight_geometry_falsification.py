@@ -59,7 +59,6 @@ References:
 from __future__ import annotations
 
 import argparse
-import copy
 import gc
 import json
 import logging
@@ -157,7 +156,6 @@ class WeightGeometryFalsification:
 
     def _load_model_and_inject(self):
         """Load model, compute geometry, inject NB-LoRA, freeze base."""
-        import mlx.core as mx
 
         from modelcypher.backends import initialize_default_backend
         from modelcypher.backends.mlx_training_adapter import MLXTrainingAdapter

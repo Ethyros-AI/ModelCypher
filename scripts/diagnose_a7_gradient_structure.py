@@ -41,11 +41,11 @@ from pathlib import Path
 
 # Reuse validated functions from A7 validator
 from validate_a7_assumption import (
-    MODELS,
-    PROBE_TEXTS,
     _EPS_F32,
     _FLOAT32_MIN_NORMAL,
     _QUERY_POS,
+    MODELS,
+    PROBE_TEXTS,
     collect_baseline,
     collect_per_head_gradient_data,
     compute_radial_projections,
@@ -414,7 +414,6 @@ def run_single_model(
     }
 
     for pr in probe_results:
-        agg = pr["aggregate"]
         # Collect raw values from per_head (not from stats)
         for l_key in pr["per_head"]:
             for h_key in pr["per_head"][l_key]:
@@ -493,7 +492,7 @@ def write_text_summary(txt_path: Path, run_doc: dict) -> None:
         agg = model_doc["cross_probe_aggregate"]
         r_sq = agg["r_squared_radial"]
         lines.append("")
-        lines.append(f"R²(radial) across all probes:")
+        lines.append("R²(radial) across all probes:")
         lines.append(
             f"  mean={r_sq['mean']:.4f}, median={r_sq['median']:.4f}, "
             f"range=[{r_sq['min']:.4f}, {r_sq['max']:.4f}] (n={r_sq['n']})"
@@ -517,7 +516,7 @@ def write_text_summary(txt_path: Path, run_doc: dict) -> None:
 
         k_eff = agg["k_eff_over_T"]
         lines.append("")
-        lines.append(f"Gradient concentration (k_eff/T, 1.0=diffuse, 1/T=concentrated):")
+        lines.append("Gradient concentration (k_eff/T, 1.0=diffuse, 1/T=concentrated):")
         lines.append(
             f"  mean={k_eff['mean']:.4f}, median={k_eff['median']:.4f}, "
             f"range=[{k_eff['min']:.4f}, {k_eff['max']:.4f}] (n={k_eff['n']})"

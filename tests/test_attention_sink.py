@@ -388,7 +388,6 @@ class TestComputeSinkScoreDelta:
 
     def test_zero_scores_cosine_zero(self):
         """When both score vectors are zero, cosine is 0.0 (degenerate case)."""
-        T = 2
         # Identity attention: each token only attends to itself
         # For token 0: s_0 = (1/2)(A[0][0] + A[1][0]) = (1/2)(1 + 0) = 0.5
         # For token 1: s_1 = (1/1)(A[1][1]) = 1.0

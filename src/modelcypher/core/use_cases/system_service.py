@@ -28,8 +28,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Backend
     from modelcypher.backends import BackendDescriptor
+    from modelcypher.ports.backend import Backend
 
 
 class _StorePaths(Protocol):

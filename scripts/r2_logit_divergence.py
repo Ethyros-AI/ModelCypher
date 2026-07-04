@@ -39,7 +39,7 @@ import json
 import logging
 import sys
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -586,6 +586,7 @@ def main() -> None:
     t_start = time.time()
 
     import mlx.core as mx
+
     from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.backends import initialize_default_backend
 

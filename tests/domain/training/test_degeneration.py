@@ -10,7 +10,6 @@ from modelcypher.core.domain.training.degeneration import (
     sequence_ngram_repetition_rate,
 )
 
-
 # --- derive_ngram_order tests ---
 
 

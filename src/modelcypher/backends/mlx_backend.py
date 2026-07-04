@@ -1563,8 +1563,6 @@ class MLXBackend(_MLXBackendActivationMixin, Backend):
         Returns:
             Number of MoE layers unpacked (0 for dense models).
         """
-        import json
-        from pathlib import Path
 
         from modelcypher.core.domain.moe.topology import MoETopology
 

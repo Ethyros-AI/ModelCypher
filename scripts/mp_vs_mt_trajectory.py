@@ -28,8 +28,6 @@ import argparse
 import json
 import logging
 import math
-import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -335,7 +333,6 @@ def print_attention_analysis(mp_result: dict, mt_result: dict, domain: str, laye
     2. How MP and MT attention patterns differ
     3. Which heads show the largest divergence
     """
-    import mlx.core as mx
 
     mp_tokens = mp_result["tokens"]
     mt_tokens = mt_result["tokens"]
@@ -348,9 +345,6 @@ def print_attention_analysis(mp_result: dict, mt_result: dict, domain: str, laye
         mp_w = mp_attn[layer_idx]  # [n_heads, L_mp, L_mp]
         mt_w = mt_attn[layer_idx]  # [n_heads, L_mt, L_mt]
         n_heads = mp_w.shape[0]
-        L_mp = mp_w.shape[1]
-        L_mt = mt_w.shape[1]
-
         # Attention from the LAST position (the one that generates the first answer token)
         mp_last = mp_w[:, -1, :]  # [n_heads, L_mp]
         mt_last = mt_w[:, -1, :]  # [n_heads, L_mt]
@@ -387,7 +381,7 @@ def print_attention_analysis(mp_result: dict, mt_result: dict, domain: str, laye
             })
 
         # Show summary: heads sorted by entropy difference
-        print(f"  Head  MP_maxw  MT_maxw  MP_ent   MT_ent   Δent")
+        print("  Head  MP_maxw  MT_maxw  MP_ent   MT_ent   Δent")
         print(f"  {'─' * 55}")
         for hd in sorted(head_divergences, key=lambda x: abs(x["mp_entropy"] - x["mt_entropy"]), reverse=True):
             delta_ent = hd["mt_entropy"] - hd["mp_entropy"]
@@ -411,12 +405,12 @@ def print_attention_analysis(mp_result: dict, mt_result: dict, domain: str, laye
             head = hd["head"]
             print(f"\n  Head {head} detail (Δent = {hd['mt_entropy'] - hd['mp_entropy']:+.3f}):")
 
-            print(f"    MP attends to:")
+            print("    MP attends to:")
             for pos, weight in hd["mp_top5"]:
                 tok = mp_tokens[pos] if pos < len(mp_tokens) else "?"
                 print(f"      pos {pos:3d} ({weight:.4f}): {repr(tok)}")
 
-            print(f"    MT attends to:")
+            print("    MT attends to:")
             for pos, weight in hd["mt_top5"]:
                 tok = mt_tokens[pos] if pos < len(mt_tokens) else "?"
                 print(f"      pos {pos:3d} ({weight:.4f}): {repr(tok)}")
@@ -451,8 +445,6 @@ def main():
     for i, layer in enumerate(layers):
         is_attn = getattr(layer, "is_attention_layer", None)
         logger.info(f"  Layer {i}: {'attention' if is_attn else 'conv'}")
-
-    all_results = []
 
     for pair in MATCHED_PAIRS:
         domain = pair["domain"]
@@ -513,7 +505,7 @@ def main():
             print(f"\n  {label}: {status}")
             print(f"    Response: {response.strip()[:200]}")
             print(f"    Logit entropy: {entropy:.3f}")
-            print(f"    Top 10 next tokens:")
+            print("    Top 10 next tokens:")
             for tok, prob in top_tokens:
                 print(f"      {repr(tok):20s} {prob:.4f}")
 
@@ -538,7 +530,7 @@ def main():
         mp_hs = pair["results"]["mp"]["hidden_states"]
         mt_hs = pair["results"]["mt"]["hidden_states"]
 
-        print(f"\n  PER-LAYER COMPARISON (hidden state at last prompt position):")
+        print("\n  PER-LAYER COMPARISON (hidden state at last prompt position):")
         print(f"  {'Layer':>6} {'Type':>6}  {'MP norm':>10}  {'MT norm':>10}  {'Cos(MP,MT)':>12}  {'L2 dist':>10}")
         print(f"  {'-'*6} {'-'*6}  {'-'*10}  {'-'*10}  {'-'*12}  {'-'*10}")
 
@@ -569,7 +561,7 @@ def main():
 
     # Cross-pair aggregate
     print(f"\n{'='*80}")
-    print(f"AGGREGATE ACROSS ALL PAIRS")
+    print("AGGREGATE ACROSS ALL PAIRS")
     print(f"{'='*80}")
 
     mp_correct = sum(1 for p in MATCHED_PAIRS if p["results"]["mp"]["correct"])
@@ -577,7 +569,7 @@ def main():
     print(f"\n  MP correct: {mp_correct}/{len(MATCHED_PAIRS)}")
     print(f"  MT correct: {mt_correct}/{len(MATCHED_PAIRS)}")
 
-    print(f"\n  Mean cosine similarity MP↔MT by layer:")
+    print("\n  Mean cosine similarity MP↔MT by layer:")
     print(f"  {'Layer':>6} {'Type':>6}  {'Mean cos':>10}  {'Min cos':>10}  {'Mean L2':>10}")
     print(f"  {'-'*6} {'-'*6}  {'-'*10}  {'-'*10}  {'-'*10}")
 
@@ -611,10 +603,10 @@ def main():
     # Entropy comparison
     mp_ent = [p["results"]["mp"]["entropy"] for p in MATCHED_PAIRS]
     mt_ent = [p["results"]["mt"]["entropy"] for p in MATCHED_PAIRS]
-    print(f"\n  Mean logit entropy:")
+    print("\n  Mean logit entropy:")
     print(f"    MP: {sum(mp_ent)/len(mp_ent):.3f}")
     print(f"    MT: {sum(mt_ent)/len(mt_ent):.3f}")
-    print(f"    (Higher = less certain about next token)")
+    print("    (Higher = less certain about next token)")
 
     if args.output:
         output_path = Path(args.output)

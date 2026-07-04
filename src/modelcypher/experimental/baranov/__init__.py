@@ -21,8 +21,8 @@ from modelcypher.experimental.baranov.consolidation_tracker import (
     FactConsolidationTracker,
 )
 from modelcypher.experimental.baranov.decision import (
-    ModeVerdict,
     ModelVerdict,
+    ModeVerdict,
     NoiseFloor,
     TrackADecision,
     compute_mode_verdict,
@@ -30,6 +30,7 @@ from modelcypher.experimental.baranov.decision import (
     compute_noise_floor,
     compute_track_a_decision,
 )
+from modelcypher.experimental.baranov.edit_applicator import EditApplicator
 from modelcypher.experimental.baranov.fact_dataset import (
     fact_to_training_text,
     facts_to_training_samples,
@@ -41,28 +42,24 @@ from modelcypher.experimental.baranov.geometry_measurement import (
     collect_probe_activations,
     compute_cka_drift,
 )
-from modelcypher.experimental.baranov.edit_applicator import EditApplicator
-from modelcypher.experimental.baranov.outer_product_editor import OuterProductEditor
 from modelcypher.experimental.baranov.manifest import (
+    REQUIRED_METRIC_KEYS,
     CodeInfo,
     ControlFlags,
     DataHashes,
     ModelInfo,
     PreRegisteredDecision,
-    REQUIRED_METRIC_KEYS,
     ReplicationManifest,
     validate_manifest,
 )
 from modelcypher.experimental.baranov.models import (
+    VALID_TRANSITIONS,
     ConsolidationStage,
     EditState,
     EditStatus,
     FactTriple,
-    VALID_TRANSITIONS,
 )
-from modelcypher.experimental.baranov.simple_recall_evaluator import (
-    SimpleRecallEvaluator,
-)
+from modelcypher.experimental.baranov.outer_product_editor import OuterProductEditor
 from modelcypher.experimental.baranov.recall_evaluator import (
     GenerateFn,
     RecallAggregate,
@@ -71,6 +68,9 @@ from modelcypher.experimental.baranov.recall_evaluator import (
     RecallOutcome,
     RecallResult,
     compute_recall_aggregate,
+)
+from modelcypher.experimental.baranov.simple_recall_evaluator import (
+    SimpleRecallEvaluator,
 )
 
 __all__ = [

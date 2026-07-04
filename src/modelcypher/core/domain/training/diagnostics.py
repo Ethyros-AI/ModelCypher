@@ -31,7 +31,6 @@ from modelcypher.core.domain.agent_protocol import (
     AgentRecommendation,
 )
 
-
 # ---------------------------------------------------------------------------
 # Stop reason interpretation
 # ---------------------------------------------------------------------------

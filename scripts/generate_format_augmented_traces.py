@@ -29,7 +29,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from novel_problems import PREMISE_PAIRS
 
-
 # ---------------------------------------------------------------------------
 # Format components (vary independently)
 # ---------------------------------------------------------------------------
@@ -245,7 +244,7 @@ def main():
             for s in data:
                 f.write(json.dumps({"text": s["text"]}) + "\n")
 
-    print(f"\nWritten:")
+    print("\nWritten:")
     print(f"  {train_path} ({len(train_samples)} samples)")
     print(f"  {val_path} ({len(val_samples)} samples)")
 
@@ -261,7 +260,7 @@ def main():
         for line in lines[:4]:
             print(f"  {line[:120]}")
         if len(lines) > 4:
-            print(f"  ...")
+            print("  ...")
 
 
 if __name__ == "__main__":

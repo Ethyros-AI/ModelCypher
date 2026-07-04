@@ -95,11 +95,11 @@ def geodesic_compare(
     with open(prompts_path) as f:
         categorized_prompts = json.load(f)
 
+    from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.cli.composition import (
         get_activation_provider,
         get_backend,
     )
-    from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.core.use_cases.geodesic_trajectory_service import (
         GeodesicTrajectoryService,
     )

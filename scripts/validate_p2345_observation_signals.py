@@ -32,7 +32,6 @@ Roadmap link: R1 (baseline comparison), R2 (behavioral preservation operator).
 
 from __future__ import annotations
 
-import math
 import sys
 from types import SimpleNamespace
 
@@ -50,7 +49,6 @@ from modelcypher.backends.mlx_training_adapter_core import (
     iterate_vl_batches,
 )
 from modelcypher.core.domain.training.online_eval import OnlineEvalResult
-
 
 # ---------------------------------------------------------------------------
 # Minimal test doubles

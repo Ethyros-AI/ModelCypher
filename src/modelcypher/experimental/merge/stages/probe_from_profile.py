@@ -46,10 +46,10 @@ from modelcypher.core.domain.profile import (
     load_activations,
 )
 
+from ..models import build_transmission_layer_scores
 from .probe_alignment import (
     align_layers,
 )
-from ..models import build_transmission_layer_scores
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend

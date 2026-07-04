@@ -1012,7 +1012,7 @@ def print_stats(samples: list[PairedSample], label: str) -> None:
 
     if samples:
         s = samples[0]
-        print(f"\n  Example:")
+        print("\n  Example:")
         print(f"    text: {s.text[:80]}...")
         print(f"    answer_start: {s.answer_start[:40]}")
         print(f"    logic_id: {s.logic_id}")
@@ -1044,7 +1044,7 @@ def main():
 
     print_stats(train, "Training set")
     print_stats(val, "Validation set")
-    print(f"\nWritten to:")
+    print("\nWritten to:")
     print(f"  {args.output}")
     print(f"  {args.val_output}")
 

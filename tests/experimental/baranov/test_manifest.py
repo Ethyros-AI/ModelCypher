@@ -8,12 +8,12 @@ import math
 import pytest
 
 from modelcypher.experimental.baranov.manifest import (
+    REQUIRED_METRIC_KEYS,
     CodeInfo,
     ControlFlags,
     DataHashes,
     ModelInfo,
     PreRegisteredDecision,
-    REQUIRED_METRIC_KEYS,
     ReplicationManifest,
     validate_manifest,
 )

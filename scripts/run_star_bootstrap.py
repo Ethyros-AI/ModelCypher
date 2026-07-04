@@ -216,7 +216,8 @@ def generate_verified_star_samples(
 ) -> tuple[list[dict], int]:
     """Generate answers (greedy/deterministic) and keep only verified samples."""
     import mlx.core as mx
-    from mlx_lm import generate, load as mlx_load
+    from mlx_lm import generate
+    from mlx_lm import load as mlx_load
 
     model, tokenizer = mlx_load(model_path, adapter_path=adapter_path)
 
@@ -280,7 +281,8 @@ def generate_verified_novel_samples(
         problems the model got wrong (candidates for rationalization).
     """
     import mlx.core as mx
-    from mlx_lm import generate, load as mlx_load
+    from mlx_lm import generate
+    from mlx_lm import load as mlx_load
 
     model, tokenizer = mlx_load(model_path, adapter_path=adapter_path)
 

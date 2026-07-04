@@ -246,7 +246,7 @@ def _print_summary(summary: dict, analysis: list[dict]) -> None:
     print(f"Delta:    {summary['accuracy_delta']:+.1%}")
 
     f = summary["flips"]
-    print(f"\n--- Flip Analysis (paired) ---")
+    print("\n--- Flip Analysis (paired) ---")
     print(f"  Stayed right:    {f['stayed_right']}")
     print(f"  Wrong -> Right:  {f['wrong_to_right']}")
     print(f"  Right -> Wrong:  {f['right_to_wrong']}")
@@ -254,12 +254,12 @@ def _print_summary(summary: dict, analysis: list[dict]) -> None:
     print(f"  Net improvement: {summary['net_improvement']} items")
     print(f"  McNemar discordant: b={summary['mcnemar_b']}, c={summary['mcnemar_c']}")
 
-    print(f"\n--- Explanation-Only Matches (diagnostic, NOT counted as correct) ---")
+    print("\n--- Explanation-Only Matches (diagnostic, NOT counted as correct) ---")
     print(f"  Baseline: {summary['baseline_explanation_only']}")
     print(f"  Adapter:  {summary['adapter_explanation_only']}")
 
     m = summary["miss_classification"]
-    print(f"\n--- Post-Training Miss Classification ---")
+    print("\n--- Post-Training Miss Classification ---")
     print(f"  Explanation only (not correct):  {m['explanation_only']}")
     print(f"  Semantic correct (exact miss):   {m['semantic_correct_exact_miss']}")
     print(f"  Actually wrong:                  {m['actually_wrong']}")

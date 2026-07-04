@@ -342,7 +342,7 @@ def main():
         "## DPI Violations",
         "",
         f"**{n_positive}/{len(dpi_violations)} transitions** have positive violations",
-        f"(MI increased through the layer).",
+        "(MI increased through the layer).",
         "",
         "| Transition | Delta_l | ||h_l|| | ||F_l|| | Residual Ratio | Cosine |",
         "|------------|---------|---------|---------|---------------|--------|",

@@ -13,11 +13,11 @@ import pytest
 
 from modelcypher.backends.mlx_training_adapter import EpochMetrics
 from modelcypher.core.domain.training.mass_step_size import (
-    BehavioralStateMeasurement,
     CONTROLLER_MODE_BEHAVIORAL_PROBE,
+    OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+    BehavioralStateMeasurement,
     ControllerLayerMeasurement,
     ControllerStepTrace,
-    OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
 )
 
 

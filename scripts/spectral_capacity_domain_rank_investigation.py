@@ -425,7 +425,7 @@ def print_summary(per_model: dict[str, dict], crossscale: dict) -> None:
                 )
 
             # Domain rank gaps for this layer
-            print(f"\n    Domain rank gaps:")
+            print("\n    Domain rank gaps:")
             print(
                 f"    {'Rank':<6} {'Domain':<28} | ", end=""
             )
@@ -453,7 +453,7 @@ def print_summary(per_model: dict[str, dict], crossscale: dict) -> None:
                     else:
                         print(f"{'N/A':>7} {'N/A':>7} ", end="")
                 print()
-            print(f"    (format: gap_ratio energy_fraction)")
+            print("    (format: gap_ratio energy_fraction)")
 
     # Cross-scale summary
     print(f"\n{'=' * 80}")

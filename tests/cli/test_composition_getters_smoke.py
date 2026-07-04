@@ -20,10 +20,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import modelcypher.cli.composition as composition
+import modelcypher.core.use_cases.observation_service as observation_module
 from modelcypher.core.use_cases.observation_bundle_report_service import (
     ObservationBundleReportService,
 )
-import modelcypher.core.use_cases.observation_service as observation_module
 
 
 @dataclass

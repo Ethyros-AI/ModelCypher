@@ -199,18 +199,23 @@ If you are guessing, you are missing a measurement.
 src/modelcypher/
 ├── core/
 │   ├── domain/
-│   ├── ports/
 │   └── use_cases/
 ├── adapters/
 ├── backends/
-└── cli/
+├── cli/
+├── experimental/
+├── infrastructure/
+├── ports/
+└── utils/
 ```
 
 Dependencies point inward.
 
 - `backends/` is the only place allowed to import ML frameworks
 - `adapters/` uses the Backend protocol
-- `core/` uses ports and pure logic only
+- `core/` uses `ports/` and pure logic only
+- `experimental/` is not a production dependency unless a surface is explicitly
+  labeled experimental
 
 Framework imports such as `mlx`, `jax`, and `torch` belong in `backends/` only.
 
@@ -426,6 +431,10 @@ mc analyze lora-svd /path/to/adapter --base /path/to/model
 mc merge run -s SOURCE -t TARGET -o OUTPUT
 mc infer run --model /path/to/model --prompt "Hello"
 ```
+
+Operational machine-local notes such as owner model paths, external-volume
+locations, and active runbooks live in `OPERATIONS.md`. AGENTS.md remains the
+single source for repository doctrine and coding rules.
 
 ### Concurrency
 
