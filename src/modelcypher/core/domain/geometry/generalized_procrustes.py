@@ -47,7 +47,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import (
-    geodesic_norms,
     geodesic_pairwise_metrics,
 )
 
@@ -55,6 +54,11 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
+
+
+def _squared_euclidean_row_norms(vectors: "Array", backend: "Backend") -> "Array":
+    """Return the row-wise squared norms used by the Procrustes objective."""
+    return backend.sum(vectors * vectors, axis=1)
 
 
 # Parameters are derived from data; Fréchet mean is used, reflections and scaling are disabled.
@@ -211,15 +215,16 @@ class GeneralizedProcrustes:
             # When X0 = X1, the optimal rotation is identity and error is exactly 0.
             # Skip SVD to avoid numerical errors in the null space.
             diff = X0 - X1
-            # Use geodesic norms for matrix distance (flatten to row vector)
-            # Batch all norm computations in single eval for efficiency
-            diff_norm_arr = geodesic_norms(b.reshape(diff, (1, -1)), b)
-            x_norm_arr = geodesic_norms(b.reshape(X0, (1, -1)), b)
-            x1_norm_arr = geodesic_norms(b.reshape(X1, (1, -1)), b)
-            b.eval(diff_norm_arr, x_norm_arr, x1_norm_arr)  # Single eval for all norms
-            diff_norm = float(b.to_scalar(diff_norm_arr))
-            x_norm = float(b.to_scalar(x_norm_arr))
-            x1_norm = float(b.to_scalar(x1_norm_arr))
+            # Orthogonal Procrustes minimizes the Frobenius objective from
+            # Schoenemann (1966); graph-geodesic distance is a different
+            # operator and cannot be substituted into that closed form.
+            diff_sq = _squared_euclidean_row_norms(b.reshape(diff, (1, -1)), b)
+            x_sq = _squared_euclidean_row_norms(b.reshape(X0, (1, -1)), b)
+            x1_sq = _squared_euclidean_row_norms(b.reshape(X1, (1, -1)), b)
+            b.eval(diff_sq, x_sq, x1_sq)
+            diff_norm = sqrt_scalar(float(b.to_scalar(diff_sq)), b)
+            x_norm = sqrt_scalar(float(b.to_scalar(x_sq)), b)
+            x1_norm = sqrt_scalar(float(b.to_scalar(x1_sq)), b)
             eps = float(division_epsilon(b, X0))
 
             if diff_norm <= eps * max(x_norm, 1.0):
@@ -255,8 +260,7 @@ class GeneralizedProcrustes:
                 consensus = self._compute_consensus(aligned_X)
                 residuals = aligned_X - consensus
                 residuals_flat = b.reshape(residuals, (model_count, -1))
-                per_model_norms = geodesic_norms(residuals_flat, b)
-                per_model_errors = per_model_norms * per_model_norms
+                per_model_errors = _squared_euclidean_row_norms(residuals_flat, b)
                 total_error = float(b.to_scalar(b.sum(per_model_errors)))
                 b.eval(Rs, residuals, per_model_errors)
 
@@ -299,16 +303,11 @@ class GeneralizedProcrustes:
             consensus = self._compute_consensus(aligned_X)
 
             residuals = aligned_X - consensus
-            # Compute geodesic norms for each model's residuals
             residuals_flat = b.reshape(residuals, (model_count, -1))  # [M, n*k]
-            per_model_norms = geodesic_norms(residuals_flat, b)  # [M]
-            per_model_errors = per_model_norms * per_model_norms  # squared geodesic norms
-            # Total error is sum of squared geodesic norms
+            per_model_errors = _squared_euclidean_row_norms(residuals_flat, b)
             current_error_arr = b.sum(per_model_errors)
-            # Total variance via geodesic norm
             aligned_flat = b.reshape(aligned_X, (1, -1))
-            total_var_arr = geodesic_norms(aligned_flat, b)
-            total_var_arr = total_var_arr * total_var_arr  # squared
+            total_var_arr = _squared_euclidean_row_norms(aligned_flat, b)
             b.eval(current_error_arr, total_var_arr, per_model_errors)
             current_error = float(b.to_scalar(current_error_arr))
             total_var = float(b.to_scalar(total_var_arr))
@@ -377,16 +376,12 @@ class GeneralizedProcrustes:
 
             # Error - normalize by total data energy for scale-invariant convergence
             diffs = aligned_X - new_consensus
-            # Use geodesic norms for error computation
             diffs_flat = self._backend.reshape(diffs, (1, -1))
-            diffs_norm = geodesic_norms(diffs_flat, self._backend)
-            current_error_arr = diffs_norm * diffs_norm  # squared geodesic norm
-            aligned_flat = self._backend.reshape(aligned_X, (1, -1))
-            aligned_norm = geodesic_norms(aligned_flat, self._backend)
-            total_energy_arr = aligned_norm * aligned_norm  # squared
-            self._backend.eval(current_error_arr, total_energy_arr)
+            current_error_arr = _squared_euclidean_row_norms(
+                diffs_flat, self._backend
+            )
+            self._backend.eval(current_error_arr)
             current_error = float(self._backend.to_scalar(current_error_arr))
-            total_energy = float(self._backend.to_scalar(total_energy_arr))
 
             # Convergence: GPA (Gower 1975) minimizes sum of squared residuals
             # monotonically. Declare converged when improvement is negligible.
@@ -406,15 +401,15 @@ class GeneralizedProcrustes:
 
         # Final outputs
         residuals = aligned_X - consensus
-        # Compute geodesic norms for each model's residuals
         residuals_flat = self._backend.reshape(residuals, (model_count, -1))  # [M, n*k]
-        per_model_norms = geodesic_norms(residuals_flat, self._backend)  # [M]
-        per_model_errors = per_model_norms * per_model_norms  # squared geodesic norms
+        per_model_errors = _squared_euclidean_row_norms(
+            residuals_flat, self._backend
+        )
 
-        # Variance calc using geodesic norm
         aligned_flat = self._backend.reshape(aligned_X, (1, -1))
-        total_var_arr = geodesic_norms(aligned_flat, self._backend)
-        total_var_arr = total_var_arr * total_var_arr  # squared
+        total_var_arr = _squared_euclidean_row_norms(
+            aligned_flat, self._backend
+        )
         self._backend.eval(total_var_arr)
         total_var = float(self._backend.to_scalar(total_var_arr))
         residual_var = current_error

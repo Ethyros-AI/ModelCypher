@@ -146,16 +146,23 @@ def detect_default_backend_type() -> BackendType:
                 )
         return env_backend  # type: ignore[return-value]
 
-    # Auto-detect best available backend
-    mlx_available, mlx_error = _try_mlx_available()
+    # Auto-detect best available backend. MC_DISABLE_MLX is used by the
+    # cross-platform test and CI path to exercise the JAX fallback even when
+    # MLX is installed on Apple Silicon.
+    mlx_disabled = os.environ.get("MC_DISABLE_MLX", "").lower() in ("1", "true", "yes")
+    if mlx_disabled:
+        mlx_available, mlx_error = False, "disabled by MC_DISABLE_MLX"
+    else:
+        mlx_available, mlx_error = _try_mlx_available()
 
     if sys.platform == "darwin":
         if mlx_available:
             return "mlx"
-        message = "MLX backend unavailable on macOS."
-        if mlx_error:
-            message = f"{message} {mlx_error}."
-        raise RuntimeError(message)
+        if not mlx_disabled:
+            message = "MLX backend unavailable on macOS."
+            if mlx_error:
+                message = f"{message} {mlx_error}."
+            raise RuntimeError(message)
 
     if mlx_available:
         return "mlx"

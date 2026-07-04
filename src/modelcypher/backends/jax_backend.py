@@ -291,9 +291,15 @@ class JAXBackend(Backend):
     def dot(self, a: Array, b: Array) -> Array:
         return self.jnp.dot(a, b)
 
-    def svd(self, array: Array, compute_uv: bool = True) -> tuple[Array, Array, Array] | Array:
+    def svd(
+        self,
+        array: Array,
+        compute_uv: bool = True,
+        full_matrices: bool | None = None,
+    ) -> tuple[Array, Array, Array] | Array:
+        use_full_matrices = bool(full_matrices) if full_matrices is not None else False
         if compute_uv:
-            u, s, vt = self.jnp.linalg.svd(array, full_matrices=False)
+            u, s, vt = self.jnp.linalg.svd(array, full_matrices=use_full_matrices)
             return u, s, vt
         return self.jnp.linalg.svd(array, compute_uv=False)
 
@@ -412,7 +418,9 @@ class JAXBackend(Backend):
         if compiled is None:
             def _fw(d: Array) -> Array:
                 def body(k, current):
-                    via = current[:, k : k + 1] + current[k : k + 1, :]
+                    column = self.jax.lax.dynamic_slice_in_dim(current, k, 1, axis=1)
+                    row = self.jax.lax.dynamic_slice_in_dim(current, k, 1, axis=0)
+                    via = column + row
                     return self.jnp.minimum(current, via)
 
                 return self.jax.lax.fori_loop(0, n, body, d)
@@ -476,7 +484,7 @@ class JAXBackend(Backend):
         self, array: Array, indices: Array, values: Array, axis: int | None = None
     ) -> Array:
         indices_int = indices.astype(self.jnp.int32)
-        return self.jnp.put_along_axis(array, indices_int, values, axis=axis)
+        return self.jnp.put_along_axis(array, indices_int, values, axis=axis, inplace=False)
 
     # --- Sorting ---
     def sort(self, array: Array, axis: int = -1) -> Array:

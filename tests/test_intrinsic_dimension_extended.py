@@ -35,7 +35,7 @@ from modelcypher.core.domain.geometry.intrinsic_dimension import (
     LocalDimensionMap,
     TwoNNEstimate,
 )
-from modelcypher.core.domain.geometry.numerical_stability import all_finite, division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import all_finite
 
 
 @pytest.fixture
@@ -78,8 +78,8 @@ class TestIntrinsicDimensionCompute:
 
         assert result.sample_count == 3
 
-    def test_dimension_bounded_by_ambient(self, backend):
-        """Intrinsic dimension should not exceed ambient dimension."""
+    def test_dimension_reports_raw_finite_sample_estimate(self, backend):
+        """TwoNN reports its raw estimate rather than clipping sampling bias."""
         ambient_dim = 8
         points = backend.random_normal((64, ambient_dim))
         backend.eval(points)
@@ -87,8 +87,10 @@ class TestIntrinsicDimensionCompute:
         estimator = IntrinsicDimension(backend)
         result = estimator.compute(points)
 
-        eps = division_epsilon(backend, points)
-        assert result.intrinsic_dimension <= ambient_dim + eps
+        dist_sq = estimator._geodesic_distance_matrix_squared(points)
+        mu = estimator._compute_two_nn_mu_from_distances(dist_sq)
+        expected = estimator._compute_from_mu(mu)
+        assert result.intrinsic_dimension == expected
 
     def test_with_confidence_interval(self, backend):
         """Computing with CI should return valid intervals."""

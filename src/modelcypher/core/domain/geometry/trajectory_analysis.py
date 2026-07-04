@@ -281,14 +281,16 @@ def compute_trajectory_subspace(
             total_samples, hidden_dim, position_count, velocity_count
         )
 
-        # For tall-skinny matrices (m >> n), use Gram matrix trick:
+        # For wide matrices or tall-skinny matrices (m >> n), use the Gram
+        # matrix trick. Wide matrices need the full hidden-space eigenbasis so
+        # compute_trajectory_null_space can recover all d-rank directions.
         # G = X.T @ X has shape [n, n] instead of [m, n]
         # Eigenvalues of G = singular_values^2 of X
         # Eigenvectors of G = right singular vectors (V) of X
         # This avoids computing the full m x m U matrix which would exceed memory
-        if total_samples > hidden_dim * 2:
+        if total_samples < hidden_dim or total_samples > hidden_dim * 2:
             logger.info(
-                "TRAJECTORY SUBSPACE: Using Gram matrix trick (m=%d >> n=%d)",
+                "TRAJECTORY SUBSPACE: Using Gram matrix basis (m=%d, n=%d)",
                 total_samples, hidden_dim
             )
             # G = X.T @ X is [hidden_dim, hidden_dim]
@@ -334,7 +336,7 @@ def compute_trajectory_subspace(
         rank_mask = S > threshold
         rank_arr = b.sum(b.astype(rank_mask, "int32"))
         b.eval(rank_arr)
-        rank = int(b.to_scalar(rank_arr))
+        rank = min(int(b.to_scalar(rank_arr)), total_samples, hidden_dim)
 
         logger.info(
             "TRAJECTORY SUBSPACE: rank=%d/%d (%.1f%% coverage), sigma_max=%.4e, threshold=%.4e",

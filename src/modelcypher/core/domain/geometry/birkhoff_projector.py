@@ -134,8 +134,6 @@ class BirkhoffProjector:
         # Run Sinkhorn-Knopp iteration
         M, iterations, max_error = self._sinkhorn_knopp(M, n, threshold)
 
-        converged = max_error < threshold
-
         # Compute spectral norm before bounding
         spectral_norm_before = self._compute_spectral_norm(M)
 
@@ -144,6 +142,18 @@ class BirkhoffProjector:
         backend.eval(M)
 
         spectral_norm_after = self._compute_spectral_norm(M)
+
+        # Spectral bounding changes the returned matrix. Report the marginals
+        # of that matrix, not the pre-bound Sinkhorn iterate.
+        ones = backend.ones((n,))
+        row_error = backend.max(backend.abs(backend.sum(M, axis=1) - ones))
+        col_error = backend.max(backend.abs(backend.sum(M, axis=0) - ones))
+        backend.eval(row_error, col_error)
+        max_error = max(
+            float(backend.to_scalar(row_error)),
+            float(backend.to_scalar(col_error)),
+        )
+        converged = max_error < threshold
 
         return BirkhoffProjectionResult(
             projected_matrix=M,

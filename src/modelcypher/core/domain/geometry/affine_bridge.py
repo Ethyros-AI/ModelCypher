@@ -35,7 +35,6 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
-    geodesic_svd,
     machine_epsilon,
     precision_dtype,
 )
@@ -212,16 +211,10 @@ class AffineBridge:
         A = XtX + reg_term
         XtY = backend.matmul(backend.transpose(X), Y)
 
-        # Solve via SVD for numerical stability
-        U, S, Vt = geodesic_svd(backend, A)
-
-        # Compute pseudo-inverse: V @ S^(-1) @ U^T
-        S_inv = 1.0 / (S + division_epsilon(backend, S))
-        A_inv = backend.matmul(
-            backend.transpose(Vt),
-            backend.matmul(backend.diag(S_inv), backend.transpose(U))
-        )
-        W = backend.matmul(A_inv, XtY)
+        # A is positive definite after ridge regularization. Solving the
+        # system directly avoids adding a second epsilon to every singular
+        # value, which biased even well-conditioned exact affine maps.
+        W = backend.solve(A, XtY)
         backend.eval(W)
 
         # Compute bias: b = mean(Y - X @ W)

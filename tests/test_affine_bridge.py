@@ -196,10 +196,17 @@ class TestAffineBridge:
         assert result.train_mse <= baseline * (1.0 + tol), (
             f"MSE should improve on baseline, got {result.train_mse} vs baseline {baseline}"
         )
-        # W should be close to 2*I
-        w_tol = math.sqrt(
-            max(result.train_mse, _eps(backend, result.train_mse))
-        ) * math.sqrt(float(result.source_dim))
+        # For Y=2X, ridge gives W-2I = -2*lambda*(X.T X+lambda I)^-1.
+        # Its operator norm is bounded by 2*lambda/(sigma_min(X)^2+lambda).
+        _, singular_values, _ = backend.svd(X, compute_uv=True)
+        backend.eval(singular_values)
+        sigma_min = float(backend.to_scalar(singular_values[-1]))
+        ridge_bias = (
+            2.0 * result.regularization
+            / (sigma_min * sigma_min + result.regularization)
+        )
+        roundoff = result.source_dim * _eps(backend, result.W[0][0])
+        w_tol = ridge_bias + roundoff
         assert abs(result.W[0][0] - 2.0) < w_tol, f"W[0][0] should be ~2.0, got {result.W[0][0]}"
         assert abs(result.W[1][1] - 2.0) < w_tol, f"W[1][1] should be ~2.0, got {result.W[1][1]}"
 

@@ -101,9 +101,10 @@ class IntrinsicDimension:
     """
     Computes intrinsic dimension using the TwoNN method (Facco et al., 2017).
 
-    Intrinsic dimension (ID) is a direct geometric measurement - NOT an estimate.
-    The TwoNN method precisely measures the local scaling of the manifold from
-    the distribution of nearest neighbor distance ratios.
+    Intrinsic dimension (ID) is estimated from finite-sample nearest-neighbor
+    ratios. The raw estimate may exceed the ambient dimension because TwoNN is
+    statistically biased at finite sample size; callers should inspect its
+    confidence interval rather than silently clipping the measurement.
 
     Interpretation:
     - Low ID: tight, consistent behavior (risk: caricature/mode collapse)
@@ -724,9 +725,17 @@ class IntrinsicDimension:
         if lower_idx >= upper_idx:
             return None
 
+        # The regression estimator is positively biased at finite sample size.
+        # Use the basic bootstrap interval, which reflects the empirical bias
+        # around the original estimate instead of returning raw percentiles:
+        # [2*theta_hat - q_(1-alpha), 2*theta_hat - q_alpha].
+        point_estimate = self._compute_from_mu(mu)
+        lower = 2.0 * point_estimate - dimensions[upper_idx]
+        upper = 2.0 * point_estimate - dimensions[lower_idx]
+        positive_floor = machine_epsilon(backend, mu)
         return ConfidenceInterval(
-            lower=dimensions[lower_idx],
-            upper=dimensions[upper_idx],
+            lower=max(positive_floor, lower),
+            upper=max(positive_floor, upper),
             resamples=len(dimensions),
         )
 

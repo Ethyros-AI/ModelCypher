@@ -158,3 +158,25 @@ ignore = ["E501"]
 "src/modelcypher/core/domain/safety/*" = ["E741"]
 # Test files often have conditional imports and mathematical variable names
 "tests/*" = ["E402", "E741", "F401"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src/modelcypher"]
+ignore_missing_imports = true
+follow_imports = "silent"
+check_untyped_defs = false
+disallow_untyped_defs = false
+warn_unused_ignores = false
+warn_return_any = false
+no_implicit_optional = false
+ignore_errors = true
+pretty = true
+
+[[tool.mypy.overrides]]
+module = [
+    "modelcypher.core.domain.chat_template",
+    "modelcypher.core.domain.training.exceptions",
+    "modelcypher.core.domain.training.pipeline_gate",
+]
+ignore_errors = false
+check_untyped_defs = true

@@ -384,7 +384,7 @@ def compute_stable_rank(
         return 0.0
 
     # Spectral norm via power iteration
-    m, n = int(M.shape[0]), int(M.shape[1])
+    n = int(M.shape[1])
     v = b.random_normal((n, 1))
     v = b.astype(v, "float32")
     b.eval(v)
@@ -432,9 +432,10 @@ def compute_initialization_vectors(
     faster and more numerically stable than full SVD on large matrices,
     and avoids MLX sgesvdx_ crashes on ill-conditioned weights.
 
-    When ``structural_rank + oversampling >= min(m, n)``, the randomized
-    approach would compute a near-full decomposition, so full SVD is
-    used instead (same asymptotic cost, exact result).
+    When the randomized matrix-product work is at least the leading-order
+    work of a full SVD, full SVD is used instead.  The comparison is
+    ``target * (2 * power_iters + 1) >= min(m, n)`` because range finding
+    applies that many weight-sized matrix products.
 
     Args:
         weight: Base weight matrix [out, in].
@@ -473,8 +474,11 @@ def compute_initialization_vectors(
     k = max(0, min(structural_rank - 1, min(m, n) - 1))
     target = k + 1 + oversampling  # columns in random projection
 
-    # If target covers most of the matrix, full SVD is no more expensive.
-    if target >= min(m, n):
+    # Compare the leading matrix-product costs rather than only the sampled
+    # rank. Power iteration can make a nominally truncated decomposition more
+    # expensive than an exact one.
+    randomized_work = target * (2 * power_iters + 1)
+    if randomized_work >= min(m, n):
         U, S, Vt = b.svd(W, compute_uv=True)
         b.eval(U, S, Vt)
         u_k = b.reshape(U[:, k], (-1, 1))
