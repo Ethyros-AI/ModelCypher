@@ -2,7 +2,13 @@
 
 **Date:** 2026-02-03
 
-## Abstract [EMPIRICAL]
+> **DE-ORBIT NOTICE [2026-07-04]:** `plasma/` is unintegrated,
+> torch-based, and unbaselined against published disruption predictors. It is
+> not a ModelCypher product surface or validation evidence. TODO(owner):
+> relocate or delete `plasma/` outside the flagship repo; any external "1s
+> disruption lead time" claim requires a DisruptionBench baseline first.
+
+## Abstract [EXPLORATORY]
 
 Universal low-dimensional structure emerges across domains—but with domain-specific compression ratios. Plasma dynamics, LLM embeddings, and RL policies all live on manifolds far smaller than their measurement spaces, but the compression efficiency varies systematically:
 
@@ -64,7 +70,7 @@ The ~9% ratio observed in plasma and RL is **not** a universal constant. It's wh
 | **LLM** | LFM2-350M highway edges (L4-6, 10-11) | 1024 | 21.0 | **2.1%** | Transition zones |
 | **LLM** | GPT-2 embeddings | 768 | 10-50 | **1-7%** | Literature baseline |
 
-### Training Volume vs Compression [EMPIRICAL]
+### Training Volume vs Compression [EXPLORATORY]
 
 | System | Training Data | Compression Ratio | Notes |
 |--------|---------------|-------------------|-------|
@@ -122,7 +128,7 @@ Both show compression then expansion, but the axis differs:
 - LLMs: compression is spatial (middle layers)
 - Plasma: compression is temporal (steady-state phase)
 
-### Cross-Domain Tool Validation
+### Cross-Domain Tool Trial [EXPLORATORY]
 
 The same geometric tools work across domains:
 
@@ -210,7 +216,7 @@ Source: `data/experiments/archive/trajectory_analysis_synthesis.md`
 
 ---
 
-## Conclusion [EMPIRICAL]
+## Conclusion [EXPLORATORY]
 
 1. **Low-dimensional structure is universal**: All measured systems (plasma, LLMs, RL) live on manifolds orders of magnitude smaller than their measurement spaces.
 

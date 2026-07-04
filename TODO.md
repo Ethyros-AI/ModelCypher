@@ -9,7 +9,6 @@
 | Project | Location | Purpose |
 |---------|----------|---------|
 | **ModelCypher** | `/` | Main geometric analysis toolkit for neural networks |
-| **Plasma** | `/plasma/` | Tokamak plasma geometry analysis (fusion research application) |
 
 ---
 
@@ -22,7 +21,7 @@
 - [ ] Entropy reg + answer-mask mutual exclusivity fix — currently in `else` branch, needs refactor to apply independently
 
 **Recently completed (2026-02-25 through 2026-03-01):**
-- Gradient accumulation for 8B training (OOM fix): memory-safe micro-batch probe + grad accumulation [VALIDATED]
+- Gradient accumulation for 8B training (OOM fix): memory-safe micro-batch probe + grad accumulation [VALIDATED-ENG]
 - Pre/post benchmark evaluation via `--benchmark quick` flag (GSM8K, ARC-Easy, BoolQ)
 - Degeneration measurement alignment: per-epoch check using few-shot prompts, 512 tokens, 20 samples
 - `degeneration_exceeded` stopping criterion
@@ -35,7 +34,7 @@
 - K-FAC removed after its validation path failed to justify product complexity; see `docs/research/REFUTATION-LEDGER.md`
 
 **Previously completed (2026-02-20):**
-- Data-rank ceiling: `min(tail_dims, n_train_samples)` — 8B params 2.76B → 927M (2.91x reduction) [VALIDATED]
+- Data-rank ceiling: `min(tail_dims, n_train_samples)` — 8B params 2.76B → 927M (2.91x reduction) [VALIDATED-ENG]
 - Duplicate SVD elimination: `derive_optimizer_geometry_config()` accepts precomputed geometries
 - Streaming B_crit estimation: two-pass constant-memory gradient noise estimation
 - SVD `compute_uv=False` optimization: ~3x faster geometry analysis
@@ -47,10 +46,12 @@
 **Closed (no longer pursuing):**
 - ~~Validate REINFORCE on 1.2B~~ — REINFORCE on 350M closed 2026-02-23 (gradient orthogonal to CE, degradation monotonic). 1.2B attempt deferred until CE-based pipeline fully validated.
 
-### Plasma Subproject
+### Cross-Domain Forays
 
-- [ ] Complete TODO/FIXME items in `plasma/src/diiid_loader.py`
-- [ ] Complete TODO/FIXME items in `plasma/src/data_loader.py`
+- [ ] TODO(owner): relocate or delete `plasma/` outside the flagship repo.
+      `src/` has no plasma importers as of 2026-07-04. Do not pursue plasma
+      TODO/FIXME work here; any external "1s disruption lead time" claim needs
+      a DisruptionBench baseline first.
 
 ---
 
@@ -79,4 +80,4 @@ Quick links:
 
 ---
 
-*Source files: docs/research/*.md, plasma/src/*
+*Source files: docs/research/*.md*
