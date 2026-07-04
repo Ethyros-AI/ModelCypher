@@ -84,23 +84,27 @@ Need extra instrumentation? Use flags on the same command path, such as
 
 ## What Gets Derived
 
-| # | What Industry Tunes | What ModelCypher Derives | Source |
-|---|---|---|---|
-| 1 | Learning rate (`1e-4`) | MASS spectral ceiling | Weyl 1912, Loizou 2020 |
-| 2 | Adam epsilon (`1e-8`) | Spectral noise floor | IEEE 754 + SVD |
-| 3 | Momentum (`0.9/0.999`) | Cayley-Stiefel retraction | Wen & Yin 2013, Wang 2025 |
-| 4 | Weight decay (`0.01`) | Condition ratio `sigma_k / sigma_max` | SVD |
-| 5 | Gradient clipping (`1.0`) | **Removed** — MASS bounds by construction | Weyl 1912 |
-| 6 | Warmup (5-10% steps) | **Removed** — geometric LR stable from step 0 | Ma & Yarats 2021 |
-| 7 | LR schedule (cosine) | **Removed** — MASS is per-step, no schedule needed | Defazio 2024 |
-| 8 | Batch size | Gradient noise scale `B_crit` | McCandlish 2018 |
-| 9 | Early stopping (patience) | 4 geometric criteria | SVD + IEEE 754 |
-| 10 | LoRA scale (`alpha/rank`) | Spectral bound `sigma_k(W) / \|\|BA\|\|` | Weyl perturbation theory |
-| 11 | LoRA rank (`8`) | Null-space capacity `tail_dims` | Shannon effective rank |
-| 12 | Target modules (`q+v`) | Spectral decay analysis | SVD per-layer |
-| 13 | Dropout (`0.1`) | Product of two spectral ratios | Roy & Vetterli 2007 |
-| 14 | Weight init (random A, zero B) | Spectral normalized to `sigma_k` | SVD |
-| 15 | Residual scaling (`1`) | Per-layer `sigma_max(x) / sigma_max(f(x))` | Power iteration |
+<!-- BEGIN GENERATED KNOB MATRIX -->
+
+| # | Training control | Runtime status | Current code truth | Code source |
+|---|---|---|---|---|
+| 1 | Learning rate | derived+research-mode-only | default: calibrated AdamW 2e-4 cosine; MASS on research modes | `_mlx_training_adapter_train_mixin.py` + `mass_step_size.py` |
+| 2 | Adam epsilon | formula-exists-unwired | formula exists in `compute_geometric_epsilon`; shipped AdamW path does not consume it | `geometric_optimizer.py` |
+| 3 | Momentum | derived+research-mode-only | default: AdamW betas 0.9/0.999; Fisher/MASS moments only in research modes | `_mlx_training_adapter_train_mixin.py` + `diagonal_fisher_preconditioner.py` |
+| 4 | Weight decay | formula-exists-unwired | condition-ratio formula exists; shipped `mc train run` default passes `weight_decay=0.0` | `geometric_optimizer.py`, `dataset_training_service.py` |
+| 5 | Gradient clipping | derived+research-mode-only | MASS bounds updates in research modes; canonical AdamW path has no geometric clipper | `mass_step_size.py` |
+| 6 | Warmup | derived+research-mode-only | canonical path uses calibrated cosine from step 0; research modes use MASS ceilings | `dataset_training_service.py`, `mass_step_size.py` |
+| 7 | LR schedule | derived+research-mode-only | default: cosine over 6 data-epochs; no-schedule MASS only in research modes | `_mlx_training_adapter_train_mixin.py`, `mass_step_size.py` |
+| 8 | Batch size | derived+shipped-default | derived from gradient-noise scale, then reduced only for memory-safe micro-batching | `DatasetTrainingService.train_from_dataset` |
+| 9 | Early stopping | derived+shipped-default | geometric certificate and measured validation-loss windows are wired into training | `geometric_early_stopping.py`, `_mlx_training_adapter_train_mixin.py` |
+| 10 | LoRA scale | derived+shipped-default | adapter scale budget and saturation telemetry are enforced during training | `geometric_lora.py`, `_mlx_training_adapter_train_mixin.py` |
+| 11 | LoRA rank | derived+shipped-default | per-module ranks derive from tail dimensions and rank-capacity samples | `geometric_lora.py`, `DatasetTrainingService.build_training_plan` |
+| 12 | Target modules | derived+shipped-default | target surface derives from layer spectral geometry | `select_target_modules`, `DatasetTrainingService.build_training_plan` |
+| 13 | Dropout | formula-exists-unwired | formula is generated for config payloads but not applied by the shipped training adapter | `compute_geometric_dropout` runtime references=2 |
+| 14 | Weight init | formula-exists-unwired | default init is PiSSA; the documented spectral-normalized init is not the shipped default | `spectral_normalized_lora_init` runtime references=3 |
+| 15 | Residual scaling | dead-code | standalone residual-scaling formula exists with no shipped training-path consumer | `residual_scaling.py`; runtime references=0 |
+
+<!-- END GENERATED KNOB MATRIX -->
 
 Full derivations with formulas: [Geometric Hyperparameter Rosetta Stone](docs/research/geometric_hyperparameter_rosetta_stone.md)
 
