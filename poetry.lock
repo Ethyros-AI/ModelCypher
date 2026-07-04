@@ -6241,4 +6241,4 @@ vlm = ["mlx-vlm"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.15"
-content-hash = "ce62e3273abf5909f093c90ee7fbf6f95a7bcce73f11530c4f011ffb75032f8b"
+content-hash = "1cebf32f69f35b5be31aac0846b3ceccd3baff26fb68e837ffa31a1c41b1a277"
