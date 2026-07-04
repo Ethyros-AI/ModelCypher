@@ -14,9 +14,15 @@ the repo has not yet closed the promotable same-model same-data same-eval
 benchmark needed to claim "better than standard practice." See
 [RESEARCH-ROADMAP.md](docs/RESEARCH-ROADMAP.md).
 
-## The Thesis
+## The Measurement Thesis
 
-A forward pass is a deterministic geometric map. The industry treats 15 training hyperparameters as knobs to tune — learning rate, rank, scale, warmup, clipping, schedule, decay, dropout, batch size, early stopping, target modules, weight init, epsilon, momentum, residual scaling. Every one of these has a closed-form geometric replacement derived from SVD, IEEE 754 machine precision, or a cited theorem. ModelCypher replaces all 15. See [AGENTS.md](AGENTS.md) for the full derivation philosophy.
+A forward pass is a deterministic geometric map, and `mc analyze` is the
+shipped workbench for measuring that map below token level. The downstream
+training program derives all 15 traditional controls from model geometry,
+precision, or measured data where the current derivation is wired; the runtime
+status table below names the places where the shipped default still uses a
+calibrated AdamW value or an unwired formula. See
+[AGENTS.md](AGENTS.md) for the full derivation philosophy.
 
 ## Start By Measuring
 
@@ -75,14 +81,15 @@ remains research-only in `scripts/run_measurement_atlas.py`.
 poetry run mc train run --model /path/to/model --data /path/to/dataset --output /path/to/adapter
 ```
 
-No learning rate. No rank selection. No warmup schedule. No gradient clipping.
-The optimizer and step sizes are derived from measured geometry rather than
-copied recipes.
+The shipped path derives the adapter surface, rank, batch sizing, scale budget,
+and stopping certificate from measured geometry. Its default optimizer is still
+the calibrated AdamW/cosine path called out in the status table; MASS remains
+available on research modes until the closure benchmark earns promotion.
 
 Need extra instrumentation? Use flags on the same command path, such as
 `--benchmark`, `--topo-monitor`, `--dim-monitor`, or `--entropy-reg`.
 
-## What Gets Derived
+## 15-Control Runtime Status
 
 <!-- BEGIN GENERATED KNOB MATRIX -->
 
@@ -106,7 +113,9 @@ Need extra instrumentation? Use flags on the same command path, such as
 
 <!-- END GENERATED KNOB MATRIX -->
 
-Full derivations with formulas: [Geometric Hyperparameter Rosetta Stone](docs/research/geometric_hyperparameter_rosetta_stone.md)
+Research program and formulas:
+[15-Hyperparameter Research Program](docs/research/15-HYPERPARAMETER-RESEARCH-PROGRAM.md)
+and [Geometric Hyperparameter Rosetta Stone](docs/research/geometric_hyperparameter_rosetta_stone.md).
 
 ## Quick Start
 
@@ -215,6 +224,7 @@ All geometric computations are framework-agnostic. Backend selection is automati
 | [Training Guide](docs/TRAINING-GUIDE.md) | Downstream adapter workflows and dataset preparation |
 | [CLI Reference](docs/CLI-REFERENCE.md) | Workflow-first `mc analyze` plus expert command examples |
 | [Mission](docs/MISSION.md) | Measurement-first mission and derived training standards |
+| [15-Hyperparameter Research Program](docs/research/15-HYPERPARAMETER-RESEARCH-PROGRAM.md) | Per-control runtime and evidence status for the derivation program |
 | [Glossary](docs/GLOSSARY.md) | 60+ term definitions |
 | [Architecture](docs/ARCHITECTURE.md) | Hexagonal architecture and domain boundaries |
 | [Bibliography](docs/references/BIBLIOGRAPHY.md) | All cited papers with local reference PDFs |
@@ -252,7 +262,7 @@ HYPOTHESIS_PROFILE=full poetry run pytest       # Full property-based testing
 ```bibtex
 @software{kempf2026modelcypher,
   author = {Kempf, Jason},
-  title = {ModelCypher: Geometry-First LoRA Training for LLMs},
+  title = {ModelCypher: MLX-Native Measurement Workbench for LLMs},
   year = {2026},
   url = {https://github.com/Ethyros-AI/ModelCypher},
   license = {AGPL-3.0}
