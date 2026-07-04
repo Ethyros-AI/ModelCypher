@@ -19,12 +19,12 @@
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain.geometry.geometry_domain import GeometryDomain
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
-    sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.riemannian_types import CurvatureEstimate
 
@@ -51,8 +51,10 @@ class RiemannianCurvatureMixin:
         """
         Estimate local sectional curvature at a point.
 
-        Uses geodesic defect (geodesic vs chord length) for 2D/3D probes.
-        For 4D+, falls back to geodesic-only curvature estimation.
+        Uses geodesic defect (geodesic vs chord length) for 2D/3D probes,
+        with sign reported only when the defect exceeds a matched flat-data
+        null computed at the same (n, d, k). For 4D+, returns the fallback
+        scalar estimate but leaves sign unknown until a matched null is wired.
 
         Args:
             points: Point cloud [n, d]
@@ -114,13 +116,11 @@ class RiemannianCurvatureMixin:
             backend.eval(center, neighbor_pts)
             estimator = SectionalCurvatureEstimator()
             local = estimator.estimate_local_curvature(center, neighbor_pts)
-            std_val = sqrt_scalar(local.variance_sectional, backend)
-            confidence = 1.0 / (1.0 + std_val) if std_val > 0 else 1.0
             return CurvatureEstimate(
                 sectional_curvature=local.mean_sectional,
-                is_positive=local.mean_sectional > 0,
-                is_negative=local.mean_sectional < 0,
-                confidence=confidence,
+                is_positive=False,
+                is_negative=False,
+                confidence=0.0,
             )
 
         # 2D/3D: compute geodesic defect against chord distances.
@@ -157,16 +157,6 @@ class RiemannianCurvatureMixin:
         backend.eval(mean_defect_arr)
         mean_defect = float(backend.to_scalar(mean_defect_arr))
 
-        if valid_count_val > 1:
-            diff = defects - mean_defect_arr
-            diff = backend.where(valid_mask, diff, backend.zeros_like(diff))
-            variance = backend.sum(diff * diff) / valid_count_val
-            std_defect_arr = backend.sqrt(variance)
-            backend.eval(std_defect_arr)
-            std_defect = float(backend.to_scalar(std_defect_arr))
-        else:
-            std_defect = 0.0
-
         # Estimate curvature from defect
         # For a sphere of radius R, geodesic/chord ≈ 1 + K*r²/6 for small r
         # where K = 1/R² is the sectional curvature
@@ -181,12 +171,105 @@ class RiemannianCurvatureMixin:
         else:
             sectional_curvature = 0.0
 
-        # Confidence based on consistency of defects
-        confidence = 1.0 / (1.0 + std_defect) if std_defect > 0 else 1.0
+        null_min, null_max = self._matched_flat_defect_range(
+            n=n,
+            d=d,
+            center_idx=center_idx,
+            k_neighbors=k_neighbors,
+            scale=max(avg_radius, eps),
+        )
+        sign_slack = division_epsilon(backend, backend.array([mean_defect, null_min, null_max]))
+        is_positive = mean_defect > null_max + sign_slack
+        is_negative = mean_defect < null_min - sign_slack
 
         return CurvatureEstimate(
             sectional_curvature=sectional_curvature,
-            is_positive=sectional_curvature > 0,
-            is_negative=sectional_curvature < 0,
-            confidence=confidence,
+            is_positive=is_positive,
+            is_negative=is_negative,
+            confidence=0.0,
         )
+
+    def _matched_flat_defect_range(
+        self,
+        *,
+        n: int,
+        d: int,
+        center_idx: int,
+        k_neighbors: int,
+        scale: float,
+    ) -> tuple[float, float]:
+        """Return min/max geodesic defect for a matched flat hyperplane sample."""
+        backend = self._backend
+        flat_points = self._flat_hyperplane_sample(
+            n=n,
+            d=d,
+            center_idx=center_idx,
+            scale=scale,
+        )
+        geo_result = self.geodesic_distances(flat_points, k_neighbors=k_neighbors)
+        center_geo = geo_result.distances[center_idx]
+        inf_val = geo_result.inf_value
+        center_geo = backend.where(
+            backend.arange(0, n) == center_idx,
+            backend.full((n,), inf_val),
+            center_geo,
+        )
+        kth = max(0, min(k_neighbors - 1, n - 1))
+        partitioned = backend.argpartition(center_geo, kth)
+        neighbors = partitioned[:k_neighbors]
+        center = flat_points[center_idx]
+        neighbor_pts = backend.take(flat_points, neighbors, axis=0)
+        diffs = neighbor_pts - center
+        chords = backend.sqrt(backend.sum(diffs * diffs, axis=1))
+        geodesics = backend.take(center_geo, neighbors)
+        backend.eval(chords, geodesics)
+
+        eps = division_epsilon(backend, chords)
+        valid_mask = chords > eps
+        valid_count_arr = _count_mask(valid_mask, backend, dtype_source=chords)
+        backend.eval(valid_count_arr)
+        if int(backend.to_scalar(valid_count_arr)) == 0:
+            return 0.0, 0.0
+
+        defects = (geodesics - chords) / chords
+        defects = backend.where(valid_mask, defects, backend.zeros_like(defects))
+        valid_large = backend.where(valid_mask, defects, backend.full(defects.shape, -inf_val))
+        valid_small = backend.where(valid_mask, defects, backend.full(defects.shape, inf_val))
+        null_max_arr = backend.max(valid_large)
+        null_min_arr = backend.min(valid_small)
+        backend.eval(null_min_arr, null_max_arr)
+        return float(backend.to_scalar(null_min_arr)), float(backend.to_scalar(null_max_arr))
+
+    def _flat_hyperplane_sample(
+        self,
+        *,
+        n: int,
+        d: int,
+        center_idx: int,
+        scale: float,
+    ) -> "Array":
+        """Build deterministic uniform points on a flat hyperplane."""
+        if d < 1:
+            raise ValueError("Point dimension must be positive")
+        width = math.ceil(math.sqrt(max(n, 1)))
+        midpoint = (width - 1) / 2.0
+        coords: list[list[float]] = []
+        for idx in range(n):
+            row = idx // width
+            col = idx % width
+            point = [0.0] * d
+            if d == 1:
+                point[0] = (idx - (n - 1) / 2.0) * scale
+            else:
+                point[0] = (col - midpoint) * scale
+                point[1] = (row - midpoint) * scale
+            coords.append(point)
+
+        origin_idx = min(
+            range(n),
+            key=lambda idx: sum(abs(value) for value in coords[idx]),
+        )
+        coords[center_idx], coords[origin_idx] = coords[origin_idx], coords[center_idx]
+        arr = self._backend.array(coords)
+        self._backend.eval(arr)
+        return arr

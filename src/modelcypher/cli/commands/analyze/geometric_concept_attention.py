@@ -255,22 +255,22 @@ def safety_chain_profile(
 
     Measures the validated causal chain at every layer:
 
-        Entropy -> Curvature (angular) -> Cumulative curvature -> ID -> Phase
+        Entropy -> Layer rotation angle -> Cumulative rotation -> ID -> Phase
 
     Per-layer measurements:
     - Entropy: Shannon entropy via unembedding projection (Entropy-Lens)
-    - Curvature: Angular change in radians (arccos of cosine similarity)
-    - Attn/MLP decomposition: Fraction of curvature from attention vs MLP
+    - Layer rotation angle: arccos of cosine similarity, in radians
+    - Attn/MLP decomposition: Fraction of rotation from attention vs MLP
     - Intrinsic dimension: TwoNN estimator (Facco et al., 2017)
     - Phase: highway / processing / exit (data-derived boundaries)
 
     Cross-link correlations:
-    - Entropy <-> Curvature: Spearman r (validated range: 0.4-0.6)
-    - Cumulative curvature <-> ID: Spearman r (family-dependent)
+    - Entropy <-> layer rotation angle: Spearman r (validated range: 0.4-0.6)
+    - Cumulative rotation <-> ID: Spearman r (family-dependent)
     - Mean attention fraction: ~0.37 (universal across architectures)
 
     For LFM2 hybrid models, non-attention layers (ShortConv/SSM) get total
-    curvature only -- attn/MLP decomposition is not available.
+    rotation angle only -- attn/MLP decomposition is not available.
 
     Examples:
         mc analyze chain-profile --model ./my-model
@@ -353,30 +353,30 @@ def safety_chain_profile(
             f"Probes: {profile.probe_count}",
             "",
             "Per-Layer Chain:",
-            f"  {'Layer':>5} | {'Entropy':>8} | {'Curv (rad)':>10} | {'Attn frac':>9} | {'ID (TwoNN)':>10} | Phase",
+            f"  {'Layer':>5} | {'Entropy':>8} | {'Rot (rad)':>10} | {'Attn frac':>9} | {'ID (TwoNN)':>10} | Phase",
             f"  {'-----':>5}-+-{'--------':>8}-+-{'----------':>10}-+-{'---------':>9}-+-{'----------':>10}-+------",
         ]
 
         for m in profile.layers:
             entropy_str = f"{m.entropy:8.4f}" if m.entropy > 0 else "     N/A"
-            curv_str = f"{m.total_curvature:10.4f}"
+            angle_str = f"{m.layer_rotation_angle:10.4f}"
             attn_str = f"{m.attn_fraction:9.2%}" if m.attn_fraction is not None else "      N/A"
             id_str = f"{m.intrinsic_dimension:10.2f}" if not math.isnan(m.intrinsic_dimension) else "       N/A"
             phase_str = m.phase.value
 
             lines.append(
-                f"  {m.layer_idx:5d} | {entropy_str} | {curv_str} | {attn_str} | {id_str} | {phase_str}"
+                f"  {m.layer_idx:5d} | {entropy_str} | {angle_str} | {attn_str} | {id_str} | {phase_str}"
             )
 
         lines.extend([
             "",
             "Cross-Link Correlations:",
-            f"  Entropy -> Curvature:       Spearman r = {profile.correlations.entropy_to_curvature:.3f}"
-            if not math.isnan(profile.correlations.entropy_to_curvature)
-            else "  Entropy -> Curvature:       N/A (insufficient data)",
-            f"  Cumulative curv -> ID:      Spearman r = {profile.correlations.cumulative_curvature_to_id:.3f}"
-            if not math.isnan(profile.correlations.cumulative_curvature_to_id)
-            else "  Cumulative curv -> ID:      N/A (insufficient data)",
+            f"  Entropy -> rotation angle:  Spearman r = {profile.correlations.entropy_to_layer_rotation_angle:.3f}"
+            if not math.isnan(profile.correlations.entropy_to_layer_rotation_angle)
+            else "  Entropy -> rotation angle:  N/A (insufficient data)",
+            f"  Cumulative rotation -> ID:  Spearman r = {profile.correlations.cumulative_layer_rotation_angle_to_id:.3f}"
+            if not math.isnan(profile.correlations.cumulative_layer_rotation_angle_to_id)
+            else "  Cumulative rotation -> ID:  N/A (insufficient data)",
         ])
 
         if profile.correlations.mean_attn_fraction is not None:

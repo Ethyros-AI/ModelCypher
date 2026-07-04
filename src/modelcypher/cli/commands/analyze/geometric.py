@@ -18,7 +18,7 @@
 """Geometric analysis CLI commands.
 
 Provides commands for geometric analysis of model representations:
-- chain-profile: Unified causal chain diagnostic (entropy → curvature → ID → phase)
+- chain-profile: Unified causal chain diagnostic (entropy → layer rotation angle → ID → phase)
 - concept-volume: Multi-concept Riemannian volume analysis
 - dimension-profile: Per-layer intrinsic dimension profiling
 - entropy-trajectory: Layer-wise entropy trajectory analysis

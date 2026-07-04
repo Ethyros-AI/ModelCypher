@@ -68,7 +68,7 @@ class TrajectoryComplexityResult:
 
     # Curvature
     mean_curvature: float
-    """Mean angular curvature (radians) at each intermediate point."""
+    """Mean turn angle in radians at each intermediate point."""
 
     max_curvature: float
     """Maximum curvature at any point. High = sharp direction change."""
