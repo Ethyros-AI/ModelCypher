@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Merge CLI - Geometric model merging.
+"""Experimental merge CLI - geometric model merging.
 
 Null-space constrained transplant: W' = W_target + P_null @ (W_source_aligned - W_target)
 
@@ -93,7 +93,7 @@ def merge_run(
         help="Use behavior Jacobian null-space projector (per-probe CE gradients) instead of activation-covariance",
     ),
 ) -> None:
-    """Merge source model into target using null-space geometric transplant.
+    """Experimental: merge source model into target using null-space transplant.
 
     Transfers knowledge from source into target's unused representation space
     without disrupting target's existing capabilities. The pipeline discovers
@@ -160,7 +160,7 @@ def merge_batch(
         ..., "--output", "-o", help="Output directory for merged model"
     ),
 ) -> None:
-    """Merge multiple source models into one target (N→1 batch merge).
+    """Experimental: merge multiple source models into one target.
 
     Target is loaded and probed once, then reused for all sources.
     Deltas accumulate in the target's null space. Each source contributes

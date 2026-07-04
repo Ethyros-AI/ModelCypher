@@ -240,6 +240,9 @@ remains research-only in `scripts/run_measurement_atlas.py`.
 
 ## `mc merge`
 
+Experimental surface: the command is backed by the retained experimental merge
+stack until the merge pipeline is promoted or replaced.
+
 Commands:
 
 - `run`
