@@ -180,8 +180,12 @@ def compute_layer_tikhonov_weights(
         (tikhonov_weights_array, mp_edge)
     """
     b = backend
-    eigenvalue_sum = float(b.to_scalar(b.sum(eigenvalues)))
-    mp_edge = marchenko_pastur_noise_edge(eigenvalue_sum, n_features, n_samples)
+    mp_edge = marchenko_pastur_noise_edge(
+        eigenvalues,
+        n_features,
+        n_samples,
+        backend=b,
+    )
     weights = eigenvalues / (eigenvalues + mp_edge)
     b.eval(weights)
     return weights, mp_edge
@@ -451,7 +455,7 @@ def run_sequential_correction(
                 layer_time,
             )
 
-        del X, XtX, eigvals, eigvecs, tikhonov_w
+        del eigvals, eigvecs, tikhonov_w
         gc.collect()
 
     return QuantizationCorrectionResult(

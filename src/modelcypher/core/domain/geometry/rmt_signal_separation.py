@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.mp_noise_estimator import estimate_mp_noise
 from modelcypher.core.domain.geometry.numerical_stability import (
     compute_median,
     division_epsilon,
@@ -145,19 +146,7 @@ def estimate_noise_variance_from_bulk(
     n_features: int,
     backend: "Backend",
 ) -> float:
-    """Estimate noise variance from the bulk of the eigenvalue spectrum.
-
-    Uses the median of eigenvalues as a robust estimator of the bulk center,
-    then derives sigma^2 from the Marchenko-Pastur distribution.
-
-    For MP distribution with aspect ratio gamma = d/n:
-        median ≈ sigma^2 * (1 - sqrt(gamma))^2 + sigma^2 * gamma / 2
-                (approximate, exact formula involves incomplete beta)
-
-    We use the approximation:
-        sigma^2 ≈ median / (1 + gamma)
-
-    This is robust to outlier signal eigenvalues at the top.
+    """Estimate noise variance using the shared spike-robust MP estimator.
 
     Args:
         eigenvalues: Eigenvalues sorted in descending order.
@@ -168,38 +157,12 @@ def estimate_noise_variance_from_bulk(
     Returns:
         Estimated noise variance sigma^2.
     """
-    b = backend
-    eigs = b.astype(eigenvalues, precision_dtype(b, reference=eigenvalues))
-    b.eval(eigs)
-
-    n_eigs = int(eigs.shape[0])
-    if n_eigs == 0:
-        return 1.0
-
-    gamma = float(n_features) / float(n_samples)
-    eps = division_epsilon(b, eigs)
-
-    # Use median as robust estimate of bulk center
-    # Sort eigenvalues (they should already be sorted, but ensure it)
-    sorted_eigs = b.sort(eigs)
-    b.eval(sorted_eigs)
-
-    # Compute median
-    mid = n_eigs // 2
-    if n_eigs % 2 == 1:
-        median_val = float(b.to_scalar(sorted_eigs[mid]))
-    else:
-        lower = float(b.to_scalar(sorted_eigs[mid - 1]))
-        upper = float(b.to_scalar(sorted_eigs[mid]))
-        median_val = (lower + upper) / 2.0
-
-    # Estimate sigma^2 from median
-    # For MP distribution: E[lambda] = sigma^2 * (1 + gamma)
-    # Median is slightly lower, so this slightly overestimates sigma^2
-    # which overestimates sigma^2, raising the MP edge (fewer false signals)
-    sigma_sq = median_val / max(1.0 + gamma, eps)
-
-    return max(sigma_sq, eps)
+    return estimate_mp_noise(
+        eigenvalues,
+        n_samples=n_samples,
+        n_features=n_features,
+        backend=backend,
+    ).sigma_sq
 
 
 def estimate_noise_variance_closed_form(
@@ -208,17 +171,7 @@ def estimate_noise_variance_closed_form(
     n_features: int,
     backend: "Backend",
 ) -> float:
-    """Noise variance estimator using the lower MP bulk.
-
-    Uses the lower half of eigenvalues to estimate sigma^2 based on MP
-    distribution relationships. Assumes signal components lie above the bulk
-    in the spiked model.
-
-    Mathematical derivation:
-        - Lower edge: lambda_- = sigma^2 * (1 - sqrt(gamma))^2
-        - Q1 approximation: Q1 ≈ sigma^2 * (1 + gamma - sqrt(gamma))
-        - Mean of lower half ≈ (lower_edge + Q1) / 2
-        - Solve for sigma^2 = lower_mean / expected_factor
+    """Compatibility wrapper for the shared spike-robust MP estimator.
 
     Args:
         eigenvalues: Eigenvalues (any order, will be sorted).
@@ -233,75 +186,12 @@ def estimate_noise_variance_closed_form(
         - Marchenko & Pastur (1967)
         - The invariant "signal > bulk" follows from spiked covariance models
     """
-    b = backend
-    eigs = b.astype(eigenvalues, precision_dtype(b, reference=eigenvalues))
-    b.eval(eigs)
-
-    n_eigs = int(eigs.shape[0])
-    if n_eigs == 0:
-        return 1.0
-
-    gamma = float(n_features) / float(n_samples)
-    eps = division_epsilon(b, eigs)
-
-    # Sort eigenvalues ascending (lower eigenvalues first)
-    sorted_eigs = b.sort(eigs)
-    b.eval(sorted_eigs)
-
-    # Take lower half - these are GUARANTEED to be noise
-    # Signal eigenvalues are always ABOVE the bulk, never below
-    lower_half_count = max(n_eigs // 2, 1)
-    lower_indices = b.arange(lower_half_count)
-    lower_eigs = b.take(sorted_eigs, lower_indices, axis=0)
-    b.eval(lower_eigs)
-
-    # Compute mean of lower half
-    lower_mean = b.mean(lower_eigs)
-    b.eval(lower_mean)
-    lower_mean_val = float(b.to_scalar(lower_mean))
-
-    # Compute expected mean of lower half of MP distribution
-    # E[lambda | lambda < median] / sigma^2 = g(gamma)
-    #
-    # For MP distribution on [a, b] where:
-    #   a = sigma^2 * (1 - sqrt(gamma))^2  (lower edge)
-    #   b = sigma^2 * (1 + sqrt(gamma))^2  (upper edge)
-    #
-    # The lower half has conditional expectation approximately:
-    #   E[lambda | lambda < median] ≈ sigma^2 * (lower_edge_factor + q1_factor) / 2
-    #
-    # where:
-    #   lower_edge_factor = (1 - sqrt(gamma))^2
-    #   q1_factor ≈ 1 + gamma - sqrt(gamma)  (Q1 approximation from MP CDF)
-    sqrt_gamma = sqrt_scalar(gamma, b)
-
-    # Lower edge factor: (1 - sqrt(gamma))^2
-    lower_edge_factor = (1.0 - sqrt_gamma) ** 2
-
-    # Q1 approximation: derived from MP CDF behavior
-    # The 25th percentile lies at approximately sigma^2 * (1 + gamma - sqrt(gamma))
-    q1_factor = 1.0 + gamma - sqrt_gamma
-
-    # Expected mean of lower half ≈ midpoint of [lower_edge, Q1]
-    expected_lower_mean_factor = (lower_edge_factor + q1_factor) / 2.0
-
-    # Edge case: when gamma is very small or very large
-    if expected_lower_mean_factor < eps:
-        # Fall back to simple mean relationship
-        expected_lower_mean_factor = 0.5 * (1.0 + gamma)
-
-    # Solve for sigma^2
-    sigma_sq = lower_mean_val / max(expected_lower_mean_factor, eps)
-
-    logger.debug(
-        "RMT closed-form: gamma=%.4f, lower_mean=%.6f, factor=%.4f, sigma^2=%.6f",
-        gamma,
-        lower_mean_val,
-        expected_lower_mean_factor,
-        sigma_sq,
-    )
-
-    return max(sigma_sq, eps)
+    return estimate_mp_noise(
+        eigenvalues,
+        n_samples=n_samples,
+        n_features=n_features,
+        backend=backend,
+    ).sigma_sq
 
 
 def separate_signal_noise(
@@ -382,33 +272,15 @@ def separate_signal_noise(
     eigenvalues_sorted = b.take(eigenvalues, desc_indices, axis=0)
     b.eval(eigenvalues_sorted)
 
-    # For MP distribution, use effective sample size
-    # gamma_eff = d / n for overdetermined, n / d for underdetermined
-    # The MP distribution always uses the smaller dimension in numerator
-    if n_samples >= n_features:
-        # Overdetermined: gamma = d/n < 1
-        n_eff = n_samples
-        d_eff = n_features
-    else:
-        # Underdetermined: gamma = n/d < 1
-        n_eff = n_features
-        d_eff = n_samples
-
-    # Estimate noise variance from bulk
-    # Default: closed-form using lower-bulk invariant (signal > bulk, so lower = noise)
-    if noise_estimation == "closed_form":
-        sigma_sq = estimate_noise_variance_closed_form(
-            eigenvalues_sorted, n_eff, d_eff, b
-        )
-    else:  # "median" fallback
-        sigma_sq = estimate_noise_variance_from_bulk(
-            eigenvalues_sorted, n_eff, d_eff, b
-        )
-
-    # Compute MP edges with effective dimensions
-    lower_edge, upper_edge = marchenko_pastur_edges(
-        n_eff, d_eff, sigma_sq, b
+    estimate = estimate_mp_noise(
+        eigenvalues_sorted,
+        n_samples=n_samples,
+        n_features=n_features,
+        backend=b,
     )
+    sigma_sq = estimate.sigma_sq
+    lower_edge = estimate.lower_edge
+    upper_edge = estimate.upper_edge
 
     logger.debug(
         "RMT: sigma^2=%.6f, MP edges=[%.6f, %.6f]",
