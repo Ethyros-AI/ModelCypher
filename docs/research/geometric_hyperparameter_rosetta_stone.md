@@ -17,45 +17,52 @@
 
 There are no "knobs" in LLMs. Temperature, top-p, top-k are noise injection mechanisms that obscure the deterministic geometric structure. The model's weights define a fixed high-dimensional landscape. With greedy decoding (temp=0), every input traces exactly one path through that landscape.
 
-Every training hyperparameter is either:
+Every training-control row is now labeled by evidence type:
 
-1. **Derived** from the spectral structure of weight matrices
-2. **Derived** from dtype machine precision (float32 constants)
-3. **Removed** because the geometric optimizer makes it unnecessary
+1. **derived**: the cited mechanism yields the formula directly
+2. **adopted**: the row uses a mainstream external method as-is
+3. **convention**: the row uses a precision or engineering convention, not a
+   validated behavioral theorem
 
-This document maps each traditional hyperparameter to its geometric replacement.
+Runtime status lives in
+[`15-HYPERPARAMETER-RESEARCH-PROGRAM.md`](15-HYPERPARAMETER-RESEARCH-PROGRAM.md).
+This document maps the historical formula claims and keeps the citation labels
+honest.
 
 ---
 
 ## Master Reference Table
 
-| # | Hyperparameter | Industry Standard | Geometric Replacement | Formula | Status |
+| # | Hyperparameter | Industry Standard | Replacement / Current Truth | Formula | Evidence label |
 |---|---|---|---|---|---|
 | | **Optimizer** | | | | |
-| 1 | Learning Rate | `1e-4` (grid search) | MASS step-size controller | `η_step = min(η_ceiling, η_sps, η_weyl)` | Implemented |
-| 2 | Adam Epsilon | `1e-8` (never questioned) | Spectral noise floor | `max(sigma_k^2, sqrt(eps) * sigma_max^2)` | Implemented |
-| 3 | Adam/Momentum | `0.9 / 0.999` | **Cayley-Stiefel** retraction | Orthogonality constraint on NB-LoRA factors | Superseded: ScaledGD by Cayley-Stiefel |
-| 4 | Weight Decay | `0.01` (uniform) | Condition-aware scaling | `sigma_k / sigma_max` | Implemented |
-| 5 | Gradient Clipping | `clip=1.0` | **REMOVED** | Cayley-Stiefel retraction + MASS budget monitoring prevent explosion | Removed |
+| 1 | Learning Rate | `1e-4` (grid search) | MASS step-size controller on research modes; default path is calibrated AdamW `2e-4` cosine | `eta_step = min(eta_ceiling, eta_sps, eta_weyl)` | derived |
+| 2 | Adam Epsilon | `1e-8` (never questioned) | Precision floor formula exists but has unresolved Adam-units mismatch | `max(sigma_k^2, sqrt(eps) * sigma_max^2)` | convention |
+| 3 | Adam/Momentum | `0.9 / 0.999` | Default path adopts AdamW betas; research modes use Fisher/MASS moment logic | AdamW betas or Fisher/MASS state | adopted |
+| 4 | Weight Decay | `0.01` (uniform) | Condition-aware formula exists; default `mc train run` passes `weight_decay=0.0` | `sigma_k / sigma_max` | derived |
+| 5 | Gradient Clipping | `clip=1.0` | Removed from canonical path; MASS research modes bound updates | controller-bound displacement | derived |
 | | **Training Loop** | | | | |
-| 6 | Warmup | 5-10% of steps | **REMOVED** | Geometric LR stable from step 0 | Removed |
-| 7 | LR Schedule | Cosine decay | **OPTIONAL** | Condition ratio is static; cosine marginal | Optional |
-| 8 | Batch Size | "As big as fits" | Gradient noise scale | `B_crit = Var(g) / \|\|E[g]\|\|^2` | Implemented |
-| 9 | Early Stopping | Val loss patience | Geometric convergence | Loss < sqrt(eps) OR spectral budget > 0.9 | Implemented |
+| 6 | Warmup | 5-10% of steps | No warmup flag on the canonical path; MASS research modes rely on measured ceilings | no separate warmup schedule | derived |
+| 7 | LR Schedule | Cosine decay | Default path uses calibrated cosine; schedule-free framing is external work | Defazio/Schedule-Free equivalence, not a ModelCypher derivation | adopted |
+| 8 | Batch Size | "As big as fits" | Gradient-noise scale is wired for logical batch sizing | `B_crit = Var(g) / ||E[g]||^2` | adopted |
+| 9 | Early Stopping | Val loss patience | Certificate and loss windows are wired; sqrt-eps behavioral thresholds are under review | measured validation windows plus precision conventions | convention |
 | | **LoRA** | | | | |
-| 10 | Scale | `alpha/rank = 2.0` | Spectral bound per-layer | `sigma_k(W) / \|\|BA\|\|_spectral` | Implemented |
-| 11 | Rank | `8` (arbitrary) | Null-space capacity | `tail_dims = full_rank - floor(shannon_effective_rank)` | Implemented |
-| 12 | Target Modules | `q_proj + v_proj` | Spectral decay analysis | Layers where `tail_dims > 0` | Implemented |
-| 13 | Dropout | `0.1` (arbitrary) | Two spectral ratios | `redundancy * adapter_fraction` | Implemented |
-| 14 | Weight Init | Random A, zeros B | Spectral normalized | `\|\|BA\|\|_spectral = sigma_k` from step 0 | Implemented |
+| 10 | Scale | `alpha/rank = 2.0` | Weyl structural bound is correct; sigma_k budget is diagnostic-only for behavioral damage per R2 | `sigma_k(W) / ||BA||_2` structural bound | derived |
+| 11 | Rank | `8` (arbitrary) | Null-space capacity from Shannon effective rank | `tail_dims = full_rank - floor(shannon_effective_rank)` | derived |
+| 12 | Target Modules | `q_proj + v_proj` | Spectral decay analysis selects target surface | layers where `tail_dims > 0` | derived |
+| 13 | Dropout | `0.1` (arbitrary) | Formula exists for config payloads but shipped adapter does not apply it | `redundancy * adapter_fraction` | convention |
+| 14 | Weight Init | Random A, zeros B | Runtime default is PiSSA; spectral-normalized init is historical/unwired | PiSSA or historical `||BA||_2 = sigma_k` | adopted |
 | | **Architecture** | | | | |
-| 15 | Residual Scaling | `alpha = 1` | Spectral ratio per-layer | `sigma_max(x) / sigma_max(f(x))` | Implemented |
+| 15 | Residual Scaling | `alpha = 1` | Formula exists as dead code; no shipped training-path consumer | `sigma_max(x) / sigma_max(f(x))` | derived |
 
 ---
 
-## Constants Derived from Machine Precision `[PROVEN]`
+## Precision Conventions `[CONVENTION]`
 
-All formulas reference constants derived from IEEE 754 float32:
+Several formulas reference IEEE 754 float32 constants. These are valid machine
+precision quantities, but using them as behavioral thresholds is a convention
+unless the measurement operator's sampling noise has been bounded below that
+scale.
 
 | Constant | Symbol | Value | Derivation | Used By |
 |---|---|---|---|---|
@@ -93,17 +100,20 @@ history.
 
 ---
 
-### 2. Adam Epsilon `[EMPIRICAL]`
+### 2. Adam Epsilon `[CONVENTION]`
 
 **Industry**: `1e-8`, the default from Kingma & Ba (2014). Never questioned.
 
-**Geometric**: `eps = max(sigma_k^2, sqrt(eps_mach) * sigma_max^2)`
+**Historical formula**: `eps = max(sigma_k^2, sqrt(eps_mach) * sigma_max^2)`
 
 Two floors, take the larger:
 - `sigma_k^2`: the noise floor of the weight's eigenspectrum
 - `sqrt(eps_mach) * sigma_max^2`: the numerical precision floor
 
-**Mathematical Basis**: Epsilon prevents division by zero in the Adam denominator (`1 / (sqrt(v) + eps)`). It must be large enough for stability but small enough to preserve gradient signal. Both floors come from the weight's spectral structure.
+**Current status**: This is not a shipped optimizer claim. Adam epsilon is added
+to `sqrt(v_t)`, so its units must match the measured second-moment state. The
+weight-singular-value-squared formula is a precision convention until that unit
+chain is derived and wired.
 
 **Code**: `geometric_optimizer.py:129` (`compute_geometric_epsilon`)
 
@@ -133,59 +143,79 @@ The ε regularization in the inverse uses the geometric epsilon `max(σ_k², √
 
 ---
 
-### 4. Weight Decay `[EMPIRICAL]`
+### 4. Weight Decay `[DERIVED-FORMULA-UNWIRED]`
 
 **Industry**: `0.01`, applied uniformly to all parameters.
 
-**Geometric**: `decay_scale = sigma_k / sigma_max` (condition ratio). Poorly-conditioned layers (high kappa = sigma_max / sigma_k) get less decay because their small singular values are already near the noise floor. Decaying them further destroys useful signal.
+**Geometric formula**: `decay_scale = sigma_k / sigma_max` (condition ratio).
+Poorly-conditioned layers (high kappa = sigma_max / sigma_k) get less decay
+under the formula.
+
+**Current status**: The formula exists, but the canonical `mc train run`
+runtime passes `weight_decay=0.0` by default. Do not cite this row as a shipped
+replacement until it is wired and benchmarked.
 
 **Code**: `geometric_optimizer.py:157` (`compute_decay_scale`)
 
 ---
 
-### 5. Gradient Clipping `[EMPIRICAL]`
+### 5. Gradient Clipping `[DERIVED-RESEARCH-MODE]`
 
 **Industry**: `clip=1.0`, from Pascanu et al. (2013). No theoretical basis for the threshold.
 
-**Geometric**: **REMOVED**. Cayley-Stiefel retraction bounds update norms by construction. The spectral budget monitor (`check_budget_exhausted`) catches any violation and halts training — this is cleaner than clipping because halting respects the bound while clipping is a heuristic correction. Experiments showed 0% clipping events across all layers.
+**Geometric**: **Removed from the canonical path**. MASS research modes bound
+updates through controller terms rather than clipping a post-hoc gradient norm.
+The old "0% clipping events" statement is historical experiment context, not a
+current public efficacy claim.
 
 **Deep Dive**: `training_heuristics_analysis.md`, Experiment 1
 
 ---
 
-### 6. Warmup `[EMPIRICAL]`
+### 6. Warmup `[DERIVED-RESEARCH-MODE]`
 
 **Industry**: Linear warmup for 5-10% of total steps.
 
-**Geometric**: **REMOVED**. Geometric LR is bounded by spectral structure from step 0. The condition ratio `sigma_k/sigma_max` is computed once from base weights and never changes. There is no "cold start" problem because the step size is not learned - it's measured. Ma & Yarats (AAAI 2021) showed warmup compensates for Adam's initial update magnitude starting at exactly alpha. The geometric optimizer has no such initialization artifact.
+**Geometric**: **Removed as a separate control** on MASS research modes because
+the step ceiling is measured before use. The canonical path currently uses
+calibrated AdamW/cosine from step 0. This row is not evidence that the default
+optimizer is fully hyperparameter-free.
 
 **Deep Dive**: `training_heuristics_analysis.md`, Experiment 2
 
 ---
 
-### 7. LR Schedule `[EMPIRICAL]`
+### 7. LR Schedule `[ADOPTED]`
 
 **Industry**: Cosine decay to 0 (standard in transformer training).
 
-**Geometric**: **OPTIONAL**. The per-layer condition ratio is static (computed once from base weights), so there's no implicit schedule. Experiments showed cosine decay gave only marginal improvement (0.008 loss) over flat geometric LR. Defazio et al. (NeurIPS 2024) showed schedules are equivalent to iterate averaging. For the geometric optimizer, the static LR works because the condition ratio already captures the correct scale.
+**Adopted reference**: Defazio et al. (NeurIPS 2024) is an external
+schedule-free/iterate-averaging result. It does not by itself prove the
+ModelCypher runtime can remove schedules.
+
+**Current status**: The canonical path uses calibrated cosine decay. MASS
+research modes avoid a separate schedule by choosing `eta_step` online.
 
 **Deep Dive**: `training_heuristics_analysis.md`, Experiment 3
 
 ---
 
-### 8. Batch Size `[CONJECTURAL]`
+### 8. Batch Size `[ADOPTED]`
 
 **Industry**: "As big as fits in memory."
 
 **Geometric**: `B_crit = Var(g) / ||E[g]||^2` (gradient noise scale). Below B_crit: linear speedup. Above B_crit: diminishing returns. The gradient covariance encodes sample redundancy. Low effective rank of gradient covariance means samples are redundant and larger batches are safe.
 
-**Status**: Partial. Formula proven (McCandlish et al. 2018), not wired to training loop.
+**Status**: The gradient-noise scale model is adopted from McCandlish et al.
+(2018) and is wired for logical batch sizing. Promotion still depends on
+showing that the measured critical batch predicts useful training behavior in
+the closure benchmark.
 
 **Deep Dive**: `training_heuristics_analysis.md`, Experiment 4
 
 ---
 
-### 9. Early Stopping `[EMPIRICAL]`
+### 9. Early Stopping `[CONVENTION-UNDER-REVIEW]`
 
 **Industry**: "Stop when validation loss hasn't improved for N epochs" (patience).
 
@@ -196,22 +226,34 @@ should_stop = loss_stable OR budget_exhausted
 ```
 
 Where:
-- `loss_stable`: Loss change below `sqrt(eps)` (numerical precision floor)
-- `budget_exhausted`: Spectral bound ratio > 0.9 (90% of geometric budget consumed, i.e. `||BA||_spectral / sigma_k > 0.9`)
+- `loss_stable`: measured validation-loss windows
+- `budget_exhausted`: spectral budget telemetry
 
-All thresholds are dtype-derived (`sqrt(eps)`) or geometry-derived (spectral bound ratio).
+**Current status**: Any use of `sqrt(eps)` on sampled behavioral quantities is
+a precision convention until baseline sampling variance is measured and shown
+to be below that threshold. Do not promote dtype thresholds as behavioral
+stopping theorems.
 
 **Deep Dive**: `training_heuristics_analysis.md`, Phase 2b
 
 ---
 
-### 10. LoRA Scale `[VALIDATED]`
+### 10. LoRA Scale `[DERIVED-STRUCTURAL]`
 
 **Industry**: `scale = alpha/rank` (typically alpha=16, rank=8, scale=2.0).
 
-**Geometric**: `scale <= sigma_k(W) / ||B @ A||_spectral` per layer. All 9 tested adapters were 22-2700x over this bound. The standard scale of 2.0 caused catastrophic model degradation (gibberish output, repetitive loops). The geometric scale restored correct reasoning.
+**Geometric**: `scale <= sigma_k(W) / ||B @ A||_spectral` per layer is the
+structural Weyl budget used by `mc analyze lora-svd`.
 
-**Mathematical Basis**: By Weyl's inequality, `|sigma_i(W') - sigma_i(W)| <= ||scale * Delta||_2`. To preserve W's spectral structure, the perturbation must not exceed `sigma_k`. For crossing at the structural boundary, the Weyl no-crossing condition is `||E||_2 < gap_k / 2`, giving `scale <= gap / (2 * ||Delta||_2)`.
+**Mathematical basis**: By Weyl's inequality,
+`|sigma_i(W') - sigma_i(W)| <= ||scale * Delta||_2`. To preserve W's
+structural spectrum, the perturbation must remain below the chosen structural
+budget. For crossing at an eigengap, the no-crossing condition is
+`||E||_2 < gap_k / 2`.
+
+**R2 finding**: The retained R2 report downgraded the structural `sigma_k`
+budget to **diagnostic-only** for behavioral damage. It is a correct structural
+measurement; it does not currently predict behavioral damage by itself.
 
 **Code**: `lora_safety_service.py` (`compute_geometric_scale`, `apply_lora_geometric`)
 
@@ -252,11 +294,11 @@ v_proj/k_proj have 100x more room for perturbation than q_proj/o_proj. The stand
 
 ---
 
-### 13. LoRA Dropout `[VALIDATED]`
+### 13. LoRA Dropout `[CONVENTION-UNWIRED]`
 
 **Industry**: `0.1`, arbitrary.
 
-**Geometric**: Product of two spectral ratios, no arbitrary constants:
+**Historical formula**: Product of two spectral ratios:
 
 ```
 dropout = redundancy * adapter_fraction
@@ -267,9 +309,9 @@ Where:
 - `adapter_fraction = rank / full_rank` (how much of the weight's space LoRA occupies)
 - `shannon_eff_rank = exp(H(sigma^2))` (Roy & Vetterli 2007)
 
-Self-calibrating: layers with more null-space capacity get both higher rank AND higher dropout. The two ratios multiply to give values that scale with the geometry. NB-LoRA (Cayley transform) uses 0.0 because its spectral norm bound is strictly tighter than dropout's nuclear norm regularization.
-
-Validated on 7 real models across 4 architectures. Dropout ranges from 0.001 (small rank) to 0.11 (large rank layers).
+Current status: this formula can appear in generated config payloads, but the
+shipped training adapter does not apply it as runtime dropout. Treat the row as
+unwired, not validated.
 
 **Code**: `geometric_lora.py:283` (`compute_geometric_dropout`)
 
@@ -277,11 +319,11 @@ Validated on 7 real models across 4 architectures. Dropout ranges from 0.001 (sm
 
 ---
 
-### 14. LoRA Weight Initialization `[EMPIRICAL]`
+### 14. LoRA Weight Initialization `[ADOPTED-DEFAULT]`
 
 **Industry**: Random A (Gaussian), zeros B (Hu et al. 2021). Product B @ A starts at zero and must "grow into" the budget during training.
 
-**Geometric**: Spectral normalized initialization:
+**Historical geometric formula**: Spectral normalized initialization:
 
 ```
 ||A||_spectral = sqrt(sigma_k)
@@ -289,17 +331,20 @@ Validated on 7 real models across 4 architectures. Dropout ranges from 0.001 (sm
 ||B @ A||_spectral = sigma_k
 ```
 
-Uses the full geometric budget from step 0. Each matrix gets `sqrt(sigma_k)` spectral norm so the product respects the bound immediately.
+**Current status**: The runtime default is PiSSA. The spectral-normalized
+`sigma_k` initialization is not the shipped default and should not be described
+as the active weight-init derivation.
 
 **Code**: `spectral_init.py:162` (`spectral_normalized_lora_init`)
 
 ---
 
-### 15. Residual Connection Scaling `[EMPIRICAL]`
+### 15. Residual Connection Scaling `[DERIVED-FORMULA-DEAD-CODE]`
 
 **Industry**: `alpha = 1` (no scaling, standard residual `output = x + f(x)`).
 
-**Geometric**: `alpha_i = sigma_max(x) / sigma_max(f(x))` per layer. Normalizes so `||alpha * f(x)|| ~ ||x||`, making residual contributions comparable across layers. Hook-based (non-invasive, no model modification). Clamped to precision-derived range `[sqrt(eps), 1/sqrt(eps)]`. Spectral norms computed via fast power iteration (3 iterations).
+**Geometric formula**: `alpha_i = sigma_max(x) / sigma_max(f(x))` per layer.
+The standalone formula exists, but no shipped training path consumes it.
 
 **Code**: `residual_scaling.py:184` (`compute_residual_scale`), `:39` (`spectral_norm_power_iteration`)
 
@@ -309,18 +354,21 @@ Uses the full geometric budget from step 0. Each matrix gets `sqrt(sigma_k)` spe
 
 | Heuristic | Why Removed / Replaced | Evidence |
 |---|---|---|
-| Gradient Clipping | Cayley-Stiefel retraction bounds updates; budget monitor halts on violation | 0% clip events across all layers in experiments |
-| Warmup | MASS is stable from step 0, no warmup needed | No divergence without warmup; convergence immediate |
-| Adam / Momentum | Replaced by Cayley-Stiefel retraction (NB-LoRA). Historical: ScaledGD (Tong et al. JMLR 2021) | Orthogonality constraint makes preconditioning unnecessary |
-| Per-layer LR heuristics | Replaced by MASS controller + Weyl bounds | σ_k/σ_max, 1/σ_max, σ_k/σ_max² were guesses, not measured controls |
+| Gradient Clipping | Removed from the canonical path; MASS research modes bound updates | Historical experiment note only; not a current public efficacy claim |
+| Warmup | No separate warmup control on the canonical CLI | Default still uses calibrated AdamW/cosine, so this is not a fully replaced knob |
+| Adam / Momentum | Default adopts AdamW betas; research modes use Fisher/MASS state | Promotion requires closure benchmark evidence |
+| Per-layer LR heuristics | Replaced in research modes by MASS controller + Weyl bounds | `sigma_k/sigma_max`, `1/sigma_max`, `sigma_k/sigma_max^2` were guesses, not measured controls |
 
 ---
 
-## Partially Implemented
+## Unwired Or Partially Implemented
 
 | Heuristic | Formula | What Exists | What's Missing |
 |---|---|---|---|
-| Weight Decay | `sigma_k / sigma_max` | `compute_decay_scale()` in optimizer | Full integration across all training paths |
+| Adam epsilon | `max(sigma_k^2, sqrt(eps) * sigma_max^2)` | `compute_geometric_epsilon()` | Unit-consistent Adam `v_t` derivation and runtime wiring |
+| Weight Decay | `sigma_k / sigma_max` | `compute_decay_scale()` | Canonical runtime wiring and closure benchmark evidence |
+| Dropout | `redundancy * adapter_fraction` | `compute_geometric_dropout()` | Adapter-runtime dropout application and validation |
+| Residual scaling | `sigma_max(x) / sigma_max(f(x))` | `residual_scaling.py` | A shipped consumer or deletion |
 
 ---
 
@@ -328,7 +376,7 @@ Uses the full geometric budget from step 0. Each matrix gets `sqrt(sigma_k)` spe
 
 | Topic | Document | Content |
 |---|---|---|
-| LoRA scale empirical validation | `lora_spectral_scale_bound.md` | 9 adapter analysis, GSM8K test case |
+| LoRA scale structural diagnostic | `lora_spectral_scale_bound.md` | Adapter spectral analysis; behavioral prediction downgraded by R2 |
 | 3 Theorems (Weyl, Weyl no-crossing, Sufficiency) | `lora_spectral_theory.md` | Full proofs for necessity, no-crossing, sufficiency |
 | Rank/target/scale original derivation | `lora_geometric_derivation.md` | Original derivation (superseded by scale bound) |
 | Projection targeting | `lora_projection_targeting.md` | q_proj vs v_proj spectral analysis |
@@ -359,4 +407,5 @@ Uses the full geometric budget from step 0. Each matrix gets `sqrt(sigma_k)` spe
 
 ---
 
-*All code paths relative to `src/modelcypher/`. All formulas verified against source.*
+*All code paths relative to `src/modelcypher/`. Runtime status must be checked
+against the generated matrix before promoting any row.*
