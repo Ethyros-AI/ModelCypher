@@ -9,7 +9,7 @@ Canonical protocols for verifying ModelCypher's key claims.
 Command:
 
 ```bash
-poetry run mc merge run -s <source_model> -t <target_model> -o <output_dir>
+poetry run mc merge run -s <source_model> -t <target_model> -o <output_dir>  # experimental
 ```
 
 Inspect merge output for:
@@ -103,7 +103,7 @@ poetry run mc model info ./model
 poetry run mc model capacity ./model
 
 # Merge models
-poetry run mc merge run -s ./model-A -t ./model-B -o ./merged
+poetry run mc merge run -s ./model-A -t ./model-B -o ./merged  # experimental
 
 # Safety calibration and testing
 poetry run mc analyze calibrate-safety --model ./model

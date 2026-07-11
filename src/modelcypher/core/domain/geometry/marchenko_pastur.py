@@ -23,7 +23,7 @@ eigenvalues that split into signal (population structure) and noise (finite-
 sample artifact). The Marchenko-Pastur law (1967) gives the upper edge of the
 noise bulk:
 
-    sigma_sq = trace(C) / D  (average eigenvalue)
+    sigma_sq = robust MP bulk mean with signal spikes excluded
     gamma = D / N  (aspect ratio, columns / rows)
     alpha = sigma_sq * (1 + sqrt(gamma))^2
 
@@ -43,8 +43,13 @@ Applications using this module may be experimental (see caller docstrings).
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+from modelcypher.core.domain.geometry.mp_noise_estimator import estimate_mp_noise
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Backend
 
 
 @dataclass(frozen=True)
@@ -52,7 +57,7 @@ class MarchenkoPasturResult:
     """Result of Marchenko-Pastur noise edge computation."""
 
     sigma_sq: float
-    """Average eigenvalue (trace(C)/D)."""
+    """Estimated MP bulk mean with exact zeros and signal spikes excluded."""
 
     aspect_ratio: float
     """D / N (features / samples)."""
@@ -65,31 +70,33 @@ class MarchenkoPasturResult:
 
 
 def marchenko_pastur_noise_edge(
-    eigenvalue_sum: float,
+    eigenvalues: list[float] | tuple[float, ...],
     n_features: int,
     n_samples: int,
+    backend: "Backend | None" = None,
 ) -> float:
-    """Compute the Marchenko-Pastur upper noise edge.
+    """Compute the spike-robust Marchenko-Pastur upper noise edge.
 
     Args:
-        eigenvalue_sum: Sum of eigenvalues (= trace of sample covariance).
+        eigenvalues: Eigenvalues of the sample covariance.
         n_features: D, dimensionality of each sample.
         n_samples: N, number of samples (rows of the data matrix X).
+        backend: Optional source backend used to derive the eigenvalue dtype
+            precision. Omit only for Python-float spectra.
 
     Returns:
         alpha: The noise edge. Eigenvalues below this are sampling noise.
 
-    The aspect ratio gamma = D / N. When N >> D (gamma << 1), the noise edge
-    is close to sigma_sq (all eigenvalues are reliable). When D >> N
-    (gamma >> 1), the noise edge is large (few eigenvalues pass).
+    The estimator excludes exact rank-deficiency zeros and estimates sigma_sq
+    from the remaining MP bulk after removing signal spikes.
     """
-    if n_features <= 0 or n_samples <= 0:
-        raise ValueError(
-            f"n_features={n_features} and n_samples={n_samples} must be positive"
-        )
-    sigma_sq = eigenvalue_sum / n_features
-    gamma = n_features / n_samples
-    return sigma_sq * (1.0 + math.sqrt(gamma)) ** 2
+    estimate = estimate_mp_noise(
+        eigenvalues,
+        n_samples=n_samples,
+        n_features=n_features,
+        backend=backend,
+    )
+    return estimate.upper_edge
 
 
 def tikhonov_weights_from_eigenvalues(
@@ -145,12 +152,16 @@ def compute_marchenko_pastur_profile(
         MarchenkoPasturResult with sigma_sq, aspect_ratio, noise_edge,
         and effective_rank (sum of Tikhonov weights).
     """
-    eigenvalue_sum = sum(eigenvalues)
-    noise_edge = marchenko_pastur_noise_edge(eigenvalue_sum, n_features, n_samples)
+    estimate = estimate_mp_noise(
+        eigenvalues,
+        n_samples=n_samples,
+        n_features=n_features,
+    )
+    noise_edge = estimate.upper_edge
     eff_rank = tikhonov_effective_rank(eigenvalues, noise_edge)
     return MarchenkoPasturResult(
-        sigma_sq=eigenvalue_sum / n_features,
-        aspect_ratio=n_features / n_samples,
+        sigma_sq=estimate.sigma_sq,
+        aspect_ratio=estimate.aspect_ratio,
         noise_edge=noise_edge,
         effective_rank=eff_rank,
     )

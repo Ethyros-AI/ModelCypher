@@ -20,9 +20,8 @@ import argparse
 import json
 import math
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
-
 
 # ── Pure-Python statistics (no Backend needed for post-hoc analysis) ─────────
 
@@ -350,7 +349,6 @@ def section_3c_composite_correlations(records: list[dict]) -> dict:
     sbf_srs = [sr for sr, c in zip(scale_ratios, composites) if c.sbf is not None]
 
     # Log-space variants
-    log_sr = [math.log(sr) for sr in scale_ratios if sr > 0]
     log_sr_full = []
     is_for_log = []
     defect_for_log = []
@@ -744,7 +742,7 @@ def main():
         print(f"  Best individual r² = {ols['best_individual_r_squared']:.4f}")
         if ols["improvement_ratio"] is not None:
             print(f"  Joint R² / best individual r² = {ols['improvement_ratio']:.2f}x")
-        print(f"\n  Coefficients:")
+        print("\n  Coefficients:")
         for name, b in ols["coefficients"].items():
             print(f"    {name:20s} β = {b:+.4f}")
     print()

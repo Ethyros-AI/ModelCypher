@@ -82,6 +82,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_UNDERIVED_INIT_SCALE_FRACTION = 0.5
+
 
 # =============================================================================
 # Data Classes
@@ -130,7 +132,9 @@ def cayley_transform(
 
     Mathematical formulation:
         Z = X - X^T + Y^T @ Y  (skew-symmetric + positive semi-definite)
-        (I + Z)^{-1} exists because eigenvalues of Z are imaginary
+        (I + Z)^{-1} exists because the symmetric part Y^T @ Y is
+        positive semidefinite, so every eigenvalue λ of Z has Re(λ) >= 0
+        and -1 cannot be an eigenvalue.
         A = (I - Z) @ (I + Z)^{-1}
         B = -2 @ Y @ (I + Z)^{-1}
 
@@ -162,8 +166,7 @@ def cayley_transform(
     # Identity matrix
     I = b.eye(r)
 
-    # Compute (I + Z)^{-1}
-    # This inverse always exists because Z has imaginary eigenvalues
+    # Compute (I + Z)^-1. Since Re(lambda(Z)) >= 0, -1 is excluded.
     IpZ = I + Z
     b.eval(IpZ)
 
@@ -365,7 +368,8 @@ class NBLoRAConfig:
         out_features: Output dimension
         rank: LoRA rank (r)
         scale_bound: Maximum value for diagonal S (sigma_k from base weight)
-        init_scale: Initial scale for S (default: 0.5 * scale_bound)
+        init_scale: Initial scale for S. When omitted, the legacy engineering
+            warm start uses 0.5 * scale_bound; this is not a derived bound.
     """
 
     in_features: int
@@ -376,7 +380,8 @@ class NBLoRAConfig:
 
     def __post_init__(self) -> None:
         if self.init_scale is None:
-            self.init_scale = 0.5 * self.scale_bound
+            # TODO: derive from measured adapter warm-start ablations.
+            self.init_scale = _UNDERIVED_INIT_SCALE_FRACTION * self.scale_bound
 
 
 class NBLoRALayer:
@@ -437,8 +442,12 @@ class NBLoRALayer:
         b.eval(self.B_tilde)
 
         # S_raw: raw scale values (will be clamped to [0, scale_bound])
-        # Initialize to init_scale
-        init_s = config.init_scale or (0.5 * config.scale_bound)
+        # Initialize to the configured scale.
+        init_s = (
+            config.init_scale
+            if config.init_scale is not None
+            else _UNDERIVED_INIT_SCALE_FRACTION * config.scale_bound
+        )
         self.S_raw = b.ones((r,)) * init_s
         b.eval(self.S_raw)
 
@@ -686,16 +695,14 @@ def create_nb_lora_from_base_weight(
         - Per-step displacement is bounded by MASS (eta_weyl = σ_k_min / ||g||),
           which provides the per-iteration safety mechanism.
 
-    The scale_bound is set to (σ_max / 2) × margin, where by default:
-        margin = 1 - sqrt(ε_dtype)
-    This keeps the bound within finite-precision distinguishability.
+    The scale_bound is set to (σ_max / 2) × margin. The default margin is
+    1.0; callers may pass a measured safety margin explicitly.
 
     Args:
         W: Base weight matrix [out_features, in_features]
         rank: LoRA rank
         backend: Compute backend
-        safety_margin: Optional fraction of geometric bound.
-            When omitted, derived from dtype precision as 1 - sqrt(eps).
+        safety_margin: Optional measured fraction of geometric bound.
 
     Returns:
         NBLoRALayer configured with geometry-derived scale bound
@@ -730,14 +737,16 @@ def create_nb_lora_from_base_weight(
         sigma_k = float(b.to_scalar(S[-1]))
 
     # Geometry-derived scale bound:
+    # TODO(owner): resolve sigma_k vs sigma_max/2 scale-bound fork per WS2.10.
     # max(S) = σ_max/2 allows the adapter to perturb at the scale of the
     # weight itself: ||2 × B^T @ S @ A|| ≤ σ_max.  Per-step displacement is
     # bounded by MASS (eta_weyl = σ_k_min / ||g||), so the S clamp controls
     # total capacity, not per-step safety.  Using σ_max instead of σ_k
     # removes the redundant preservation constraint that was the binding
     # limit on learning capacity.
-    # Margin defaults to dtype-derived numerical significance headroom.
-    default_margin = max(0.0, 1.0 - math.sqrt(eps))
+    # Default margin is no extra shrinkage. Callers may pass a measured
+    # safety_margin; dtype headroom is not a behavioral-capacity derivation.
+    default_margin = 1.0
     margin = default_margin if safety_margin is None else float(safety_margin)
     if not (0.0 < margin <= 1.0):
         raise ValueError(

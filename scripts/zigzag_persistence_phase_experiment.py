@@ -53,7 +53,6 @@ import math
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 logging.basicConfig(
     level=logging.INFO,
@@ -293,10 +292,8 @@ def compute_per_layer_vr_persistence(
     across all prompts. VR filtration captures the topology of how prompts
     are distributed in representation space at that layer.
     """
-    import numpy as np
 
     from modelcypher.core.domain.geometry.topological_fingerprint import (
-        PersistenceDiagram,
         TopologicalFingerprint,
     )
 
@@ -867,7 +864,6 @@ def run_single_model(
 
 def run_experiment(args: argparse.Namespace) -> None:
     """Run the full zigzag persistence phase detection experiment."""
-    import numpy as np
 
     from modelcypher.backends import initialize_default_backend
 

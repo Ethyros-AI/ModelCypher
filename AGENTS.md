@@ -199,18 +199,23 @@ If you are guessing, you are missing a measurement.
 src/modelcypher/
 ├── core/
 │   ├── domain/
-│   ├── ports/
 │   └── use_cases/
 ├── adapters/
 ├── backends/
-└── cli/
+├── cli/
+├── experimental/
+├── infrastructure/
+├── ports/
+└── utils/
 ```
 
 Dependencies point inward.
 
 - `backends/` is the only place allowed to import ML frameworks
 - `adapters/` uses the Backend protocol
-- `core/` uses ports and pure logic only
+- `core/` uses `ports/` and pure logic only
+- `experimental/` is not a production dependency unless a surface is explicitly
+  labeled experimental
 
 Framework imports such as `mlx`, `jax`, and `torch` belong in `backends/` only.
 
@@ -427,6 +432,10 @@ mc merge run -s SOURCE -t TARGET -o OUTPUT
 mc infer run --model /path/to/model --prompt "Hello"
 ```
 
+Operational machine-local notes such as owner model paths, external-volume
+locations, and active runbooks live in `OPERATIONS.md`. AGENTS.md remains the
+single source for repository doctrine and coding rules.
+
 ### Concurrency
 
 Multiple agents may be working at once.
@@ -455,6 +464,16 @@ Minimum rules:
 3. change one mutable surface per loop unless the operator requires a bundle
 4. keep an append-only ledger for every run, including crashes and invalid measurements
 5. advance only when the predicted observable survives its falsifier and no hard guardrail is violated
+
+Retention rule for benchmark efficacy families:
+
+- raw per-seed `gates.json`, `train_result.json`, and benchmark result JSON
+  files may not be deleted until the aggregate verdict is computed and
+  committed
+- efficacy claims must report seed count; `[VALIDATED-EFF]` requires at least
+  3 seeds with pooled effect outside 2*SE
+- code, memory, artifact, and mechanics checks use `[VALIDATED-ENG]`; a
+  single engineering run does not imply benchmark efficacy
 
 For any new canonical research family, require all of:
 

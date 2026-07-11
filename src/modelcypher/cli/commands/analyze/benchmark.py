@@ -64,11 +64,11 @@ def run_benchmark(
         mc analyze benchmark /path/to/model --suite quick
         mc analyze benchmark /path/to/model --suite comprehensive -o ./results
     """
+    from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.cli.composition import (
         get_backend,
         get_benchmark_service,
     )
-    from modelcypher.adapters.model_loader import ModelLoader
 
     context = get_context(ctx)
 
@@ -377,7 +377,7 @@ def curriculum_profile(
     """
     import json
 
-    from modelcypher.cli.composition import get_curriculum_profiler, get_model_loader
+    from modelcypher.cli.composition import get_curriculum_profiler
 
     context = get_context(ctx)
 

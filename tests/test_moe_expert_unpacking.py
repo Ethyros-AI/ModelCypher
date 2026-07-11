@@ -28,8 +28,8 @@ from modelcypher.backends.moe_expert_unpacking import (
     UnpackedExpert,
     UnpackedMoEBlock,
     _make_linear_from_weight,
-    unpack_moe_block,
     unpack_model_experts,
+    unpack_moe_block,
 )
 from modelcypher.core.domain.moe.topology import MoETopology
 

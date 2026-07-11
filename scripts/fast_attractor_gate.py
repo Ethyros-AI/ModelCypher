@@ -9,7 +9,6 @@
 #     --model /path/to/model --adapter /path/to/adapter
 
 import argparse
-import json
 import logging
 import subprocess
 import sys

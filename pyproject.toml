@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "modelcypher"
-version = "1.0.0"
+version = "1.0.1"
 description = "Geometry-first diagnostic toolkit for LLM representations: intrinsic dimension, CKA, spectral analysis, Procrustes alignment, LoRA adapter training and geometry on Apple Silicon (MLX)"
 authors = ["Jason Kempf <jason@ethyros.ai>"]
 readme = "README.md"
@@ -41,6 +41,8 @@ packages = [{ include = "modelcypher", from = "src" }]
 include = [
   { path = "src/modelcypher/data/*.json", format = "sdist" },
   { path = "src/modelcypher/data/*.json", format = "wheel" },
+  { path = "src/modelcypher/data/*.yaml", format = "sdist" },
+  { path = "src/modelcypher/data/*.yaml", format = "wheel" },
 ]
 
 [tool.poetry.urls]
@@ -52,8 +54,7 @@ Changelog = "https://github.com/Ethyros-AI/ModelCypher/blob/main/CHANGELOG.md"
 python = ">=3.11,<3.15"
 typer = "^0.21.0"
 PyYAML = "^6.0.3"
-huggingface-hub = "^1.2.3"
-mlx-lm = "^0.30.7"
+mlx-lm = ">=0.30.7,<0.32.0"
 numpy = ">=2.0.0,<2.3.0"
 scipy = "^1.16.3"
 psutil = "^7.2.1"
@@ -70,27 +71,21 @@ python-pptx = { version = "^1.0.2", optional = true }
 torch = { version = "^2.9.1", optional = true }
 jax = { version = "^0.8.2", optional = true }
 jaxlib = { version = "^0.8.2", optional = true }
-scikit-learn = "^1.8.0"
-lm-eval = "^0.4.9.2"
+lm-eval = { version = "^0.4.9.2", optional = true }
 plotly = { version = "^6.5.0", optional = true }
-tenacity = "^9.1.2"
 xxhash = "^3.6.0"
 mlx = "^0.31.0"
 pillow = "^12.1.0"
-matplotlib = "^3.10.8"
-openai-whisper = "^20250625"
-gwpy = "^3.0.14"
-gwosc = "^0.8.1"
-geoopt = "^0.5.1"
-ripser = "^0.6.14"
+matplotlib = { version = "^3.10.8", optional = true }
 
 [tool.poetry.extras]
 docs = ["pypdf", "python-docx", "beautifulsoup4", "openpyxl", "python-pptx"]
 cuda = ["torch"]
 jax = ["jax", "jaxlib"]
+eval = ["lm-eval"]
 embeddings = ["mlx-embeddings"]
 vlm = ["mlx-vlm"]
-viz = ["plotly"]
+viz = ["matplotlib", "plotly"]
 
 [tool.poetry.scripts]
 mc = "modelcypher.cli.app:app"
@@ -138,6 +133,7 @@ build-backend = "poetry.core.masonry.api"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+extend-exclude = ["plasma"]  # WS4.7: de-orbited, pending owner relocation.
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
@@ -156,5 +152,31 @@ ignore = ["E501"]
 "src/modelcypher/core/use_cases/*" = ["E402", "E741"]
 "src/modelcypher/cli/app.py" = ["E402"]
 "src/modelcypher/core/domain/safety/*" = ["E741"]
+# Standalone research scripts bootstrap local imports and use l for layer index.
+"scripts/*" = ["E402", "E741"]
+"scripts/**/*" = ["E402", "E741"]
+"scripts/novel_problems.py" = ["E731"]
 # Test files often have conditional imports and mathematical variable names
 "tests/*" = ["E402", "E741", "F401"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src/modelcypher"]
+ignore_missing_imports = true
+follow_imports = "silent"
+check_untyped_defs = false
+disallow_untyped_defs = false
+warn_unused_ignores = false
+warn_return_any = false
+no_implicit_optional = false
+ignore_errors = true
+pretty = true
+
+[[tool.mypy.overrides]]
+module = [
+    "modelcypher.core.domain.chat_template",
+    "modelcypher.core.domain.training.exceptions",
+    "modelcypher.core.domain.training.pipeline_gate",
+]
+ignore_errors = false
+check_untyped_defs = true

@@ -16,7 +16,6 @@ from modelcypher.core.domain.training.geometric_lora import (
     apply_data_rank_ceiling,
     compute_adaptation_budget_ranks,
     compute_coupled_ranks,
-    compute_geometric_dropout,
     compute_geometric_rank,
     compute_layer_geometry,
     compute_layer_geometry_randomized,
@@ -504,59 +503,7 @@ class TestEstimateNbLoraParameterCount:
 
 
 # ===========================================================================
-# 5. compute_geometric_dropout — Spectral-Derived Dropout
-# ===========================================================================
-
-
-class TestGeometricDropout:
-
-    def test_flat_spectrum_near_zero_dropout(self):
-        """Flat spectrum (utilization ≈ 1) → dropout ≈ 0."""
-        geom = _geometry("layer", shannon_eff_rank=8.0, full_rank=8)
-        dropout = compute_geometric_dropout(geom, rank=4)
-        # utilization = 8/8 = 1.0, redundancy = 0.0 → dropout = 0
-        assert dropout == pytest.approx(0.0)
-
-    def test_concentrated_spectrum_positive_dropout(self):
-        """Concentrated spectrum → positive dropout."""
-        geom = _geometry("layer", shannon_eff_rank=1.0, full_rank=10)
-        dropout = compute_geometric_dropout(geom, rank=5)
-        # redundancy = 1 - 1/10 = 0.9, adapter_fraction = 5/10 = 0.5
-        # dropout = 0.9 * 0.5 = 0.45
-        assert dropout == pytest.approx(0.45)
-
-    def test_rank_one_returns_zero(self):
-        """rank=1 → dropout = 0.0 (constraint)."""
-        geom = _geometry("layer", shannon_eff_rank=1.0, full_rank=10)
-        assert compute_geometric_dropout(geom, rank=1) == 0.0
-
-    def test_full_rank_zero_returns_zero(self):
-        """full_rank=0 → dropout = 0.0."""
-        geom = _geometry("layer", full_rank=0, shannon_eff_rank=0.0)
-        assert compute_geometric_dropout(geom, rank=4) == 0.0
-
-    def test_dropout_clamped_by_rank_constraint(self):
-        """dropout must be < 1 - 1/rank; test that clamping triggers."""
-        # full_rank=2, shannon_eff=0.1 → redundancy = 0.95
-        # adapter_fraction = 2/2 = 1.0 → raw dropout = 0.95
-        # p_max = 1 - 1/2 = 0.5 → clamped to 0.5
-        geom = _geometry("layer", shannon_eff_rank=0.1, full_rank=2)
-        dropout = compute_geometric_dropout(geom, rank=2)
-        assert dropout == pytest.approx(0.5)
-        assert dropout <= 1.0 - 1.0 / 2
-
-    def test_formula_verification(self):
-        """Verify exact formula: dropout = redundancy * adapter_fraction."""
-        geom = _geometry("layer", shannon_eff_rank=2.0, full_rank=8)
-        dropout = compute_geometric_dropout(geom, rank=4)
-        # utilization = 2/8 = 0.25, redundancy = 0.75
-        # adapter_fraction = 4/8 = 0.5
-        # dropout = 0.75 * 0.5 = 0.375
-        assert dropout == pytest.approx(0.375)
-
-
-# ===========================================================================
-# 6. derive_lora_configs — End-to-End Config Derivation
+# 5. derive_lora_configs — End-to-End Config Derivation
 # ===========================================================================
 
 
@@ -599,7 +546,7 @@ class TestDeriveLoraConfigs:
         assert c.sigma_k == pytest.approx(0.5)
         assert c.in_features == 16
         assert c.out_features == 8
-        assert isinstance(c.dropout, float)
+        assert c.dropout == 0.0
 
     def test_skips_missing_geometries(self):
         geom = _geometry("present", tail_dims=2)
@@ -612,7 +559,7 @@ class TestDeriveLoraConfigs:
 
 
 # ===========================================================================
-# 7. compute_layer_geometry_randomized — Randomized SVD Geometry
+# 6. compute_layer_geometry_randomized — Randomized SVD Geometry
 # ===========================================================================
 
 

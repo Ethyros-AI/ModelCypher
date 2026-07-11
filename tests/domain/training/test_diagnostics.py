@@ -30,8 +30,8 @@ from modelcypher.core.domain.agent_protocol import (
     AgentDiagnostics,
     AgentEnvelope,
     AgentMetadata,
-    NextAction,
     AgentRecommendation,
+    NextAction,
     derived_eval_hash,
     file_hash,
     make_metadata,
@@ -43,7 +43,6 @@ from modelcypher.core.domain.training.diagnostics import (
     interpret_stop_reason,
     suggest_next_steps,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures: synthetic training results

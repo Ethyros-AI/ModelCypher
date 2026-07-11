@@ -14,17 +14,19 @@ without requiring real models or backends.  Validates:
 from __future__ import annotations
 
 import json
+
+# Import script-level functions (scripts/ is on path via conftest or direct import)
+import sys
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Import script-level functions (scripts/ is on path via conftest or direct import)
-import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
 
 from baranov_track_a import (
+    FACT_POOL,
     InterventionMode,
     _build_csv_rows,
     _build_recall_curves,
@@ -32,9 +34,7 @@ from baranov_track_a import (
     build_manifest,
     build_summary,
     measure_recall,
-    FACT_POOL,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

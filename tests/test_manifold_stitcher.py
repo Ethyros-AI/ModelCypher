@@ -340,7 +340,8 @@ class TestProperRotation:
         result = _ensure_proper_rotation(u, vt, omega, backend)
 
         # R @ R^T should be identity
-        # Tolerance: n * eps for n×n matrix operations (error accumulates)
+        # The path includes SVD orthogonal factors, U @ Vt, and R @ R.T.
+        # Bound all three dense operations with Higham's gamma_k.
         n = 3
         product = backend.matmul(result, backend.transpose(result))
         expected = backend.eye(n)
@@ -349,7 +350,9 @@ class TestProperRotation:
         backend.eval(diff)
         diff_val = float(backend.max(diff))
         eps = _eps(diff_val)
-        assert diff_val <= n * eps
+        operation_depth = 3 * n
+        gamma = (operation_depth * eps) / (1.0 - operation_depth * eps)
+        assert diff_val <= gamma
 
 
 # =============================================================================

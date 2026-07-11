@@ -8,6 +8,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import merge_portability_falsifier as merge_falsifier
+
 from modelcypher.experimental.merge.falsifier_contract import (
     build_merge_portability_manifest,
     build_merge_portability_summary,

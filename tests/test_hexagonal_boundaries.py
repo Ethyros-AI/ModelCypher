@@ -47,6 +47,29 @@ _ADAPTERS_ALLOWLIST = {
     "modelcypher/core/use_cases/model_profiler_service.py",
 }
 
+_EXPERIMENTAL_IMPORT_ALLOWLIST = {
+    (
+        "modelcypher/cli/composition.py",
+        "modelcypher.experimental.merge.merger",
+    ),
+    (
+        "modelcypher/core/domain/lora_memory_store.py",
+        "modelcypher.experimental.continual.update_strategy",
+    ),
+    (
+        "modelcypher/core/use_cases/adapter_analysis_service.py",
+        "modelcypher.experimental.lora_geometry.measurements",
+    ),
+    (
+        "modelcypher/core/use_cases/model_service.py",
+        "modelcypher.experimental.merge",
+    ),
+    (
+        "modelcypher/core/use_cases/profile_service.py",
+        "modelcypher.experimental.merge.stages.probe_inference",
+    ),
+}
+
 
 def _module_parts(path: Path, src_root: Path) -> list[str]:
     rel = path.relative_to(src_root)
@@ -111,6 +134,40 @@ def _scan_forbidden_imports(root: Path, src_root: Path) -> list[str]:
     return violations
 
 
+def _is_experimental_import(module: str | None) -> bool:
+    return module == "modelcypher.experimental" or (
+        module is not None and module.startswith("modelcypher.experimental.")
+    )
+
+
+def _scan_experimental_imports(root: Path, src_root: Path) -> list[str]:
+    violations: list[str] = []
+    for path in root.rglob("*.py"):
+        file_rel = str(path.relative_to(src_root))
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=file_rel)
+        module_parts = _module_parts(path, src_root)
+        for node in ast.walk(tree):
+            modules: list[str] = []
+            if isinstance(node, ast.Import):
+                modules.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                full_module = _resolve_import_from(node, module_parts)
+                if full_module is not None:
+                    modules.append(full_module)
+                if node.module == "modelcypher":
+                    modules.extend(
+                        f"modelcypher.{alias.name}" for alias in node.names
+                    )
+
+            for module in modules:
+                if not _is_experimental_import(module):
+                    continue
+                if (file_rel, module) in _EXPERIMENTAL_IMPORT_ALLOWLIST:
+                    continue
+                violations.append(f"{file_rel}:{node.lineno} imports {module}")
+    return violations
+
+
 def test_core_hexagonal_boundaries() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     src_root = repo_root / "src"
@@ -123,4 +180,24 @@ def test_core_hexagonal_boundaries() -> None:
 
     assert not violations, "Hexagonal boundary violations:\n" + "\n".join(
         sorted(violations)
+    )
+
+
+def test_no_new_experimental_imports_in_production_surfaces() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    src_root = repo_root / "src"
+    roots = [
+        src_root / "modelcypher" / "cli",
+        src_root / "modelcypher" / "core" / "domain",
+        src_root / "modelcypher" / "core" / "use_cases",
+    ]
+
+    violations: list[str] = []
+    for root in roots:
+        violations.extend(_scan_experimental_imports(root, src_root))
+
+    assert not violations, (
+        "Experimental imports are not allowed in production CLI/core surfaces. "
+        "Promote the dependency or add a temporary allowlist entry with a burn-down "
+        "reason.\n" + "\n".join(sorted(violations))
     )

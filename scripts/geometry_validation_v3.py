@@ -24,7 +24,7 @@ import json
 import logging
 import random
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -229,10 +229,7 @@ class GeometryValidationV3:
 
         Critical: Capture hidden states and logits in the SAME forward pass.
         """
-        from modelcypher.core.domain.entropy.layer_entropy_projector import LayerEntropyProjector
-
         b = self.backend
-        projector = LayerEntropyProjector(b)
 
         base_model = getattr(self.model, "model", self.model)
         layers = getattr(base_model, "layers", None)
@@ -355,7 +352,7 @@ class GeometryValidationV3:
             # Decode token
             try:
                 token_str = self.tokenizer.decode([next_token])
-            except:
+            except Exception:
                 token_str = f"<{next_token}>"
 
             # Store measurement
@@ -497,7 +494,7 @@ class GeometryValidationV3:
         c_vel = [r.velocity_at_answer for r in correct_with_answer if r.velocity_at_answer is not None]
         i_vel = [r.velocity_at_answer for r in incorrect_with_answer if r.velocity_at_answer is not None]
 
-        print(f"\nVelocity at answer token:")
+        print("\nVelocity at answer token:")
         print(f"  Correct samples with velocity: {len(c_vel)}")
         print(f"  Incorrect samples with velocity: {len(i_vel)}")
 
@@ -520,7 +517,7 @@ class GeometryValidationV3:
         c_dir = [r.direction_change_at_answer for r in correct_with_answer if r.direction_change_at_answer is not None]
         i_dir = [r.direction_change_at_answer for r in incorrect_with_answer if r.direction_change_at_answer is not None]
 
-        print(f"\nDirection change at answer token:")
+        print("\nDirection change at answer token:")
         if c_dir and i_dir:
             c_mean = sum(c_dir) / len(c_dir)
             i_mean = sum(i_dir) / len(i_dir)
@@ -533,7 +530,7 @@ class GeometryValidationV3:
             print(f"  Effect size d:  {d:.3f} [95% CI: {ci_low:.3f}, {ci_high:.3f}]")
 
         # Per-layer analysis
-        print(f"\nPer-layer velocity at answer token:")
+        print("\nPer-layer velocity at answer token:")
         for layer_idx in range(self.num_layers):
             c_layer = [r.layer_velocities_at_answer[layer_idx]
                       for r in correct_with_answer
@@ -549,7 +546,7 @@ class GeometryValidationV3:
                 print(f"  Layer {layer_idx:2d}: correct={c_mean:.4f}, incorrect={i_mean:.4f}, d={d:+.3f}")
 
         # Report on samples WITHOUT answer found (transparency)
-        print(f"\n### SAMPLES WITHOUT ANSWER TOKEN FOUND ###")
+        print("\n### SAMPLES WITHOUT ANSWER TOKEN FOUND ###")
         no_answer_correct = sum(1 for r in results if r.is_correct and not r.answer_found)
         no_answer_incorrect = sum(1 for r in results if not r.is_correct and not r.answer_found)
         print(f"Correct but no answer token: {no_answer_correct}")

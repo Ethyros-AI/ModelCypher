@@ -34,7 +34,6 @@ from modelcypher.experimental.merge.stages.compression_descent import (
     stage_compression_descent,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

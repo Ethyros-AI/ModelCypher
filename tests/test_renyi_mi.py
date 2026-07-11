@@ -129,7 +129,6 @@ def test_renyi_entropy_bounds(any_backend):
     eps = _div_eps(backend)
 
     # Random PSD matrix: K = X @ X^T
-    rng_key = backend.array([42])
     x = backend.array([[float(i * j % 7 + 1) for j in range(5)] for i in range(n)])
     gram = x @ backend.transpose(x)
 

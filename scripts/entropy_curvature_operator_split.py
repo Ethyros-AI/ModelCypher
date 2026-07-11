@@ -436,6 +436,7 @@ def collect_logit_entropy(model, tokenizer, prompts: list[str], num_layers: int,
     This removes the ||h||² confound where softmax sharpness scales with hidden state norm.
     """
     import mlx.core as mx
+
     from modelcypher.core.domain.entropy.layer_entropy_projector import LayerEntropyProjector
 
     # Resolve backbone once; used by both projector setup and manual fallback paths.

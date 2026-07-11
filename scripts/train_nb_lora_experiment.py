@@ -285,13 +285,12 @@ def evaluate(
     backend,
 ) -> dict:
     """Evaluate model on validation data."""
-    import mlx.core as mx
     import re
+
+    import mlx.core as mx
 
     correct = 0
     total = 0
-    total_loss = 0.0
-
     for item in val_data[:20]:  # Limit for speed
         text = item["text"]
 
@@ -343,9 +342,6 @@ def evaluate(
 
 def verify_spectral_bounds(nb_lora_layers: dict, weights: dict) -> dict:
     """Verify per-direction spectral bounds for all layers."""
-    from modelcypher.core.domain._backend import get_default_backend
-
-    backend = get_default_backend()
     results = {}
 
     for key, layer in nb_lora_layers.items():

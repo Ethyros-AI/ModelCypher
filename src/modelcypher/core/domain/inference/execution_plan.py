@@ -22,7 +22,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-
 PlanKind = Literal["identity", "explicit", "rys"]
 
 

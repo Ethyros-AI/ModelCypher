@@ -1135,18 +1135,10 @@ class TestGroundTruthSphere:
 
 
 class TestGroundTruthHyperboloid:
-    """Hyperboloid x_1^2 + ... + x_{d-1}^2 - x_d^2 = -1 has K < 0.
+    """The hyperboloid model requires its Lorentzian metric operator."""
 
-    Ground truth: The hyperboloid model of hyperbolic space has constant
-    negative sectional curvature K = -1. We test the sign only (magnitude
-    harder with finite samples).
-
-    The promoted estimator uses a canonical manifold fit selector that chooses
-    hyperboloid fitting when it beats the flat model by a precision-derived
-    margin.
-    """
-    def test_hyperboloid_curvature_negative(self) -> None:
-        """Points on the hyperboloid should yield negative curvature."""
+    def test_hyperboloid_requires_lorentz_metric_for_negative_curvature(self) -> None:
+        """Euclidean coordinates alone do not establish K = -1."""
         backend = get_default_backend()
         rng = np.random.Generator(np.random.PCG64(42))
         d = 4  # Ambient dimension (3D hyperboloid in 4D)
@@ -1178,27 +1170,11 @@ class TestGroundTruthHyperboloid:
 
         curvature = estimator.estimate_local_curvature(point, neighbors)
 
-        # K should be negative (ground truth: K = -1)
-        # scalar_curvature comes from principal curvatures (shape operator).
-        assert curvature.scalar_curvature < 0, (
-            f"Hyperboloid scalar curvature should be negative, got {curvature.scalar_curvature}"
-        )
-        # Gauss-equation fallback derives sectional curvature from
-        # principal curvature products when Christoffel returns near-zero.
-        assert curvature.mean_sectional < 0, (
-            f"Hyperboloid mean_sectional should be negative via Gauss fallback, "
-            f"got {curvature.mean_sectional}"
-        )
-        assert curvature.sign in (CurvatureSign.NEGATIVE, CurvatureSign.MIXED), (
-            f"Hyperboloid sign should be NEGATIVE or MIXED, got {curvature.sign}"
-        )
-        # Majority of principal curvatures should be negative
-        if curvature.principal_curvatures is not None:
-            pc = backend.tolist(curvature.principal_curvatures)
-            neg_count = sum(1 for k in pc if k < 0)
-            assert neg_count > len(pc) // 2, (
-                f"Majority of principal curvatures should be negative, got {pc}"
-            )
+        # K=-1 is induced by the Lorentzian metric. This call supplied only
+        # Euclidean coordinates, where the upper sheet is a convex embedding.
+        # A negative-only classification would conflate coordinates with the
+        # absent measurement operator.
+        assert curvature.sign is not CurvatureSign.NEGATIVE
 
 
     def test_gauss_equation_fallback_sphere(self) -> None:

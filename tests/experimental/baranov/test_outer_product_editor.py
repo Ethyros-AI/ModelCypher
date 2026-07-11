@@ -23,7 +23,6 @@ from modelcypher.experimental.baranov.outer_product_editor import (
     _navigate_to_module,
 )
 
-
 # ---------------------------------------------------------------------------
 # Mock infrastructure
 # ---------------------------------------------------------------------------

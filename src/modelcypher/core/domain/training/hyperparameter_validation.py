@@ -17,18 +17,11 @@
 
 """Training hyperparameter validation.
 
-Philosophy: Bounds are DERIVED from numerical analysis, not heuristics.
-
-Learning rate bounds:
-    - LR_MIN = eps (machine epsilon, can't go smaller meaningfully)
-    - LR_MAX = 1/sqrt(eps) (stability bound from numerical analysis)
-
-The bounds are derived from float32 precision:
-    - eps ≈ 1.19e-7
-    - sqrt(eps) ≈ 3.45e-4
-    - 1/sqrt(eps) ≈ 2896
-
-We use sqrt(eps) as the reference scale for most operations.
+This module enforces algebraic validity and labels practical limits honestly.
+Only the dtype floor is derived from IEEE 754. Batch, sequence, learning-rate
+ceiling, epoch, and gradient-accumulation caps are engineering limits retained
+for the event-buffer training path until they are replaced by measured
+architecture and memory constraints.
 """
 
 import math
@@ -63,30 +56,30 @@ class TrainingHyperparameterValidator:
     """
     Validates training hyperparameters for algebraic correctness.
 
-    All bounds are DERIVED from numerical properties, not arbitrary heuristics:
-    - LR_MIN = eps (can't represent smaller values meaningfully)
-    - LR_MAX = 1/sqrt(eps) (numerical stability bound)
-    - SEQUENCE bounds from transformer attention quadratic memory
+    Only positivity, non-negativity, and LR_MIN are mathematically derived here.
+    The upper/advisory bounds below are engineering limits for the legacy
+    event-buffer path, not doctrine-level geometric derivations.
     """
 
     # Batch size: algebraic constraint (must be positive integer)
-    BATCH_SIZE_RANGE = range(1, 9)  # [1, 8] is practical for memory
+    # TODO: derive from measured per-device memory budget.
+    BATCH_SIZE_RANGE = range(1, 9)
     BATCH_SIZE_INFO_THRESHOLD = (BATCH_SIZE_RANGE.start + BATCH_SIZE_RANGE.stop - 1) // 2
 
-    # Sequence length: architecture-derived (attention is O(n²) memory)
-    # MIN: Must have enough tokens for meaningful context
-    # MAX: Quadratic memory scaling makes this a hard limit
-    SEQUENCE_MIN = 128  # Minimum meaningful context
-    SEQUENCE_MAX = 4096  # Attention memory limit for most architectures
+    # Engineering limits for the event-buffer path.
+    # TODO: derive from model context window and measured attention memory.
+    SEQUENCE_MIN = 128
+    SEQUENCE_MAX = 4096
     SEQUENCE_WARNING = SEQUENCE_MAX // 2
 
-    # Learning rate: DERIVED from machine epsilon
+    # Learning rate:
     # LR_MIN: Can't represent smaller changes than eps meaningfully
-    # LR_MAX: Stability bound 1/sqrt(eps) (gradient scaling)
+    # LR_MAX: engineering guardrail pending a curvature-derived stability bound.
     LR_MIN = _EPS  # ~1.19e-7
-    LR_MAX = 1.0 / _SQRT_EPS  # ~2896
+    # TODO: derive from measured local curvature / Hessian spectral radius.
+    LR_MAX = 1.0 / _SQRT_EPS
 
-    # Info thresholds at geometric thirds of the valid range
+    # Info thresholds at geometric thirds of the engineering range.
     # These mark "typical" vs "unusual" values, not "good" vs "bad"
     LR_INFO_LOW = LR_MIN * (LR_MAX / LR_MIN) ** (1 / 3)  # ~6.9e-5
     LR_WARN_HIGH = LR_MIN * (LR_MAX / LR_MIN) ** (2 / 3)  # ~40
@@ -100,6 +93,7 @@ class TrainingHyperparameterValidator:
     # Gradient accumulation: advisory cap for the event-buffer training path.
     # The NB-LoRA pipeline does not use gradient accumulation (batch_size
     # is geometry-derived via critical batch size).
+    # TODO: derive from measured memory, optimizer state, and accumulation noise.
     GRAD_ACCUM_MAX = 16
 
     @classmethod

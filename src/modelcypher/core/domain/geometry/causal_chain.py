@@ -18,18 +18,18 @@
 """Causal chain profile for model layer analysis.
 
 Computes the validated causal chain per layer:
-    Entropy → Curvature (angular) → Cumulative curvature → ID → Phase
+    Entropy → Layer rotation angle → Cumulative rotation → ID → Phase
 
 All measurements are deterministic geometric properties of the forward pass.
-Phase classification uses data-derived boundaries (median curvature,
+Phase classification uses data-derived boundaries (median rotation angle,
 monotonicity of ID trajectory). Small numerical stability guards (1e-10 for
 near-zero norms, 1e-6 for monotonicity tolerance) are used to prevent
 division-by-zero and floating-point noise; these are not decision thresholds.
 
 Validated on 6 models: LFM2-350M, LFM2-1.2B, Qwen2.5-3B, Qwen3-8B,
 Llama-3.2-3B, Qwen3-1.7B. Key cross-link correlations:
-    Entropy ↔ Curvature:         Spearman r ≈ 0.507 (range 0.4-0.6)
-    Cumulative curvature ↔ ID:   Family-dependent (Qwen 0.55-0.77, Llama -0.38)
+    Entropy ↔ Rotation angle:    Spearman r ≈ 0.507 (range 0.4-0.6)
+    Cumulative rotation ↔ ID:    Family-dependent (Qwen 0.55-0.77, Llama -0.38)
     Attention fraction:          Universal ~0.37 (range 0.36-0.38)
 
 References:
@@ -51,8 +51,8 @@ class Phase(str, Enum):
     """Layer phase in the processing pipeline.
 
     Classification uses data-derived boundaries:
-        HIGHWAY:    ID monotonically non-decreasing AND curvature < median
-        PROCESSING: curvature >= median
+        HIGHWAY:    ID monotonically non-decreasing AND rotation angle < median
+        PROCESSING: rotation angle >= median
         EXIT:       layers after peak ID where ID monotonically decreases
     """
 
@@ -67,11 +67,11 @@ class LayerChainMeasurement:
 
     layer_idx: int
     entropy: float
-    total_curvature: float  # Angular change in radians
-    cumulative_curvature: float  # Sum of total_curvature up to this layer
-    attn_curvature: float | None  # None for non-attention layers (LFM2 conv)
-    mlp_curvature: float | None
-    attn_fraction: float | None  # attn_curvature / (attn + mlp)
+    layer_rotation_angle: float  # Angular change in radians
+    cumulative_layer_rotation_angle: float  # Sum of layer_rotation_angle up to here
+    attn_rotation_angle: float | None  # None for non-attention layers (LFM2 conv)
+    mlp_rotation_angle: float | None
+    attn_fraction: float | None  # attn_angle / (attn_angle + mlp_angle)
     intrinsic_dimension: float  # TwoNN estimate (NaN if insufficient samples)
     phase: Phase
 
@@ -80,14 +80,14 @@ class LayerChainMeasurement:
 class ChainCorrelations:
     """Cross-link Spearman correlations in the causal chain."""
 
-    entropy_to_curvature: float  # Validated range: 0.4-0.6
-    cumulative_curvature_to_id: float  # Family-dependent
+    entropy_to_layer_rotation_angle: float  # Validated range: 0.4-0.6
+    cumulative_layer_rotation_angle_to_id: float  # Family-dependent
     mean_attn_fraction: float | None  # Universal: ~0.36-0.38
 
     def as_dict(self) -> dict:
         return {
-            "entropyToCurvature": self.entropy_to_curvature,
-            "cumulativeCurvatureToId": self.cumulative_curvature_to_id,
+            "entropyToLayerRotationAngle": self.entropy_to_layer_rotation_angle,
+            "cumulativeLayerRotationAngleToId": self.cumulative_layer_rotation_angle_to_id,
             "meanAttnFraction": self.mean_attn_fraction,
         }
 
@@ -113,10 +113,10 @@ class ChainProfile:
                 {
                     "layer": m.layer_idx,
                     "entropy": m.entropy,
-                    "totalCurvature": m.total_curvature,
-                    "cumulativeCurvature": m.cumulative_curvature,
-                    "attnCurvature": m.attn_curvature,
-                    "mlpCurvature": m.mlp_curvature,
+                    "layerRotationAngle": m.layer_rotation_angle,
+                    "cumulativeLayerRotationAngle": m.cumulative_layer_rotation_angle,
+                    "attnRotationAngle": m.attn_rotation_angle,
+                    "mlpRotationAngle": m.mlp_rotation_angle,
                     "attnFraction": m.attn_fraction,
                     "intrinsicDimension": m.intrinsic_dimension,
                     "phase": m.phase.value,
@@ -184,14 +184,14 @@ def angular_change(v1: list[float], v2: list[float]) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Curvature computation
+# Layer rotation angle computation
 # ---------------------------------------------------------------------------
 
 
-def compute_layer_curvatures(
+def compute_layer_rotation_angles(
     sublayer_data: list[dict],
 ) -> list[dict]:
-    """Compute per-layer curvature from sublayer activations.
+    """Compute per-layer rotation angles from sublayer activations.
 
     Args:
         sublayer_data: List of dicts per layer, each with:
@@ -201,7 +201,7 @@ def compute_layer_curvatures(
             has_decomposition: bool
 
     Returns:
-        List of dicts with curvature measurements per layer.
+        List of dicts with rotation-angle measurements per layer.
     """
     from modelcypher.core.domain.geometry.exceptions import EstimatorError
     from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
@@ -214,10 +214,10 @@ def compute_layer_curvatures(
         h_out = act["h_out"]  # list[list[float]] [N, d]
         n_probes = len(h_in)
 
-        # Total curvature: mean angular change h_in → h_out
+        # Total layer rotation angle: mean angular change h_in → h_out
         total_angles = [angular_change(h_in[j], h_out[j]) for j in range(n_probes)]
-        total_curvature = _mean(total_angles)
-        cumulative += total_curvature
+        total_rotation_angle = _mean(total_angles)
+        cumulative += total_rotation_angle
 
         # ID via TwoNN
         if n_probes < IntrinsicDimension.local_dimension_min_samples():
@@ -232,11 +232,11 @@ def compute_layer_curvatures(
 
         layer_result: dict = {
             "layer_idx": i,
-            "total_curvature": total_curvature,
-            "cumulative_curvature": cumulative,
+            "layer_rotation_angle": total_rotation_angle,
+            "cumulative_layer_rotation_angle": cumulative,
             "id_two_nn": id_val,
-            "attn_curvature": None,
-            "mlp_curvature": None,
+            "attn_rotation_angle": None,
+            "mlp_rotation_angle": None,
             "attn_fraction": None,
         }
 
@@ -244,17 +244,17 @@ def compute_layer_curvatures(
             h_post_attn = act["h_post_attn"]
             attn_angles = [angular_change(h_in[j], h_post_attn[j]) for j in range(n_probes)]
             mlp_angles = [angular_change(h_post_attn[j], h_out[j]) for j in range(n_probes)]
-            attn_curv = _mean(attn_angles)
-            mlp_curv = _mean(mlp_angles)
+            attn_angle = _mean(attn_angles)
+            mlp_angle = _mean(mlp_angles)
 
-            layer_result["attn_curvature"] = attn_curv
-            layer_result["mlp_curvature"] = mlp_curv
+            layer_result["attn_rotation_angle"] = attn_angle
+            layer_result["mlp_rotation_angle"] = mlp_angle
             # When total curvature is near-zero, both sub-components are
             # negligible — use NaN to signal "not measurable" rather than
             # an arbitrary 0.5 fallback.
             layer_result["attn_fraction"] = (
-                attn_curv / (attn_curv + mlp_curv)
-                if (attn_curv + mlp_curv) > 1e-10
+                attn_angle / (attn_angle + mlp_angle)
+                if (attn_angle + mlp_angle) > 1e-10
                 else float("nan")
             )
 
@@ -269,19 +269,19 @@ def compute_layer_curvatures(
 
 
 def classify_phases(
-    ids: list[float], curvatures: list[float]
+    ids: list[float], rotation_angles: list[float]
 ) -> list[Phase]:
     """Classify layers into highway / processing / exit phases.
 
     Uses data-derived boundaries:
-        - Median curvature splits high/low curvature (data-derived)
+        - Median layer rotation angle splits high/low rotation (data-derived)
         - Monotonicity of ID trajectory is boolean (1e-6 tolerance for FP noise)
         - Peak ID position is measured
 
     Algorithm:
         1. Find peak ID layer (argmax, ignoring NaN)
-        2. Layers before peak with curvature < median AND ID non-decreasing → HIGHWAY
-        3. Layers with curvature >= median → PROCESSING
+        2. Layers before peak with angle < median AND ID non-decreasing → HIGHWAY
+        3. Layers with angle >= median → PROCESSING
         4. Layers after peak ID where ID monotonically decreases → EXIT
     """
     n = len(ids)
@@ -290,13 +290,13 @@ def classify_phases(
 
     # Filter valid IDs for peak detection
     valid_ids = [(i, v) for i, v in enumerate(ids) if not math.isnan(v)]
-    median_curv = _median(curvatures)
+    median_angle = _median(rotation_angles)
 
     if not valid_ids:
-        # No valid IDs — classify purely by curvature
+        # No valid IDs — classify purely by rotation angle.
         return [
-            Phase.PROCESSING if c >= median_curv else Phase.HIGHWAY
-            for c in curvatures
+            Phase.PROCESSING if angle >= median_angle else Phase.HIGHWAY
+            for angle in rotation_angles
         ]
 
     peak_idx = max(valid_ids, key=lambda x: x[1])[0]
@@ -326,9 +326,9 @@ def classify_phases(
     for i in range(exit_start, n):
         phases[i] = Phase.EXIT
 
-    # HIGHWAY: layers before peak with curvature < median AND ID non-decreasing
+    # HIGHWAY: layers before peak with angle < median AND ID non-decreasing.
     for i in range(min(peak_idx + 1, exit_start)):
-        if curvatures[i] < median_curv:
+        if rotation_angles[i] < median_angle:
             # Check ID non-decreasing from start to this point
             is_nondecreasing = True
             prev_id = None
@@ -395,35 +395,35 @@ def compute_chain_correlations(
     """Compute Spearman correlations between chain components.
 
     Returns correlations for the validated causal links:
-        entropy ↔ curvature: r ≈ 0.507 (validated range 0.4-0.6)
-        cumulative curvature ↔ ID: family-dependent
+        entropy ↔ layer rotation angle: r ≈ 0.507 (validated range 0.4-0.6)
+        cumulative layer rotation angle ↔ ID: family-dependent
         mean attention fraction: universal ~0.37
     """
     # Filter to layers with valid ID (not NaN)
     valid = [m for m in measurements if not math.isnan(m["id_two_nn"])]
 
-    # entropy ↔ curvature (only layers with valid entropy, not NaN)
-    ent_curv_pairs = [
-        (m.get("entropy", float("nan")), m["total_curvature"])
+    # entropy ↔ layer rotation angle (only layers with valid entropy, not NaN)
+    ent_angle_pairs = [
+        (m.get("entropy", float("nan")), m["layer_rotation_angle"])
         for m in measurements
         if not math.isnan(m.get("entropy", float("nan")))
     ]
-    if len(ent_curv_pairs) >= 3:
-        entropies = [p[0] for p in ent_curv_pairs]
-        curvatures_for_corr = [p[1] for p in ent_curv_pairs]
-        if _std(entropies) > 1e-10 and _std(curvatures_for_corr) > 1e-10:
-            ent_curv_r = _spearman_r(entropies, curvatures_for_corr)
+    if len(ent_angle_pairs) >= 3:
+        entropies = [p[0] for p in ent_angle_pairs]
+        angles_for_corr = [p[1] for p in ent_angle_pairs]
+        if _std(entropies) > 1e-10 and _std(angles_for_corr) > 1e-10:
+            ent_angle_r = _spearman_r(entropies, angles_for_corr)
         else:
-            ent_curv_r = float("nan")
+            ent_angle_r = float("nan")
     else:
-        ent_curv_r = float("nan")
+        ent_angle_r = float("nan")
 
-    # cumulative curvature ↔ ID (valid layers only)
+    # cumulative layer rotation angle ↔ ID (valid layers only)
     if len(valid) >= 3:
-        cum_curvs = [m["cumulative_curvature"] for m in valid]
+        cum_angles = [m["cumulative_layer_rotation_angle"] for m in valid]
         id_vals = [m["id_two_nn"] for m in valid]
-        if _std(cum_curvs) > 1e-10 and _std(id_vals) > 1e-10:
-            cum_id_r = _spearman_r(cum_curvs, id_vals)
+        if _std(cum_angles) > 1e-10 and _std(id_vals) > 1e-10:
+            cum_id_r = _spearman_r(cum_angles, id_vals)
         else:
             cum_id_r = float("nan")
     else:
@@ -438,8 +438,8 @@ def compute_chain_correlations(
     mean_attn = _mean(attn_fracs) if attn_fracs else None
 
     return ChainCorrelations(
-        entropy_to_curvature=ent_curv_r,
-        cumulative_curvature_to_id=cum_id_r,
+        entropy_to_layer_rotation_angle=ent_angle_r,
+        cumulative_layer_rotation_angle_to_id=cum_id_r,
         mean_attn_fraction=mean_attn,
     )
 
@@ -454,7 +454,7 @@ def assemble_chain_profile(
     num_layers: int,
     hidden_dim: int,
     probe_count: int,
-    curvature_measurements: list[dict],
+    rotation_measurements: list[dict],
     entropies: list[float],
 ) -> ChainProfile:
     """Assemble a complete chain profile from measurements.
@@ -464,32 +464,32 @@ def assemble_chain_profile(
         num_layers: Number of transformer layers.
         hidden_dim: Model hidden dimension.
         probe_count: Number of probe texts used.
-        curvature_measurements: Output of compute_layer_curvatures().
+        rotation_measurements: Output of compute_layer_rotation_angles().
         entropies: Per-layer entropy values (from BehavioralAnalyzer).
     """
-    # Attach entropy to curvature measurements (NaN for missing layers)
-    for i, m in enumerate(curvature_measurements):
+    # Attach entropy to rotation measurements (NaN for missing layers)
+    for i, m in enumerate(rotation_measurements):
         m["entropy"] = entropies[i] if i < len(entropies) else float("nan")
 
     # Classify phases
-    ids = [m["id_two_nn"] for m in curvature_measurements]
-    curvatures_list = [m["total_curvature"] for m in curvature_measurements]
-    phases = classify_phases(ids, curvatures_list)
+    ids = [m["id_two_nn"] for m in rotation_measurements]
+    rotation_angles = [m["layer_rotation_angle"] for m in rotation_measurements]
+    phases = classify_phases(ids, rotation_angles)
 
     # Compute correlations
-    correlations = compute_chain_correlations(curvature_measurements)
+    correlations = compute_chain_correlations(rotation_measurements)
 
     # Build layer measurements
     layers = []
-    for m, phase in zip(curvature_measurements, phases):
+    for m, phase in zip(rotation_measurements, phases):
         layers.append(
             LayerChainMeasurement(
                 layer_idx=m["layer_idx"],
                 entropy=m["entropy"],
-                total_curvature=m["total_curvature"],
-                cumulative_curvature=m["cumulative_curvature"],
-                attn_curvature=m["attn_curvature"],
-                mlp_curvature=m["mlp_curvature"],
+                layer_rotation_angle=m["layer_rotation_angle"],
+                cumulative_layer_rotation_angle=m["cumulative_layer_rotation_angle"],
+                attn_rotation_angle=m["attn_rotation_angle"],
+                mlp_rotation_angle=m["mlp_rotation_angle"],
                 attn_fraction=m["attn_fraction"],
                 intrinsic_dimension=m["id_two_nn"],
                 phase=phase,

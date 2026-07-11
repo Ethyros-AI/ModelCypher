@@ -32,11 +32,11 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
+from modelcypher.core.domain.star.problem_generator import StarProblem
 from modelcypher.core.domain.statistics import (
     binomial_degradation_is_significant,
     clopper_pearson_interval,
 )
-from modelcypher.core.domain.star.problem_generator import StarProblem
 
 logger = logging.getLogger(__name__)
 

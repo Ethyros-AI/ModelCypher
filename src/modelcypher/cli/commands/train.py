@@ -221,12 +221,11 @@ def train_run(
     if explain and plan_only:
         raise typer.BadParameter("--explain and --plan-only cannot be used together")
 
-    from modelcypher.cli.composition import get_dataset_training_service
-
     import os
     import sys
     import uuid
 
+    from modelcypher.cli.composition import get_dataset_training_service
     from modelcypher.cli.progress import ProgressReporter
     from modelcypher.core.domain.runtime_status import RuntimeOwner
     from modelcypher.core.use_cases.runtime_coordinator import (
@@ -859,8 +858,8 @@ def train_export(
 
         from modelcypher.core.domain.runtime_status import RuntimeOwner
         from modelcypher.core.use_cases.export_orchestrator import (
-            ExportOrchestrator,
             ExportOrchestrationError,
+            ExportOrchestrator,
         )
         from modelcypher.core.use_cases.export_service import (
             ExportRequest,

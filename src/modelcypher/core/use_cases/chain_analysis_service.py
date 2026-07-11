@@ -18,10 +18,10 @@
 """Chain analysis service — unified causal chain diagnostic.
 
 Orchestrates per-layer measurements of the validated causal chain:
-    Entropy → Curvature → Cumulative curvature → Intrinsic Dimension → Phase
+    Entropy → Layer rotation angle → Cumulative rotation → Intrinsic Dimension → Phase
 
 Combines sub-layer activation collection (injected callable) with
-domain-level pure math (curvature decomposition, phase classification,
+domain-level pure math (rotation-angle decomposition, phase classification,
 correlation analysis).
 """
 
@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from modelcypher.core.domain.geometry.causal_chain import (
     ChainProfile,
     assemble_chain_profile,
-    compute_layer_curvatures,
+    compute_layer_rotation_angles,
 )
 
 if TYPE_CHECKING:
@@ -53,7 +53,7 @@ class ChainAnalysisService:
     """Computes the full causal chain profile for a model.
 
     Delegates activation collection to an injected sublayer collector,
-    entropy computation to BehavioralAnalyzer, and curvature/phase/correlation
+    entropy computation to BehavioralAnalyzer, and rotation/phase/correlation
     computation to the domain module.
     """
 
@@ -111,9 +111,9 @@ class ChainAnalysisService:
         logger.info("Computing per-layer entropy...")
         entropies = self._compute_entropies(model, tokenizer, probe_texts, num_layers)
 
-        # 3. Compute curvature decomposition + ID (domain pure math)
-        logger.info("Computing curvature decomposition and intrinsic dimension...")
-        curvature_measurements = compute_layer_curvatures(sublayer_data)
+        # 3. Compute layer rotation-angle decomposition + ID (domain pure math)
+        logger.info("Computing layer rotation-angle decomposition and intrinsic dimension...")
+        rotation_measurements = compute_layer_rotation_angles(sublayer_data)
 
         # 4. Assemble profile (phase classification + correlations in domain)
         logger.info("Classifying phases and computing correlations...")
@@ -122,7 +122,7 @@ class ChainAnalysisService:
             num_layers=num_layers,
             hidden_dim=hidden_dim,
             probe_count=len(probe_texts),
-            curvature_measurements=curvature_measurements,
+            rotation_measurements=rotation_measurements,
             entropies=entropies,
         )
 

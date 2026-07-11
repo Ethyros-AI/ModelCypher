@@ -221,6 +221,55 @@ class TestGeodesicProjection:
         assert result.orthogonal_dim == expected_dim
         assert result.orthogonal_dim >= d - activations.shape[0]
 
+    def test_rmt_projection_is_rotation_invariant(self):
+        """Jointly rotating activations and delta should rotate the output."""
+        backend = get_default_backend()
+        geo_filter = GeodesicNullSpaceFilter(backend)
+
+        activations = backend.array(
+            [
+                [4.0, 0.0, 0.0, 0.0],
+                [-4.0, 0.0, 0.0, 0.0],
+                [3.0, 0.0, 0.0, 0.0],
+                [-3.0, 0.0, 0.0, 0.0],
+                [0.0, 2.0, 0.0, 0.0],
+                [0.0, -2.0, 0.0, 0.0],
+                [0.0, 1.5, 0.0, 0.0],
+                [0.0, -1.5, 0.0, 0.0],
+            ]
+        )
+        delta = backend.array(
+            [
+                [1.0, 2.0, 3.0, 5.0],
+                [-2.0, 1.0, 0.5, 4.0],
+            ]
+        )
+        rotation = backend.array(
+            [
+                [0.5, 0.5, 0.5, 0.5],
+                [0.5, -0.5, 0.5, -0.5],
+                [0.5, 0.5, -0.5, -0.5],
+                [0.5, -0.5, -0.5, 0.5],
+            ]
+        )
+        rotated_activations = backend.matmul(activations, rotation)
+        rotated_delta = backend.matmul(delta, rotation)
+        backend.eval(activations, delta, rotation, rotated_activations, rotated_delta)
+
+        result = geo_filter.filter_delta(delta, activations)
+        rotated_result = geo_filter.filter_delta(rotated_delta, rotated_activations)
+        expected_rotated = backend.matmul(result.filtered_delta, rotation)
+        backend.eval(rotated_result.filtered_delta, expected_rotated)
+
+        assert 0 < result.orthogonal_dim < activations.shape[1]
+
+        diff = backend.max(backend.abs(rotated_result.filtered_delta - expected_rotated))
+        scale = backend.max(backend.abs(expected_rotated))
+        backend.eval(diff, scale)
+        scale_val = max(float(backend.to_scalar(scale)), 1.0)
+        tol = division_epsilon(backend, expected_rotated) * scale_val * expected_rotated.size
+        assert float(backend.to_scalar(diff)) <= tol
+
 
 class TestMergeIntegration:
     """Test integration with merge workflow."""

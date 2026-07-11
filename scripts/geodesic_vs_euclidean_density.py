@@ -35,7 +35,6 @@ from pathlib import Path
 from statistics import mean, pstdev
 from typing import Any
 
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
@@ -49,7 +48,6 @@ from modelcypher.core.domain.geometry.numerical_stability import division_epsilo
 from modelcypher.core.domain.geometry.ollivier_ricci import OllivierRicciCurvature
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 from modelcypher.core.domain.geometry.riemannian_validation import derive_k_neighbors
-
 
 LOG = logging.getLogger("geodesic_vs_euclidean_density")
 

@@ -151,7 +151,7 @@ def main() -> None:
 
     print()
     print("=" * 60)
-    print(f"  DIGIT-RANGE ADDITION PROFILE")
+    print("  DIGIT-RANGE ADDITION PROFILE")
     print(f"  Model: {args.model}")
     print("=" * 60)
     print(f"  {'Range':<10}  {'Operands':<18}  {'Correct':>8}  {'Accuracy':>10}")

@@ -45,6 +45,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 from modelcypher.ports.training import LoRALayerConfig
 
 if TYPE_CHECKING:
+    from modelcypher.core.domain.geometry.rmt_signal_separation import SignalRankResult
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
@@ -269,7 +270,7 @@ def _randomized_singular_values(
         Structure with Randomness. SIAM Review, 53(2), 217-288.
     """
     b = backend
-    m, n = int(W.shape[0]), int(W.shape[1])
+    n = int(W.shape[1])
 
     if seed is not None:
         b.random_seed(seed)
@@ -709,10 +710,9 @@ def compute_per_layer_signal_ranks(
 
     Returns:
         dict mapping layer index to SignalRankResult.  Layers with < 2 probes
-        are skipped.
+    are skipped.
     """
     from modelcypher.core.domain.geometry.rmt_signal_separation import (
-        SignalRankResult,
         compute_signal_rank_from_singular_values,
     )
 
@@ -982,64 +982,6 @@ def compute_adaptation_budget_ranks(
     return per_layer_ranks
 
 
-def compute_geometric_dropout(geometry: LayerGeometry, rank: int) -> float:
-    """Derive per-layer dropout rate from weight spectral geometry.
-
-    Dropout acts as a low-rank regularizer (Cavazza et al., AISTATS 2018).
-    The rate is the product of two spectral ratios — no arbitrary constants:
-
-        dropout = redundancy × adapter_fraction
-
-    Where:
-        - redundancy = 1 - shannon_eff_rank / full_rank
-          (how concentrated the spectrum is; 0 = flat, 1 = single SV)
-        - adapter_fraction = rank / full_rank
-          (how much of the weight's space the LoRA adapter occupies)
-
-    Both factors are ratios of measured geometric quantities.
-
-    Geometric interpretation: with this dropout, the expected active LoRA
-    dimensions per training step are rank × (1 - redundancy × rank/full_rank).
-    When the spectrum is flat (redundancy ≈ 0), all LoRA dims stay active.
-    When the spectrum is steep and rank is large relative to full_rank,
-    more dims are dropped — the adapter's effective training dimensionality
-    reflects the weight's spectral utilization.
-
-    For NB-LoRA (Cayley transform), dropout = 0.0 because the spectral bound
-    is a strictly tighter constraint than dropout's nuclear norm regularization.
-
-    Args:
-        geometry: Pre-computed spectral geometry for this layer.
-        rank: LoRA rank assigned to this layer.
-
-    Returns:
-        Dropout rate (product of two spectral ratios).
-
-    Reference:
-        Cavazza, J. et al. (2018). Dropout as a Low-Rank Regularizer. AISTATS.
-        Roy, O. & Vetterli, M. (2007). Effective rank definition.
-    """
-    if geometry.full_rank == 0 or rank <= 1:
-        return 0.0
-
-    # Spectral redundancy: how concentrated the energy is (not uniformly spread)
-    utilization = geometry.shannon_effective_rank / geometry.full_rank
-    utilization = max(0.0, min(1.0, utilization))
-    redundancy = 1.0 - utilization
-
-    # Adapter fraction: how much of the total space LoRA occupies
-    adapter_fraction = rank / geometry.full_rank
-
-    # Product of two spectral ratios — both purely geometric
-    dropout = redundancy * adapter_fraction
-
-    # Mathematical constraint: at least 1 rank dimension must survive
-    p_max_from_rank = 1.0 - 1.0 / rank
-    dropout = min(dropout, p_max_from_rank)
-
-    return round(dropout, 4)
-
-
 def derive_lora_configs(
     geometries: dict[str, LayerGeometry],
     target_modules: list[str],
@@ -1069,8 +1011,6 @@ def derive_lora_configs(
         geom = geometries[key]
         rank = per_layer_ranks.get(key, 0)
 
-        dropout = compute_geometric_dropout(geom, rank) if rank > 0 else 0.0
-
         configs.append(
             LoRALayerConfig(
                 layer_key=key,
@@ -1078,7 +1018,7 @@ def derive_lora_configs(
                 sigma_k=geom.sigma_k,
                 in_features=geom.shape[1],
                 out_features=geom.shape[0],
-                dropout=dropout,
+                dropout=0.0,
             )
         )
 
@@ -1092,7 +1032,6 @@ __all__ = [
     "analyze_weight_geometries",
     "compute_adaptation_budget_ranks",
     "compute_coupled_ranks",
-    "compute_geometric_dropout",
     "compute_geometric_rank",
     "compute_layer_geometry",
     "compute_layer_geometry_randomized",

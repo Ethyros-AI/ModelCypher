@@ -1,6 +1,6 @@
 # ModelCypher TODO
 
-**Updated:** 2026-03-01
+**Updated:** 2026-07-04
 
 ---
 
@@ -9,7 +9,6 @@
 | Project | Location | Purpose |
 |---------|----------|---------|
 | **ModelCypher** | `/` | Main geometric analysis toolkit for neural networks |
-| **Plasma** | `/plasma/` | Tokamak plasma geometry analysis (fusion research application) |
 
 ---
 
@@ -18,11 +17,11 @@
 ### ModelCypher Core
 
 **Open:**
-- [ ] G5: Complete credibility proof (Qwen3-8B) — pre-training benchmark complete (GSM8K 70%, ARC-Easy 100%, BoolQ 100%, overall 90%), training run in progress with gradient accumulation + degeneration stopping
+- [ ] G5: Complete credibility proof (Qwen3-8B) — owner rerun required on Apple Silicon. The 2026-03-01 CLI credibility run did not complete: `results/cli_credibility_2026-03-01/train_result.json.tmp` is a 0-byte tmp file. Do not report G5 as complete until a non-tmp `train_result.json`, pre/post benchmark JSON, degeneration trace, and gates are present.
 - [ ] Entropy reg + answer-mask mutual exclusivity fix — currently in `else` branch, needs refactor to apply independently
 
 **Recently completed (2026-02-25 through 2026-03-01):**
-- Gradient accumulation for 8B training (OOM fix): memory-safe micro-batch probe + grad accumulation [VALIDATED]
+- Gradient accumulation for 8B training (OOM fix): memory-safe micro-batch probe + grad accumulation [VALIDATED-ENG]
 - Pre/post benchmark evaluation via `--benchmark quick` flag (GSM8K, ARC-Easy, BoolQ)
 - Degeneration measurement alignment: per-epoch check using few-shot prompts, 512 tokens, 20 samples
 - `degeneration_exceeded` stopping criterion
@@ -31,11 +30,11 @@
 - ActivationProviderAdapter delegation fix (4 methods)
 - `mc quantize correct` CLI promotion
 - bf16 SVD guard for `compute_per_layer_signal_ranks`
-- Delegation contract tests (9 new, total 6809 tests)
-- K-FAC removed (gain ≈ 1.03, not worth complexity)
+- Delegation contract tests for ActivationProviderAdapter. Current test collection count is generated in `README.md` by `scripts/update_test_count.py`.
+- K-FAC removed after its validation path failed to justify product complexity; see `docs/research/REFUTATION-LEDGER.md`
 
 **Previously completed (2026-02-20):**
-- Data-rank ceiling: `min(tail_dims, n_train_samples)` — 8B params 2.76B → 927M (2.91x reduction) [VALIDATED]
+- Data-rank ceiling: `min(tail_dims, n_train_samples)` — 8B params 2.76B → 927M (2.91x reduction) [VALIDATED-ENG]
 - Duplicate SVD elimination: `derive_optimizer_geometry_config()` accepts precomputed geometries
 - Streaming B_crit estimation: two-pass constant-memory gradient noise estimation
 - SVD `compute_uv=False` optimization: ~3x faster geometry analysis
@@ -47,10 +46,12 @@
 **Closed (no longer pursuing):**
 - ~~Validate REINFORCE on 1.2B~~ — REINFORCE on 350M closed 2026-02-23 (gradient orthogonal to CE, degradation monotonic). 1.2B attempt deferred until CE-based pipeline fully validated.
 
-### Plasma Subproject
+### Cross-Domain Forays
 
-- [ ] Complete TODO/FIXME items in `plasma/src/diiid_loader.py`
-- [ ] Complete TODO/FIXME items in `plasma/src/data_loader.py`
+- [ ] TODO(owner): relocate or delete `plasma/` outside the flagship repo.
+      `src/` has no plasma importers as of 2026-07-04. Do not pursue plasma
+      TODO/FIXME work here; any external "1s disruption lead time" claim needs
+      a DisruptionBench baseline first.
 
 ---
 
@@ -79,4 +80,4 @@ Quick links:
 
 ---
 
-*Source files: docs/research/*.md, plasma/src/*
+*Source files: docs/research/*.md*

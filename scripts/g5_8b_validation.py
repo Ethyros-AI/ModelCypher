@@ -434,8 +434,8 @@ def _run_seed(args: argparse.Namespace) -> None:
 
     _record_memory("after_baseline_eval")
 
-    del baseline_model
-    del baseline_tokenizer
+    baseline_model = None
+    baseline_tokenizer = None
     gc.collect()
     _safe_clear_backend_cache(backend)
     _record_memory("after_baseline_cleanup")

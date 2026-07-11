@@ -27,7 +27,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from novel_problems import PREMISE_PAIRS
 
-
 # ---------------------------------------------------------------------------
 # Reasoning trace templates
 # ---------------------------------------------------------------------------
@@ -221,7 +220,7 @@ def main():
         for sample in val_samples:
             f.write(json.dumps(sample) + "\n")
 
-    print(f"\nWritten:")
+    print("\nWritten:")
     print(f"  {train_path} ({len(train_samples)} samples)")
     print(f"  {val_path} ({len(val_samples)} samples)")
 

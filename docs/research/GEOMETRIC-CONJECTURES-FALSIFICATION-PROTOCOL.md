@@ -41,14 +41,18 @@ They do not replace the geometric mechanism.
 
 ## Claim Status Taxonomy
 
-See [EVIDENCE-TAXONOMY.md](../EVIDENCE-TAXONOMY.md) for the full 5-label system used project-wide.
+See [EVIDENCE-TAXONOMY.md](../EVIDENCE-TAXONOMY.md) for the
+project-wide evidence taxonomy.
 
 | Status | Meaning |
 |--------|---------|
 | `[PROVEN]` | Theorem-level result with assumptions stated and checked in scope |
-| `[VALIDATED]` | Null-hypothesis tested, reproduced across multiple settings/models (formerly `SUPPORTED`) |
+| `[VALIDATED-ENG]` | Engineering/mechanics claim checked by direct code, memory, artifact, or invariant validation |
+| `[VALIDATED-EFF]` | Benchmark-efficacy claim reproduced across at least 3 seeds, with seed count reported and pooled effect outside 2*SE |
 | `[EMPIRICAL]` | Measured and reproducible, but not falsification-tested |
 | `[CONJECTURAL]` | Theoretically motivated hypothesis with insufficient evidence (formerly `OPEN`) |
+| `[MEASUREMENT_INVALID]` | Measurement operator is non-commensurable or degenerate in the stated scope |
+| `[MECHANISM_UNDERSPECIFIED]` | Mechanism is missing required architecture, scale, precision, or operator terms |
 | `[DISPROVEN]` | Tested and rejected; pre-registered rejection condition met (formerly `FALSIFIED`) |
 
 All broad claims must explicitly carry one of these labels.
@@ -225,10 +229,11 @@ Required files:
 
 ### 4. Decision Rule
 
-A conjecture can move from `[CONJECTURAL]` to `[VALIDATED]` only when:
+A conjecture can move from `[CONJECTURAL]` to `[VALIDATED-EFF]` only when:
 - all pre-registered primary metrics pass
 - result reproduces across registered families/scales
 - confidence intervals support sign and magnitude claims
+- at least 3 seeds are reported, and the pooled effect lies outside 2*SE
 
 A conjecture moves to `[DISPROVEN]` immediately when its rejection condition is
 met. No silent re-interpretation.

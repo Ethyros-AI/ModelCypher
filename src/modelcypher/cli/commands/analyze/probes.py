@@ -30,9 +30,8 @@ from datetime import datetime, timezone
 from typing import Callable
 
 from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
-from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
-
 from modelcypher.cli.exit_codes import EXIT_RUNTIME
+from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
 
 from ._common import (
     ErrorDetail,

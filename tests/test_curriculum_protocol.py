@@ -34,7 +34,6 @@ from modelcypher.core.use_cases.curriculum_generation_service import (
     CurriculumGenerationService,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

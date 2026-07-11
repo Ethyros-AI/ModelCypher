@@ -96,24 +96,24 @@ def test_correct_projection_low_weights_preserve_error(any_backend):
 def test_compute_layer_tikhonov_weights(any_backend):
     """MP noise edge and weights are computed correctly."""
     b = any_backend
-    # Eigenvalues: 2 strong, 2 weak
-    eigenvalues = b.array([100.0, 10.0, 0.01, 0.001])
+    # Eigenvalues: 2 strong, a unit-scale noise bulk, 2 weak directions.
+    eigenvalues = b.array([100.0, 10.0] + [1.0] * 20 + [0.01, 0.001])
 
     weights, mp_edge = compute_layer_tikhonov_weights(
-        eigenvalues, 4, 100, b,
+        eigenvalues, 24, 100, b,
     )
     b.eval(weights)
 
     assert mp_edge > 0.0
-    # MP edge: sigma_sq=27.5, gamma=0.04, alpha=39.6
-    # w_i = lambda_i / (lambda_i + alpha)
-    w_list = [float(b.to_scalar(weights[i])) for i in range(4)]
+    # The shared estimator excludes the top spikes and estimates sigma_sq
+    # from the unit-scale bulk, so weak directions fall below the edge.
+    w_list = [float(b.to_scalar(weights[i])) for i in range(24)]
     assert w_list[0] > 0.5   # 100 / (100 + 39.6) = 0.716
     assert w_list[1] > 0.1   # 10 / (10 + 39.6) = 0.202
-    assert w_list[2] < 0.01  # 0.01 / (0.01 + 39.6) ≈ 0
-    assert w_list[3] < 0.01  # 0.001 / (0.001 + 39.6) ≈ 0
+    assert w_list[-2] < 0.01
+    assert w_list[-1] < 0.01
     # Monotone: stronger eigenvalues get higher weights
-    assert w_list[0] > w_list[1] > w_list[2] > w_list[3]
+    assert all(left >= right for left, right in zip(w_list, w_list[1:]))
 
 
 def test_compute_layer_tikhonov_weights_aspect_ratio_effect(any_backend):

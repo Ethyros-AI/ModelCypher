@@ -144,9 +144,9 @@ def analyze_model(
 
     logger.info("Loading model: %s", model_tag)
 
-    from modelcypher.backends import initialize_default_backend
-    from modelcypher.adapters.model_loader import ModelLoader
     from modelcypher.adapters.model_backbone import resolve_model_backbone
+    from modelcypher.adapters.model_loader import ModelLoader
+    from modelcypher.backends import initialize_default_backend
     from modelcypher.core.domain.geometry.positive_geometry import (
         compute_positive_grassmann_signature,
     )

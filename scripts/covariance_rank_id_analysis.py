@@ -43,10 +43,8 @@ import argparse
 import gc
 import json
 import logging
-import math
 import os
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -1092,7 +1090,6 @@ def run_experiment(args: argparse.Namespace) -> None:
     for name, vals in summary["per_model"].items():
         r_global = vals["spearman_keff_global_vs_id"]
         r_local = vals.get("spearman_keff_local_vs_id", float("nan"))
-        r_cum = vals["spearman_cum_curvature_vs_id"]
         r_layer = vals["spearman_layer_idx_vs_id"]
         e7_cv = vals.get("e7_mean_cv_local_id", float("nan"))
         logger.info(

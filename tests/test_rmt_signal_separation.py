@@ -37,6 +37,33 @@ from modelcypher.core.domain.geometry.rmt_signal_separation import (
 )
 
 
+def _hadamard(n: int) -> list[list[float]]:
+    assert n > 0 and n & (n - 1) == 0
+    matrix = [[1.0]]
+    while len(matrix) < n:
+        top = [row + row for row in matrix]
+        bottom = [row + [-value for value in row] for row in matrix]
+        matrix = top + bottom
+    return matrix
+
+
+def _orthogonal_signal_activations(
+    *,
+    n_samples: int,
+    n_features: int,
+    signal_rank: int,
+    backend,
+):
+    basis = _hadamard(n_samples)
+    rows = []
+    for row in basis:
+        signal = row[1 : signal_rank + 1]
+        rows.append(signal + [0.0] * (n_features - signal_rank))
+    activations = backend.array(rows, dtype="float32")
+    backend.eval(activations)
+    return activations
+
+
 @pytest.fixture
 def backend():
     """Get the default backend for testing."""
@@ -298,6 +325,38 @@ class TestSeparateSignalNoise:
         # Should still work and return valid result
         assert isinstance(result, MPSignalNoiseResult)
         assert result.signal_rank + result.noise_rank == n_features
+
+    def test_spiked_covariance_signal_rank_recovery_gamma_less_than_one(
+        self, backend
+    ):
+        """Robust MP estimator recovers equal-energy spikes for gamma < 1."""
+        signal_rank = 8
+        activations = _orthogonal_signal_activations(
+            n_samples=128,
+            n_features=32,
+            signal_rank=signal_rank,
+            backend=backend,
+        )
+
+        result = separate_signal_noise(activations, backend=backend)
+
+        assert result.signal_rank == signal_rank
+
+    def test_probe_regime_signal_rank_recovery_gamma_greater_than_one(
+        self, backend
+    ):
+        """N << D probe regime keeps unit signal eigenvalues above the MP edge."""
+        signal_rank = 32
+        activations = _orthogonal_signal_activations(
+            n_samples=64,
+            n_features=256,
+            signal_rank=signal_rank,
+            backend=backend,
+        )
+
+        result = separate_signal_noise(activations, backend=backend)
+
+        assert result.signal_rank == signal_rank
 
 
 class TestComputeRMTNullSpaceWeights:

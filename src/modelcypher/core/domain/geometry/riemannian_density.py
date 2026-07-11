@@ -807,6 +807,25 @@ class RiemannianDensityEstimator:
                 f"Enable store_raw_activations=True when creating volumes."
             )
 
+        if volume_a.raw_activations.shape == volume_b.raw_activations.shape:
+            raw_delta = volume_a.raw_activations - volume_b.raw_activations
+            max_raw_delta = backend.max(backend.abs(raw_delta))
+            backend.eval(max_raw_delta)
+            if float(backend.to_scalar(max_raw_delta)) == 0.0:
+                return ConceptVolumeRelation(
+                    volume_a=volume_a,
+                    volume_b=volume_b,
+                    overlap_coefficient=1.0,
+                    jaccard_index=1.0,
+                    bhattacharyya_coefficient=1.0,
+                    centroid_distance=0.0,
+                    geodesic_centroid_distance=0.0,
+                    mahalanobis_distance_ab=0.0,
+                    mahalanobis_distance_ba=0.0,
+                    curvature_divergence=0.0,
+                    subspace_alignment=1.0,
+                )
+
         # Compute geodesic RBF CKA - this is dimension-agnostic AND curvature-aware
         # Uses geodesic distances in RBF kernel: K = exp(-d_geo²/2σ²)
         cka_result = compute_cka(
@@ -821,11 +840,29 @@ class RiemannianDensityEstimator:
         # - CKA ~ 0.0 = different representations = no overlap
         # - CKA in between = partial alignment
 
-        # Map CKA to our metrics:
-        # - overlap_coefficient: CKA directly measures overlap in representation space
-        # - bhattacharyya: CKA approximates distribution overlap
-        # - jaccard: CKA approximates concept intersection
-        # - subspace_alignment: CKA measures alignment directly
+        # In a shared coordinate space, CKA measures centered relational
+        # structure and is translation invariant. It therefore cannot measure
+        # support overlap or centroid distance. Preserve the distributional
+        # measurements and use CKA only for subspace alignment.
+        if volume_a.dimension == volume_b.dimension:
+            geometric = self._compute_geodesic_relation(volume_a, volume_b)
+            return ConceptVolumeRelation(
+                volume_a=volume_a,
+                volume_b=volume_b,
+                overlap_coefficient=geometric.overlap_coefficient,
+                jaccard_index=geometric.jaccard_index,
+                bhattacharyya_coefficient=geometric.bhattacharyya_coefficient,
+                centroid_distance=geometric.centroid_distance,
+                geodesic_centroid_distance=geometric.geodesic_centroid_distance,
+                mahalanobis_distance_ab=geometric.mahalanobis_distance_ab,
+                mahalanobis_distance_ba=geometric.mahalanobis_distance_ba,
+                curvature_divergence=geometric.curvature_divergence,
+                subspace_alignment=cka_similarity,
+            )
+
+        # Across different feature dimensions there is no shared coordinate
+        # system for centroids or support volumes. CKA remains the commensurate
+        # operator, so these fields report representational similarity only.
         overlap = cka_similarity
         bhattacharyya = cka_similarity
         jaccard = cka_similarity

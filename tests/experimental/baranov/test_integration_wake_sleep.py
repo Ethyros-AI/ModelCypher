@@ -124,7 +124,7 @@ class TestWakeSleepPartialRecall:
         facts = _make_facts(4)
         layer_ids = [3]
 
-        edit_state = _mock_apply_edit(facts, layer_ids)
+        _mock_apply_edit(facts, layer_ids)
 
         # Only first 2 facts recalled
         recalled_ids = {"fact_0", "fact_1"}
@@ -176,7 +176,6 @@ class TestRollbackPath:
 
     def test_rollback_preserves_history_and_restores_state(self) -> None:
         """After rollback, fact returns to previous stage with full history."""
-        facts = _make_facts(2)
         tracker = FactConsolidationTracker()
 
         # Initialize and advance fact_0 through two stages

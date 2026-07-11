@@ -109,9 +109,11 @@ class EmbeddingProjector:
             target_sel = target_arr[:sample_count]
         else:
             source_idx, target_idx = shared_indices
-            source_sel = source_arr[source_idx]
-            projected_sel = projected_arr[source_idx]
-            target_sel = target_arr[target_idx]
+            source_indices = backend.array(source_idx)
+            target_indices = backend.array(target_idx)
+            source_sel = backend.take(source_arr, source_indices, axis=0)
+            projected_sel = backend.take(projected_arr, source_indices, axis=0)
+            target_sel = backend.take(target_arr, target_indices, axis=0)
             sample_count = len(source_idx)
 
         cos_vals, dist_vals = geodesic_pairwise_metrics(
@@ -192,5 +194,8 @@ class EmbeddingProjector:
             target_sel = target[:count]
             return source_sel, target_sel
         source_idx, target_idx = shared_indices
-        return source[source_idx], target[target_idx]
-
+        backend = self._backend
+        return (
+            backend.take(source, backend.array(source_idx), axis=0),
+            backend.take(target, backend.array(target_idx), axis=0),
+        )

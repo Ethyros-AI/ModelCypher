@@ -33,21 +33,22 @@ import pytest
 
 from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 from modelcypher.core.domain.training.mass_step_size import (
+    _EPS_F32,
+    _SQRT_EPS_F32,
     CONTROLLER_MODE_BEHAVIORAL_CLOSED_LOOP,
     CONTROLLER_MODE_BEHAVIORAL_PROBE,
     CONTROLLER_MODE_STRUCTURAL_OBSERVE,
     OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
-    _EPS_F32,
-    _SQRT_EPS_F32,
     BehavioralStateMeasurement,
     DerivedClosedLoopLaw,
     apply_sqrt_n_epoch_correction,
     apply_validation_backoff,
-    controller_precision_floor,
     compute_closed_loop_trigger_reasons,
     compute_conformal_margin_rate,
     compute_per_step_rates,
     compute_reinforce_budget,
+    controller_precision_floor,
+    derive_ce_sps_floor,
     derive_spectral_ceiling,
     evaluate_closed_loop_law,
     replay_controller_trace,
@@ -1230,3 +1231,37 @@ class TestFStar:
                 f_star=f_star,
             )
             assert eta_weyl == pytest.approx(0.5 / 10.0)
+
+
+class TestCrossEntropySPSFloor:
+    """Tests for CE f* derived from measured validation loss."""
+
+    def test_ce_floor_uses_running_validation_minimum(self):
+        floor = derive_ce_sps_floor([2.0, 1.25, 1.5])
+        assert floor == pytest.approx(1.25)
+
+    def test_ce_floor_ignores_invalid_measurements(self):
+        floor = derive_ce_sps_floor([float("nan"), -1.0, 0.0, 1.5])
+        assert floor == pytest.approx(1.5)
+
+    def test_ce_floor_can_use_token_entropy_before_validation(self):
+        floor = derive_ce_sps_floor([], token_entropy_floor=0.75)
+        assert floor == pytest.approx(0.75)
+
+    def test_ce_floor_tightens_sps_after_validation_measurement(self):
+        loss, d_norm, floor = 1.5, 2.0, derive_ce_sps_floor([1.0])
+        _, sps_without_floor, _, _, _ = compute_per_step_rates(
+            loss, d_norm, sigma_k_min=1.0, eta_ceiling=1.0,
+        )
+        _, sps_with_floor, _, _, _ = compute_per_step_rates(
+            loss, d_norm, sigma_k_min=1.0, eta_ceiling=1.0, f_star=floor,
+        )
+        assert sps_with_floor == pytest.approx((loss - floor) / d_norm**2)
+        assert sps_with_floor < sps_without_floor
+
+    def test_explicit_mse_distillation_f_star_path_is_unchanged(self):
+        _, sps, _, _, _ = compute_per_step_rates(
+            loss=0.564, d_norm=14.3, sigma_k_min=0.874, eta_ceiling=2.24e-3,
+            f_star=0.544,
+        )
+        assert sps == pytest.approx((0.564 - 0.544) / 14.3**2, rel=1e-3)

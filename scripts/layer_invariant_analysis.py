@@ -31,7 +31,6 @@ import itertools
 import json
 import logging
 import math
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -585,7 +584,6 @@ def main():
 
         n_confirmed = sum(1 for m in per_model.values() if m["pass"])
         n_refuted = sum(1 for m in per_model.values() if m["status"] == "REFUTED")
-        n_inconclusive = sum(1 for m in per_model.values() if m["status"] == "INCONCLUSIVE")
         n_models = len(per_model)
 
         if n_confirmed == n_models:

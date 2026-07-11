@@ -913,9 +913,9 @@ def run_all_real(model_name: str, n_samples: int, max_tokens: int, output_dir: P
 
     report_lines = [
         f"# Topology Parameter Experiments — {model_name}",
-        f"",
+        "",
         f"**Samples:** {len(collected)} ({len(correct)} correct, {len(incorrect)} incorrect)",
-        f"",
+        "",
     ]
 
     # Ricci discriminative power
@@ -931,14 +931,14 @@ def run_all_real(model_name: str, n_samples: int, max_tokens: int, output_dir: P
         ]
         d = cohens_d_two_groups(c_means, i_means)
         report_lines.extend([
-            f"| Metric | Cohen's d | Mean(correct) | Mean(incorrect) |",
-            f"|--------|-----------|---------------|-----------------|",
+            "| Metric | Cohen's d | Mean(correct) | Mean(incorrect) |",
+            "|--------|-----------|---------------|-----------------|",
             f"| mean_ricci_curvature | {d:.4f} | {sum(c_means)/len(c_means):.4f} | {sum(i_means)/len(i_means):.4f} |",
-            f"",
-            f"|d| < 0.2: negligible effect → Ricci adds nothing on attention graphs",
-            f"|d| 0.2-0.5: small effect → worth exploring further",
-            f"|d| > 0.5: medium+ effect → wire into pipeline",
-            f"",
+            "",
+            "|d| < 0.2: negligible effect → Ricci adds nothing on attention graphs",
+            "|d| 0.2-0.5: small effect → worth exploring further",
+            "|d| > 0.5: medium+ effect → wire into pipeline",
+            "",
         ])
     else:
         report_lines.append("Insufficient samples for Cohen's d (need >= 2 per group).\n")

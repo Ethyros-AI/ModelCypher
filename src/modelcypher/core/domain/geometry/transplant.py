@@ -1228,7 +1228,12 @@ def compute_null_space_projector(
     #
     # Citation: Marchenko & Pastur (1967), Tikhonov (1963).
     # =========================================================================
-    mp_edge = marchenko_pastur_noise_edge(total_var_val, gram_size, n_samples)
+    mp_edge = marchenko_pastur_noise_edge(
+        eigvals_pos,
+        gram_size,
+        n_samples,
+        backend=b,
+    )
     tikhonov_w = eigvals_pos / (eigvals_pos + mp_edge)
     b.eval(tikhonov_w)
 

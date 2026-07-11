@@ -1647,7 +1647,6 @@ def _compute_family_similarity_check(
     Returns None if extraction fails (e.g., incompatible architectures).
     """
     from modelcypher.core.domain.geometry.alignment import (
-        FamilySimilarity,
         compute_family_similarity,
     )
 

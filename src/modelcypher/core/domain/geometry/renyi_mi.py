@@ -42,7 +42,6 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
-    safe_log_epsilon,
 )
 
 if TYPE_CHECKING:

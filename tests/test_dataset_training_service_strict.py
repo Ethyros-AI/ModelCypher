@@ -15,17 +15,17 @@ from typer.testing import CliRunner
 import modelcypher.core.use_cases.dataset_training_service as dataset_training_service_module
 from modelcypher.cli.app import app
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.star.problem_generator import StarProblemGenerator
 from modelcypher.core.domain.training.exceptions import TrainingDerivationError
 from modelcypher.core.domain.training.geometric_lora import LayerGeometry
 from modelcypher.core.domain.training.mass_step_size import (
-    DerivedClosedLoopLaw,
     OPTIMIZER_MODE_ADAMW_MATCHED_TRACE,
     OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+    DerivedClosedLoopLaw,
 )
-from modelcypher.core.domain.star.problem_generator import StarProblemGenerator
 from modelcypher.core.use_cases.dataset_training_service import (
-    DatasetTrainResult,
     DatasetTrainingService,
+    DatasetTrainResult,
 )
 
 runner = CliRunner()

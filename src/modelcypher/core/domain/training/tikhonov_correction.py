@@ -20,6 +20,8 @@ import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from modelcypher.core.domain.geometry.mp_noise_estimator import estimate_mp_noise
+
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
 
@@ -58,7 +60,7 @@ def compute_mp_noise_edge(
 ) -> float:
     """Marchenko-Pastur noise edge from activation eigenspectrum.
 
-    σ² = trace(C) / D  (average eigenvalue)
+    σ² = robust MP bulk mean after excluding exact zeros and signal spikes
     γ  = D / N          (aspect ratio)
     α  = σ² × (1 + √γ)²
 
@@ -79,13 +81,13 @@ def compute_mp_noise_edge(
             f"n_tokens and dimensionality must be > 0, got {n_tokens}, {dimensionality}"
         )
 
-    total_var = float(backend.to_scalar(backend.sum(eigenvalues)))
-    D = float(dimensionality)
-    N = float(n_tokens)
-
-    sigma_sq = total_var / D
-    aspect = D / N
-    return sigma_sq * (1.0 + math.sqrt(aspect)) ** 2
+    estimate = estimate_mp_noise(
+        eigenvalues,
+        n_samples=n_tokens,
+        n_features=dimensionality,
+        backend=backend,
+    )
+    return estimate.upper_edge
 
 
 def compute_tikhonov_weights(

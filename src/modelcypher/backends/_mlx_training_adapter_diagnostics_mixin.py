@@ -911,7 +911,6 @@ class _MLXTrainingAdapterDiagnosticsMixin:
         # 2x growth is optimal for unknown-budget online search (2-competitive).
         safe = 1
         safe_peak = peak1
-        failed = None
         candidate = 2
         while candidate <= max_candidate:
             logger.info(
@@ -924,7 +923,6 @@ class _MLXTrainingAdapterDiagnosticsMixin:
                 safe_peak = peak
                 candidate *= 2
             else:
-                failed = candidate
                 break
 
         # max_candidate probe intentionally omitted.

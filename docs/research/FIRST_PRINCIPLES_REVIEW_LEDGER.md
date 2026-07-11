@@ -17,7 +17,7 @@ Tracks doctrine and research documents audited under
 | 2026-03-03 | `docs/RESEARCH-ROADMAP.md` | Updated | Added repo-wide doc rework thread and promotion block for MI claims |
 | 2026-03-03 | `docs/research/OPEN-MATHEMATICAL-QUESTIONS.md` (§9) | Reclassified | Changed from "resolved" to `[MEASUREMENT_INVALID]` pending commensurable MI operator |
 | 2026-03-03 | `CLAUDE.md` | Updated | Removed fixed-percentage gating language; added mixed-model enforcement |
-| 2026-03-03 | `docs/EVIDENCE-TAXONOMY.md` | Updated | Expanded to canonical 8-label system, added migration map for legacy tags |
+| 2026-03-03 | `docs/EVIDENCE-TAXONOMY.md` | Updated | Expanded the then-current evidence taxonomy and added migration map for legacy tags |
 | 2026-03-03 | `docs/research/OPEN-MATHEMATICAL-QUESTIONS-REFUTATIONS.md` | Updated | Replaced legacy status tags with canonical evidence tags |
 | 2026-03-03 | `docs/research/information_bridge_derivation.md` | Updated | Normalized `CONJECTURE` tags to `CONJECTURAL` |
 | 2026-03-03 | `docs/research/linear_accessible_information_derivation.md` | Created | Q3 frontier artifact: protocol-compliant replacement of invalid MI-depth claims with linear-accessible observable |
@@ -36,6 +36,8 @@ Tracks doctrine and research documents audited under
 | 2026-03-09 | `docs/ARCHITECTURE.md` | Updated | Corrected canonical-vs-experimental merge architecture references and actual domain layout |
 | 2026-03-09 | `docs/CURIOSITY-DAEMON.md` | Updated | Marked curiosity and consolidation as experimental and corrected module paths |
 | 2026-03-09 | `docs/START-HERE.md` | Updated | Aligned onboarding language with canonical-vs-experimental repo reality |
+| 2026-07-04 | `docs/EVIDENCE-TAXONOMY.md` | Updated | Split the legacy umbrella validation tag into `[VALIDATED-ENG]` and `[VALIDATED-EFF]`, with seed-count and pooled-effect requirements for efficacy claims |
+| 2026-07-04 | `AGENTS.md` | Updated | Added raw per-seed artifact retention rule for benchmark efficacy families |
 
 ---
 

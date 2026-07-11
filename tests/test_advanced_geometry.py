@@ -35,12 +35,10 @@ def test_intrinsic_dimension_estimator_mle(any_backend):
     D = 10
 
     x1 = backend.random_normal((N, 1))
-    line_points = backend.zeros((N, D))
-    line_points[:, :1] = x1 * 10.0
+    line_points = backend.concatenate([x1 * 10.0, backend.zeros((N, D - 1))], axis=1)
 
     x2 = backend.random_normal((N, 2))
-    plane_points = backend.zeros((N, D))
-    plane_points[:, :2] = x2 * 10.0
+    plane_points = backend.concatenate([x2 * 10.0, backend.zeros((N, D - 2))], axis=1)
 
     estimator = IntrinsicDimension()
     line_est = estimator.compute(line_points)

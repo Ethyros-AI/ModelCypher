@@ -28,7 +28,6 @@ from modelcypher.experimental.merge.stages.transplant_stitches import (
     compute_composite_stitches,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

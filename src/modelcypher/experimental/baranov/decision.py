@@ -33,7 +33,6 @@ from typing import Any
 
 from modelcypher.core.domain.statistics import clopper_pearson_interval
 
-
 # ---------------------------------------------------------------------------
 # Data types
 # ---------------------------------------------------------------------------
@@ -298,7 +297,6 @@ def compute_mode_verdict(
         )
 
     n_seeds = len(post_rates)
-    post_mean = sum(post_rates) / n_seeds
     deltas = [p - pre_rate for p in post_rates]
     delta_mean = sum(deltas) / n_seeds
 

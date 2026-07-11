@@ -56,7 +56,6 @@ PROBE_TEXTS = [
 
 def validate_model(model_name: str, model_path: str) -> dict:
     """Run sink validation on a single model."""
-    import mlx.core as mx
     import mlx_lm
 
     from modelcypher.backends.mlx_backend import MLXBackend

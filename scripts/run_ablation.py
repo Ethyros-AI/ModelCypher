@@ -47,10 +47,9 @@ import gc
 import json
 import logging
 import math
-import os
 import sys
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -846,7 +845,7 @@ def compute_decision(output_root: str, arms: list[str], seeds: list[int],
                         f"CI=[{ci['ci_low']:+.4f}, {ci['ci_high']:+.4f}] {sig}"
                     )
 
-    print(f"\nVerdicts:")
+    print("\nVerdicts:")
     for k, v in verdicts.items():
         emoji = "PASS" if v else ("FAIL" if v is False else "N/A")
         print(f"  {k:30s}: {emoji}")

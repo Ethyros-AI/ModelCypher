@@ -194,7 +194,7 @@ def autopsy_layer(
     w_sigma_k = s_w[k_idx] if k_idx < len(s_w) else w_sigma_min
 
     # ── SVD of delta Δ ──
-    print(f"    SVD(Δ)...", end=" ", flush=True)
+    print("    SVD(Δ)...", end=" ", flush=True)
     _, S_d, _ = svd_safe(delta_W)
     s_d = to_list(S_d)
     print(f"done ({time.time()-t0:.1f}s)")
@@ -204,7 +204,7 @@ def autopsy_layer(
     d_top1_frac = (s_d[0] ** 2 / d_total_energy) if d_total_energy > 0 else 0.0
 
     # ── SVD of combined W + Δ ──
-    print(f"    SVD(W+Δ)...", end=" ", flush=True)
+    print("    SVD(W+Δ)...", end=" ", flush=True)
     _, S_c, _ = svd_safe(W_adapted)
     s_c = to_list(S_c)
     print(f"done ({time.time()-t0:.1f}s)")
@@ -221,7 +221,7 @@ def autopsy_layer(
 
     # ── Per-direction analysis: U^T Δ V ──
     # Project delta into W's singular basis
-    print(f"    Per-direction analysis...", end=" ", flush=True)
+    print("    Per-direction analysis...", end=" ", flush=True)
     # U_w: [out, min(out,in)], Vt_w: [min(out,in), in]
     # delta_W: [out, in]
     # projected = U_w^T @ delta_W @ V_w^T^T = U_w^T @ delta_W @ V_w
@@ -250,7 +250,7 @@ def autopsy_layer(
 
     # ── Principal angles between leading subspaces ──
     # Use the leading r singular vectors of W and Δ
-    print(f"    Principal angles...", end=" ", flush=True)
+    print("    Principal angles...", end=" ", flush=True)
     _, _, Vt_d = svd_safe(delta_W)
 
     # Compare right singular vectors (input-space directions)
@@ -379,7 +379,7 @@ def main():
             results.append(result)
 
             # Print summary for this layer
-            print(f"  Results:")
+            print("  Results:")
             print(f"    W eff_rank: {result.W_effective_rank:.1f}, σ_max: {result.W_sigma_max:.4f}, σ_k: {result.W_sigma_k:.6f}")
             print(f"    Δ eff_rank: {result.delta_effective_rank:.1f}, ||Δ||₂: {result.delta_spectral_norm:.6f}")
             print(f"    Δ rank for 50%/90%/99% energy: {result.delta_rank_50pct}/{result.delta_rank_90pct}/{result.delta_rank_99pct}")

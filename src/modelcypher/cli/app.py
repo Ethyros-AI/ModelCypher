@@ -18,7 +18,7 @@
 """ModelCypher CLI - workflow-first commands with expert surfaces.
 
 mc train    - Train LoRA adapters
-mc merge    - Geometric model merging
+mc merge    - Experimental geometric model merging
 mc infer    - Run inference
 mc analyze  - Workflow-first observation and expert metrics
 mc model    - Model registry
@@ -53,8 +53,8 @@ from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_in
 register_default_atlas_inventories()
 
 # The 9 commands
-from modelcypher.cli.commands import analyze as analyze_commands
 from modelcypher.cli.commands import adapter as adapter_commands
+from modelcypher.cli.commands import analyze as analyze_commands
 from modelcypher.cli.commands import data as data_commands
 from modelcypher.cli.commands import infer as infer_commands
 from modelcypher.cli.commands import merge as merge_commands
@@ -155,7 +155,11 @@ app = typer.Typer(no_args_is_help=True, add_completion=False, cls=_GlobalOptions
 # Register commands
 app.add_typer(train_commands.train_app, name="train", help="Train LoRA adapters")
 app.add_typer(data_commands.data_app, name="data", help="Data preparation and validation")
-app.add_typer(merge_commands.merge_app, name="merge", help="Geometric model merging")
+app.add_typer(
+    merge_commands.merge_app,
+    name="merge",
+    help="Experimental geometric model merging",
+)
 app.add_typer(infer_commands.app, name="infer", help="Run inference")
 app.add_typer(
     analyze_commands.app,

@@ -25,7 +25,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 # Fix lm-eval / transformers 5.x incompatibility
-import transformers
 from transformers.utils.import_utils import _LazyModule
 
 _original_lazy_getattr = _LazyModule.__getattr__
@@ -98,7 +97,8 @@ def run_lm_eval(model_path: str, tasks: list[str], adapter_path: str | None = No
 def run_inference_tests(model_path: str, adapter_path: str | None = None,
                         max_tokens: int = 200) -> list[dict]:
     import mlx.core as mx
-    from mlx_lm import generate, load as mlx_load
+    from mlx_lm import generate
+    from mlx_lm import load as mlx_load
 
     logger.info(f"  Inference tests (adapter={adapter_path or 'none'})")
 

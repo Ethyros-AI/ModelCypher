@@ -193,7 +193,6 @@ class TestLoRASafetyQuantizedBase:
         assert tuple(int(x) for x in W_svd.shape) == (64, 64)
 
     def test_quantized_scale_bound_matches_full_precision(self, backend):
-        from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
         from modelcypher.core.use_cases.lora_safety_service import LoRASafetyService
 
         service = LoRASafetyService()
@@ -214,7 +213,6 @@ class TestLoRASafetyQuantizedBase:
         if q_biases is not None:
             backend.eval(q_biases)
 
-        fp_linear = SimpleNamespace(weight=W_fp)
         q_linear = SimpleNamespace(
             weight=q_weight,
             scales=q_scales,
@@ -222,7 +220,6 @@ class TestLoRASafetyQuantizedBase:
             group_size=64,
             bits=8,
         )
-        fp_model = self._build_model_with_down_proj(fp_linear).model
         q_model = self._build_model_with_down_proj(q_linear).model
 
         rank = 8
@@ -264,21 +261,24 @@ class TestLoRASafetyQuantizedBase:
         )
         assert W_q_for_svd is not None
 
-        scale_fp = _sigma_k(W_fp) / delta_spectral
+        sigma_k_fp = _sigma_k(W_fp)
+        scale_fp = sigma_k_fp / delta_spectral
         scale_q = _sigma_k(W_q_for_svd) / delta_spectral
         rel_diff = abs(scale_q - scale_fp) / max(abs(scale_fp), 1e-12)
 
-        # Precision-derived tolerance:
-        # - sqrt(eps_f32): numerical floor of SVD arithmetic
-        # - 1/2^bits: quantization grid resolution (dominant for 8-bit affine)
-        quantization_resolution = 1.0 / float(2 ** int(q_linear.bits))
-        tol = max(
-            float(sqrt_scalar(backend.finfo().eps, backend)),
-            float(sqrt_scalar(backend.finfo(W_q_for_svd.dtype).eps, backend)),
-            quantization_resolution,
+        # Weyl: |sigma_k(W_q) - sigma_k(W)| <= ||W_q - W||_2.
+        quantization_error = W_q_for_svd - W_fp
+        _, error_singular_values, _ = backend.svd(
+            quantization_error, compute_uv=True
+        )
+        backend.eval(error_singular_values)
+        error_spectral = float(backend.to_scalar(error_singular_values[0]))
+        weyl_relative_bound = error_spectral / sigma_k_fp
+        roundoff = max(int(W_fp.shape[0]), int(W_fp.shape[1])) * float(
+            backend.finfo(W_fp.dtype).eps
         )
         assert math.isfinite(rel_diff)
-        assert rel_diff <= tol
+        assert rel_diff <= weyl_relative_bound + roundoff
 
     def test_get_weight_for_svd_returns_none_if_dequantization_fails(self, backend, monkeypatch):
         from modelcypher.core.use_cases.lora_safety_service import LoRASafetyService

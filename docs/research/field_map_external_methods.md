@@ -159,12 +159,15 @@ These have never been combined, and none shares a common geometric framework.
 
 ### ModelCypher's Position
 
-ModelCypher derives **all 15 hyperparameters** from three sources (SVD, IEEE 754, measured data):
+ModelCypher tracks the traditional 15-control training program against three
+allowed evidence sources (SVD, IEEE 754, measured data). The current shipped
+default derives only the controls marked as shipped in
+`docs/research/15-HYPERPARAMETER-RESEARCH-PROGRAM.md`.
 
 | # | Hyperparameter | Source |
 |---|----------------|--------|
 | 1 | Learning Rate | MASS (Weyl ceiling + SPS + Weyl displacement) |
-| 2 | Adam Epsilon | Spectral noise floor: max(σ_k², √ε×σ_max²) |
+| 2 | Adam Epsilon | Removed as an Adam claim; ScaledGD regularization has weight-spectrum units |
 | 3 | Momentum | Cayley-Stiefel retraction (replaces Adam) |
 | 4 | Weight Decay | σ_k / σ_max per layer |
 | 5 | Gradient Clipping | REMOVED (MASS step bound + budget monitoring prevent explosion) |

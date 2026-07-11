@@ -51,7 +51,6 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 # ---------------------------------------------------------------------------
 # Fix lm-eval / transformers 5.x incompatibility
 # ---------------------------------------------------------------------------
-import transformers
 from transformers.utils.import_utils import _LazyModule
 
 _original_lazy_getattr = _LazyModule.__getattr__
@@ -189,8 +188,8 @@ def train_standard_lora(
     from mlx_lm import load as mlx_load
     from mlx_lm.lora import (
         TrainingArgs,
-        load_dataset,
         linear_to_lora_layers,
+        load_dataset,
         save_config,
         train,
     )
@@ -334,6 +333,7 @@ def train_nb_lora(
     seed: int = 42,
 ) -> dict:
     import mlx.core as mx
+
     from modelcypher.backends import initialize_default_backend
     from modelcypher.cli.composition import get_dataset_training_service
 

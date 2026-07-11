@@ -29,7 +29,6 @@ Acceptance criteria:
 """
 from __future__ import annotations
 
-import json
 import math
 import sys
 from pathlib import Path
@@ -101,7 +100,7 @@ def validate_model(model_name: str, model_path: str) -> dict:
                       f"got {layer_indices}")
                 all_pass = False
             else:
-                print(f"    PASS: Correct 6/16 attention layers")
+                print("    PASS: Correct 6/16 attention layers")
 
         # Compute collapse for each layer
         layer_results = []

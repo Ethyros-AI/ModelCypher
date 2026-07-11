@@ -25,12 +25,9 @@ Results go to /Volumes/CodeCypher/experiments/gradient-projection-causal/
 import argparse
 import json
 import logging
-import math
-import os
 import random
 import re
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
 
@@ -40,18 +37,16 @@ import mlx.core as mx
 import mlx.nn as nn
 import mlx.optimizers as opt
 import numpy as np
-from mlx_lm import load, generate
+from mlx.utils import tree_flatten as mlx_flatten
+from mlx.utils import tree_unflatten
+from mlx_lm import generate
 from mlx_lm.tuner.trainer import default_loss, iterate_batches
-from mlx.utils import tree_flatten as mlx_flatten, tree_unflatten
 
 from modelcypher.adapters.mlx_training_adapter import MLXTrainingAdapter
 from modelcypher.backends.mlx_backend import MLXBackend
 from modelcypher.core.domain.training.geometric_lora import (
     analyze_weight_geometries,
     select_target_modules,
-)
-from modelcypher.core.domain.training.geometric_optimizer import (
-    derive_optimizer_geometry_config,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -608,6 +603,7 @@ def setup_model_with_lora(model_path, seed=42):
     adapter.freeze_and_apply_lora(model)
 
     sigma_max = max(g.sigma_max for g in geometries.values() if g.sigma_max > 0)
+    sigma_k_min = min(g.sigma_k for g in geometries.values() if g.sigma_k > 0)
 
     # Discover LoRA gradient keys by running a test gradient
     # (keys in gradient pytree may differ from trainable_parameters keys)
@@ -627,7 +623,7 @@ def setup_model_with_lora(model_path, seed=42):
     logger.info("Model setup: %d LoRA params, %d grad keys, sigma_max=%.4f",
                 n_params, len(param_keys), sigma_max)
 
-    return model, tokenizer, sigma_max, param_keys
+    return model, tokenizer, sigma_max, sigma_k_min, param_keys
 
 
 # =====================================================================
@@ -656,7 +652,9 @@ def run_arm(arm, output_dir=None):
     eval_samples = load_jsonl(eval_path)
 
     # Setup model
-    model, tokenizer, sigma_max, param_keys = setup_model_with_lora(MODEL_PATH)
+    model, tokenizer, sigma_max, sigma_k_min, param_keys = setup_model_with_lora(
+        MODEL_PATH
+    )
     train_dataset = tokenize_dataset(train_samples, tokenizer)
     eval_dataset = tokenize_dataset(eval_samples, tokenizer)
 
@@ -706,7 +704,6 @@ def run_arm(arm, output_dir=None):
     logger.info("Pre-training MT: %d/5", mt_score_pre)
 
     # Train
-    sigma_k_min_val = min(g.sigma_k for g in geometries.values() if g.sigma_k > 0)
     train_losses, val_losses, best_val = train_with_projection(
         model=model,
         train_dataset=train_dataset,
@@ -716,7 +713,7 @@ def run_arm(arm, output_dir=None):
         seq_length=None,
         max_epochs=10,
         sigma_max=sigma_max,
-        sigma_k_min=sigma_k_min_val,
+        sigma_k_min=sigma_k_min,
         gradient_hook=gradient_hook,
         hook_label=hook_label,
     )
@@ -957,12 +954,12 @@ def run_eval_only(adapter_dir, model_path=None, output_dir=None):
     print(f"  Feasibility: {feasibility['correct']}/{feasibility['total']}")
 
     # Per-form breakdown for novel
-    print(f"\n  Novel by form:")
+    print("\n  Novel by form:")
     for form, stats in sorted(novel["by_form"].items()):
         print(f"    {form:>25s}: {stats['correct']}/{stats['n']}")
 
     # Per-category breakdown for inference
-    print(f"\n  Inference by category:")
+    print("\n  Inference by category:")
     for cat, stats in sorted(inference["by_category"].items()):
         print(f"    {cat:>25s}: {stats['correct']}/{stats['n']}")
 

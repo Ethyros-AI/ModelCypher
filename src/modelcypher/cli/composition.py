@@ -39,15 +39,16 @@ if TYPE_CHECKING:
     from modelcypher.core.use_cases.capacity_analysis_service import (
         CapacityAnalysisService,
     )
+    from modelcypher.core.use_cases.chain_analysis_service import ChainAnalysisService
     from modelcypher.core.use_cases.entropy_calibration_service import (
         EntropyCalibrationService,
     )
+    from modelcypher.core.use_cases.model_probe_service import ModelProbeService
+    from modelcypher.core.use_cases.model_service import ModelService
     from modelcypher.core.use_cases.observation_bundle_report_service import (
         ObservationBundleReportService,
     )
     from modelcypher.core.use_cases.observation_service import ObservationService
-    from modelcypher.core.use_cases.model_probe_service import ModelProbeService
-    from modelcypher.core.use_cases.model_service import ModelService
     from modelcypher.core.use_cases.verification_depth_profile_service import (
         VerificationDepthProfileService,
     )
@@ -56,7 +57,6 @@ if TYPE_CHECKING:
     from modelcypher.ports.activation_provider import ActivationProvider
     from modelcypher.ports.backend import Backend
     from modelcypher.ports.inference import InferenceEngine
-    from modelcypher.ports.model_loader import ModelLoaderPort
 
 
 @lru_cache(maxsize=1)
@@ -166,7 +166,7 @@ def get_chain_analysis_service() -> "ChainAnalysisService":
     """Get ChainAnalysisService with proper dependency injection.
 
     Returns a service for computing the unified causal chain profile
-    (entropy, curvature, intrinsic dimension, phase classification).
+    (entropy, layer rotation angle, intrinsic dimension, phase classification).
     Injects the backend-specific sublayer collector via DI.
     """
     from modelcypher.backends.sublayer_collector import collect_sublayer_activations

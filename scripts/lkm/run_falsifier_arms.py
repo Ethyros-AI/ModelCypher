@@ -113,7 +113,7 @@ def run_falsifier_arms(
             )
             print(f"  Training done in {time.monotonic() - t0:.1f}s")
         else:
-            print(f"  SKIP training: adapter already exists")
+            print("  SKIP training: adapter already exists")
 
         # 2. Evaluate
         scores_path = arm_dir / "raw_scores.jsonl"
@@ -132,12 +132,12 @@ def run_falsifier_arms(
             )
             print(f"  Eval done in {time.monotonic() - t0:.1f}s: EM={em:.4f}")
         else:
-            print(f"  SKIP eval: scores already exist")
+            print("  SKIP eval: scores already exist")
             em = _compute_em(scores_path)
             print(f"  Loaded EM={em:.4f}")
 
         # 3. Measure geometry
-        print(f"  Measuring fact geometry...")
+        print("  Measuring fact geometry...")
         t0 = time.monotonic()
         geom = measure_fact_geometry(
             model_path=model_path,

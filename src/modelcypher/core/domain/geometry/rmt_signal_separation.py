@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.mp_noise_estimator import estimate_mp_noise
 from modelcypher.core.domain.geometry.numerical_stability import (
     compute_median,
     division_epsilon,
@@ -89,6 +90,23 @@ class MPSignalNoiseResult:
 
     # Fraction of total variance captured by signal
     signal_variance_fraction: float
+
+
+@dataclass
+class RMTNullSpaceProjection:
+    """Feature-space RMT projections for null-space filtering."""
+
+    # Per-coordinate diagnostic fraction of each coordinate in the noise subspace.
+    keep_weights: "Array"
+
+    # Orthogonal projector onto MP-bulk eigenvectors: V_noise @ V_noise.T.
+    noise_projection: "Array"
+
+    # Orthogonal projector onto MP-signal eigenvectors: V_signal @ V_signal.T.
+    signal_projection: "Array"
+
+    # MP bulk separation diagnostics.
+    mp_result: MPSignalNoiseResult
 
 
 def marchenko_pastur_edges(
@@ -145,19 +163,7 @@ def estimate_noise_variance_from_bulk(
     n_features: int,
     backend: "Backend",
 ) -> float:
-    """Estimate noise variance from the bulk of the eigenvalue spectrum.
-
-    Uses the median of eigenvalues as a robust estimator of the bulk center,
-    then derives sigma^2 from the Marchenko-Pastur distribution.
-
-    For MP distribution with aspect ratio gamma = d/n:
-        median ≈ sigma^2 * (1 - sqrt(gamma))^2 + sigma^2 * gamma / 2
-                (approximate, exact formula involves incomplete beta)
-
-    We use the approximation:
-        sigma^2 ≈ median / (1 + gamma)
-
-    This is robust to outlier signal eigenvalues at the top.
+    """Estimate noise variance using the shared spike-robust MP estimator.
 
     Args:
         eigenvalues: Eigenvalues sorted in descending order.
@@ -168,38 +174,12 @@ def estimate_noise_variance_from_bulk(
     Returns:
         Estimated noise variance sigma^2.
     """
-    b = backend
-    eigs = b.astype(eigenvalues, precision_dtype(b, reference=eigenvalues))
-    b.eval(eigs)
-
-    n_eigs = int(eigs.shape[0])
-    if n_eigs == 0:
-        return 1.0
-
-    gamma = float(n_features) / float(n_samples)
-    eps = division_epsilon(b, eigs)
-
-    # Use median as robust estimate of bulk center
-    # Sort eigenvalues (they should already be sorted, but ensure it)
-    sorted_eigs = b.sort(eigs)
-    b.eval(sorted_eigs)
-
-    # Compute median
-    mid = n_eigs // 2
-    if n_eigs % 2 == 1:
-        median_val = float(b.to_scalar(sorted_eigs[mid]))
-    else:
-        lower = float(b.to_scalar(sorted_eigs[mid - 1]))
-        upper = float(b.to_scalar(sorted_eigs[mid]))
-        median_val = (lower + upper) / 2.0
-
-    # Estimate sigma^2 from median
-    # For MP distribution: E[lambda] = sigma^2 * (1 + gamma)
-    # Median is slightly lower, so this slightly overestimates sigma^2
-    # which overestimates sigma^2, raising the MP edge (fewer false signals)
-    sigma_sq = median_val / max(1.0 + gamma, eps)
-
-    return max(sigma_sq, eps)
+    return estimate_mp_noise(
+        eigenvalues,
+        n_samples=n_samples,
+        n_features=n_features,
+        backend=backend,
+    ).sigma_sq
 
 
 def estimate_noise_variance_closed_form(
@@ -208,17 +188,7 @@ def estimate_noise_variance_closed_form(
     n_features: int,
     backend: "Backend",
 ) -> float:
-    """Noise variance estimator using the lower MP bulk.
-
-    Uses the lower half of eigenvalues to estimate sigma^2 based on MP
-    distribution relationships. Assumes signal components lie above the bulk
-    in the spiked model.
-
-    Mathematical derivation:
-        - Lower edge: lambda_- = sigma^2 * (1 - sqrt(gamma))^2
-        - Q1 approximation: Q1 ≈ sigma^2 * (1 + gamma - sqrt(gamma))
-        - Mean of lower half ≈ (lower_edge + Q1) / 2
-        - Solve for sigma^2 = lower_mean / expected_factor
+    """Compatibility wrapper for the shared spike-robust MP estimator.
 
     Args:
         eigenvalues: Eigenvalues (any order, will be sorted).
@@ -233,75 +203,12 @@ def estimate_noise_variance_closed_form(
         - Marchenko & Pastur (1967)
         - The invariant "signal > bulk" follows from spiked covariance models
     """
-    b = backend
-    eigs = b.astype(eigenvalues, precision_dtype(b, reference=eigenvalues))
-    b.eval(eigs)
-
-    n_eigs = int(eigs.shape[0])
-    if n_eigs == 0:
-        return 1.0
-
-    gamma = float(n_features) / float(n_samples)
-    eps = division_epsilon(b, eigs)
-
-    # Sort eigenvalues ascending (lower eigenvalues first)
-    sorted_eigs = b.sort(eigs)
-    b.eval(sorted_eigs)
-
-    # Take lower half - these are GUARANTEED to be noise
-    # Signal eigenvalues are always ABOVE the bulk, never below
-    lower_half_count = max(n_eigs // 2, 1)
-    lower_indices = b.arange(lower_half_count)
-    lower_eigs = b.take(sorted_eigs, lower_indices, axis=0)
-    b.eval(lower_eigs)
-
-    # Compute mean of lower half
-    lower_mean = b.mean(lower_eigs)
-    b.eval(lower_mean)
-    lower_mean_val = float(b.to_scalar(lower_mean))
-
-    # Compute expected mean of lower half of MP distribution
-    # E[lambda | lambda < median] / sigma^2 = g(gamma)
-    #
-    # For MP distribution on [a, b] where:
-    #   a = sigma^2 * (1 - sqrt(gamma))^2  (lower edge)
-    #   b = sigma^2 * (1 + sqrt(gamma))^2  (upper edge)
-    #
-    # The lower half has conditional expectation approximately:
-    #   E[lambda | lambda < median] ≈ sigma^2 * (lower_edge_factor + q1_factor) / 2
-    #
-    # where:
-    #   lower_edge_factor = (1 - sqrt(gamma))^2
-    #   q1_factor ≈ 1 + gamma - sqrt(gamma)  (Q1 approximation from MP CDF)
-    sqrt_gamma = sqrt_scalar(gamma, b)
-
-    # Lower edge factor: (1 - sqrt(gamma))^2
-    lower_edge_factor = (1.0 - sqrt_gamma) ** 2
-
-    # Q1 approximation: derived from MP CDF behavior
-    # The 25th percentile lies at approximately sigma^2 * (1 + gamma - sqrt(gamma))
-    q1_factor = 1.0 + gamma - sqrt_gamma
-
-    # Expected mean of lower half ≈ midpoint of [lower_edge, Q1]
-    expected_lower_mean_factor = (lower_edge_factor + q1_factor) / 2.0
-
-    # Edge case: when gamma is very small or very large
-    if expected_lower_mean_factor < eps:
-        # Fall back to simple mean relationship
-        expected_lower_mean_factor = 0.5 * (1.0 + gamma)
-
-    # Solve for sigma^2
-    sigma_sq = lower_mean_val / max(expected_lower_mean_factor, eps)
-
-    logger.debug(
-        "RMT closed-form: gamma=%.4f, lower_mean=%.6f, factor=%.4f, sigma^2=%.6f",
-        gamma,
-        lower_mean_val,
-        expected_lower_mean_factor,
-        sigma_sq,
-    )
-
-    return max(sigma_sq, eps)
+    return estimate_mp_noise(
+        eigenvalues,
+        n_samples=n_samples,
+        n_features=n_features,
+        backend=backend,
+    ).sigma_sq
 
 
 def separate_signal_noise(
@@ -382,33 +289,15 @@ def separate_signal_noise(
     eigenvalues_sorted = b.take(eigenvalues, desc_indices, axis=0)
     b.eval(eigenvalues_sorted)
 
-    # For MP distribution, use effective sample size
-    # gamma_eff = d / n for overdetermined, n / d for underdetermined
-    # The MP distribution always uses the smaller dimension in numerator
-    if n_samples >= n_features:
-        # Overdetermined: gamma = d/n < 1
-        n_eff = n_samples
-        d_eff = n_features
-    else:
-        # Underdetermined: gamma = n/d < 1
-        n_eff = n_features
-        d_eff = n_samples
-
-    # Estimate noise variance from bulk
-    # Default: closed-form using lower-bulk invariant (signal > bulk, so lower = noise)
-    if noise_estimation == "closed_form":
-        sigma_sq = estimate_noise_variance_closed_form(
-            eigenvalues_sorted, n_eff, d_eff, b
-        )
-    else:  # "median" fallback
-        sigma_sq = estimate_noise_variance_from_bulk(
-            eigenvalues_sorted, n_eff, d_eff, b
-        )
-
-    # Compute MP edges with effective dimensions
-    lower_edge, upper_edge = marchenko_pastur_edges(
-        n_eff, d_eff, sigma_sq, b
+    estimate = estimate_mp_noise(
+        eigenvalues_sorted,
+        n_samples=n_samples,
+        n_features=n_features,
+        backend=b,
     )
+    sigma_sq = estimate.sigma_sq
+    lower_edge = estimate.lower_edge
+    upper_edge = estimate.upper_edge
 
     logger.debug(
         "RMT: sigma^2=%.6f, MP edges=[%.6f, %.6f]",
@@ -524,22 +413,22 @@ def separate_signal_noise(
     )
 
 
-def compute_rmt_null_space_weights(
+def compute_rmt_null_space_projection(
     activations: "Array",
     backend: "Backend | None" = None,
-) -> tuple["Array", MPSignalNoiseResult]:
-    """Compute per-dimension weights for null-space projection using RMT.
+) -> RMTNullSpaceProjection:
+    """Compute RMT feature-space projectors for null-space filtering.
 
-    This is the direct replacement for variance-based heuristics. Instead of
-    normalizing variance to [0, 1] and using (1 - variance) as keep weights,
-    we use the Marchenko-Pastur distribution to determine which directions
-    are truly signal vs noise.
+    This is the direct replacement for coordinate-wise variance heuristics.
+    Instead of scaling each feature independently, use the Marchenko-Pastur
+    distribution to identify signal/noise eigenvector subspaces and build the
+    orthogonal projector onto the noise subspace.
 
     Algorithm:
         1. Compute covariance eigenvectors
         2. Separate signal from noise using MP distribution
-        3. Project variance onto eigenvector basis
-        4. Weight dimensions by their contribution to noise vs signal
+        3. Build P_noise = V_noise @ V_noise.T
+        4. Report diag(P_noise)-equivalent keep weights for diagnostics
 
     For each dimension d:
         - If d's variance projects mainly onto noise eigenvectors: keep_weight ≈ 1
@@ -550,8 +439,7 @@ def compute_rmt_null_space_weights(
         backend: Optional backend for computation.
 
     Returns:
-        (keep_weights, mp_result) where keep_weights[i] ∈ [0, 1] indicates
-        how much of dimension i is available for transfer.
+        RMTNullSpaceProjection with projector matrices and MP diagnostics.
     """
     b = backend or get_default_backend()
 
@@ -597,6 +485,14 @@ def compute_rmt_null_space_weights(
     noise_mask = b.arange(n_eigs) >= n_signal  # Eigenvectors after signal are noise
     noise_mask = b.astype(noise_mask, eigenvectors.dtype)
     b.eval(noise_mask)
+    signal_mask = 1.0 - noise_mask
+    b.eval(signal_mask)
+
+    noise_vectors = eigenvectors * b.reshape(noise_mask, (1, -1))
+    signal_vectors = eigenvectors * b.reshape(signal_mask, (1, -1))
+    noise_projection = b.matmul(noise_vectors, b.transpose(noise_vectors))
+    signal_projection = b.matmul(signal_vectors, b.transpose(signal_vectors))
+    b.eval(noise_projection, signal_projection)
 
     # Compute per-dimension projection onto noise vs signal subspace
     # Each dimension's "noise fraction" = sum of squared loadings on noise eigenvectors
@@ -633,7 +529,26 @@ def compute_rmt_null_space_weights(
         n_noise,
     )
 
-    return keep_weights, mp_result
+    return RMTNullSpaceProjection(
+        keep_weights=keep_weights,
+        noise_projection=noise_projection,
+        signal_projection=signal_projection,
+        mp_result=mp_result,
+    )
+
+
+def compute_rmt_null_space_weights(
+    activations: "Array",
+    backend: "Backend | None" = None,
+) -> tuple["Array", MPSignalNoiseResult]:
+    """Compute per-dimension diagnostic weights for null-space projection.
+
+    The production filter should use ``compute_rmt_null_space_projection`` so
+    rotated signal subspaces remain rotated. This wrapper is retained for
+    callers and tests that need the historical coordinate diagnostics.
+    """
+    projection = compute_rmt_null_space_projection(activations, backend=backend)
+    return projection.keep_weights, projection.mp_result
 
 
 @dataclass

@@ -165,17 +165,29 @@ class TestCheckValLossConverged:
 
 
 class TestMarginStopping:
-    def test_margin_collapse_uses_derived_vocab_floor(self):
-        vocab_size = 32000
-        expected_threshold = pytest.approx(math.log(vocab_size) * _SQRT_EPS)
+    def test_margin_collapse_uses_baseline_bootstrap_floor(self):
+        baseline_margins = [1.0, 1.2, 0.8, 1.0]
+        baseline_mean = sum(baseline_margins) / len(baseline_margins)
+        empirical_var = sum(
+            (x - baseline_mean) ** 2 for x in baseline_margins
+        ) / len(baseline_margins)
+        expected_threshold = pytest.approx(
+            baseline_mean - math.sqrt(empirical_var / len(baseline_margins))
+        )
 
         collapsed, threshold = check_margin_collapse(
-            [1.0, math.log(vocab_size) * _SQRT_EPS * 0.5],
-            vocab_size=vocab_size,
+            [1.0, 0.8],
+            baseline_margin_history=baseline_margins,
         )
 
         assert collapsed is True
         assert threshold == expected_threshold
+
+    def test_margin_collapse_without_baseline_is_unidentified(self):
+        collapsed, threshold = check_margin_collapse([1.0, 0.0], vocab_size=32000)
+
+        assert collapsed is False
+        assert threshold == 0.0
 
     def test_margin_trend_declining_detects_windowed_erosion(self):
         declining, threshold = check_margin_trend_declining(
@@ -322,29 +334,45 @@ class TestCheckStoppingCertificate:
         assert cert.delta_max_val == 0.0
         assert cert.improvement_bound_met is True
 
-    def test_entropy_collapse_detects_drift(self):
-        """Entropy below floor = mechanism drift."""
+    def test_entropy_collapse_detects_drift_against_baseline(self):
+        """Entropy below baseline bootstrap band = mechanism drift."""
         cert = check_stopping_certificate(
             grad_norm=1e-5,
             alignment=0.0,
             curvature=1.0,
             val_ci_half_width=1e-3,
-            mean_token_entropy=1e-10,
+            mean_token_entropy=2.8,
+            baseline_entropy_samples=[3.5, 3.6, 3.4, 3.5],
             repetition_rate=0.0,
         )
         assert cert.entropy_collapsed is True
         assert cert.no_drift is False
         assert cert.all_conditions_met is False
 
-    def test_repetition_spike_detects_drift(self):
-        """Repetition near 1.0 = mechanism drift."""
+    def test_entropy_scalar_baseline_does_not_invent_drift(self):
+        """A scalar entropy baseline has no sampling variance, so drift is unidentified."""
+        cert = check_stopping_certificate(
+            grad_norm=1e-5,
+            alignment=0.0,
+            curvature=1.0,
+            val_ci_half_width=1e-3,
+            mean_token_entropy=1e-10,
+            baseline_entropy=3.5,
+            repetition_rate=0.0,
+        )
+        assert cert.entropy_collapsed is False
+        assert cert.no_drift is True
+
+    def test_repetition_spike_detects_drift_against_baseline(self):
+        """Repetition above baseline bootstrap band = mechanism drift."""
         cert = check_stopping_certificate(
             grad_norm=1e-5,
             alignment=0.0,
             curvature=1.0,
             val_ci_half_width=1e-3,
             mean_token_entropy=3.0,
-            repetition_rate=0.9999,
+            repetition_rate=0.20,
+            baseline_repetition_samples=[0.05, 0.06, 0.04, 0.05],
         )
         assert cert.repetition_spiked is True
         assert cert.no_drift is False

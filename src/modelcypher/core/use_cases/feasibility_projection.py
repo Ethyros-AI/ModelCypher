@@ -22,7 +22,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
-
 _BYTES_PER_GIB = 1024**3
 
 

@@ -43,7 +43,6 @@ import argparse
 import gc
 import json
 import logging
-import math
 import random
 import statistics
 from datetime import datetime, timezone

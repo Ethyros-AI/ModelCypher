@@ -310,8 +310,9 @@ def train_step(
 
 def evaluate(model, lora_layers: dict, val_data: list[dict], tokenizer, backend) -> dict:
     """Evaluate model on validation data."""
-    import mlx.core as mx
     import re
+
+    import mlx.core as mx
 
     correct = 0
     total = 0
@@ -425,8 +426,8 @@ def apply_geometric_rescaling(
 
 def verify_per_direction_bounds(lora_layers: dict, weights: dict) -> dict:
     """Verify per-direction spectral bounds after geometric rescaling."""
-    from modelcypher.core.use_cases.lora_safety_service import LoRASafetyService
     from modelcypher.core.domain._backend import get_default_backend
+    from modelcypher.core.use_cases.lora_safety_service import LoRASafetyService
 
     backend = get_default_backend()
     results = {}

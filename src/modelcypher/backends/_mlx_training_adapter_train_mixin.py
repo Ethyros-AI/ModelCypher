@@ -25,6 +25,16 @@ import math
 import time
 from typing import TYPE_CHECKING, Any, Callable
 
+from modelcypher.backends._mlx_training_adapter_budget_mixin import _MLXTrainingAdapterBudgetMixin
+from modelcypher.backends._mlx_training_loop_helpers import (
+    build_batch_iterator_plan,
+    build_behavioral_probe_state,
+    build_epoch_metrics,
+    build_objective_components,
+    mask_frozen_gradients,
+    summarize_adamw_state,
+    summarize_fisher_state,
+)
 from modelcypher.backends.mlx_training_adapter_core import *  # noqa: F403
 from modelcypher.core.domain.training.geometric_early_stopping import (  # noqa: F401
     check_effective_rank_declining,
@@ -35,6 +45,30 @@ from modelcypher.core.domain.training.geometric_early_stopping import (  # noqa:
     check_val_loss_converged,
     should_certificate_stop,
 )
+from modelcypher.core.domain.training.identity import (
+    GEOMETRIC_LORA_CONTROLLER,
+    GEOMETRIC_LORA_INIT_METHOD,
+    GEOMETRIC_LORA_INIT_METHOD_CAYLEY,
+    GEOMETRIC_LORA_METHOD,
+    GEOMETRIC_LORA_STOPPING,
+    resolve_geometric_lora_optimizer_name,
+)
+from modelcypher.core.domain.training.mass_step_size import (
+    _SQRT_EPS_F32,
+    CONTROLLER_MODE_BEHAVIORAL_CLOSED_LOOP,
+    CONTROLLER_MODE_STRUCTURAL_OBSERVE,
+    OPTIMIZER_MODE_ADAMW_GEOMETRIC,
+    OPTIMIZER_MODE_ADAMW_MATCHED_TRACE,
+    OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
+    BehavioralStateMeasurement,
+    ClosedLoopControlDecision,
+    ControllerStepTrace,
+    DerivedClosedLoopLaw,
+    derive_ce_sps_floor,
+    evaluate_closed_loop_law,
+    validate_controller_mode,
+    validate_optimizer_research_mode,
+)
 from modelcypher.core.domain.training.spectral_budget import (  # noqa: F401
     DTYPE_THRESHOLD_F32,
     compute_budget_ratios,
@@ -43,304 +77,12 @@ from modelcypher.core.domain.training.spectral_budget import (  # noqa: F401
     compute_stable_rank,
     is_budget_exhausted,
 )
-from modelcypher.core.domain.training.mass_step_size import (
-    _SQRT_EPS_F32,
-    ClosedLoopControlDecision,
-    CONTROLLER_MODE_BEHAVIORAL_CLOSED_LOOP,
-    CONTROLLER_MODE_BEHAVIORAL_PROBE,
-    CONTROLLER_MODE_STRUCTURAL_OBSERVE,
-    DerivedClosedLoopLaw,
-    OPTIMIZER_MODE_ADAMW_GEOMETRIC,
-    OPTIMIZER_MODE_ADAMW_MATCHED_TRACE,
-    OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
-    BehavioralStateMeasurement,
-    ControllerLayerMeasurement,
-    ControllerStepTrace,
-    evaluate_closed_loop_law,
-    validate_controller_mode,
-    validate_optimizer_research_mode,
-)
-from modelcypher.core.domain.training.identity import (
-    GEOMETRIC_LORA_CONTROLLER,
-    GEOMETRIC_LORA_INIT_METHOD_CAYLEY,
-    GEOMETRIC_LORA_INIT_METHOD,
-    GEOMETRIC_LORA_METHOD,
-    GEOMETRIC_LORA_STOPPING,
-    resolve_geometric_lora_optimizer_name,
-)
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.training.geometric_optimizer import OptimizerGeometryConfig
 
 
-class _MLXTrainingAdapterTrainMixin:
-    def _structural_sigma_budget_is_enforceable(
-        self,
-        *,
-        use_pissa_lora: bool,
-    ) -> bool:
-        """Return whether structural ``sigma_k`` can gate control decisions.
-
-        PiSSA trains a low-rank displacement on top of an exact-reconstruction
-        initialization. The stored ``sigma_k`` is measured at the Shannon
-        structural boundary, which can sit far outside the adapter-rank block.
-        In that regime ``||ΔW||₂ / sigma_k`` is still a useful structural
-        diagnostic, but not an enforceable behavioral or controller budget.
-        """
-        return not use_pissa_lora
-
-    def _seed_remaining_budget(
-        self,
-        *,
-        use_pissa_lora: bool,
-        use_mass_step_sizing: bool,
-        sigma_k_min: float,
-    ) -> float | None:
-        """Seed conformal remaining budget when a live margin exists.
-
-        For PiSSA exact-reconstruction adapters we do not seed a running margin:
-        the structural ``sigma_k`` boundary is diagnostic-only when the adapter
-        rank is much smaller than the Shannon structural rank. NB-LoRA enforces
-        its scale bound by construction, so there is no separate seeded margin.
-        """
-        if not use_mass_step_sizing or sigma_k_min <= 0.0:
-            return None
-        if use_pissa_lora:
-            return None
-        return None
-
-    def _reanchor_pissa_budget(
-        self,
-        model: Any,
-        sigma_k_min: float,
-    ) -> float | None:
-        """Measure PiSSA structural displacement against the stored ``sigma_k``.
-
-        Runs power iteration on the implicit displacement operator
-        ``D = a_curr @ b_curr - a_init @ b_init`` for every PiSSA layer to get
-        the true spectral norm of cumulative displacement.  Returns
-        ``sigma_k_min * (1 - max_ratio)`` clamped to ``[0, sigma_k_min]``.
-
-        This remains useful for structural postmortems even when the resulting
-        ratio is not enforced as a controller or stopping budget.
-        """
-        init_factors = getattr(self, '_pissa_init_factors', {})
-        per_layer_sk = getattr(self, '_pissa_per_layer_sigma_k', {})
-        if not init_factors:
-            return None
-
-        pissa_products: list[tuple[float, Any, Any, Any, Any, float]] = []
-        pissa_module_names: list[str] = []
-        for name, lora in self._iter_pissa_lora_modules(model):
-            if name not in init_factors or name not in per_layer_sk:
-                continue
-            a_init, b_init = init_factors[name]
-            pissa_products.append((
-                float(lora.scale),
-                lora.lora_a, lora.lora_b,
-                a_init, b_init,
-                per_layer_sk[name],
-            ))
-            pissa_module_names.append(name)
-            mx.eval(lora.lora_a, lora.lora_b)
-
-        if not pissa_products:
-            return None
-
-        ratios = compute_pissa_budget_ratios(pissa_products, self._backend)
-        if not ratios:
-            return None
-
-        max_ratio = max(ratios)
-        if len(ratios) == len(pissa_module_names):
-            worst_idx = ratios.index(max_ratio)
-            worst_name = pissa_module_names[worst_idx]
-            worst_sk = pissa_products[worst_idx][5]
-            rank = pissa_products[worst_idx][1].shape[-1]  # lora_a shape
-            logger.info(
-                "PiSSA budget bottleneck: %s ratio=%.4f sigma_k=%.4f rank=%d",
-                worst_name, max_ratio, worst_sk, rank,
-            )
-            if not getattr(self, '_pissa_full_dump_done', False):
-                self._pissa_full_dump_done = True
-                for i, (name, ratio) in enumerate(
-                    zip(pissa_module_names, ratios)
-                ):
-                    sk = pissa_products[i][5]
-                    r = pissa_products[i][1].shape[-1]
-                    logger.info(
-                        "  [budget] %s: ratio=%.4f sigma_k=%.4f rank=%d remaining=%.4f",
-                        name, ratio, sk, r, max(0.0, sk * (1.0 - ratio)),
-                    )
-        return max(0.0, sigma_k_min * (1.0 - max_ratio))
-
-    def _measure_pissa_effective_update_norm(
-        self,
-        model,
-        update_direction: dict[str, Any],
-    ) -> float | None:
-        """Measure first-order PiSSA update norm in weight space.
-
-        Thin wrapper over ``_measure_pissa_effective_update_norm_sq_expression``
-        for call sites that need a realized Python float.
-        """
-        total_norm_sq = self._measure_pissa_effective_update_norm_sq_expression(
-            model,
-            update_direction,
-        )
-        if total_norm_sq is None:
-            return None
-
-        mx.eval(total_norm_sq)
-        total_norm_sq_val = (
-            float(total_norm_sq.item())
-            if hasattr(total_norm_sq, "item")
-            else float(total_norm_sq)
-        )
-        total_norm = math.sqrt(max(total_norm_sq_val, 0.0))
-        if not math.isfinite(total_norm) or total_norm <= 0.0:
-            return None
-        return total_norm
-
-    def _measure_pissa_effective_update_norm_sq_expression(
-        self,
-        model,
-        update_direction: dict[str, Any],
-    ) -> Any | None:
-        """Build the induced PiSSA weight-step Frobenius norm squared lazily.
-
-        MASS uses ``eta_weyl = sigma_k / ||D||`` to bound spectral displacement.
-        For PiSSA, the trainable coordinates are factor matrices ``(A, B)``, but
-        Weyl applies to the induced weight update:
-
-            D_W = scale * (dA @ B + A @ dB)
-
-        The factor-space norm can dramatically understate the real displacement
-        when ``A`` and ``B`` already encode the model's principal directions.
-        This helper returns the unevaluated Frobenius norm squared of the
-        induced update across all active PiSSA layers so callers can batch the
-        realization with other scalar diagnostics.
-        """
-        total_norm_sq_terms: list[Any] = []
-
-        for layer_key, lora_module in self._iter_pissa_lora_modules(model):
-            prefix = layer_key.removesuffix(".weight")
-            d_a = update_direction.get(prefix + ".lora_a")
-            d_b = update_direction.get(prefix + ".lora_b")
-            if d_a is None and d_b is None:
-                continue
-
-            induced = None
-            if d_a is not None:
-                induced = mx.matmul(
-                    d_a.astype(mx.float32),
-                    lora_module.lora_b.astype(mx.float32),
-                )
-            if d_b is not None:
-                a_db = mx.matmul(
-                    lora_module.lora_a.astype(mx.float32),
-                    d_b.astype(mx.float32),
-                )
-                induced = a_db if induced is None else induced + a_db
-            if induced is None:
-                continue
-
-            induced = float(lora_module.scale) * induced
-            total_norm_sq_terms.append(mx.sum(induced * induced))
-
-        if not total_norm_sq_terms:
-            return None
-
-        total_norm_sq = total_norm_sq_terms[0]
-        for term in total_norm_sq_terms[1:]:
-            total_norm_sq = total_norm_sq + term
-        return total_norm_sq
-
-    def _batched_layer_measurements_from_gradient(
-        self,
-        *,
-        model: Any,
-        grad_map: dict[str, Any],
-        step_learning_rate: float,
-        use_pissa_lora: bool,
-        opt_config: "OptimizerGeometryConfig | None",
-    ) -> dict[str, ControllerLayerMeasurement] | None:
-        """Build per-layer controller measurements with one scalar sync."""
-        if not grad_map:
-            return None
-
-        layer_inputs: list[tuple[str, Any, float | None, float | None]] = []
-        if use_pissa_lora:
-            lora_iter = self._iter_pissa_lora_modules(model)
-            param_suffixes = (".lora_a", ".lora_b")
-        else:
-            lora_iter = self._iter_nb_lora_modules(model)
-            param_suffixes = (".A_tilde", ".B_tilde", ".S_raw")
-
-        for layer_key, lora_module in lora_iter:
-            prefix = layer_key.removesuffix(".weight")
-            grad_norm_sq_terms: list[Any] = []
-            for suffix in param_suffixes:
-                grad_array = grad_map.get(prefix + suffix)
-                if grad_array is None or grad_array.size == 0:
-                    continue
-                grad_norm_sq_terms.append(mx.sum(grad_array * grad_array))
-            if not grad_norm_sq_terms:
-                continue
-
-            grad_norm_sq = grad_norm_sq_terms[0]
-            for term in grad_norm_sq_terms[1:]:
-                grad_norm_sq = grad_norm_sq + term
-
-            decay_scale = None
-            if opt_config is not None and layer_key in opt_config.layer_configs:
-                decay_scale = float(opt_config.layer_configs[layer_key].decay_scale)
-            scale_bound_val = None if use_pissa_lora else float(lora_module._scale_bound)
-            layer_inputs.append((layer_key, grad_norm_sq, decay_scale, scale_bound_val))
-
-        if not layer_inputs:
-            return None
-
-        mx.eval(*[grad_norm_sq for _, grad_norm_sq, _, _ in layer_inputs])
-
-        per_layer: dict[str, ControllerLayerMeasurement] = {}
-        layer_norms: dict[str, float] = {}
-        total_norm_sq = 0.0
-
-        for layer_key, grad_norm_sq, decay_scale, scale_bound_val in layer_inputs:
-            grad_norm_sq_val = (
-                float(grad_norm_sq.item())
-                if hasattr(grad_norm_sq, "item")
-                else float(grad_norm_sq)
-            )
-            grad_norm_sq_val = max(grad_norm_sq_val, 0.0)
-            grad_norm = math.sqrt(grad_norm_sq_val)
-            layer_norms[layer_key] = grad_norm
-            total_norm_sq += grad_norm_sq_val
-            per_layer[layer_key] = ControllerLayerMeasurement(
-                parameter_update_norm=step_learning_rate * grad_norm,
-                total_step_fraction=None,
-                decay_scale=decay_scale,
-                scale_bound=scale_bound_val,
-                step_learning_rate=step_learning_rate,
-            )
-
-        total_norm = math.sqrt(total_norm_sq)
-        if total_norm > 0.0:
-            for layer_key, layer_norm in layer_norms.items():
-                current = per_layer[layer_key]
-                per_layer[layer_key] = ControllerLayerMeasurement(
-                    parameter_update_norm=current.parameter_update_norm,
-                    behavioral_transport_norm=current.behavioral_transport_norm,
-                    spectral_budget_ratio=current.spectral_budget_ratio,
-                    remaining_budget=current.remaining_budget,
-                    total_step_fraction=layer_norm / total_norm,
-                    decay_scale=current.decay_scale,
-                    scale_bound=current.scale_bound,
-                    step_learning_rate=current.step_learning_rate,
-                )
-        return per_layer
-
+class _MLXTrainingAdapterTrainMixin(_MLXTrainingAdapterBudgetMixin):
     def train_loop(
         self,
         model,
@@ -434,7 +176,8 @@ class _MLXTrainingAdapterTrainMixin:
 
         MASS (Measured-Adaptive Step Size) — three-layer system:
         1. Spectral ceiling: eta_ceiling = sigma_k_min / sigma_max (Weyl 1912, static)
-        2. Per-step SPS: eta_sps = f(x_t) / ||d_t||^2 (Loizou et al. 2020)
+        2. Per-step SPS: eta_sps = max(0, f(x_t) - f*) / ||d_t||^2
+           (Loizou et al. 2020); CE f* is the best measured validation loss.
         3. Per-step Weyl: eta_weyl = sigma_k_min / ||d_t|| (displacement bound)
         Combined: eta_step = min(eta_sps, eta_weyl, eta_ceiling)
 
@@ -473,9 +216,10 @@ class _MLXTrainingAdapterTrainMixin:
             )
 
         import mlx.optimizers as opt
-        from mlx.utils import tree_flatten as mlx_flatten, tree_map as mlx_tree_map
+        from mlx.utils import tree_flatten as mlx_flatten
+        from mlx.utils import tree_map as mlx_tree_map
         from mlx.utils import tree_unflatten as mlx_unflatten
-        from mlx_lm.tuner.trainer import default_loss, iterate_batches
+        from mlx_lm.tuner.trainer import default_loss
 
         # Resolve base CE loss: exclude EOS globally if requested.
         # The base model already has EOS behaviour from pre-training; training CE
@@ -524,560 +268,22 @@ class _MLXTrainingAdapterTrainMixin:
         if use_bilm_margin and use_vl:
             raise ValueError("BiLM-margin topology loss is text-only and cannot be combined with VL batches")
 
-        if geometric_reshape and paired_dataset is not None:
-            # Determine target layers for geometric reshaping.
-            # Use middle-to-late layers where reasoning processing happens.
-            base = getattr(model, "model", model)
-            n_layers = len(base.layers)
-            # All transformer blocks participate.  Embedding and output head
-            # are outside model.layers; no geometric basis to exclude any block.
-            reshape_target_layers = list(range(n_layers))
-            loss_fn = make_geometric_reshaping_loss(reshape_target_layers)
-            loss_value_and_grad = nn.value_and_grad(model, loss_fn)
-            logger.info(
-                "Geometric reshaping: target_layers=%s (expand erank + contrastive)",
-                reshape_target_layers,
-            )
-            # Calibrate gradient weights: measure per-component gradient norms
-            # on a single batch and set weights so all three components contribute
-            # equally to the parameter update. Data-derived, no magic numbers.
-            calib_iter = iterate_structured_batches(
-                paired_dataset, batch_size, seq_length,
-                logic_groups=logic_groups or {},
-                template_groups=template_groups or {},
-                loop=False, seed=seed,
-            )
-            calib_batch = next(calib_iter)
-            cb, cl, cam, cinv, ccf = calib_batch
-            # Trigger init_values by running one forward pass first
-            (init_loss, _), _ = loss_value_and_grad(
-                model, cb, cl, cam, cinv, ccf,
-            )
-            mx.eval(init_loss)
-            calib_info = calibrate_geometric_weights(
-                model, loss_fn, cb, cl, cam, cinv, ccf,
-            )
-            # Rebuild loss_value_and_grad with calibrated weights
-            loss_value_and_grad = nn.value_and_grad(model, loss_fn)
-            logger.info(
-                "Gradient calibration: ||∇ce||=%.4e ||∇expand||=%.4e "
-                "||∇contrast||=%.4e → w_expand=%.1f w_contrast=%.1f",
-                calib_info["ce_gnorm"],
-                calib_info["expand_gnorm"],
-                calib_info["contrast_gnorm"],
-                calib_info["w_expand"],
-                calib_info["w_contrast"],
-            )
-        elif use_constrained:
-            loss_fn = make_constrained_loss(constraint_state, constraint_config)
-            loss_value_and_grad = nn.value_and_grad(model, loss_fn)
-            logger.info(
-                "Constrained training: ε_inv=%.4f, m_sep=%.4f, ε_tail=%.4f, "
-                "target_layers=%s",
-                constraint_config.epsilon_inv,
-                constraint_config.margin_sep,
-                constraint_config.epsilon_tail,
-                constraint_config.target_layers,
-            )
-        elif answer_masked_dataset is not None:
-            # Answer-span masking: CE only on answer tokens + EOS
-            if entropy_regularization:
-                # Combined: answer-masked CE + entropy floor on all tokens
-                baseline_ent = measure_baseline_entropy(
-                    model, train_dataset, batch_size, seq_length,
-                    n_batches=eval_batches,
-                )
-                if entropy_floor_fraction is not None:
-                    ent_floor = baseline_ent * entropy_floor_fraction
-                    logger.info(
-                        "Entropy floor override (answer-masked): fraction=%.4f, baseline=%.4f, floor=%.4f",
-                        entropy_floor_fraction, baseline_ent, ent_floor,
-                    )
-                else:
-                    ent_floor = self._derive_entropy_floor_or_fail(
-                        baseline_entropy=baseline_ent,
-                        dataset_samples=len(train_dataset),
-                        scope="answer_masked_training",
-                    )
-                am_loss_fn = make_entropy_regularized_answer_masked_loss(ent_floor)
-                logger.info(
-                    "Answer-masked CE + entropy reg: baseline=%.4f, floor=%.4f",
-                    baseline_ent, ent_floor,
-                )
-            else:
-                def am_loss_fn(model, inputs, targets, masks):
-                    logits = model(inputs)
-                    logits = logits.astype(mx.float32)
-                    ce = nn.losses.cross_entropy(logits, targets, reduction="none")
-                    masked_ce = ce * masks
-                    ntoks = masks.sum()
-                    return masked_ce.sum() / mx.maximum(ntoks, mx.array(1.0)), ntoks
-
-            loss_value_and_grad = nn.value_and_grad(model, am_loss_fn)
-            logger.info("Answer-masked CE: training on answer tokens + EOS only")
-            use_answer_mask = True
-        elif use_vl:
-            image_token_id = train_dataset[0].get("image_token_id")
-            video_token_id = train_dataset[0].get("video_token_id")
-            loss_fn = make_vl_loss(
-                image_token_id=image_token_id,
-                video_token_id=video_token_id,
-            )
-            loss_value_and_grad = nn.value_and_grad(model, loss_fn)
-            logger.info(
-                "VL training: image-conditioned CE with visual embedding injection "
-                "(image_token_id=%s, video_token_id=%s)",
-                image_token_id,
-                video_token_id,
-            )
-        elif use_bilm_margin:
-            import numpy as np
-
-            direction_path = bilm_margin_config.get("direction_path")
-            if not direction_path:
-                raise ValueError("bilm_margin_config requires direction_path")
-            direction_np = np.load(str(direction_path)).astype("float32")
-            if direction_np.ndim == 2:
-                direction_np = direction_np[0]
-            if direction_np.ndim != 1:
-                raise ValueError(
-                    f"BiLM direction must be 1-D or [n,d], got shape {direction_np.shape}"
-                )
-            direction_sign = float(bilm_margin_config.get("direction_sign", 1.0))
-            direction_np = direction_np * direction_sign
-            loss_fn = make_bilm_margin_loss(
-                layer_index=int(bilm_margin_config.get("layer_index", 19)),
-                direction=mx.array(direction_np, dtype=mx.float32),
-                auxiliary_weight=float(bilm_margin_config.get("auxiliary_weight", 0.1)),
-                margin=float(bilm_margin_config.get("margin", 1.0)),
-                normalize_direction=bool(bilm_margin_config.get("normalize_direction", True)),
-            )
-            loss_value_and_grad = nn.value_and_grad(model, loss_fn)
-            logger.info(
-                "BiLM topology margin: layer=%d lambda=%.4f margin=%.4f "
-                "direction_dim=%d direction_sign=%.1f",
-                int(bilm_margin_config.get("layer_index", 19)),
-                float(bilm_margin_config.get("auxiliary_weight", 0.1)),
-                float(bilm_margin_config.get("margin", 1.0)),
-                int(direction_np.shape[0]),
-                direction_sign,
-            )
-        else:
-            if entropy_regularization:
-                # Measure baseline entropy to derive the floor
-                baseline_ent = measure_baseline_entropy(
-                    model, train_dataset, batch_size, seq_length,
-                    n_batches=eval_batches,
-                )
-                if entropy_floor_fraction is not None:
-                    # Ablation override: use explicit fraction instead of sqrt(eps)
-                    ent_floor = baseline_ent * entropy_floor_fraction
-                    logger.info(
-                        "Entropy floor override: fraction=%.4f, baseline=%.4f, floor=%.4f",
-                        entropy_floor_fraction, baseline_ent, ent_floor,
-                    )
-                else:
-                    ent_floor = self._derive_entropy_floor_or_fail(
-                        baseline_entropy=baseline_ent,
-                        dataset_samples=len(train_dataset),
-                        scope="full_sequence_training",
-                    )
-                loss_fn = make_entropy_regularized_loss(ent_floor)
-                logger.info(
-                    "Entropy regularization: baseline=%.4f, floor=%.4f",
-                    baseline_ent, ent_floor,
-                )
-            else:
-                loss_fn = base_ce_loss
-            loss_value_and_grad = nn.value_and_grad(model, loss_fn)
-
-        # Learning rate: MASS (Measured-Adaptive Step Size)
-        # Layer 1: Spectral ceiling from Weyl 1912 (static, from SVD geometry)
-        # Layer 2: Per-step SPS (Loizou et al. 2020) + per-step Weyl displacement
-        # Layer 3: Validation-guided backoff (existing, measured)
-        eta_ceiling = self._derive_spectral_ceiling(
-            sigma_k_min=sigma_k_min,
-            sigma_max_global=sigma_max,
+        batch_iter, n_batches_per_epoch, grad_accum_steps = build_batch_iterator_plan(
+            geometric_reshape=geometric_reshape,
+            use_constrained=use_constrained,
+            use_answer_mask=use_answer_mask,
+            use_vl=use_vl,
+            use_bilm_margin=use_bilm_margin,
+            paired_dataset=paired_dataset,
+            answer_masked_dataset=answer_masked_dataset,
+            train_dataset=train_dataset,
+            batch_size=batch_size,
+            seq_length=seq_length,
+            logic_groups=logic_groups,
+            template_groups=template_groups,
+            seed=seed,
+            grad_accum_steps=grad_accum_steps,
         )
-        current_eta = eta_ceiling
-
-        # Curvature-aware Cayley-Stiefel: diagonal Fisher preconditioning
-        # with direction smoothing (first moment). Both moments operate in
-        # unconstrained (A_tilde, B_tilde) space BEFORE Cayley retraction,
-        # which is valid because the retraction maps unconstrained parameters
-        # to orthonormal factors regardless.
-        # m_t → direction smoothing, v_t → diag(F_empirical) (Hwang et al. 2024, FAdam).
-        from modelcypher.core.domain.training.diagonal_fisher_preconditioner import (
-            init_fisher_state,
-            precondition_gradient as fisher_precondition,
-            update_fisher_state,
-        )
-
-        # fisher_state and optimizer are initialized after n_batches_per_epoch
-        # is known (~line 710+), so both paths use the same derived β₁/β₂.
-        # The closures below (_summarize_fisher_state, _summarize_adamw_state)
-        # capture these by name and are only called inside the training loop.
-        fisher_state = None  # type: ignore[assignment]
-        optimizer = None
-
-        baseline_accuracy = None
-        if online_eval_problems:
-            baseline_accuracy = len(online_eval_baseline_ids or frozenset()) / max(
-                len(online_eval_problems), 1,
-            )
-
-        def _objective_components() -> list[str]:
-            components = ["ce"]
-            if use_answer_mask:
-                components[0] = "ce_answer_masked"
-            if use_constrained:
-                components.append("constraint")
-            if geometric_reshape:
-                components.append("geometric_reshape")
-            if entropy_regularization:
-                components.append("entropy_regularization")
-            if use_vl:
-                components.append("vision_language")
-            if use_bilm_margin:
-                components.append("bilm_margin")
-            return components
-
-        def _freeze_param_names_for_layer(layer_key: str) -> tuple[str, ...]:
-            prefix = layer_key.removesuffix(".weight")
-            if use_pissa_lora:
-                return (prefix + ".lora_a", prefix + ".lora_b")
-            return (prefix + ".A_tilde", prefix + ".B_tilde", prefix + ".S_raw")
-
-        def _mask_frozen_gradients(
-            grad_tree: Any,
-            *,
-            frozen_layers: set[str],
-        ) -> tuple[Any, dict[str, Any], tuple[str, ...]]:
-            grad_flat_local = dict(mlx_flatten(grad_tree))
-            if not frozen_layers:
-                return grad_tree, grad_flat_local, ()
-            masked_param_names: list[str] = []
-            for layer_key in sorted(frozen_layers):
-                for param_name in _freeze_param_names_for_layer(layer_key):
-                    grad_value = grad_flat_local.get(param_name)
-                    if grad_value is None:
-                        continue
-                    grad_flat_local[param_name] = mx.zeros_like(grad_value)
-                    masked_param_names.append(param_name)
-            if not masked_param_names:
-                return grad_tree, grad_flat_local, ()
-            masked_tree = mlx_unflatten(list(grad_flat_local.items()))
-            return masked_tree, grad_flat_local, tuple(sorted(masked_param_names))
-
-        def _summarize_fisher_state() -> tuple[float | None, float | None, float | None]:
-            """Return (second_moment_norm, preconditioner_scale, first_moment_norm)."""
-            fisher_terms = [
-                arr.reshape(-1)
-                for arr in fisher_state.v.values()
-                if getattr(arr, "size", 0) > 0
-            ]
-            if not fisher_terms:
-                return None, None, None
-            fisher_norm_sq = sum(mx.sum(arr * arr) for arr in fisher_terms)
-            preconditioner_terms = [mx.sqrt(arr) for arr in fisher_terms]
-            preconditioner_scale = sum(mx.mean(arr) for arr in preconditioner_terms) / len(
-                preconditioner_terms,
-            )
-            # First moment norm (if β₁ > 0)
-            first_moment_norm = None
-            if fisher_state.beta1 > 0.0 and fisher_state.m:
-                m_terms = [
-                    arr.reshape(-1)
-                    for arr in fisher_state.m.values()
-                    if getattr(arr, "size", 0) > 0
-                ]
-                if m_terms:
-                    m_norm_sq = sum(mx.sum(arr * arr) for arr in m_terms)
-                    mx.eval(fisher_norm_sq, preconditioner_scale, m_norm_sq)
-                    first_moment_norm = float(mx.sqrt(m_norm_sq).item())
-                    return (
-                        float(mx.sqrt(fisher_norm_sq).item()),
-                        float(preconditioner_scale.item()),
-                        first_moment_norm,
-                    )
-            mx.eval(fisher_norm_sq, preconditioner_scale)
-            return float(mx.sqrt(fisher_norm_sq).item()), float(preconditioner_scale.item()), None
-
-        def _summarize_adamw_state() -> tuple[float | None, float | None, float | None]:
-            if optimizer is None:
-                return None, None, None
-            state_flat = dict(mlx_flatten(optimizer.state))
-            m_terms = [
-                value.reshape(-1)
-                for key, value in state_flat.items()
-                if key.endswith(".m") and getattr(value, "size", 0) > 0
-            ]
-            v_terms = [
-                value.reshape(-1)
-                for key, value in state_flat.items()
-                if key.endswith(".v") and getattr(value, "size", 0) > 0
-            ]
-            if not m_terms and not v_terms:
-                return None, None, None
-            first_moment = None
-            second_moment = None
-            preconditioner_scale = None
-            m_norm_sq = None
-            v_norm_sq = None
-            denom_scale = None
-            if m_terms:
-                m_norm_sq = sum(mx.sum(arr * arr) for arr in m_terms)
-            if v_terms:
-                v_norm_sq = sum(mx.sum(arr * arr) for arr in v_terms)
-                denom_scale = sum(mx.mean(mx.sqrt(arr)) for arr in v_terms) / len(v_terms)
-            realized = []
-            if m_norm_sq is not None:
-                realized.append(m_norm_sq)
-            if v_norm_sq is not None and denom_scale is not None:
-                realized.extend([v_norm_sq, denom_scale])
-            if realized:
-                mx.eval(*realized)
-            if m_norm_sq is not None:
-                m_norm_sq_val = (
-                    float(m_norm_sq.item())
-                    if hasattr(m_norm_sq, "item")
-                    else float(m_norm_sq)
-                )
-                first_moment = math.sqrt(max(m_norm_sq_val, 0.0))
-            if v_norm_sq is not None and denom_scale is not None:
-                v_norm_sq_val = (
-                    float(v_norm_sq.item())
-                    if hasattr(v_norm_sq, "item")
-                    else float(v_norm_sq)
-                )
-                second_moment = math.sqrt(max(v_norm_sq_val, 0.0))
-                preconditioner_scale = float(denom_scale.item())
-            return first_moment, second_moment, preconditioner_scale
-
-        def _behavioral_probe_state(
-            *,
-            per_layer_budget_ratio: dict[str, float] | None,
-            per_layer_remaining_budget: dict[str, float] | None,
-            online_eval_accuracy: float | None,
-            online_eval_n_lost: int | None,
-            online_eval_n_gained: int | None,
-        ) -> BehavioralStateMeasurement | None:
-            if controller_mode not in {
-                CONTROLLER_MODE_BEHAVIORAL_PROBE,
-                CONTROLLER_MODE_BEHAVIORAL_CLOSED_LOOP,
-            }:
-                return None
-
-            per_layer_transport: dict[str, float] = {}
-            if base_activations:
-                if use_pissa_lora:
-                    transport_iter = self._iter_pissa_lora_modules(model)
-                else:
-                    transport_iter = self._iter_nb_lora_modules(model)
-                for layer_key, lora_module in transport_iter:
-                    try:
-                        layer_idx = int(layer_key.split(".")[2])
-                    except (IndexError, ValueError):
-                        continue
-                    layer_acts = base_activations.get(layer_idx)
-                    if not layer_acts:
-                        continue
-                    layer_stack = mx.stack(layer_acts)
-                    if use_pissa_lora:
-                        in_features = int(lora_module.lora_a.shape[0])
-                        if int(layer_stack.shape[-1]) != in_features:
-                            continue
-                        # DeltaW^T = scale * lora_a @ lora_b  [in, out]
-                        delta_w_t = lora_module.scale * mx.matmul(
-                            lora_module.lora_a, lora_module.lora_b,
-                        )
-                    else:
-                        if int(layer_stack.shape[-1]) != int(lora_module._in_features):
-                            continue
-                        A, B = lora_module._cayley_transform()
-                        S = mx.clip(lora_module.S_raw, 0.0, lora_module._scale_bound)
-                        delta_w_t = 2.0 * mx.matmul((S[:, None] * A).T, B)
-                    transport = mx.matmul(
-                        layer_stack.astype(mx.float32),
-                        delta_w_t.astype(mx.float32),
-                    )
-                    transport_norm = mx.sqrt(mx.sum(transport * transport))
-                    mx.eval(transport_norm)
-                    per_layer_transport[layer_key] = float(transport_norm.item())
-
-            margin_mean_delta = None
-            margin_n_flipped_sign = None
-            margin_n_near_zero_baseline = None
-            margin_n_near_zero_current = None
-            if online_eval_problems and tokenizer is not None and baseline_margins is not None:
-                from modelcypher.core.domain.training.online_eval import compute_answer_margin
-
-                def _collect_logits(prompt: str):
-                    return self._backend.collect_logits(model, tokenizer, prompt)
-
-                current_margins = compute_answer_margin(
-                    online_eval_problems,
-                    _collect_logits,
-                    self._backend,
-                )
-                baseline_values = list(baseline_margins.values())
-                current_values = list(current_margins.values())
-                if baseline_values and current_values:
-                    margin_mean_delta = (
-                        sum(current_values) / len(current_values)
-                        - sum(baseline_values) / len(baseline_values)
-                    )
-                    margin_n_near_zero_baseline = sum(
-                        1 for value in baseline_values if abs(value) < _SQRT_EPS_F32
-                    )
-                    margin_n_near_zero_current = sum(
-                        1 for value in current_values if abs(value) < _SQRT_EPS_F32
-                    )
-                    shared_ids = set(baseline_margins.keys()) & set(current_margins.keys())
-                    margin_n_flipped_sign = sum(
-                        1
-                        for problem_id in shared_ids
-                        if (
-                            baseline_margins[problem_id] > 0.0
-                            and current_margins[problem_id] <= 0.0
-                        )
-                        or (
-                            baseline_margins[problem_id] <= 0.0
-                            and current_margins[problem_id] > 0.0
-                        )
-                    )
-
-            accuracy_delta = None
-            if online_eval_accuracy is not None and baseline_accuracy is not None:
-                accuracy_delta = float(online_eval_accuracy) - float(baseline_accuracy)
-
-            if (
-                not per_layer_transport
-                and per_layer_budget_ratio is None
-                and margin_mean_delta is None
-                and accuracy_delta is None
-            ):
-                return None
-
-            return BehavioralStateMeasurement(
-                per_layer_behavioral_transport_norm=per_layer_transport or None,
-                per_layer_spectral_budget_ratio=per_layer_budget_ratio,
-                per_layer_remaining_budget=per_layer_remaining_budget,
-                margin_mean_delta=margin_mean_delta,
-                margin_n_flipped_sign=margin_n_flipped_sign,
-                margin_n_near_zero_baseline=margin_n_near_zero_baseline,
-                margin_n_near_zero_current=margin_n_near_zero_current,
-                online_eval_accuracy_delta=accuracy_delta,
-                online_eval_n_lost=online_eval_n_lost,
-                online_eval_n_gained=online_eval_n_gained,
-            )
-
-        # Cayley constraint preserved in NBLoRALinear. Pullback metric P
-        # removed (falsification 2026-02-23: P ≈ I throughout training,
-        # median ||P-I||/√r = 0.001, cos(Pg,g) > 0.999, 3 seeds × 2
-        # families). The Stiefel constraint drives the validated benefit
-        # (val_loss 1.27 vs 1.38), not the pullback metric.
-
-        losses: list[tuple[int, float, float]] = []
-        val_losses: list[float] = []
-        epoch_metrics_list: list[EpochMetrics] = []
-        epoch_step_traces: list[dict[str, Any]] = []
-        last_max_spectral_ratio: float | None = None
-        dim_snapshots: list = []  # DimensionalSnapshot history for trend analysis
-        stop_reason: str | None = None
-        use_pissa_lora = self._has_pissa_lora(model)
-        enforce_structural_budget = self._structural_sigma_budget_is_enforceable(
-            use_pissa_lora=use_pissa_lora,
-        )
-        best_val_loss = float("inf")
-        best_weights: dict[str, Any] | None = None
-        val_loss_baseline: float | None = None  # First epoch's val loss for certificate condition 5
-        # P2: Answer margin time series
-        margin_history: list[float] = []  # Per-epoch median margins
-        # P3: Adapter stable rank time series
-        stable_rank_history: list[float] = []  # Per-epoch median stable ranks
-        adapter_rank_for_stopping: int | None = None  # Set once from first adapter module
-        # P5: Effective rank time series
-        effective_rank_history: list[float] = []  # Per-epoch effective ranks
-        # R2: Closed-loop intervention state
-        closed_loop_frozen_layers: set[str] = set()
-        closed_loop_interventions_used = 0
-
-        if geometric_reshape and paired_dataset is not None:
-            batch_iter = iterate_structured_batches(
-                paired_dataset, batch_size, seq_length,
-                logic_groups=logic_groups or {},
-                template_groups=template_groups or {},
-                loop=True, seed=seed,
-            )
-            n_batches_per_epoch = len(list(iterate_structured_batches(
-                paired_dataset, batch_size, seq_length,
-                logic_groups=logic_groups or {},
-                template_groups=template_groups or {},
-                loop=False, seed=seed,
-            )))
-        elif use_constrained and paired_dataset is not None:
-            # Constrained training requires both invariance and counterfactual
-            # pairs in every batch. Template-first structured sampling guarantees
-            # non-zero counterfactual coverage; pair-only sampling can produce
-            # cf_pairs == 0 for entire epochs on sparse template overlap.
-            batch_iter = iterate_structured_batches(
-                paired_dataset, batch_size, seq_length,
-                logic_groups=logic_groups or {},
-                template_groups=template_groups or {},
-                loop=True, seed=seed,
-            )
-            n_batches_per_epoch = len(list(iterate_structured_batches(
-                paired_dataset, batch_size, seq_length,
-                logic_groups=logic_groups or {},
-                template_groups=template_groups or {},
-                loop=False, seed=seed,
-            )))
-        elif use_answer_mask:
-            batch_iter = iterate_masked_batches(
-                answer_masked_dataset, batch_size, seq_length,
-                loop=True, seed=seed,
-            )
-            n_batches_per_epoch = len(list(iterate_masked_batches(
-                answer_masked_dataset, batch_size, seq_length,
-                loop=False, seed=seed,
-            )))
-        elif use_vl:
-            # VL path currently uses direct batches (no grad accumulation) because
-            # each sample carries variable-size visual tensors.
-            batch_iter = iterate_vl_batches(
-                train_dataset, batch_size, seq_length, loop=True, seed=seed,
-            )
-            n_batches_per_epoch = len(
-                list(iterate_vl_batches(
-                    train_dataset, batch_size, seq_length, loop=False, seed=seed,
-                ))
-            )
-        elif use_bilm_margin:
-            batch_iter = iterate_bilm_margin_batches(
-                train_dataset, batch_size, seq_length, loop=True, seed=seed,
-            )
-            n_batches_per_epoch = len(
-                list(iterate_bilm_margin_batches(
-                    train_dataset, batch_size, seq_length, loop=False, seed=seed,
-                ))
-            )
-        else:
-            # Gradient accumulation: use smaller micro-batches for forward/backward
-            # to avoid OOM, accumulate grad_accum_steps micro-batches per optimizer step.
-            micro_bs = math.ceil(batch_size / grad_accum_steps) if grad_accum_steps > 1 else batch_size
-            if grad_accum_steps > 1:
-                logger.info(
-                    "Gradient accumulation: logical_batch=%d, micro_batch=%d, accum_steps=%d",
-                    batch_size, micro_bs, grad_accum_steps,
-                )
-            batch_iter = iterate_batches(
-                train_dataset, micro_bs, seq_length, loop=True, seed=seed,
-            )
-            # Epoch structure uses logical batch_size (optimizer steps per epoch)
-            n_batches_per_epoch = len(
-                list(iterate_batches(train_dataset, batch_size, seq_length, loop=False, seed=seed))
-            )
         if n_batches_per_epoch <= 0:
             raise ValueError("Training dataset produced zero batches")
 
@@ -1236,6 +442,7 @@ class _MLXTrainingAdapterTrainMixin:
             )
         max_effective_gain_this_epoch: float = 0.0
         max_disp_to_remaining_this_epoch: float = 0.0
+        ce_sps_floor: float = 0.0
 
         for it in range(max_iters):
             # Snapshot params at epoch start
@@ -1308,9 +515,10 @@ class _MLXTrainingAdapterTrainMixin:
             grad_last = grad
             masked_frozen_params: tuple[str, ...] = ()
             if closed_loop_frozen_layers:
-                grad, grad_flat, masked_frozen_params = _mask_frozen_gradients(
+                grad, grad_flat, masked_frozen_params = mask_frozen_gradients(
                     grad,
                     frozen_layers=closed_loop_frozen_layers,
+                    use_pissa_lora=use_pissa_lora,
                 )
                 grad_last = grad
             else:
@@ -1326,7 +534,14 @@ class _MLXTrainingAdapterTrainMixin:
 
             ce_grad_norm = None
             ce_norm_sq = None
-            objective_components = _objective_components()
+            objective_components = build_objective_components(
+                use_answer_mask=use_answer_mask,
+                use_constrained=use_constrained,
+                geometric_reshape=geometric_reshape,
+                entropy_regularization=entropy_regularization,
+                use_vl=use_vl,
+                use_bilm_margin=use_bilm_margin,
+            )
             if masked_frozen_params:
                 objective_components.append("closed_loop_freeze")
             if len(objective_components) == 1 and objective_components[0] in {
@@ -1349,7 +564,7 @@ class _MLXTrainingAdapterTrainMixin:
                     fisher_second_moment_norm,
                     fisher_preconditioner_scale,
                     fisher_first_moment_norm,
-                ) = _summarize_fisher_state()
+                ) = summarize_fisher_state(fisher_state)
             else:
                 update_direction = grad_flat
 
@@ -1428,10 +643,16 @@ class _MLXTrainingAdapterTrainMixin:
                 # PiSSA: amortize budget over remaining steps (sqrt model).
                 # NB-LoRA: amortization_steps=1 (budget enforced by Cayley).
                 _amort = max(1, max_iters - it) if use_pissa_lora else 1
+                sps_f_star = (
+                    ce_sps_floor
+                    if objective_components in (["ce"], ["ce_answer_masked"])
+                    else 0.0
+                )
                 eta_step, eta_sps_val, eta_weyl_val, displacement_val, eta_margin_val = (
                     compute_per_step_rates(
                         loss_float, d_norm_val, sigma_k_min, eta_ceiling,
                         remaining_budget=remaining_budget,
+                        f_star=sps_f_star,
                         g_dot_d=g_dot_d_float,
                         amortization_steps=_amort,
                     )
@@ -1487,9 +708,10 @@ class _MLXTrainingAdapterTrainMixin:
             if gradient_hook is not None:
                 grad = gradient_hook(grad)
                 if closed_loop_frozen_layers:
-                    grad, grad_flat, _ = _mask_frozen_gradients(
+                    grad, grad_flat, _ = mask_frozen_gradients(
                         grad,
                         frozen_layers=closed_loop_frozen_layers,
+                        use_pissa_lora=use_pissa_lora,
                     )
                 else:
                     grad_flat = dict(mlx_flatten(grad))
@@ -1520,7 +742,7 @@ class _MLXTrainingAdapterTrainMixin:
                     optimizer_first_moment_norm,
                     optimizer_second_moment_norm,
                     optimizer_preconditioner_scale,
-                ) = _summarize_adamw_state()
+                ) = summarize_adamw_state(optimizer)
             else:
                 eta_arr = mx.array(eta_step)
                 wd_factor = mx.array(1.0 - eta_step * weight_decay) if weight_decay > 0 else None
@@ -1654,7 +876,9 @@ class _MLXTrainingAdapterTrainMixin:
                         seq_length=seq_length,
                         n_batches=eval_batches,
                     )
+                if v_loss is not None:
                     val_losses.append(v_loss)
+                    ce_sps_floor = derive_ce_sps_floor(val_losses)
                     # Record baseline val loss from first evaluation
                     if val_loss_baseline is None:
                         val_loss_baseline = v_loss
@@ -1992,7 +1216,16 @@ class _MLXTrainingAdapterTrainMixin:
 
                 gate_confound_event = False
                 online_eval_stop_basis_stage = "pre_outcome"
-                behavioral_state = _behavioral_probe_state(
+                behavioral_state = build_behavioral_probe_state(
+                    adapter=self,
+                    model=model,
+                    controller_mode=controller_mode,
+                    use_pissa_lora=use_pissa_lora,
+                    base_activations=base_activations,
+                    online_eval_problems=online_eval_problems,
+                    tokenizer=tokenizer,
+                    baseline_margins=baseline_margins,
+                    baseline_accuracy=baseline_accuracy,
                     per_layer_budget_ratio=(
                         per_layer_budget_ratio if enforce_structural_budget else None
                     ),
@@ -2005,98 +1238,7 @@ class _MLXTrainingAdapterTrainMixin:
                 )
 
                 # 6. Collect epoch metrics
-                epoch_metrics_list.append(EpochMetrics(
-                    epoch=epoch_num,
-                    train_loss=loss_val,
-                    val_loss=v_loss,
-                    eta=current_eta,
-                    update_norm=update_norm,
-                    max_spectral_ratio=max_ratio,
-                    spectral_ratio_growth_per_iter=spectral_ratio_growth_per_iter,
-                    mean_token_entropy=mean_entropy,
-                    repetition_rate=rep_rate,
-                    elapsed_seconds=epoch_elapsed,
-                    eta_ceiling=eta_ceiling if adaptive_lr else None,
-                    adapter_saturation_median_ratio=median_budget_ratio,
-                    expert_saturation_map=expert_saturation_map,
-                    n_saturated_experts=n_saturated_experts,
-                    n_total_target_experts=n_total_target_experts,
-                    displacement=mass_metrics.get("displacement"),
-                    eta_sps=mass_metrics.get("eta_sps"),
-                    eta_weyl=mass_metrics.get("eta_weyl"),
-                    eta_step=mass_metrics.get("eta_step"),
-                    d_norm=mass_metrics.get("d_norm"),
-                    eta_margin=mass_metrics.get("eta_margin"),
-                    remaining_budget=remaining_budget,
-                    max_displacement_to_remaining=(
-                        max_disp_to_remaining_this_epoch
-                        if max_disp_to_remaining_this_epoch > 0 else None
-                    ),
-                    max_effective_gain_ratio=(
-                        max_effective_gain_this_epoch
-                        if max_effective_gain_this_epoch > 0 else None
-                    ),
-                    online_eval_accuracy=online_eval_acc,
-                    online_eval_n_correct=online_eval_n_correct,
-                    online_eval_n_total=online_eval_n_total,
-                    online_eval_degraded=online_eval_degraded,
-                    online_eval_degraded_raw=online_eval_degraded_raw,
-                    online_eval_degraded_significant=online_eval_degraded_significant,
-                    online_eval_alpha=online_eval_alpha,
-                    online_eval_current_ci_lower=online_eval_current_ci_lower,
-                    online_eval_current_ci_upper=online_eval_current_ci_upper,
-                    online_eval_baseline_ci_lower=online_eval_baseline_ci_lower,
-                    online_eval_baseline_ci_upper=online_eval_baseline_ci_upper,
-                    online_eval_pre_accuracy=online_eval_acc,
-                    online_eval_pre_n_correct=online_eval_n_correct,
-                    online_eval_pre_n_total=online_eval_n_total,
-                    online_eval_pre_degraded=online_eval_degraded,
-                    online_eval_pre_degraded_raw=online_eval_degraded_raw,
-                    online_eval_pre_degraded_significant=online_eval_degraded_significant,
-                    online_eval_pre_alpha=online_eval_alpha,
-                    online_eval_pre_current_ci_lower=online_eval_current_ci_lower,
-                    online_eval_pre_current_ci_upper=online_eval_current_ci_upper,
-                    online_eval_pre_baseline_ci_lower=online_eval_baseline_ci_lower,
-                    online_eval_pre_baseline_ci_upper=online_eval_baseline_ci_upper,
-                    online_eval_pre_n_lost=online_eval_n_lost,
-                    online_eval_pre_n_gained=online_eval_n_gained,
-                    online_eval_pre_per_type_correct=online_eval_per_type_correct,
-                    online_eval_pre_per_type_total=online_eval_per_type_total,
-                    online_eval_stop_basis_accuracy=online_eval_stop_basis_acc,
-                    online_eval_stop_basis_n_correct=online_eval_stop_basis_n_correct,
-                    online_eval_stop_basis_n_total=online_eval_stop_basis_n_total,
-                    online_eval_stop_basis_degraded=online_eval_stop_basis_degraded,
-                    online_eval_stop_basis_degraded_raw=online_eval_stop_basis_degraded_raw,
-                    online_eval_stop_basis_degraded_significant=(
-                        online_eval_stop_basis_degraded_significant
-                    ),
-                    online_eval_stop_basis_alpha=online_eval_stop_basis_alpha,
-                    online_eval_stop_basis_current_ci_lower=(
-                        online_eval_stop_basis_current_ci_lower
-                    ),
-                    online_eval_stop_basis_current_ci_upper=(
-                        online_eval_stop_basis_current_ci_upper
-                    ),
-                    online_eval_stop_basis_baseline_ci_lower=(
-                        online_eval_stop_basis_baseline_ci_lower
-                    ),
-                    online_eval_stop_basis_baseline_ci_upper=(
-                        online_eval_stop_basis_baseline_ci_upper
-                    ),
-                    online_eval_stop_basis_stage=online_eval_stop_basis_stage,
-                    gate_confound_event=gate_confound_event,
-                    projected_residual_max=projected_residual_max,
-                    controller_mode=controller_mode,
-                    optimizer_research_mode=optimizer_research_mode,
-                    controller_trace={
-                        "step_traces": list(epoch_step_traces),
-                        "behavioral_state": (
-                            behavioral_state.to_dict()
-                            if behavioral_state is not None
-                            else None
-                        ),
-                    },
-                ))
+                epoch_metrics_list.append(build_epoch_metrics(locals()))
 
                 # 6b. Topological phase metrics (optional)
                 if topo_monitor and tokenizer is not None:
@@ -2251,7 +1393,9 @@ class _MLXTrainingAdapterTrainMixin:
                 epoch_margin_n_flipped = None
                 if online_eval_problems and tokenizer is not None:
                     try:
-                        from modelcypher.core.domain.training.online_eval import compute_answer_margin
+                        from modelcypher.core.domain.training.online_eval import (
+                            compute_answer_margin,
+                        )
 
                         def _collect_logits_for_margin(prompt: str):
                             return self._backend.collect_logits(model, tokenizer, prompt)
@@ -2656,8 +1800,15 @@ class _MLXTrainingAdapterTrainMixin:
                 # 7c''. Margin collapse stop (P2)
                 if not disable_early_stopping and len(margin_history) >= 2 and tokenizer is not None:
                     vocab_size = getattr(tokenizer, "vocab_size", 32000)
+                    baseline_margin_values = (
+                        list(baseline_margins.values())
+                        if baseline_margins is not None
+                        else None
+                    )
                     margin_collapsed, margin_threshold = check_margin_collapse(
-                        margin_history, vocab_size,
+                        margin_history,
+                        vocab_size,
+                        baseline_margin_history=baseline_margin_values,
                     )
                     if margin_collapsed:
                         if closed_loop_intervention_applied:

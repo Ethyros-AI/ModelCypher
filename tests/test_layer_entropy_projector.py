@@ -142,7 +142,11 @@ class TestLayerEntropyProjector:
         # Entropy of uniform distribution = log(vocab_size)
         expected = log_scalar(float(vocab_size), any_backend)
         eps = _eps(any_backend)
-        assert abs(entropy - expected) <= eps * max(1.0, expected)
+        # Softmax normalization and entropy each reduce vocab_size terms.
+        # Higham's gamma_n bound composes both reductions.
+        reduction_ops = 2 * vocab_size
+        gamma = (reduction_ops * eps) / (1.0 - reduction_ops * eps)
+        assert abs(entropy - expected) <= gamma * max(1.0, expected)
 
     def test_concentrated_logits_gives_low_entropy(self, any_backend):
         """One-hot distribution should give near-zero entropy."""

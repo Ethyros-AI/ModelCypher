@@ -119,9 +119,15 @@ class CUDABackend(Backend):
     def astype(self, array: Array, dtype: Any) -> Array:
         return array.to(self._map_dtype(dtype) or dtype)
 
-    def svd(self, array: Array, compute_uv: bool = True) -> tuple[Array, Array, Array] | Array:
+    def svd(
+        self,
+        array: Array,
+        compute_uv: bool = True,
+        full_matrices: bool | None = None,
+    ) -> tuple[Array, Array, Array] | Array:
+        use_full_matrices = bool(full_matrices) if full_matrices is not None else False
         if compute_uv:
-            u, s, vt = self.torch.linalg.svd(array, full_matrices=False)
+            u, s, vt = self.torch.linalg.svd(array, full_matrices=use_full_matrices)
             return u, s, vt
         return self.torch.linalg.svdvals(array)
 

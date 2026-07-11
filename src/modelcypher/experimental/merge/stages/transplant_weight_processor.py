@@ -32,12 +32,12 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     precision_dtype,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.trajectory_projection import (
-    TrajectoryTangentResult,
-)
 from modelcypher.core.domain.geometry.riemannian_utils import (
     geodesic_norms,
     geodesic_paired_distances,
+)
+from modelcypher.core.domain.geometry.trajectory_projection import (
+    TrajectoryTangentResult,
 )
 from modelcypher.core.domain.geometry.transplant import (
     compute_behavior_jacobian_projector,

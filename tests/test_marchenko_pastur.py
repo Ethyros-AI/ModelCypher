@@ -31,58 +31,44 @@ from modelcypher.core.domain.geometry.marchenko_pastur import (
     tikhonov_weights_from_eigenvalues,
 )
 
-
 # ── marchenko_pastur_noise_edge ─────────────────────────────────────────
 
 
 class TestMarchenkoPasturNoiseEdge:
-    """Tests for the MP noise edge formula: sigma_sq * (1 + sqrt(D/N))^2."""
+    """Tests for the shared spike-robust MP noise edge."""
 
-    def test_known_values_square_aspect(self):
-        """D = N: aspect ratio = 1, noise edge = sigma_sq * (1 + 1)^2 = 4*sigma_sq."""
-        # 10 eigenvalues summing to 10.0, D=10, N=10
-        edge = marchenko_pastur_noise_edge(
-            eigenvalue_sum=10.0, n_features=10, n_samples=10,
-        )
-        sigma_sq = 10.0 / 10  # = 1.0
-        expected = sigma_sq * (1.0 + math.sqrt(1.0)) ** 2  # = 4.0
-        assert abs(edge - expected) < 1e-12
+    def test_signal_spikes_do_not_set_noise_edge(self):
+        """Top spikes are excluded before estimating the MP bulk mean."""
+        eigenvalues = [100.0, 50.0] + [1.0] * 20
+        edge = marchenko_pastur_noise_edge(eigenvalues, n_features=22, n_samples=100)
+        expected_bulk_edge = (1.0 + math.sqrt(22.0 / 100.0)) ** 2
+        assert edge == pytest.approx(expected_bulk_edge)
+        assert edge < 10.0
 
-    def test_known_values_high_aspect(self):
-        """D >> N: noise edge is large (most eigenvalues are noise)."""
-        # D=1000, N=10 -> aspect=100, noise edge = sigma_sq * (1+10)^2 = 121*sigma_sq
+    def test_probe_regime_exact_zeros_do_not_swallow_unit_signal(self):
+        """N << D with 32 unit signals among 256 dims keeps the unit signals."""
+        eigenvalues = [1.0] * 32 + [0.0] * (256 - 32)
         edge = marchenko_pastur_noise_edge(
-            eigenvalue_sum=1000.0, n_features=1000, n_samples=10,
+            eigenvalues,
+            n_features=256,
+            n_samples=32,
         )
-        sigma_sq = 1000.0 / 1000  # = 1.0
-        expected = sigma_sq * (1.0 + math.sqrt(100.0)) ** 2  # = 121.0
-        assert abs(edge - expected) < 1e-10
-
-    def test_known_values_low_aspect(self):
-        """N >> D: noise edge is close to sigma_sq (all eigenvalues reliable)."""
-        # D=10, N=10000 -> aspect=0.001, noise edge ≈ sigma_sq * (1.0316)^2
-        edge = marchenko_pastur_noise_edge(
-            eigenvalue_sum=10.0, n_features=10, n_samples=10000,
-        )
-        sigma_sq = 10.0 / 10  # = 1.0
-        expected = sigma_sq * (1.0 + math.sqrt(0.001)) ** 2
-        assert abs(edge - expected) < 1e-12
-        # With N >> D, edge should be close to sigma_sq
-        assert edge < 1.1 * sigma_sq
+        assert edge < 1.0
 
     def test_scales_with_eigenvalue_magnitude(self):
         """Noise edge scales linearly with eigenvalue magnitude."""
-        edge_1 = marchenko_pastur_noise_edge(10.0, 10, 100)
-        edge_2 = marchenko_pastur_noise_edge(100.0, 10, 100)
+        eigenvalues = [20.0, 10.0] + [1.0] * 20
+        edge_1 = marchenko_pastur_noise_edge(eigenvalues, 22, 100)
+        edge_2 = marchenko_pastur_noise_edge([10.0 * x for x in eigenvalues], 22, 100)
         assert abs(edge_2 / edge_1 - 10.0) < 1e-10
 
     def test_invalid_dimensions_raises(self):
         with pytest.raises(ValueError, match="must be positive"):
-            marchenko_pastur_noise_edge(10.0, 0, 10)
+            marchenko_pastur_noise_edge([1.0], 0, 10)
         with pytest.raises(ValueError, match="must be positive"):
-            marchenko_pastur_noise_edge(10.0, 10, 0)
+            marchenko_pastur_noise_edge([1.0], 10, 0)
         with pytest.raises(ValueError, match="must be positive"):
-            marchenko_pastur_noise_edge(10.0, -1, 10)
+            marchenko_pastur_noise_edge([1.0], -1, 10)
 
 
 # ── tikhonov_weights_from_eigenvalues ────────────────────────────────────
@@ -188,14 +174,13 @@ class TestComputeProfile:
         assert isinstance(result, MarchenkoPasturResult)
 
     def test_profile_sigma_sq(self):
-        eigenvalues = [10.0, 5.0, 1.0, 0.1]
+        eigenvalues = [10.0, 5.0] + [1.0] * 20
         result = compute_marchenko_pastur_profile(
             eigenvalues=eigenvalues,
-            n_features=100,
-            n_samples=50,
+            n_features=22,
+            n_samples=100,
         )
-        expected_sigma_sq = sum(eigenvalues) / 100
-        assert abs(result.sigma_sq - expected_sigma_sq) < 1e-12
+        assert result.sigma_sq == pytest.approx(1.0)
 
     def test_profile_aspect_ratio(self):
         result = compute_marchenko_pastur_profile(
@@ -209,7 +194,7 @@ class TestComputeProfile:
         """Profile noise edge matches standalone function."""
         eigenvalues = [10.0, 5.0, 1.0, 0.1]
         result = compute_marchenko_pastur_profile(eigenvalues, 100, 50)
-        standalone = marchenko_pastur_noise_edge(sum(eigenvalues), 100, 50)
+        standalone = marchenko_pastur_noise_edge(eigenvalues, 100, 50)
         assert abs(result.noise_edge - standalone) < 1e-12
 
     def test_profile_effective_rank_consistency(self):

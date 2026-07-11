@@ -31,7 +31,6 @@ import pytest
 from modelcypher.adapters.activation_provider import ActivationProviderAdapter
 from modelcypher.ports.activation_provider import ProbeActivationBatch
 
-
 HIDDEN_DIM = 960
 INTERMEDIATE_DIM = 2560
 N_LAYERS = 4
@@ -129,35 +128,35 @@ class TestDelegation:
         self.adapter = ActivationProviderAdapter(self.backend)
 
     def test_collect_intermediate_delegates(self):
-        result = self.adapter.collect_intermediate_activations(
+        self.adapter.collect_intermediate_activations(
             sentinel.model, sentinel.tokenizer, "test text"
         )
         assert "collect_intermediate_activations" in self.call_log.calls
         assert "collect_hidden_activations" not in self.call_log.calls
 
     def test_collect_probe_batch_delegates(self):
-        result = self.adapter.collect_probe_activations_batch(
+        self.adapter.collect_probe_activations_batch(
             sentinel.model, sentinel.tokenizer, ["test text"]
         )
         assert "collect_probe_activations_batch" in self.call_log.calls
         assert "collect_hidden_activations" not in self.call_log.calls
 
     def test_collect_intermediate_batch_delegates(self):
-        result = self.adapter.collect_intermediate_activations_batch(
+        self.adapter.collect_intermediate_activations_batch(
             sentinel.model, sentinel.tokenizer, ["test text"]
         )
         assert "collect_intermediate_activations_batch" in self.call_log.calls
         assert "collect_hidden_activations" not in self.call_log.calls
 
     def test_collect_gate_batch_delegates(self):
-        result = self.adapter.collect_gate_activations_batch(
+        self.adapter.collect_gate_activations_batch(
             sentinel.model, sentinel.tokenizer, ["test text"]
         )
         assert "collect_gate_activations_batch" in self.call_log.calls
         assert "collect_hidden_activations" not in self.call_log.calls
 
     def test_collect_routing_decisions_delegates(self):
-        result = self.adapter.collect_routing_decisions(
+        self.adapter.collect_routing_decisions(
             sentinel.model, sentinel.tokenizer, ["test text"]
         )
         assert "collect_routing_decisions" in self.call_log.calls

@@ -31,7 +31,7 @@ import argparse
 import json
 import logging
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -355,7 +355,7 @@ class SOTAGeometryAnalysis:
 
             try:
                 token_str = self.tokenizer.decode([next_token])
-            except:
+            except Exception:
                 token_str = f"<{next_token}>"
 
             # Store measurement (pivot detection done later)
@@ -793,7 +793,7 @@ class SOTAGeometryAnalysis:
             c_mean = sum(correct_pivots) / len(correct_pivots)
             i_mean = sum(incorrect_pivots) / len(incorrect_pivots)
             d = self._cohens_d(correct_pivots, incorrect_pivots)
-            print(f"\nPivots per generation:")
+            print("\nPivots per generation:")
             print(f"  Correct mean:   {c_mean:.2f}")
             print(f"  Incorrect mean: {i_mean:.2f}")
             print(f"  Effect size d:  {d:.3f}")
@@ -825,7 +825,7 @@ class SOTAGeometryAnalysis:
         probe_result = self._train_and_evaluate_probe(results)
 
         if probe_result:
-            print(f"\nProbe trained on chunk boundary hidden states (last layer):")
+            print("\nProbe trained on chunk boundary hidden states (last layer):")
             print(f"  AUROC:    {probe_result.auroc:.3f}")
             print(f"  Accuracy: {probe_result.accuracy:.3f}")
             print(f"  Train: {probe_result.n_train_correct} correct, {probe_result.n_train_incorrect} incorrect")
@@ -859,11 +859,11 @@ class SOTAGeometryAnalysis:
 
             print(f"\nBest layer: {best_layer} (AUROC = {best_auroc:.3f})")
             if best_auroc > 0.60:
-                print(f"  ✓ Found correctness signal in middle/late layers")
+                print("  ✓ Found correctness signal in middle/late layers")
             elif best_auroc > 0.55:
-                print(f"  ~ Weak signal - may need more samples")
+                print("  ~ Weak signal - may need more samples")
             else:
-                print(f"  ✗ No linear correctness signal found at any layer")
+                print("  ✗ No linear correctness signal found at any layer")
         else:
             print("Insufficient samples for per-layer probe training")
 

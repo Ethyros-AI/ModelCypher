@@ -23,9 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import random
-from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -151,13 +149,8 @@ class GeometryValidationV2:
     ) -> GenerationTrajectory:
         """Generate with full hidden state capture at each token."""
         from modelcypher.core.domain.entropy.layer_entropy_projector import LayerEntropyProjector
-        from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
-        from modelcypher.core.domain.geometry.effective_rank import EffectiveRank
-
         b = self.backend
         projector = LayerEntropyProjector(b)
-        id_estimator = IntrinsicDimension(b)
-        rank_estimator = EffectiveRank(b)
 
         base_model = getattr(self.model, "model", self.model)
         layers = getattr(base_model, "layers", None)
@@ -278,7 +271,7 @@ class GeometryValidationV2:
             # Decode token for storage
             try:
                 token_str = self.tokenizer.decode([next_token])
-            except:
+            except Exception:
                 token_str = f"<{next_token}>"
 
             # Store geometry

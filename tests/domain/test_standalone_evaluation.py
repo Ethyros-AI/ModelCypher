@@ -34,7 +34,6 @@ from modelcypher.core.use_cases.standalone_evaluation_service import (
     StandaloneEvaluationService,
 )
 
-
 # ---------------------------------------------------------------------------
 # InferenceComparison dataclass
 # ---------------------------------------------------------------------------

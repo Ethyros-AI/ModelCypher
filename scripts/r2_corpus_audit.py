@@ -34,7 +34,7 @@ from __future__ import annotations
 import json
 import re
 import sys
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 
 TRAIN_PATH = Path("data/training/r1_quick_aligned_train.jsonl")

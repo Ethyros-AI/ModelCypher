@@ -53,8 +53,8 @@ import argparse
 import json
 from pathlib import Path
 
-from modelcypher.backends import initialize_default_backend
 from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
+from modelcypher.backends import initialize_default_backend
 from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
 from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
 

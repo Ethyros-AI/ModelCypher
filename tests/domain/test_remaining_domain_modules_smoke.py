@@ -28,7 +28,6 @@ MODULES = [
     "modelcypher.core.domain.geometry.trajectory_coherence",
     "modelcypher.core.domain.profile",
     "modelcypher.core.domain.training.evaluation",
-    "modelcypher.core.domain.training.residual_scaling",
 ]
 
 
@@ -36,4 +35,3 @@ MODULES = [
 def test_import_remaining_domain_module(module_name: str) -> None:
     module = importlib.import_module(module_name)
     assert module is not None
-

@@ -14,7 +14,8 @@ Framework-specific optimizers live behind backend-specific adapters.
 
 Provides per-layer spectral geometry for training:
 - sigma_max, sigma_k per layer — for MASS step control and spectral budget monitoring
-- Epsilon: max(σ_k², √ε_mach × σ_max²) — regularization floor
+- ScaledGD epsilon: max(σ_k², √ε_mach × σ_max²) — weight-spectrum
+  regularization floor, not Adam epsilon
 - Weight decay: σ_k/σ_max (condition-aware scaling)
 
 Active NB-LoRA training pipeline (Cayley-Stiefel):
@@ -56,7 +57,7 @@ class LayerOptimizerConfig:
     - sigma_k: Smallest significant SV (noise floor)
     - lr_scale: Vestigial (retained for serialization). ScaledGD + measured η
                 replaces per-layer LR scaling.
-    - epsilon: Numerical stability threshold (used as ScaledGD regularization)
+    - epsilon: Weight-spectrum regularization scale for ScaledGD only
     - decay_scale: Condition-aware weight decay multiplier
     """
 
@@ -135,11 +136,14 @@ def compute_geometric_epsilon(
     sigma_k: float,
     backend: "Backend",
 ) -> float:
-    """Compute geometry-derived epsilon for numerical stability.
+    """Compute the ScaledGD regularization floor in weight-spectrum units.
 
     Formula: ε = max(σ_k², √ε_mach × σ_max²)
 
-    This is the natural scale for numerical precision in this layer's geometry.
+    This value regularizes inverses of factor Gram matrices in ScaledGD-style
+    LoRA paths. It is not Adam's epsilon: Adam adds ε to ``sqrt(v_t)``, so an
+    Adam epsilon would need units derived from the measured gradient
+    second-moment state.
 
     Args:
         sigma_max: Largest singular value.
@@ -147,7 +151,7 @@ def compute_geometric_epsilon(
         backend: Backend for scalar operations.
 
     Returns:
-        Epsilon value for numerical stability.
+        Weight-spectrum regularization value for ScaledGD.
     """
     # Get machine epsilon from backend (use default dtype)
     eps = backend.finfo().eps

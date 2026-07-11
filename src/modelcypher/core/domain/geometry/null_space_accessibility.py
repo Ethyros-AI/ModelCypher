@@ -38,8 +38,8 @@ from modelcypher.core.domain.geometry.null_space import compute_variance_null_sp
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     precision_dtype,
-    svd_rank_threshold,
     sqrt_scalar,
+    svd_rank_threshold,
 )
 from modelcypher.core.domain.geometry.subspace import compute_grassmann_distance
 

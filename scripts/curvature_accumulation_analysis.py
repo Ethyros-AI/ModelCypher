@@ -38,8 +38,8 @@ import logging
 import math
 import os
 import time
-from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -267,7 +267,7 @@ def angular_change(v1: np.ndarray, v2: np.ndarray) -> float:
     return float(np.arccos(cos_sim))
 
 
-def try_compute_attn_entropy(self_attn, normed: "mx.array") -> float | None:
+def try_compute_attn_entropy(self_attn, normed: Any) -> float | None:
     """Compute mean attention entropy H(α) at the last query position.
 
     Recomputes Q/K projections from the already-normed input to extract softmax weights.
@@ -401,7 +401,7 @@ def try_compute_attn_entropy(self_attn, normed: "mx.array") -> float | None:
         return None
 
 
-def try_compute_logit_entropy(model, base, h_out_last: "mx.array") -> float | None:
+def try_compute_logit_entropy(model, base, h_out_last: Any) -> float | None:
     """Compute logit entropy H_logit for a layer hidden state.
 
     Projects h_out_last (last token, shape [1, d]) through the model's final norm and

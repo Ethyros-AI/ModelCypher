@@ -24,9 +24,7 @@ import json
 import logging
 import math
 import os
-import sys
 import time
-from pathlib import Path
 
 logging.basicConfig(
     level=logging.INFO,
@@ -433,9 +431,9 @@ def measure_gw_sinkhorn_convergence(backend):
         from modelcypher.core.domain.geometry.numerical_stability import (
             division_epsilon,
             is_finite,
+            log_scalar,
             regularization_epsilon,
             tiny_value,
-            log_scalar,
         )
         b = self._backend
         n = int(cost.shape[0])
@@ -715,8 +713,8 @@ def main():
         logger.info("========== %s: %s ==========", model_name, model_path)
 
         # Load model
-        from modelcypher.adapters.model_loader import ModelLoader
         from modelcypher.adapters.model_backbone import resolve_model_backbone
+        from modelcypher.adapters.model_loader import ModelLoader
         model, tokenizer = ModelLoader().load_model(model_path)
         backbone = resolve_model_backbone(model)
         _, layers, _ = backbone

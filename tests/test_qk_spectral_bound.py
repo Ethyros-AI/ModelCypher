@@ -38,7 +38,6 @@ from modelcypher.core.domain.geometry.qk_spectral_bound import (
     softcap_utilization,
 )
 
-
 # === Domain math tests ===
 
 

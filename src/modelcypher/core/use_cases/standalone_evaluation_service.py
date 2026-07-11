@@ -35,8 +35,8 @@ from typing import TYPE_CHECKING, Any
 from modelcypher.core.domain.agent_protocol import (
     AgentDiagnostics,
     AgentEnvelope,
-    NextAction,
     AgentRecommendation,
+    NextAction,
     make_metadata,
 )
 

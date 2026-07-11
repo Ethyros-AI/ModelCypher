@@ -23,12 +23,12 @@ Implementation details are split across backend-only modules.
 
 from __future__ import annotations
 
+from modelcypher.backends._mlx_training_adapter_adapter_io_mixin import (
+    _MLXTrainingAdapterAdapterIOMixin,
+)
 from modelcypher.backends._mlx_training_adapter_core_mixin import _MLXTrainingAdapterCoreMixin
 from modelcypher.backends._mlx_training_adapter_diagnostics_mixin import (
     _MLXTrainingAdapterDiagnosticsMixin,
-)
-from modelcypher.backends._mlx_training_adapter_adapter_io_mixin import (
-    _MLXTrainingAdapterAdapterIOMixin,
 )
 from modelcypher.backends._mlx_training_adapter_train_mixin import _MLXTrainingAdapterTrainMixin
 from modelcypher.backends.mlx_training_adapter_core import (

@@ -31,14 +31,11 @@ from __future__ import annotations
 import glob
 import json
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 import mlx.core as mx
 import mlx.nn as nn
-from mlx.utils import tree_flatten
-
 
 # ---------------------------------------------------------------------------
 # Config

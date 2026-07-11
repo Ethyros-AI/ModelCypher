@@ -13,7 +13,6 @@ from modelcypher.experimental.baranov.geometry_measurement import (
     compute_cka_drift,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -190,8 +189,6 @@ class TestComputeCkaDrift:
 
         # Mock compute_linear_cka_from_activations to return 1.0
         import modelcypher.experimental.baranov.geometry_measurement as gm
-
-        original_import = gm.compute_cka_drift.__code__
 
         # Simpler: just create snapshots and mock the CKA function
         acts = {0: [FakeArray([1.0])], 1: [FakeArray([2.0])]}

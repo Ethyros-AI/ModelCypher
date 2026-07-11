@@ -31,7 +31,7 @@ Two stopping mechanisms:
    - Stationarity: Riemannian gradient norm at numerical floor.
    - Improvement bound: best local val improvement below sampling uncertainty.
    - Worst-group: no single batch can improve more than its noise.
-   - No mechanism drift: entropy / repetition within dtype-derived bounds.
+   - No mechanism drift: entropy / repetition within measured baseline bands.
 
    When all four hold, no measurable local improvement remains under the
    current geometry and finite-sample uncertainty.
@@ -231,8 +231,9 @@ class StoppingCertificate:
     5. **Task improvement:** training produced a statistically significant
        improvement in validation loss over the baseline.
 
-    All thresholds are dtype-derived or measured from data. No patience
-    counters, no fixed hyperparameters.
+    All thresholds are measured from data except dtype floors used only when
+    a measured distribution has zero variance. No patience counters, no fixed
+    hyperparameters.
     """
 
     # Condition 1: Stationarity on the train manifold
@@ -253,9 +254,9 @@ class StoppingCertificate:
     worst_group_met: bool
 
     # Condition 4: Mechanism drift
-    entropy_collapsed: bool        # entropy < sqrt(ε_f32)
-    entropy_expanding: bool        # entropy > baseline * (1 + sqrt(ε_f32)) — SFT entropy-seeking
-    repetition_spiked: bool        # repetition > 1 - sqrt(ε_f32)
+    entropy_collapsed: bool        # entropy below baseline bootstrap band
+    entropy_expanding: bool        # entropy above baseline bootstrap band
+    repetition_spiked: bool        # repetition above baseline bootstrap band
     no_drift: bool
 
     # Condition 5: Task improvement
@@ -290,6 +291,30 @@ def _improvement_bound(alignment: float, curvature: float) -> float:
     return alignment * alignment / (2.0 * curvature)
 
 
+def _baseline_bootstrap_band(
+    samples: list[float] | None,
+    numeric_floor: float,
+) -> tuple[float, float] | None:
+    """Return mean and bootstrap-SE band for a baseline sample distribution.
+
+    For the empirical bootstrap distribution of the sample mean, the variance
+    is the empirical sample variance divided by ``n``. The returned half-width
+    is therefore ``sqrt(var_bootstrap(mean))`` with a dtype floor only for the
+    degenerate zero-variance baseline.
+    """
+    if samples is None:
+        return None
+    finite = [float(x) for x in samples if math.isfinite(float(x))]
+    n = len(finite)
+    if n < 2:
+        return None
+    mean_value = sum(finite) / n
+    empirical_var = sum((x - mean_value) ** 2 for x in finite) / n
+    bootstrap_var = empirical_var / n
+    half_width = max(math.sqrt(bootstrap_var), numeric_floor)
+    return mean_value, half_width
+
+
 def check_stopping_certificate(
     # Condition 1: Stationarity
     grad_norm: float,
@@ -306,7 +331,9 @@ def check_stopping_certificate(
     # Condition 4: Mechanism drift
     mean_token_entropy: float | None = None,
     baseline_entropy: float | None = None,
+    baseline_entropy_samples: list[float] | None = None,
     repetition_rate: float | None = None,
+    baseline_repetition_samples: list[float] | None = None,
     # Condition 5: Task improvement
     val_loss_baseline: float | None = None,
     val_loss_current: float | None = None,
@@ -333,8 +360,13 @@ def check_stopping_certificate(
         per_batch_ci_half_widths: per-batch CI half-widths.
         mean_token_entropy: mean Shannon entropy of generated tokens.
         baseline_entropy: pre-training entropy (measured before adaptation).
-            When provided, detects entropy expansion (SFT entropy-seeking).
+            Retained for compatibility; drift requires baseline_entropy_samples
+            because scalar baselines do not identify sampling variance.
+        baseline_entropy_samples: Pre-training entropy samples used to derive
+            bootstrap variance for entropy drift.
         repetition_rate: fraction of repeated 4-grams.
+        baseline_repetition_samples: Pre-training repetition samples used to
+            derive bootstrap variance for repetition drift.
         val_loss_baseline: Pre-training validation loss.
         val_loss_current: Current validation loss.
 
@@ -395,21 +427,23 @@ def check_stopping_certificate(
         worst_group_met = improvement_bound_met
 
     # ── Condition 4: Mechanism drift ──
-    entropy_collapsed = (
-        mean_token_entropy is not None and mean_token_entropy < numeric_floor
+    entropy_collapsed = False
+    entropy_expanding = False
+    entropy_band = _baseline_bootstrap_band(
+        baseline_entropy_samples, numeric_floor,
     )
-    # Entropy expansion: SFT can trigger entropy-seeking in small models.
-    # Detect if current entropy exceeds baseline by more than sqrt(eps_f32).
-    # Threshold: baseline * (1 + sqrt(eps_f32)). Derived from IEEE 754.
-    entropy_expanding = (
-        mean_token_entropy is not None
-        and baseline_entropy is not None
-        and baseline_entropy > 0.0
-        and mean_token_entropy > baseline_entropy * (1.0 + numeric_floor)
+    if mean_token_entropy is not None and entropy_band is not None:
+        entropy_mean, entropy_half_width = entropy_band
+        entropy_collapsed = mean_token_entropy < entropy_mean - entropy_half_width
+        entropy_expanding = mean_token_entropy > entropy_mean + entropy_half_width
+
+    repetition_spiked = False
+    repetition_band = _baseline_bootstrap_band(
+        baseline_repetition_samples, numeric_floor,
     )
-    repetition_spiked = (
-        repetition_rate is not None and repetition_rate > 1.0 - numeric_floor
-    )
+    if repetition_rate is not None and repetition_band is not None:
+        repetition_mean, repetition_half_width = repetition_band
+        repetition_spiked = repetition_rate > repetition_mean + repetition_half_width
     no_drift = not entropy_collapsed and not entropy_expanding and not repetition_spiked
 
     # ── Condition 5: Task improvement ──
@@ -459,35 +493,39 @@ def check_stopping_certificate(
 
 def check_margin_collapse(
     margin_history: list[float],
-    vocab_size: int,
+    vocab_size: int | None = None,
+    baseline_margin_history: list[float] | None = None,
     numeric_floor: float = _SQRT_EPS,
 ) -> tuple[bool, float]:
-    """Check if answer margins have collapsed below distinguishability.
+    """Check if answer margins fell below the measured baseline band.
 
     The margin is the logit gap (top-1 minus top-2) at the decision boundary.
-    When median margin drops below a derived floor, the model's predictions
-    are fragile — one more training step can flip them.
-
-    Threshold derivation: log(vocab_size) * sqrt(eps_f32).
-    - log(vocab_size) scales the floor to the output space size: larger vocab
-      means logit differences must be larger to be meaningful.
-    - sqrt(eps_f32) is the accumulated forward-error bound for float32 matmul
-      (Higham 2002, Ch. 3). A margin below this is indistinguishable from
-      numerical noise in the logit computation.
+    Collapse is identified only against baseline margin samples; a scalar
+    vocab-size floor does not model sampled behavioral variance. The returned
+    threshold is ``baseline_mean - bootstrap_SE(baseline_mean)``.
 
     Args:
         margin_history: Per-epoch median margin values (most recent last).
-        vocab_size: Model vocabulary size (for threshold derivation).
-        numeric_floor: IEEE 754 derived floor (default: sqrt(eps_f32)).
+        vocab_size: Retained for backward-compatible callers; unused.
+        baseline_margin_history: Pre-training margin samples or baseline
+            per-prompt margins used to derive the bootstrap variance.
+        numeric_floor: Lower bound only for zero-variance baseline samples.
 
     Returns:
-        (is_collapsed, threshold) — True when the model's decision boundary
-        confidence has degraded below the distinguishability floor.
+        (is_collapsed, threshold). If no baseline distribution is available,
+        returns ``(False, 0.0)`` rather than fabricating a behavioral floor.
     """
     if len(margin_history) < 2:
         return False, 0.0
 
-    threshold = math.log(max(vocab_size, 2)) * numeric_floor
+    baseline_band = _baseline_bootstrap_band(
+        baseline_margin_history, numeric_floor,
+    )
+    if baseline_band is None:
+        return False, 0.0
+
+    baseline_mean, baseline_half_width = baseline_band
+    threshold = baseline_mean - baseline_half_width
     current_median = margin_history[-1]
 
     return current_median < threshold, threshold

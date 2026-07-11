@@ -425,7 +425,7 @@ def measure_fact_geometry(
     with open(out, "w") as f:
         json.dump(output, f, indent=2)
 
-    print(f"\nSummary:")
+    print("\nSummary:")
     print(f"  mean RF: {summary['mean_rf']:.4f}")
     print(f"  mean RF (passed): {summary['mean_rf_passed']}")
     print(f"  mean RF (failed): {summary['mean_rf_failed']}")

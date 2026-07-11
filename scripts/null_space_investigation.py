@@ -44,8 +44,6 @@ import argparse
 import gc
 import json
 import logging
-import math
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -189,7 +187,8 @@ def _run_correctness_eval(backend, model_path: str, adapter_path: str | None, pr
         baseline_correct_ids=None,
         max_tokens=SEQ_LENGTH,
     )
-    del model, tokenizer
+    model = None
+    tokenizer = None
     gc.collect()
     return result
 
@@ -358,6 +357,7 @@ def analysis_3_subspace_overlap(
 ) -> dict:
     """Measure how much inference probe variance lies within the eval probe subspace."""
     import mlx.core as mx
+
     from modelcypher.core.domain.geometry.subspace import _compute_intrinsic_rank
 
     logger.info("=== Analysis 3: Subspace overlap ===")
@@ -462,8 +462,6 @@ def analysis_4_lora_delta_projection(
         return "stable_incorrect"
 
     # Map layer index to lora modules at that layer
-    # LoRA modules are at layers 2, 5, 8, 10, 12, 14
-    lora_layers = [2, 5, 8, 10, 12, 14]
     per_module = {}
 
     for key in sorted(adapter_weights.keys()):
@@ -823,7 +821,8 @@ def _run_correctness_eval_with_baseline(
         baseline_correct_ids=baseline_correct_ids,
         max_tokens=SEQ_LENGTH,
     )
-    del model, tokenizer
+    model = None
+    tokenizer = None
     gc.collect()
     return result
 

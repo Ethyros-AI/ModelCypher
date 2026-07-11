@@ -331,9 +331,7 @@ def main():
 
     # Per-layer CKA averaged by category
     categories = sorted(set(r.category for r in reports))
-    n_layers_found = len(reports[0].per_layer) if reports else 0
-
-    print(f"\nPer-layer CKA by category:")
+    print("\nPer-layer CKA by category:")
     layer_indices = [ld.layer_idx for ld in reports[0].per_layer] if reports else []
     print(f"  {'Layer':>5}", end="")
     for cat in categories:

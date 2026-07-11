@@ -14,9 +14,15 @@ the repo has not yet closed the promotable same-model same-data same-eval
 benchmark needed to claim "better than standard practice." See
 [RESEARCH-ROADMAP.md](docs/RESEARCH-ROADMAP.md).
 
-## The Thesis
+## The Measurement Thesis
 
-A forward pass is a deterministic geometric map. The industry treats 15 training hyperparameters as knobs to tune — learning rate, rank, scale, warmup, clipping, schedule, decay, dropout, batch size, early stopping, target modules, weight init, epsilon, momentum, residual scaling. Every one of these has a closed-form geometric replacement derived from SVD, IEEE 754 machine precision, or a cited theorem. ModelCypher replaces all 15. See [AGENTS.md](AGENTS.md) for the full derivation philosophy.
+A forward pass is a deterministic geometric map, and `mc analyze` is the
+shipped workbench for measuring that map below token level. The downstream
+training program derives all 15 traditional controls from model geometry,
+precision, or measured data where the current derivation is wired; the runtime
+status table below names the places where the shipped default still uses a
+calibrated AdamW value or an unwired formula. See
+[AGENTS.md](AGENTS.md) for the full derivation philosophy.
 
 ## Start By Measuring
 
@@ -59,8 +65,9 @@ family artifact under `results/measurement_atlas/<run_id>/` with:
 - `comparisons.jsonl`
 - `onset_events.jsonl`
 
-The retained replay-alignment closure for the shipped 350M atlas pack lives in
-[`results/measurement_atlas/REPORT.md`](results/measurement_atlas/REPORT.md).
+The retained replay-alignment closure for the shipped 350M atlas pack has a
+tracked report copy at
+[`docs/research/reports/measurement_atlas/REPORT.md`](docs/research/reports/measurement_atlas/REPORT.md).
 Current observed atlas surfaces are `replay={hidden, embedding}` and
 `live={hidden}`; `run_manifest.json` now records requested vs observed
 surfaces separately so the bundle does not overclaim unsupported replay space
@@ -75,34 +82,41 @@ remains research-only in `scripts/run_measurement_atlas.py`.
 poetry run mc train run --model /path/to/model --data /path/to/dataset --output /path/to/adapter
 ```
 
-No learning rate. No rank selection. No warmup schedule. No gradient clipping.
-The optimizer and step sizes are derived from measured geometry rather than
-copied recipes.
+The shipped path derives the adapter surface, rank, batch sizing, scale budget,
+and stopping certificate from measured geometry. Its default optimizer is still
+the calibrated AdamW/cosine path called out in the status table; MASS remains
+available on research modes until the closure benchmark earns promotion.
 
 Need extra instrumentation? Use flags on the same command path, such as
 `--benchmark`, `--topo-monitor`, `--dim-monitor`, or `--entropy-reg`.
 
-## What Gets Derived
+## 15-Control Runtime Status
 
-| # | What Industry Tunes | What ModelCypher Derives | Source |
-|---|---|---|---|
-| 1 | Learning rate (`1e-4`) | MASS spectral ceiling | Weyl 1912, Loizou 2020 |
-| 2 | Adam epsilon (`1e-8`) | Spectral noise floor | IEEE 754 + SVD |
-| 3 | Momentum (`0.9/0.999`) | Cayley-Stiefel retraction | Wen & Yin 2013, Wang 2025 |
-| 4 | Weight decay (`0.01`) | Condition ratio `sigma_k / sigma_max` | SVD |
-| 5 | Gradient clipping (`1.0`) | **Removed** — MASS bounds by construction | Weyl 1912 |
-| 6 | Warmup (5-10% steps) | **Removed** — geometric LR stable from step 0 | Ma & Yarats 2021 |
-| 7 | LR schedule (cosine) | **Removed** — MASS is per-step, no schedule needed | Defazio 2024 |
-| 8 | Batch size | Gradient noise scale `B_crit` | McCandlish 2018 |
-| 9 | Early stopping (patience) | 4 geometric criteria | SVD + IEEE 754 |
-| 10 | LoRA scale (`alpha/rank`) | Spectral bound `sigma_k(W) / \|\|BA\|\|` | Weyl perturbation theory |
-| 11 | LoRA rank (`8`) | Null-space capacity `tail_dims` | Shannon effective rank |
-| 12 | Target modules (`q+v`) | Spectral decay analysis | SVD per-layer |
-| 13 | Dropout (`0.1`) | Product of two spectral ratios | Roy & Vetterli 2007 |
-| 14 | Weight init (random A, zero B) | Spectral normalized to `sigma_k` | SVD |
-| 15 | Residual scaling (`1`) | Per-layer `sigma_max(x) / sigma_max(f(x))` | Power iteration |
+<!-- BEGIN GENERATED KNOB MATRIX -->
 
-Full derivations with formulas: [Geometric Hyperparameter Rosetta Stone](docs/research/geometric_hyperparameter_rosetta_stone.md)
+| # | Training control | Runtime status | Current code truth | Code source |
+|---|---|---|---|---|
+| 1 | Learning rate | derived+research-mode-only | default: calibrated AdamW 2e-4 cosine; MASS on research modes | `_mlx_training_adapter_train_mixin.py` + `mass_step_size.py` |
+| 2 | Adam epsilon | removed | no Adam epsilon derivation is claimed; `compute_geometric_epsilon` is ScaledGD regularization in weight-spectrum units | `geometric_optimizer.py` |
+| 3 | Momentum | derived+research-mode-only | default: AdamW betas 0.9/0.999; Fisher/MASS moments only in research modes | `_mlx_training_adapter_train_mixin.py` + `diagonal_fisher_preconditioner.py` |
+| 4 | Weight decay | formula-exists-unwired | condition-ratio formula exists; shipped `mc train run` default passes `weight_decay=0.0` | `geometric_optimizer.py`, `dataset_training_service.py` |
+| 5 | Gradient clipping | derived+research-mode-only | MASS bounds updates in research modes; canonical AdamW path has no geometric clipper | `mass_step_size.py` |
+| 6 | Warmup | derived+research-mode-only | canonical path uses calibrated cosine from step 0; research modes use MASS ceilings | `dataset_training_service.py`, `mass_step_size.py` |
+| 7 | LR schedule | derived+research-mode-only | default: cosine over 6 data-epochs; no-schedule MASS only in research modes | `_mlx_training_adapter_train_mixin.py`, `mass_step_size.py` |
+| 8 | Batch size | derived+shipped-default | derived from gradient-noise scale, then reduced only for memory-safe micro-batching | `DatasetTrainingService.train_from_dataset` |
+| 9 | Early stopping | derived+shipped-default | geometric certificate and measured validation-loss windows are wired into training | `geometric_early_stopping.py`, `_mlx_training_adapter_train_mixin.py` |
+| 10 | LoRA scale | derived+shipped-default | adapter scale budget and saturation telemetry are enforced during training | `geometric_lora.py`, `_mlx_training_adapter_train_mixin.py` |
+| 11 | LoRA rank | derived+shipped-default | per-module ranks derive from tail dimensions and rank-capacity samples | `geometric_lora.py`, `DatasetTrainingService.build_training_plan` |
+| 12 | Target modules | derived+shipped-default | target surface derives from layer spectral geometry | `select_target_modules`, `DatasetTrainingService.build_training_plan` |
+| 13 | Dropout | removed | derived dropout formula was deleted because no shipped training adapter consumed it | `compute_geometric_dropout` runtime references=0 |
+| 14 | Weight init | removed | default init is PiSSA; the unshipped spectral-normalized helper was deleted | `spectral_normalized_lora_init` runtime references=0 |
+| 15 | Residual scaling | removed | standalone residual-scaling formula was deleted because no shipped path consumed it | `residual_scaling.py`; runtime references=0 |
+
+<!-- END GENERATED KNOB MATRIX -->
+
+Research program and formulas:
+[15-Hyperparameter Research Program](docs/research/15-HYPERPARAMETER-RESEARCH-PROGRAM.md)
+and [Geometric Hyperparameter Rosetta Stone](docs/research/geometric_hyperparameter_rosetta_stone.md).
 
 ## Quick Start
 
@@ -211,6 +225,7 @@ All geometric computations are framework-agnostic. Backend selection is automati
 | [Training Guide](docs/TRAINING-GUIDE.md) | Downstream adapter workflows and dataset preparation |
 | [CLI Reference](docs/CLI-REFERENCE.md) | Workflow-first `mc analyze` plus expert command examples |
 | [Mission](docs/MISSION.md) | Measurement-first mission and derived training standards |
+| [15-Hyperparameter Research Program](docs/research/15-HYPERPARAMETER-RESEARCH-PROGRAM.md) | Per-control runtime and evidence status for the derivation program |
 | [Glossary](docs/GLOSSARY.md) | 60+ term definitions |
 | [Architecture](docs/ARCHITECTURE.md) | Hexagonal architecture and domain boundaries |
 | [Bibliography](docs/references/BIBLIOGRAPHY.md) | All cited papers with local reference PDFs |
@@ -228,7 +243,11 @@ All geometric computations are framework-agnostic. Backend selection is automati
 
 ## Test Suite
 
-6,809 tests. Includes Hypothesis property-based tests for numerical invariants (CKA symmetry, spectral bounds, null-space orthogonality).
+<!-- TEST-COUNT:START -->
+7,735 collected tests. This count is generated from `pytest --collect-only`; refresh it with `poetry run python scripts/update_test_count.py --write`.
+<!-- TEST-COUNT:END -->
+
+Includes Hypothesis property-based tests for numerical invariants (CKA symmetry, spectral bounds, null-space orthogonality).
 
 ```bash
 poetry run pytest                              # Standard run
@@ -248,7 +267,7 @@ HYPOTHESIS_PROFILE=full poetry run pytest       # Full property-based testing
 ```bibtex
 @software{kempf2026modelcypher,
   author = {Kempf, Jason},
-  title = {ModelCypher: Geometry-First LoRA Training for LLMs},
+  title = {ModelCypher: MLX-Native Measurement Workbench for LLMs},
   year = {2026},
   url = {https://github.com/Ethyros-AI/ModelCypher},
   license = {AGPL-3.0}

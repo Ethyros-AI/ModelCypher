@@ -27,7 +27,6 @@ import logging
 import math
 import re
 import subprocess
-import sys
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -577,6 +576,7 @@ def _compute_cka_summary(
     backend: Any,
 ) -> dict[str, Any]:
     import mlx.core as mx
+
     from modelcypher.core.domain.geometry.cka import compute_linear_cka_from_activations
 
     per_layer: dict[int, float] = {}

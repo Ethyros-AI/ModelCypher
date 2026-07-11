@@ -462,7 +462,8 @@ def _run_sequential_correction(
             )
             h = layer(h)
             mx.eval(h)
-            del X, XtX
+            X = None
+            XtX = None
             gc.collect()
             continue
 

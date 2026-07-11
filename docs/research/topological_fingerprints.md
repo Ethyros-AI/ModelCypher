@@ -204,7 +204,7 @@ the underlying signal is validated.
 > **FALSIFICATION RESULT (2026-02-22):** The protocol below was executed on LFM2-350M
 > (n=50, 58% accuracy on hard arithmetic). Result: 3/6 tests FAIL. The claim that
 > `delta_beta_1` predicts reasoning correctness does not survive robustness controls.
-> See `results/beta1_falsification/full/LFM2-350M/FALSIFICATION_REPORT.md`.
+> See `docs/research/reports/beta1_falsification/full/LFM2-350M/FALSIFICATION_REPORT.md`.
 
 Before interpreting `delta_beta_1` as a reasoning signal, run all checks below:
 

@@ -7,7 +7,7 @@
 ## Start Here Tomorrow
 
 **Do not start here.** The single canonical handoff for R1/R2 is
-`results/nblora_vs_standard/REPORT.md`. This file is a historical work log
+`docs/research/reports/nblora_vs_standard/REPORT.md`. This file is a historical work log
 for the closed-loop controller thread, retained for context. The active next
 falsifier and exact command live in REPORT.md.
 

@@ -15,9 +15,6 @@ ARC and BoolQ answers are unchanged (they don't have stripped chains).
 from __future__ import annotations
 
 import argparse
-import hashlib
-import json
-import random
 from pathlib import Path
 from typing import Iterable
 
@@ -35,12 +32,12 @@ DEFAULT_MANIFEST_OUTPUT = REPO_ROOT / "data" / "training" / "r1_quick_aligned_ch
 # to produce the same sample selection, just different answer format.
 from scripts.build_r1_quick_aligned_dataset import (
     TASK_SPECS,
-    _stable_seed,
+    _shuffle_rows,
     _shuffle_samples,
+    _stable_seed,
     _word_stats,
     _write_json,
     _write_jsonl,
-    _shuffle_rows,
 )
 
 

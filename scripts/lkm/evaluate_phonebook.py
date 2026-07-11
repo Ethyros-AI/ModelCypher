@@ -98,7 +98,8 @@ def evaluate(
     Returns:
         Exact-match accuracy as a float in [0.0, 1.0].
     """
-    from mlx_lm import generate, load as mlx_load
+    from mlx_lm import generate
+    from mlx_lm import load as mlx_load
 
     model, tokenizer = mlx_load(model_path, adapter_path=adapter_path)
 

@@ -20,7 +20,6 @@ from modelcypher.core.use_cases.observation_service import (
     PromptFamilyManifest,
 )
 
-
 RUN_MANIFEST_VERSION = "mc.measurement_atlas.run_manifest.v2"
 DEFAULT_OUTPUT_ROOT = Path("results/measurement_atlas")
 LINKED_BLOCKER = "A1"

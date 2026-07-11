@@ -126,7 +126,6 @@ def test_classification_concordance_with_holdout_on_synthetic():
         fits2["m1"]["calibration"]["aicc"],
         fits2["m0"]["calibration"]["n_points"],
     )
-    holdout_best2 = SCRIPT._best_model_by_holdout(fits2)
     # For a constant profile, M1 can fit it too (gamma=0), so both are equivalent.
     # M0 should win or tie by AICc (fewer parameters, same fit).
     assert classification2["head_classification"] == "m0_class"

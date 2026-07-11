@@ -26,7 +26,6 @@ the implementation units:
 - statistics: Median, correlation functions
 - decomposition: SVD, pseudoinverse, null space projector
 - alignment: Invariant alignment, geodesic alignment
-- spectral_init: Spectral-normalized weight initialization
 - validation: Array validation, convergence monitoring
 """
 
@@ -102,12 +101,6 @@ from .scalars import (
     sin_scalar,
     sqrt_scalar,
     ulp_scalar,
-)
-
-# Canonical exports from spectral_init
-from .spectral_init import (
-    spectral_normalized_init,
-    spectral_normalized_lora_init,
 )
 
 # Canonical exports from statistics
@@ -192,9 +185,6 @@ __all__ = [
     "invariant_alignment",
     # Geodesic invariant alignment (preserves manifold structure)
     "geodesic_invariant_alignment",
-    # Spectral-normalized initialization
-    "spectral_normalized_init",
-    "spectral_normalized_lora_init",
     # Array validation
     "ArrayNumerics",
     "validate_array_numerics",

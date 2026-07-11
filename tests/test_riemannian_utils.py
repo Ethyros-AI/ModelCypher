@@ -540,6 +540,9 @@ class TestLocalCurvatureEstimation:
         assert abs(result.sectional_curvature) <= eps, (
             f"Expected near-zero curvature for flat points, got {result.sectional_curvature}"
         )
+        assert result.is_positive is False
+        assert result.is_negative is False
+        assert result.confidence == 0.0
 
     def test_returns_valid_estimate(self, any_backend: "Backend") -> None:
         """Curvature estimation should return valid values."""
