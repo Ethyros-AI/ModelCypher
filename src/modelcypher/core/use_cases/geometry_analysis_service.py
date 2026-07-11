@@ -48,6 +48,7 @@ from modelcypher.core.domain.geometry.intrinsic_dimension import (
     ConfidenceInterval,
     IntrinsicDimension,
     LocalDimensionMap,
+    MLEEstimate,
     TwoNNEstimate,
 )
 from modelcypher.core.domain.geometry.jacobian_analyzer import (
@@ -74,6 +75,7 @@ __all__ = [
     "GeometryAnalysisService",
     # Intrinsic dimension types
     "TwoNNEstimate",
+    "MLEEstimate",
     "ConfidenceInterval",
     "LocalDimensionMap",
     # Manifold entropy types
@@ -166,7 +168,20 @@ class GeometryAnalysisService:
             LocalDimensionMap with per-point dimension estimates.
         """
         estimator = IntrinsicDimension(backend=self._backend)
-        return estimator.local_dimension_map(activations, n_neighbors=n_neighbors)
+        if n_neighbors is not None:
+            raise ValueError(
+                "Local dimension neighborhoods are geometry-derived; "
+                "n_neighbors cannot be overridden"
+            )
+        return estimator.local_dimension_map(activations)
+
+    def compute_mle_intrinsic_dimension(
+        self,
+        activations: "Array",
+    ) -> MLEEstimate:
+        """Estimate global ID with the Levina-Bickel k-neighbor MLE."""
+        estimator = IntrinsicDimension(backend=self._backend)
+        return estimator.compute_mle(activations)
 
     # --- Manifold Entropy ---
 

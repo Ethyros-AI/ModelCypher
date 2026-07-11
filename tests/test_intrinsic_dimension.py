@@ -38,6 +38,7 @@ from modelcypher.core.domain.geometry.intrinsic_dimension import (
     ConfidenceInterval,
     IntrinsicDimension,
     LocalDimensionMap,
+    MLEEstimate,
     TwoNNEstimate,
 )
 
@@ -193,6 +194,47 @@ class TestCompute:
         estimator = IntrinsicDimension(backend)
         with pytest.raises(EstimatorError):
             estimator.compute(points)
+
+
+class TestComputeMLE:
+    """Tests for the explicit Levina-Bickel comparison estimator."""
+
+    def test_compute_mle_reports_derived_neighborhood(self):
+        backend = get_default_backend()
+        backend.random_seed(7)
+        points = backend.random_normal((48, 3))
+        backend.eval(points)
+
+        estimate = IntrinsicDimension(backend).compute_mle(points)
+
+        assert isinstance(estimate, MLEEstimate)
+        assert estimate.sample_count == 48
+        assert 0 < estimate.usable_count <= estimate.sample_count
+        assert 3 <= estimate.k_neighbors < estimate.sample_count
+        assert estimate.intrinsic_dimension > 0
+
+    def test_compute_mle_is_rotation_and_scale_invariant(self):
+        backend = get_default_backend()
+        backend.random_seed(11)
+        points = backend.random_normal((48, 3))
+        rotation = backend.array(
+            [
+                [0.0, -1.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
+        transformed = backend.matmul(points, rotation) * backend.array(3.0)
+        backend.eval(points, transformed)
+
+        estimator = IntrinsicDimension(backend)
+        baseline = estimator.compute_mle(points)
+        rotated = estimator.compute_mle(transformed)
+        tolerance = math.sqrt(
+            float(backend.finfo(points.dtype).eps)
+        ) * max(abs(baseline.intrinsic_dimension), 1.0)
+
+        assert abs(baseline.intrinsic_dimension - rotated.intrinsic_dimension) <= tolerance
 
 
 # =============================================================================

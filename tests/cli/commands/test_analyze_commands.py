@@ -1005,6 +1005,9 @@ class TestSafetyDimensionProfile:
         result = runner.invoke(app, ["analyze", "dimension-profile", "--help"])
         assert result.exit_code == 0
         assert "--model" in result.stdout
+        assert "--local" in result.stdout
+        assert "--with-ci" in result.stdout
+        assert "--with-mle" in result.stdout
 
     def test_dimension_profile_requires_model(self):
         """Test that model is required."""

@@ -958,6 +958,97 @@ class _MLXBackendActivationMixin:
         self.mx.eval(logits)
         return logits, attn_weights_per_layer
 
+    def collect_logits_with_residual_intervention(
+        self,
+        model: Any,
+        tokenizer: Any,
+        text: str,
+        *,
+        target_layer: int | None = None,
+        token_position: int | None = None,
+        delta: Any | None = None,
+        token_ids: list[int] | None = None,
+    ) -> Any:
+        """Return full logits after an optional post-block residual intervention.
+
+        The intervention is applied to exactly one token in the residual stream
+        immediately after ``target_layer`` and the ordinary causal forward pass
+        then continues. This backend-only hook supports research falsifiers such
+        as King et al. (2026, arXiv:2604.23985, section 2.6) without exposing an
+        architecture-specific model object to the domain layer.
+
+        Passing no target and no delta performs the same explicit block-by-block
+        forward without an intervention. A non-``None`` delta requires both the
+        layer and token position to be declared.
+        """
+        intervention_fields = (target_layer, token_position, delta)
+        declared_count = sum(value is not None for value in intervention_fields)
+        if declared_count not in (0, len(intervention_fields)):
+            raise ValueError(
+                "Residual intervention requires target_layer, token_position, and delta"
+            )
+
+        if token_ids is None:
+            token_ids = tokenizer.encode(text)
+        input_ids = self.mx.array([token_ids])
+        base = self._resolve_model_base(model)
+        layers = base.layers
+
+        if target_layer is not None and not 0 <= target_layer < len(layers):
+            raise ValueError("Residual intervention target_layer is out of range")
+        if token_position is not None and not 0 <= token_position < len(token_ids):
+            raise ValueError("Residual intervention token_position is out of range")
+
+        hidden = base.embed_tokens(input_ids)
+        for layer_idx, layer in enumerate(layers):
+            attention = getattr(layer, "self_attn", None) or getattr(
+                layer,
+                "attn",
+                None,
+            )
+            is_attention = attention is not None and hasattr(attention, "q_proj")
+            layer_mask = "causal" if is_attention else None
+            result = layer(hidden, mask=layer_mask, cache=None)
+            hidden = result[0] if isinstance(result, tuple) else result
+
+            if layer_idx == target_layer:
+                assert token_position is not None
+                intervention = self.mx.array(delta)
+                if intervention.ndim == 1:
+                    intervention = self.mx.reshape(intervention, (1, 1, -1))
+                elif intervention.ndim == 2:
+                    intervention = self.mx.reshape(intervention, (1, 1, -1))
+                if intervention.ndim != 3 or intervention.shape[-1] != hidden.shape[-1]:
+                    raise ValueError(
+                        "Residual intervention delta must match the hidden width"
+                    )
+                position_slice = hidden[
+                    :,
+                    token_position : token_position + 1,
+                    :,
+                ] + intervention
+                hidden = self.mx.concatenate(
+                    (
+                        hidden[:, :token_position, :],
+                        position_slice,
+                        hidden[:, token_position + 1 :, :],
+                    ),
+                    axis=1,
+                )
+            self.mx.eval(hidden)
+
+        if hasattr(base, "norm"):
+            hidden = base.norm(hidden)
+        elif hasattr(base, "embedding_norm"):
+            hidden = base.embedding_norm(hidden)
+
+        if hasattr(model, "lm_head"):
+            logits = model.lm_head(hidden)
+        else:
+            logits = base.embed_tokens.as_linear(hidden)
+        self.mx.eval(logits)
+        return logits
+
     def collect_logits(
         self,
         model: Any,

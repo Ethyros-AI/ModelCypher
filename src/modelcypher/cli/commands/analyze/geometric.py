@@ -59,6 +59,54 @@ class VerificationDepthMode(str, Enum):
     EXACT = "exact"
 
 
+def _dimension_layer_result(
+    *,
+    service,
+    backend,
+    stacked,
+    layer_idx: int,
+    local: bool,
+    with_ci: bool,
+    with_mle: bool,
+) -> dict:
+    """Compute raw global and optional local ID outputs for one layer."""
+    estimate = service.compute_intrinsic_dimension(stacked, with_ci=with_ci)
+    layer_result = {
+        "layer": layer_idx,
+        "intrinsic_dimension": estimate.intrinsic_dimension,
+        "sample_count": estimate.sample_count,
+        "usable_count": estimate.usable_count,
+    }
+    if estimate.ci is not None:
+        layer_result["confidence_interval"] = {
+            "lower": estimate.ci.lower,
+            "upper": estimate.ci.upper,
+            "resamples": estimate.ci.resamples,
+        }
+    if with_mle:
+        mle = service.compute_mle_intrinsic_dimension(stacked)
+        layer_result["mle_dimension"] = {
+            "intrinsic_dimension": mle.intrinsic_dimension,
+            "sample_count": mle.sample_count,
+            "usable_count": mle.usable_count,
+            "k_neighbors": mle.k_neighbors,
+            "estimator": "levina_bickel_eq_8",
+            "neighborhood_policy": "minimum_connected_geodesic_graph",
+        }
+    if local:
+        local_map = service.compute_local_dimension_map(stacked)
+        backend.eval(local_map.dimensions)
+        layer_result["local_dimension"] = {
+            "mean": local_map.mean_dimension,
+            "std": local_map.std_dimension,
+            "modal": local_map.modal_dimension,
+            "k_neighbors": local_map.k_neighbors,
+            "dimensions": backend.tolist(local_map.dimensions),
+            "deficient_indices": local_map.deficient_indices,
+        }
+    return layer_result
+
+
 @app.command("dimension-profile")
 def safety_dimension_profile(
     ctx: typer.Context,
@@ -75,22 +123,29 @@ def safety_dimension_profile(
     recovery: bool = typer.Option(
         False, "--recovery", "-r", help="Show dimension recovery metrics (final_ID / min_ID)"
     ),
+    local: bool = typer.Option(
+        False,
+        "--local",
+        help="Also report the per-probe local nearest-neighbor ID map at each layer",
+    ),
+    with_ci: bool = typer.Option(
+        False,
+        "--with-ci",
+        help="Bootstrap the global TwoNN finite-sample confidence interval",
+    ),
+    with_mle: bool = typer.Option(
+        False,
+        "--with-mle",
+        help="Also report the Levina-Bickel k-neighbor MLE at a derived scale",
+    ),
 ) -> None:
     """Compute per-layer intrinsic dimension profile.
 
-    Uses TwoNN (Two Nearest Neighbor) estimator to measure the intrinsic
-    dimensionality of representations at each layer.
-
-    Typical observed pattern (varies by model):
-    - Entry layers: Low ID (2-5D) - compression
-    - Mid layers: Higher ID (20-30D) - processing
-    - Exit layers: Higher ID (15-35D) - dimension recovery
-
-    The --recovery flag shows the dimension recovery ratio, which measures
-    how much the model "recovers" dimensionality after the minimum ID point:
-    - recovery_ratio = final_ID / min_ID
-    - Base models: High recovery (10-15x)
-    - Specialist models: Low recovery (~1x)
+    Reports the global finite-sample TwoNN estimate at every layer. ``--local``
+    adds the existing per-probe local-dimension estimator so published global
+    and local profiles can be compared without treating either as ground truth.
+    ``--with-mle`` adds the Levina-Bickel estimator at the minimum connected
+    geodesic neighborhood; ``--with-ci`` adds the global TwoNN bootstrap interval.
 
     Examples:
         mc analyze dimension-profile --model ./my-model
@@ -219,13 +274,17 @@ def safety_dimension_profile(
             backend.eval(stacked)
 
             try:
-                estimate = service.compute_intrinsic_dimension(stacked)
-                layer_results.append({
-                    "layer": layer_idx,
-                    "intrinsic_dimension": estimate.intrinsic_dimension,
-                    "sample_count": estimate.sample_count,
-                    "usable_count": estimate.usable_count,
-                })
+                layer_results.append(
+                    _dimension_layer_result(
+                        service=service,
+                        backend=backend,
+                        stacked=stacked,
+                        layer_idx=layer_idx,
+                        local=local,
+                        with_ci=with_ci,
+                        with_mle=with_mle,
+                    )
+                )
             except Exception as e:
                 layer_results.append({
                     "layer": layer_idx,
@@ -241,25 +300,11 @@ def safety_dimension_profile(
         min_id = min(valid_ids) if valid_ids else 0
         max_id = max(valid_ids) if valid_ids else 0
 
-        # Find highway (minimum ID region)
-        if valid_ids:
-            min_idx = next(i for i, r in enumerate(layer_results)
-                          if r["intrinsic_dimension"] == min_id)
-            highway_layers = [min_idx]
-            # Extend to adjacent low-ID layers
-            threshold = min_id * 2
-            for i in range(min_idx - 1, -1, -1):
-                if layer_results[i]["intrinsic_dimension"] < threshold:
-                    highway_layers.insert(0, i)
-                else:
-                    break
-            for i in range(min_idx + 1, num_layers):
-                if layer_results[i]["intrinsic_dimension"] < threshold:
-                    highway_layers.append(i)
-                else:
-                    break
-        else:
-            highway_layers = []
+        minimum_id_layers = [
+            int(row["layer"])
+            for row in layer_results
+            if row["intrinsic_dimension"] == min_id
+        ]
 
     except Exception as exc:
         error = ErrorDetail(
@@ -288,8 +333,11 @@ def safety_dimension_profile(
         "meanIntrinsicDim": mean_id,
         "minIntrinsicDim": min_id,
         "maxIntrinsicDim": max_id,
-        "highwayLayers": highway_layers,
+        "minimumIdLayers": minimum_id_layers,
         "compressionRatio": min_id / hidden_dim if hidden_dim > 0 else 0,
+        "localRequested": local,
+        "confidenceIntervalRequested": with_ci,
+        "mleRequested": with_mle,
         "layerResults": layer_results,
     }
 
@@ -299,7 +347,7 @@ def safety_dimension_profile(
 
     if context.output_format == "text":
         lines = [
-            "DIMENSION PROFILE (Semantic Highway Detection)",
+            "DIMENSION PROFILE",
             f"Model: {model_path}",
             f"Adapter: {adapter_path}" if adapter_path is not None else "",
             f"Layers: {num_layers}",
@@ -308,7 +356,7 @@ def safety_dimension_profile(
             "",
             "Summary:",
             f"  Mean ID: {mean_id:.1f}",
-            f"  Min ID: {min_id:.1f} (layers {highway_layers})" if highway_layers else f"  Min ID: {min_id:.1f}",
+            f"  Min ID: {min_id:.1f} (layers {minimum_id_layers})",
             f"  Max ID: {max_id:.1f}",
             f"  Compression: {hidden_dim}D -> {min_id:.1f}D ({(1 - min_id/hidden_dim)*100:.1f}%)" if hidden_dim > 0 else "",
         ]
@@ -319,7 +367,6 @@ def safety_dimension_profile(
                 "Recovery Metrics:",
                 f"  Final ID: {final_id:.1f}",
                 f"  Recovery Ratio: {recovery_ratio:.2f}x (final_ID / min_ID)",
-                f"  Interpretation: {'High recovery (base model)' if recovery_ratio > 5 else 'Low recovery (specialist)' if recovery_ratio < 2 else 'Moderate recovery'}",
             ])
 
         lines.extend([
@@ -336,14 +383,15 @@ def safety_dimension_profile(
                 lines.append(f"  Layer {layer_idx:3d}: N/A")
                 continue
 
-            # Normalize for bar (0-50 scale for typical ID range)
-            bar_val = min(1.0, id_val / 50)
-            bar_len = int(bar_val * 40)
-            bar = "#" * bar_len + "." * (40 - bar_len)
-
-            # Mark highway layers
-            marker = " < HIGHWAY" if layer_idx in highway_layers else ""
-            lines.append(f"  Layer {layer_idx:3d}: {id_val:5.1f}D |{bar}|{marker}")
+            line = f"  Layer {layer_idx:3d}: global={id_val:5.1f}D"
+            local_result = r.get("local_dimension")
+            if local_result is not None:
+                line += (
+                    f", local_mean={local_result['mean']:.1f}D, "
+                    f"local_modal={local_result['modal']:.1f}D, "
+                    f"local_std={local_result['std']:.1f}"
+                )
+            lines.append(line)
 
         write_output("\n".join(lines), context.output_format, context.pretty)
     else:
