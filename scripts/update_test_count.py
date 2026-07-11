@@ -21,6 +21,7 @@ def collect_test_count() -> int:
     """Return pytest's collected-test count without running tests."""
     env = os.environ.copy()
     env.pop("MC_DISABLE_MLX", None)
+    env.pop("MC_BACKEND", None)
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "--collect-only", "-q"],
         cwd=ROOT,

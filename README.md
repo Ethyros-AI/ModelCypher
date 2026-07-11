@@ -259,14 +259,16 @@ End-to-end loaders and expert CLI workflows remain MLX-first.
 ## Test Suite
 
 <!-- TEST-COUNT:START -->
-7,757 collected tests. This count is generated from `pytest --collect-only`; refresh it with `poetry run python scripts/update_test_count.py --write`.
+7,758 collected tests. This count is generated from `pytest --collect-only`; refresh it with `poetry run python scripts/update_test_count.py --write`.
 <!-- TEST-COUNT:END -->
 
 Includes Hypothesis property-based tests for numerical invariants (CKA symmetry, spectral bounds, null-space orthogonality).
 
 ```bash
-poetry run pytest                              # Standard run
-HYPOTHESIS_PROFILE=full poetry run pytest       # Full property-based testing
+poetry install --extras jax                    # One-time local CI dependencies
+./scripts/run_local_ci.sh                      # Full local CPU verification
+poetry run pytest                              # Standard development run
+HYPOTHESIS_PROFILE=full poetry run pytest      # Full property-based testing
 ```
 
 ## Platform Support
@@ -276,7 +278,7 @@ HYPOTHESIS_PROFILE=full poetry run pytest       # Full property-based testing
 | macOS Apple Silicon | MLX | Primary end-to-end product path |
 | Linux + NVIDIA GPU | CUDA (PyTorch) | Backend protocol available; loader/CLI parity partial |
 | Linux + TPU/GPU | JAX | Backend protocol available; loader/CLI parity partial |
-| Linux CPU (CI/tests) | JAX | Engineering fallback, not an accelerated product path |
+| Linux CPU (local CI/tests) | JAX | Engineering fallback, not an accelerated product path |
 
 ## Citation
 
