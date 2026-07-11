@@ -1,7 +1,7 @@
 # R1/R2 Local 350M Handoff
 
-Status: `R1 no-go on seed 42`, `R2 active blocker: inference-representation
-collapse`
+Status: `R1 no-go on seed 42`, `R2 retained 350M mechanism closed on
+2026-03-16`, `next owner run: arithmetic-primitives curriculum`
 
 Use this file as the single re-entry point for all R1 and R2 work before
 opening logs, result directories, or code. All other docs
@@ -12,14 +12,18 @@ here for the next falsifier.
 ## Restart Sentence
 
 ```text
-The R2 falsifier chain has closed optimizer, loop mechanics, LR schedule,
-early stopping, training duration, and PiSSA structural budget as explanations.
-The sole remaining mechanism is inference-representation collapse: train CKA
-stays healthy (0.95) while inference CKA collapses (min 0.01, mean 0.58) across
-all configurations, including full cosine-decay training to val_stable at
-epoch 8. The structural sigma_k budget is now diagnostic-only — it does not
-predict or correlate with behavioral damage.
+The retained 350M R2 falsifier chain is closed. The apparent inference CKA
+collapse was a measurement artifact caused by comparing divergent generated
+token sequences. Same-input geometry remained healthy. The measured mechanism
+was step-0 decode divergence caused by training data that removed the
+token-space work tape needed for multi-step reasoning. Chain-preserved data
+partially repaired GSM8K; the remaining owner-run blocker is arithmetic-
+execution granularity. The structural sigma_k budget remains diagnostic-only.
 ```
+
+The dated sections below preserve the investigation in chronological order.
+Where an earlier section calls inference-representation collapse active, the
+2026-03-16 closure and restart sentence above supersede it.
 
 ## What Closed Today
 

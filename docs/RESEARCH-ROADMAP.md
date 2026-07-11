@@ -57,9 +57,8 @@ new canonical result families, or repeated agent-driven run families.
 | --- | --- | --- | --- |
 | `A1` | Observation-bundle closure for workflow-first `mc analyze` | `results/measurement_atlas/`, `results/pipeline_validation/`, and CLI/service contract tests | `capture`, `family`, `compare`, and `report` are stable, documented, and produce commensurable observation bundles for prompt and target studies without legacy safety-first packaging or buried command paths |
 | `R1` | Same-model same-data same-eval baseline suite against standard practice for the canonical geometry-derived LoRA path | `results/nblora_vs_standard/` | Pre-registered multi-seed comparison against standard LoRA, rsLoRA, PiSSA, EVA, DoRA, and at least one recipe-level baseline; promotion allowed only if preservation gates stay valid |
-| `R2` | Causal operator for behavioral failure when structural safety passes | `results/pipeline_validation/`, `results/pipeline_validation_blindness_350M_t20/` | A pre-registered operator predicts failure before online degradation, survives intervention, and explains the retained 350M failure cases |
 | `R3` | 8B non-ceiling efficacy closure | `results/g5_8b_validation_multiseed/` | The pre-registered seed set on the fixed non-ceiling eval bundle passes the declared gate set without mixed or measurement-invalid outcomes |
-| `R4` | Quantization frontier law | `results/quantization_frontier/`, `results/closedform_sequential_correction/`, `results/quantization_ab_survey/` | One architecture-conditioned frontier statistic orders achieved CKA floor and degeneration across bit-depth sweeps and survives a held-out family |
+| `R4` | Quantization frontier law | `results/quantization_frontier/`, `results/closedform_sequential_correction/`, `results/quantization_ab_survey/` | One architecture-conditioned frontier statistic orders achieved CKA floor, fixed-basis feature survival, and degeneration across bit-depth sweeps and survives a held-out family |
 | `R5` | Portable cross-architecture adapter certificate | `results/geometry_sota/` plus a MergeBench-style comparison family | A commensurable preservation certificate plus head-to-head merge baselines show portable behavior, not just probe alignment |
 | `R6` | Consolidation operator that adds structure without forgetting | `results/continual_learning/` | A fixed update operator beats replay-style baselines on preservation and capacity under a frozen evaluator and comparison budget |
 
@@ -90,6 +89,9 @@ Current state (2026-04-02):
 - Every run is expected to emit the same observation bundle contract:
   `manifest.json`, `summary.json`, `REPORT.md`, `variants.jsonl`,
   `layer_metrics.jsonl`, `comparisons.jsonl`.
+- Commensurability metadata must identify prompt context, precision state, and
+  the measurement operator. Corpus averaging and interventions are part of the
+  operator, not incidental run notes.
 - Phase 1 scope is inference-first and checkpoint-comparison-first. Live
   training-stream telemetry remains deferred.
 - Remaining atlas work is now presentation and study-pack refinement:
@@ -104,7 +106,7 @@ This remains the first downstream training blocker because "better than
 standard practice" is a consequential training claim, not an optional
 benchmark.
 
-Current state (2026-03-12):
+Current state (2026-03-16):
 
 - **Stage A frozen tuple remains a no-go.** Canonical `nb_lora` won 0/7 tasks
   against every surface-matched baseline on the old benchmark pair, so seed
@@ -122,9 +124,12 @@ Current state (2026-03-12):
   `data/training/r1_quick_aligned_val.jsonl` on the local LFM2-350M bf16 model
   copy.
 - The default canonical controller is safer than the MASS matched-trace branch
-  on that tuple, but neither clears R1. The next spend is the fixed 96-step
-  matched-trace MASS diagnostic recorded in the handoff note, not seed
-  expansion or benchmark widening.
+  on that tuple, but neither clears R1. The 96-step MASS diagnostic is complete
+  and did not rescue the controller.
+- The retained R2 failure mechanism is data-format mismatch: bare-answer data
+  removed the token-space work tape. Chain-preserved data partially repaired
+  GSM8K, leaving arithmetic-execution granularity as the next owner-run
+  falsifier. Do not reopen the old inference-CKA geometry thread.
 - The family name `results/nblora_vs_standard/` is historical. The doctrine
   question is whether the canonical `geometric_lora` path beats standard
   practice, not whether the old NB-LoRA label survives.
@@ -136,42 +141,11 @@ Required controls:
 - PiSSA
 - EVA
 - DoRA
+- an applicable schedule-free control, with operator-level compatibility
+  recorded for ScheduleFree+ and SF-NorMuon
+- HiP-LoRA or an explicit matched-budget incompatibility record
 - at least one recipe-level baseline such as TorchTune, Axolotl, or an
   equivalent fixed recipe
-
-### R2. Behavioral Preservation Operator
-
-This is the shortest path from "interesting geometry" to "the canonical
-measurement and training path really preserves behavior."
-
-Current state (2026-03-26):
-
-Use [docs/research/reports/nblora_vs_standard/REPORT.md](research/reports/nblora_vs_standard/REPORT.md)
-as the source of truth for this thread. The older geometry-collapse summary
-below has been superseded there by a data-format and arithmetic-granularity
-mechanism.
-
-All surface-level explanations for the canonical path's benchmark degradation
-have been eliminated. The R2 falsifier chain:
-
-| Falsifier | Status | Ledger row |
-|-----------|--------|------------|
-| Optimizer (Cayley vs AdamW) | closed | r2 behavioral probe / V3 structural |
-| MASS matched-trace step sizing | closed | r2 behavioral probe adamw |
-| Closed-loop layer freeze | closed | r2 closed loop cayley |
-| Loop mechanics (seq_len, batch, iter cap, early stops) | closed | r2 loop parity |
-| Cosine LR schedule drift | closed | r2 adamw cosine schedule audit |
-| **Inference-representation collapse** | **ACTIVE** | — |
-
-The surviving mechanism: train-space CKA stays healthy (0.94) while
-inference-manifold CKA collapses (min 0.13). The adapter memorizes training
-format while destroying inference geometry. This persists across all optimizer,
-loop, and schedule configurations tested.
-
-Next falsifier and exact command: see
-`docs/research/reports/nblora_vs_standard/REPORT.md`
-§ Exact Next Falsifier. That file is the single canonical handoff for all
-R1/R2 work.
 
 ### R3. 8B Non-Ceiling Closure
 
@@ -223,6 +197,23 @@ what update law adds new structure without forgetting old structure?
 
 This is a vision gate, not a current mission-closure substitute.
 
+## Closed
+
+### R2. Retained 350M Behavioral Failure
+
+Closed 2026-03-16. The apparent inference-representation collapse was a
+measurement artifact: CKA compared divergent generated token sequences.
+Same-input geometry remained healthy. The causal intervention was the corpus
+format: replacing bare-answer GSM8K examples with chain-preserved examples
+partially restored the base model's reasoning-word frontier and benchmark
+behavior. The remaining arithmetic-granularity experiment belongs to `R1`.
+
+The canonical chronology and exact owner handoff are in
+[docs/research/reports/nblora_vs_standard/REPORT.md](research/reports/nblora_vs_standard/REPORT.md).
+Reopen `R2` only for a new behavioral failure that survives same-input,
+prompt-distribution, masking, cache, decode-divergence, and data-format
+controls.
+
 ## Parked
 
 These threads are scientifically valuable, but they are not allowed to displace
@@ -230,7 +221,8 @@ the active ladder unless they become a direct blocker for one of `R1`-`R6`.
 
 | Thread | Why it is parked | Main artifacts |
 | --- | --- | --- |
-| Entropy-curvature middle chain | important for deeper theory, but not the shortest path to closing the canonical engine | `results/entropy_curvature_operator_split/`, `results/f5_sign_law_analysis_6models/`, [SOTA-AUDIT-2026-03.md](/Users/jasonkempf/ModelCypher/docs/research/SOTA-AUDIT-2026-03.md) |
+| Entropy-curvature middle chain | broad chain remains parked; only the published contextual-curvature replication is active under owner-run `WS4.2` | `results/entropy_curvature_operator_split/`, `results/f5_sign_law_analysis_6models/`, [SOTA-AUDIT-2026-07.md](research/SOTA-AUDIT-2026-07.md) |
+| Jacobian lens / J-space | relevant to future same-input CKA blindness, but the retained R2 geometry thread is closed | [SOTA-AUDIT-2026-07.md](research/SOTA-AUDIT-2026-07.md) |
 | Local-ID mechanism work | mechanism-rich, but not the present blocker on mission promotion | `results/tangent_subspace_id_mechanism/` |
 | DPI-compatible information replacement | important doctrine hygiene, not the immediate reason the canonical path is blocked | `results/information_bridge_linear_cka/`, [linear_accessible_information_derivation.md](/Users/jasonkempf/ModelCypher/docs/research/linear_accessible_information_derivation.md) |
 | LKM capacity sweep | useful benchmark discipline and harness design | `results/lora_memory_capacity_validation/`, [LKM-AREA-1-RUN-MANIFEST.md](/Users/jasonkempf/ModelCypher/docs/research/LKM-AREA-1-RUN-MANIFEST.md) |
@@ -264,7 +256,7 @@ git history, not in the active ladder.
 
 Every new experiment, script, or repeated run family must declare one of:
 
-- an active roadmap item ID (`R1`-`R6`), or
+- an ID currently listed under **Active** above, or
 - an active open-question ID from
   [OPEN-MATHEMATICAL-QUESTIONS.md](/Users/jasonkempf/ModelCypher/docs/research/OPEN-MATHEMATICAL-QUESTIONS.md).
 
@@ -296,7 +288,8 @@ family is newly promoted or reactivated.
 
 - stop widening the active surface because a result is interesting
 - stop treating exploratory merge or continual-learning code as mission closure
-- stop creating free-range experiment families that are not tied to `R1`-`R6`
+- stop creating free-range experiment families that are not tied to an active
+  roadmap or open-question ID
 - stop promoting internal strength as field position without baseline controls
 
 ## Bottom Line
@@ -307,10 +300,9 @@ If a thread does not close:
 
 1. workflow-first observation closure,
 2. the baseline suite,
-3. the preservation operator,
-4. 8B closure,
-5. the quantization frontier law,
-6. the portability certificate, or
-7. the consolidation operator,
+3. 8B closure,
+4. the quantization frontier law,
+5. the portability certificate, or
+6. the consolidation operator,
 
 then it is not the work that should currently dominate the repo or the agents.

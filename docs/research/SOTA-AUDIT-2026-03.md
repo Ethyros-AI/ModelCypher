@@ -1,5 +1,9 @@
 # SOTA Audit: ModelCypher vs. Industry & Academic State of the Art
 
+> **Historical snapshot.** Superseded by
+> [SOTA-AUDIT-2026-07.md](SOTA-AUDIT-2026-07.md). Do not use this file's
+> field-position or novelty claims without the July corrections.
+
 **Date:** 2026-03-03 (narrative audit); updated 2026-03-04 (10-model entropy-curvature evidence + 6-model F2/B5 refinement sync)
 **Method:** Three independent audits (2 Claude + 1 Codex/Firecrawl), 80+ papers, 11 sub-areas
 **Canonical Source:** This file is the single maintained SOTA audit narrative.

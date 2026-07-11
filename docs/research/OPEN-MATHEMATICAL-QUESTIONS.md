@@ -1,6 +1,6 @@
 # Open Mathematical Questions
 
-**Updated:** 2026-03-12
+**Updated:** 2026-07-10
 
 ## What This File Is For
 
@@ -22,55 +22,6 @@ field positioning, it does not belong here.
 
 ## Active Questions
 
-### Q1. What operator predicts behavioral failure when structural safety still passes?
-
-**Roadmap link:** `R2`
-**Canonical handoff:** `docs/research/reports/nblora_vs_standard/REPORT.md` (single entry point for R1/R2 work)
-**Historical work log:** `docs/research/r2_closed_loop_controller_log.md`
-
-**Why this is open**
-
-The canonical training path can pass structural checks and still fail
-behavioral preservation.
-
-**Current evidence**
-
-- `results/pipeline_validation/verdict.json`: 350M structural pass `5/5`,
-  inference pass `3/5`
-- retained failure diagnostics point to high `cka_blindness_ratio`, low
-  `null_access_min_behavioral_preserved_fraction`, and margin-sign flips
-- `results/nblora_vs_standard/validate_derived_r2_closed_loop_seed42_quick.json`:
-  the first closed-loop falsifier armed and froze a layer, but still degraded
-  behavior (`online_eval 17/20 -> 3/20`, benchmark overall `0.70 -> 0.47`)
-- `results/nblora_vs_standard/r2_closed_loop_postmortem.md`: the V1 law armed
-  reactively on online-eval drop, selected a layer through an all-`null`
-  ordering fallback, and froze a layer carrying only `1.76%` of transport
-- `results/nblora_vs_standard/R1-LEDGER.tsv`: the V2 law removed the reactive
-  trigger and the lexicographic fallback, but its pre-degradation signals still
-  arrived too late; the run failed instead on `adapter_saturation_exceeded`
-
-**What is missing**
-
-- a causal observable that fires before both behavioral degradation and adapter
-  saturation on the frozen tuple
-- a targetable layer-local measurement surface that does not collapse to
-  all-`null` ordering metrics at intervention time
-- a commensurable link from adapted-surface transport and saturation to
-  off-surface inference divergence (for example the retained layer-4 failure)
-
-**Next falsifier**
-
-See `docs/research/reports/nblora_vs_standard/REPORT.md` § Exact Next
-Falsifier for the current active command. The artifact-only saturation timing
-check described below is superseded by the 96-step MASS diagnostic in REPORT.md, which
-directly measures the budget trajectory that the artifact-only check would
-have inferred.
-
-(Historical, retained for context: Run an artifact-only falsifier on the
-retained safe and failing reports: determine whether adapter saturation or
-per-layer spectral-budget ratio fires earlier than both margin-trend decline
-and online-eval degradation while remaining quiet on safe references.)
-
 ### Q2. When is a global MASS ceiling sufficient, and when is per-layer control required?
 
 **Roadmap link:** `R3`
@@ -83,7 +34,8 @@ architectures and scales.
 **Current evidence**
 
 - the canonical controller is wired into `mc train run`
-- 350M still shows unresolved behavioral failures
+- the 350M controller no-go remains, while its retained behavioral-failure
+  mechanism is closed as a data-format issue
 - 8B mechanical viability exists, but efficacy closure is open
 
 **What is missing**
@@ -117,7 +69,7 @@ when reduced precision can preserve geometry and behavior.
 **What is missing**
 
 - an architecture-conditioned equation linking crossing severity to achievable
-  CKA floor and degeneration behavior
+  CKA floor, fixed-basis feature survival, and degeneration behavior
 - a commensurable operator across bit-depths and architectures
 
 **Next falsifier**
