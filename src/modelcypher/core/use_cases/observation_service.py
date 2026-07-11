@@ -17,6 +17,12 @@ from modelcypher.core.use_cases.geometry_analysis_service import GeometryAnalysi
 from modelcypher.core.use_cases.observation_bundle_report_service import (
     ObservationBundleReportService,
 )
+from modelcypher.core.use_cases.observation_identity import (
+    build_context_state,
+    build_measurement_operator,
+    build_precision_state,
+    validate_observation_identity,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -35,7 +41,7 @@ DEFAULT_ANALYSIS_SPACES = ("hidden", "embedding")
 OPTIONAL_ANALYSIS_SPACES = ("intermediate", "q", "k", "v", "gate")
 SUPPORTED_ANALYSIS_SPACES = DEFAULT_ANALYSIS_SPACES + OPTIONAL_ANALYSIS_SPACES
 DEFAULT_MAX_TOKENS = 128
-OBSERVATION_BUNDLE_VERSION = "mc.analyze.bundle.v1"
+OBSERVATION_BUNDLE_VERSION = "mc.analyze.bundle.v2"
 PROMPT_FAMILY_MANIFEST_VERSION_V1 = "mc.analyze.prompt_family.v1"
 PROMPT_FAMILY_MANIFEST_VERSION_V2 = "mc.analyze.prompt_family.v2"
 PROMPT_FAMILY_MANIFEST_VERSIONS = (
@@ -331,15 +337,33 @@ class ObservationService:
         )
         spaces = self._normalize_spaces(spaces)
 
+        target_payloads = [target.to_dict() for target in targets]
+        prompt_manifest_payload = manifest.to_dict()
+        context_state = build_context_state(prompt_manifest_payload)
+        precision_state = build_precision_state(
+            backend=self._backend,
+            targets=target_payloads,
+        )
+        measurement_operator = build_measurement_operator(
+            workflow=workflow,
+            spaces=spaces,
+            max_tokens=max_tokens,
+            include_within_target_comparisons=include_within_target_comparisons,
+            include_between_target_comparisons=include_between_target_comparisons,
+        )
         manifest_payload = {
             "bundleVersion": OBSERVATION_BUNDLE_VERSION,
             "workflow": workflow,
             "requestedAt": datetime.now(UTC).isoformat(),
-            "targets": [target.to_dict() for target in targets],
+            "targets": target_payloads,
             "spaces": list(spaces),
             "maxTokens": max_tokens,
-            "promptFamilyManifest": manifest.to_dict(),
+            "promptFamilyManifest": prompt_manifest_payload,
+            "contextState": context_state,
+            "precisionState": precision_state,
+            "measurementOperator": measurement_operator,
         }
+        validate_observation_identity(manifest_payload)
 
         variant_rows: list[dict[str, Any]] = []
         layer_rows: list[dict[str, Any]] = []
@@ -408,6 +432,9 @@ class ObservationService:
             variant_rows=variant_rows,
             layer_rows=layer_rows,
             comparisons=comparisons,
+            context_state=context_state,
+            precision_state=precision_state,
+            measurement_operator=measurement_operator,
         )
 
         files = self._write_bundle(
@@ -943,6 +970,9 @@ class ObservationService:
         variant_rows: list[dict[str, Any]],
         layer_rows: list[dict[str, Any]],
         comparisons: list[dict[str, Any]],
+        context_state: dict[str, Any],
+        precision_state: dict[str, Any],
+        measurement_operator: dict[str, Any],
     ) -> dict[str, Any]:
         error_count = sum(len(row.get("errors", [])) for row in variant_rows)
         return {
@@ -956,6 +986,15 @@ class ObservationService:
             "layerMetricCount": len(layer_rows),
             "comparisonCount": len(comparisons),
             "errorCount": error_count,
+            "identity": {
+                "contextDigest": context_state["promptFamilyDigest"]["value"],
+                "precisionStateSchema": precision_state["schema"],
+                "allTargetPrecisionsDeclared": precision_state["allTargetsDeclared"],
+                "targetPrecisionDeclarationsMatch": precision_state[
+                    "declarationsMatch"
+                ],
+                "measurementOperatorId": measurement_operator["id"],
+            },
             "meanResponseTokenCount": self._mean_metric(variant_rows, "responseTokenCount"),
             "meanPromptTokenCount": self._mean_metric(variant_rows, "promptTokenCount"),
             "meanEntropy": self._mean_metric_from_summary(variant_rows, "meanEntropy"),

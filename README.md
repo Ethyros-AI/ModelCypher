@@ -7,11 +7,13 @@ builders. It gives humans and frontier AI a clear way to inspect geometry,
 entropy, curvature, chain structure, and adapter-induced changes through
 workflow-first CLI surfaces instead of ad hoc activation scripts.
 
-Current evidence state (2026-04-02): `mc analyze` is the clearest public
+Current evidence state (reviewed 2026-07-11): `mc analyze` is the clearest public
 entrypoint for prompt capture, prompt-family studies, and checkpoint or
 adapter comparison. `mc train run` remains shipped and geometry-derived, but
 the repo has not yet closed the promotable same-model same-data same-eval
-benchmark needed to claim "better than standard practice." See
+benchmark needed to claim "better than standard practice." The retained 350M
+R2 failure is closed as a data-format mechanism; it is not evidence of a
+general inference-geometry collapse. See
 [RESEARCH-ROADMAP.md](docs/RESEARCH-ROADMAP.md).
 
 ## The Measurement Thesis
@@ -123,9 +125,20 @@ and [Geometric Hyperparameter Rosetta Stone](docs/research/geometric_hyperparame
 ```bash
 git clone https://github.com/Ethyros-AI/ModelCypher.git
 cd ModelCypher
-poetry install          # Python 3.11+
+poetry install          # Primary macOS/MLX path; Python 3.11+
 poetry run mc --help    # Verify CLI install
 ```
+
+Backend protocol and CPU-fallback development on Linux use optional extras:
+
+```bash
+poetry install --extras cuda  # NVIDIA/CUDA backend
+poetry install --extras jax   # JAX backend; CPU is supported for CI/tests
+```
+
+The MLX path is the only end-to-end product surface today. CUDA and JAX share
+the geometry protocol, but model-loading and expert-CLI parity remain partial;
+see [BACKEND-COMPARISON.md](docs/BACKEND-COMPARISON.md).
 
 ```bash
 # Inspect a model's per-layer geometry
@@ -163,10 +176,10 @@ poetry run mc train run --model /path/to/model --data /path/to/data.jsonl --outp
 |---|---|---|
 | Does the measurement layer exist as a real workflow? | Yes. `mc analyze capture`, `mc analyze family`, and `mc analyze compare` now emit observation bundles with machine-readable artifacts plus a short report | [EMPIRICAL] |
 | Canonical training path exists | `mc train run` is the shipped geometry-derived runtime path guarded by `pipeline_gate_v1` | [EMPIRICAL] |
-| Does the retained 350M validation bundle close preservation? | No. `results/pipeline_validation/verdict.json` reports structural pass `5/5`, inference pass `3/5`, `all_pass = false` | [EMPIRICAL] |
+| Does the retained 350M validation bundle close preservation? | No. The tracked [pipeline validation report](docs/research/reports/pipeline_validation/REPORT.md) records structural pass `5/5`, inference pass `3/5`, `all_pass = false` | [EMPIRICAL] |
 | Does the retained evidence close "better than standard practice"? | No. `results/nblora_vs_standard/` is retained as `summary_only`, and the retained single-seed LFM2-350M summary does not support superiority of `nb_lora` over the kept baselines | [EMPIRICAL] |
-| Does the 8B bundle close efficacy? | No. `results/g5_8b_validation_multiseed/multiseed_gates.json` still fails `cka_ok` and `degenerate_ok` | [EMPIRICAL] |
-| Is quantization promising? | Yes as a measurement surface: `results/quantization_frontier/20260227T235714Z/quantization_frontier.json` shows PPL and degeneration improvement on all 3 retained models, but the frontier law is still open | [EMPIRICAL] |
+| Does the 8B bundle close efficacy? | No. Despite the historical family name, the tracked [G5 report](docs/research/reports/g5_8b_validation_multiseed/REPORT.md) records `n_seeds=1` and failed `cka_ok` and `degenerate_ok` gates | [EMPIRICAL: 1 seed] |
+| Is quantization promising? | Yes as a measurement surface: the tracked [quantization frontier report](docs/research/reports/quantization_frontier/REPORT.md) records PPL and degeneration improvement on all 3 retained models, but the frontier law is still open | [EMPIRICAL] |
 
 ### Falsified Training Claims
 
@@ -213,7 +226,9 @@ Hexagonal (ports-and-adapters) with strict domain boundaries:
 - **Adapters** (`adapters/`) — HuggingFace Hub, filesystem, model loading
 - **Backends** — MLX (primary, Apple Silicon), CUDA, JAX behind a protocol interface
 
-All geometric computations are framework-agnostic. Backend selection is automatic.
+Core geometric computations use the framework-agnostic Backend protocol, and
+backend selection is automatic when an installed backend is available.
+End-to-end loaders and expert CLI workflows remain MLX-first.
 
 ## Documentation
 
@@ -235,32 +250,35 @@ All geometric computations are framework-agnostic. Backend selection is automati
 | Paper | Status | Thesis |
 |-------|--------|--------|
 | [The Shape of Knowledge](papers/paper-0-the-shape-of-knowledge.md) | [EMPIRICAL] | Knowledge has measurable geometric structure; inference is trajectory |
-| [Invariant Semantic Structure](papers/paper-1-invariant-semantic-structure.md) | [PROVEN] intra-model; [CONJECTURAL] cross-model | CKA alignment invariance across layers (by construction on training probes) |
+| [Invariant Semantic Structure](papers/paper-1-invariant-semantic-structure.md) | [PROVEN: fitted probes only]; [CONJECTURAL] cross-model | A closed-form fit gives aligned CKA = 1 on its training probes; held-out and cross-model invariance remain open |
 | [Entropy Safety Signal](papers/paper-2-entropy-safety-signal.md) | [CONJECTURAL] | Behavioral drift detection via entropy differentials |
 | [Cross-Architecture Transfer](papers/paper-3-cross-architecture-transfer.md) | [CONJECTURAL] | Knowledge transfer between model families via Procrustes alignment |
 | [ModelCypher Toolkit](papers/paper-4-modelcypher-toolkit.md) | [EMPIRICAL] | Implementation methodology and CLI design |
-| [The Semantic Highway](papers/paper-5-semantic-highway.md) | [EMPIRICAL] | Layer-wise intrinsic dimension compression (15.8 → 1.8 → 9.6) |
+| [The Semantic Highway](papers/paper-5-semantic-highway.md) | [EXPLORATORY] | Historical TwoNN profile from an unretained run; published-profile replication is pending under WS4.2 |
 
 ## Test Suite
 
 <!-- TEST-COUNT:START -->
-7,735 collected tests. This count is generated from `pytest --collect-only`; refresh it with `poetry run python scripts/update_test_count.py --write`.
+7,758 collected tests. This count is generated from `pytest --collect-only`; refresh it with `poetry run python scripts/update_test_count.py --write`.
 <!-- TEST-COUNT:END -->
 
 Includes Hypothesis property-based tests for numerical invariants (CKA symmetry, spectral bounds, null-space orthogonality).
 
 ```bash
-poetry run pytest                              # Standard run
-HYPOTHESIS_PROFILE=full poetry run pytest       # Full property-based testing
+poetry install --extras jax                    # One-time local CI dependencies
+./scripts/run_local_ci.sh                      # Full local CPU verification
+poetry run pytest                              # Standard development run
+HYPOTHESIS_PROFILE=full poetry run pytest      # Full property-based testing
 ```
 
 ## Platform Support
 
 | Platform | Backend | Status |
 |----------|---------|--------|
-| macOS Apple Silicon (M1-M4) | MLX | Primary (optimized) |
-| Linux + NVIDIA GPU | CUDA (PyTorch) | Supported |
-| Linux + TPU | JAX | Supported |
+| macOS Apple Silicon | MLX | Primary end-to-end product path |
+| Linux + NVIDIA GPU | CUDA (PyTorch) | Backend protocol available; loader/CLI parity partial |
+| Linux + TPU/GPU | JAX | Backend protocol available; loader/CLI parity partial |
+| Linux CPU (local CI/tests) | JAX | Engineering fallback, not an accelerated product path |
 
 ## Citation
 

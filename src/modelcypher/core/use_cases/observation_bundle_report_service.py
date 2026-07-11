@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from modelcypher.core.use_cases.observation_identity import validate_observation_identity
+
 REQUIRED_OBSERVATION_BUNDLE_FILES = (
     "manifest.json",
     "summary.json",
@@ -79,6 +81,8 @@ class ObservationBundleReportService:
     ) -> ObservationBundleReportResult:
         files = self._resolve_observation_files(bundle_dir)
         manifest = self._load_json(Path(files["manifest"]))
+        if manifest.get("bundleVersion") == "mc.analyze.bundle.v2":
+            validate_observation_identity(manifest)
         summary = self._load_json(Path(files["summary"]))
         variant_rows = self._load_jsonl(Path(files["variants"]))
         layer_rows = self._load_jsonl(Path(files["layerMetrics"]))
@@ -338,6 +342,7 @@ class ObservationBundleReportService:
             manifest=manifest,
         )
         sections = {
+            "measurementIdentity": self._measurement_identity(manifest),
             "observedSpaces": self._space_summary(layer_rows),
             "topScalarShifts": self._top_scalar_shifts(comparisons),
             "topLayerShifts": self._top_layer_shifts(comparisons),
@@ -543,6 +548,31 @@ class ObservationBundleReportService:
         return normalized
 
     @staticmethod
+    def _measurement_identity(manifest: dict[str, Any]) -> dict[str, Any]:
+        context = manifest.get("contextState", {})
+        precision = manifest.get("precisionState", {})
+        operator = manifest.get("measurementOperator", {})
+        digest = context.get("promptFamilyDigest", {})
+        backend = precision.get("backend", {})
+        targets = precision.get("targets", [])
+        return {
+            "contextDigest": digest.get("value"),
+            "promptFamilyName": context.get("promptFamilyName"),
+            "precisionBackend": backend.get("type"),
+            "allTargetPrecisionsDeclared": precision.get("allTargetsDeclared"),
+            "targetPrecisionDeclarationsMatch": precision.get("declarationsMatch"),
+            "targetDeclarations": [
+                {
+                    "targetLabel": row.get("targetLabel"),
+                    "declared": row.get("declared"),
+                }
+                for row in targets
+                if isinstance(row, dict)
+            ],
+            "measurementOperatorId": operator.get("id"),
+        }
+
+    @staticmethod
     def _space_summary(layer_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         summary_by_space: dict[str, dict[str, Any]] = {}
         for row in layer_rows:
@@ -710,15 +740,38 @@ class ObservationBundleReportService:
             f"- Comparisons: {summary.get('comparisonCount')}",
             f"- Measurement errors: {summary.get('errorCount')}",
             f"- Spaces: {', '.join(summary.get('spaces', []))}",
-            "",
-            "## Means",
-            "",
-            f"- Mean prompt tokens: {summary.get('meanPromptTokenCount')}",
-            f"- Mean response tokens: {summary.get('meanResponseTokenCount')}",
-            f"- Mean entropy: {summary.get('meanEntropy')}",
-            f"- Mean geodesic deviation: {summary.get('meanGeodesicDeviation')}",
-            f"- Mean curvature: {summary.get('meanCurvature')}",
         ]
+
+        identity = sections.get("measurementIdentity", {})
+        if identity.get("measurementOperatorId"):
+            lines.extend(
+                [
+                    "",
+                    "## Measurement Identity",
+                    "",
+                    f"- Context digest: `{identity.get('contextDigest')}`",
+                    f"- Prompt family: `{identity.get('promptFamilyName')}`",
+                    f"- Operator: `{identity.get('measurementOperatorId')}`",
+                    f"- Backend: `{identity.get('precisionBackend')}`",
+                    "- All target precisions declared: "
+                    f"`{identity.get('allTargetPrecisionsDeclared')}`",
+                    "- Target precision declarations match: "
+                    f"`{identity.get('targetPrecisionDeclarationsMatch')}`",
+                ]
+            )
+
+        lines.extend(
+            [
+                "",
+                "## Means",
+                "",
+                f"- Mean prompt tokens: {summary.get('meanPromptTokenCount')}",
+                f"- Mean response tokens: {summary.get('meanResponseTokenCount')}",
+                f"- Mean entropy: {summary.get('meanEntropy')}",
+                f"- Mean geodesic deviation: {summary.get('meanGeodesicDeviation')}",
+                f"- Mean curvature: {summary.get('meanCurvature')}",
+            ]
+        )
 
         observed_spaces = sections.get("observedSpaces", [])
         if observed_spaces:

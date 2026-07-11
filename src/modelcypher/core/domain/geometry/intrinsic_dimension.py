@@ -78,6 +78,16 @@ class TwoNNEstimate:
 
 
 @dataclass
+class MLEEstimate:
+    """Levina-Bickel nearest-neighbor maximum-likelihood estimate."""
+
+    intrinsic_dimension: float
+    sample_count: int
+    usable_count: int
+    k_neighbors: int
+
+
+@dataclass
 class LocalDimensionMap:
     """Per-point intrinsic dimension estimates.
 
@@ -122,7 +132,7 @@ class IntrinsicDimension:
 
     @staticmethod
     def local_dimension_min_samples() -> int:
-        """Minimum samples required for local TwoNN dimension.
+        """Minimum samples required for local nearest-neighbor dimension.
 
         TwoNN local estimation needs at least two neighbor ratios (r2/r1).
         That requires k_local >= 3 neighbors, so n_samples >= 4.
@@ -157,6 +167,97 @@ class IntrinsicDimension:
 
         computer = IntrinsicDimension(b)
         return computer.compute(pts, with_ci=with_ci)
+
+    def compute_mle(self, points: "Array") -> MLEEstimate:
+        """Compute the Levina-Bickel nearest-neighbor MLE at one derived scale.
+
+        For each point, this implements Eq. 8 of Levina and Bickel (2005):
+
+        ``m_k(x) = [(k-1)^-1 sum_(j=1)^(k-1) log(T_k/T_j)]^-1``.
+
+        The reported estimate is the Eq. 9 mean across usable points. Rather
+        than copying the paper's hand-selected ``k`` range, ``k`` is the
+        smallest neighborhood that connects the measured geodesic graph,
+        bounded below only by the estimator's mathematical requirement
+        ``k > 2``. This makes the comparison scale explicit and data-derived.
+        """
+        backend = self._backend
+        points = backend.array(points)
+        backend.eval(points)
+
+        sample_count = int(points.shape[0])
+        minimum_neighbors = 3  # Eq. 8 needs k > 2 for a finite-bias estimate.
+        if sample_count <= minimum_neighbors:
+            raise EstimatorError.insufficient_samples(sample_count)
+
+        geometry = RiemannianGeometry(backend)
+        geodesic = geometry.geodesic_distances(points, k_neighbors=None)
+        k_neighbors = min(
+            sample_count - 1,
+            max(minimum_neighbors, int(geodesic.k_neighbors)),
+        )
+        if k_neighbors > int(geodesic.k_neighbors):
+            geodesic = geometry.geodesic_distances(
+                points,
+                k_neighbors=k_neighbors,
+            )
+
+        distances = geodesic.distances
+        infinity = float(backend.finfo(distances.dtype).max)
+        without_self = backend.where(
+            backend.eye(sample_count) > 0,
+            backend.full((sample_count, sample_count), infinity),
+            distances,
+        )
+        neighbor_indices = backend.argpartition(
+            without_self,
+            k_neighbors - 1,
+            axis=1,
+        )[:, :k_neighbors]
+        neighbor_distances = backend.sort(
+            backend.take_along_axis(distances, neighbor_indices, axis=1),
+            axis=1,
+        )
+
+        radius = neighbor_distances[:, -1:]
+        inner = neighbor_distances[:, :-1]
+        eps = machine_epsilon(backend, neighbor_distances)
+        finite = neighbor_distances < backend.array(infinity)
+        valid_inner = inner > eps
+        valid_rows = backend.all(finite, axis=1) & backend.all(valid_inner, axis=1)
+
+        safe_inner = backend.where(valid_inner, inner, backend.ones_like(inner))
+        log_ratios = backend.log(radius / safe_inner)
+        mean_log_ratio = backend.mean(log_ratios, axis=1)
+        valid_rows = valid_rows & (mean_log_ratio > eps)
+        safe_mean = backend.where(
+            valid_rows,
+            mean_log_ratio,
+            backend.ones_like(mean_log_ratio),
+        )
+        point_estimates = backend.array(1.0) / safe_mean
+        valid_float = backend.astype(valid_rows, str(point_estimates.dtype))
+        usable_count_array = backend.sum(valid_float)
+        estimate_array = backend.sum(point_estimates * valid_float) / backend.maximum(
+            usable_count_array,
+            backend.array(1.0),
+        )
+        backend.eval(usable_count_array, estimate_array)
+
+        usable_count = int(backend.to_scalar(usable_count_array))
+        if usable_count == 0:
+            raise EstimatorError(
+                "knn_mle",
+                "No non-degenerate connected neighborhoods were available",
+                sample_count,
+            )
+
+        return MLEEstimate(
+            intrinsic_dimension=float(backend.to_scalar(estimate_array)),
+            sample_count=sample_count,
+            usable_count=usable_count,
+            k_neighbors=k_neighbors,
+        )
 
     def compute(
         self,
@@ -752,7 +853,7 @@ class IntrinsicDimension:
         Algorithm:
             For each point i:
             1. Find k nearest neighbors (by geodesic distance)
-            2. Compute TwoNN-style mu = r2/r1 ratio locally
+            2. Compute consecutive-neighbor mu = r2/r1 ratios locally
             3. Estimate local ID from the mu distribution
 
         All parameters derived from data:

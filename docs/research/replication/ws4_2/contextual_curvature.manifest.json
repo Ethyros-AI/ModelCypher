@@ -1,0 +1,82 @@
+{
+  "schema": "mc.research.replication_manifest.v1",
+  "status": "owner_run_required",
+  "linkedBlocker": "A1",
+  "workOrder": "WS4.2",
+  "runId": "ws4_2_contextual_curvature_owner_run",
+  "claimContract": "observable = f(geometry_state, architecture_state, scale_state, precision_state, measurement_operator)",
+  "claim": "The published contextual-curvature operator has a comparable middle-layer profile and trajectory-aligned residual interventions couple curvature changes to next-token entropy more strongly than misaligned controls on the declared local model and prompts.",
+  "primaryObservable": "Layerwise out-of-fold Pearson correlation between contextual curvature and next-token entropy, plus importance-weighted per-token Pearson correlation between intervention-induced delta curvature and delta entropy for five geometric arms.",
+  "explicitFalsifier": "The local model lacks a middle-layer curvature/predictivity profile, or trajectory and planar arms do not separate from full-space, random-subspace, and activation-subspace controls under the frozen operator.",
+  "mutableSurface": "scripts/run_contextual_curvature_replication.py",
+  "frozenSurfaces": {
+    "model": "${MODEL_PATH}",
+    "probes": "${PROBE_PATH}",
+    "precision": "declared by model config and emitted at runtime",
+    "targetLayerPolicy": "minimum mean contextual curvature unless explicitly pre-registered",
+    "importanceReference": "full-space perturbations at the selected intervention layer; unlike paper appendix A.4, this first local packet does not pool across multiple intervention layers",
+    "artifactSchema": "mc.research.contextual_curvature_replication.v1"
+  },
+  "baselineCommand": "MC_BACKEND=mlx poetry run python scripts/run_contextual_curvature_replication.py --model ${MODEL_PATH} --probes ${PROBE_PATH} --output-dir results/ws4_2_contextual_curvature/${RUN_ID}",
+  "comparisonBudget": {
+    "prompts": "all ordered rows in ${PROBE_PATH}",
+    "tokens": "all positions satisfying the cited position rule and intervention look-ahead",
+    "arms": 5,
+    "perturbationsPerToken": 300
+  },
+  "artifactDirectory": "results/ws4_2_contextual_curvature/${RUN_ID}",
+  "ledgerPath": "results/ws4_2_contextual_curvature/${RUN_ID}/ledger.tsv",
+  "paper": {
+    "title": "Representational Curvature Modulates Behavioral Uncertainty in Large Language Models",
+    "arxiv": "2604.23985v1",
+    "url": "https://arxiv.org/abs/2604.23985"
+  },
+  "paperParameters": {
+    "windowSize": {
+      "value": 3,
+      "source": "King et al. 2026 section 2.3"
+    },
+    "minimumTokenPosition": {
+      "value": 7,
+      "source": "King et al. 2026 section 2.4: positions n > 6"
+    },
+    "crossValidationFolds": {
+      "value": 10,
+      "source": "King et al. 2026 section 2.5"
+    },
+    "confidenceLevel": {
+      "value": 0.95,
+      "source": "King et al. 2026 sections 2.5 and A.4"
+    },
+    "perturbationScale": {
+      "value": 0.2,
+      "source": "King et al. 2026 section 2.6: |delta| = 0.2 |v_k|"
+    },
+    "subspaceDimension": {
+      "value": 2,
+      "source": "King et al. 2026 section 2.6"
+    },
+    "perturbationsPerToken": {
+      "value": 300,
+      "source": "King et al. 2026 section 2.6"
+    },
+    "importanceBins": {
+      "value": 100,
+      "source": "King et al. 2026 appendix A.4"
+    },
+    "importanceEpsilon": {
+      "value": 1e-12,
+      "source": "King et al. 2026 appendix A.4"
+    },
+    "importanceWeightCap": {
+      "value": 10,
+      "source": "King et al. 2026 appendix A.4: weights clamped to [1/tau, tau]"
+    },
+    "bootstrapReplicates": {
+      "value": 2000,
+      "source": "King et al. 2026 appendix A.4"
+    }
+  },
+  "randomSeedPolicy": "first 64 bits of the canonical source-manifest SHA-256 digest",
+  "ownerGate": "Run on Apple Silicon with the declared model and probe inventory; compare qualitative profiles and document every discrepancy. Do not add VALIDATED-ENG or VALIDATED-EFF from this unreviewed packet."
+}

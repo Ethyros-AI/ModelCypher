@@ -60,7 +60,7 @@ Top-level fields:
 | --- | --- | --- |
 | `schema` | no | Optional schema id. Accepted values: `mc.analyze.prompt_family.v1` and `mc.analyze.prompt_family.v2` |
 | `name` | no | Human-readable study name |
-| `metadata` | no | Extra descriptive context |
+| `metadata` | no | Context declarations such as demonstration order, label mapping, task identity, and dataset split |
 | `variants` | yes | Flat list of prompt rows |
 
 Variant row fields:
@@ -171,13 +171,18 @@ shared.
 `capture` builds a synthetic manifest under the hood. Each prompt becomes a
 case with `variant_id="capture"`.
 
+Prompt context is part of the measurement, not incidental prose. For ICL or
+other context-sensitive studies, put demonstration order, label mapping, task
+identity, and split identity in `metadata`. The bundle stores the metadata and
+a SHA-256 digest over the complete ordered prompt-family manifest.
+
 ## `ObservationBundle`
 
 Every `capture`, `family`, and `compare` run writes the same file set:
 
 | File | What It Contains |
 | --- | --- |
-| `manifest.json` | Run metadata, targets, spaces, max tokens, and embedded prompt-family manifest |
+| `manifest.json` | Run metadata, targets, spaces, max tokens, embedded prompt-family manifest, and required context/precision/operator identities |
 | `summary.json` | High-level counts and mean metrics across the run |
 | `REPORT.md` | Human-readable summary of what moved and where |
 | `variants.jsonl` | One row per executed prompt variant |
@@ -193,6 +198,27 @@ report and lists immediate child runs in JSON. Individual atlas runs under
 and `onset_events.jsonl`. Retained pipeline-validation roots such as
 `results/pipeline_validation/` use `verdict.json`, `summary.json`, and
 per-scale `result.json` files.
+
+### Measurement Identity (`mc.analyze.bundle.v2`)
+
+Every new observation bundle requires three explicit objects in
+`manifest.json`:
+
+| Object | Required identity |
+| --- | --- |
+| `contextState` | Ordered prompt-family SHA-256 digest, manifest schema/name, variant order, exact-text policy, and declared metadata |
+| `precisionState` | Backend runtime identity plus each target's dtype and quantization declaration from local `config.json` when available |
+| `measurementOperator` | Stable operator id, workflow, requested spaces, max-token parameter, exact-input policy, comparison policy, and invoked collector/service paths |
+
+`summary.json` repeats the context digest, operator id, precision schema, and
+raw precision-declaration booleans. `REPORT.md` surfaces the same identity so a
+human can see whether target precision was declared and matched. An unknown
+remote-model precision is recorded as undeclared; it is never silently assumed
+to match another target.
+
+The bundle reader remains backward-compatible with retained `v1` artifacts.
+For `v2`, it verifies that the context digest still matches the embedded prompt
+manifest and rejects missing or unsupported identity schemas.
 
 ### Atlas Read-Side Sections
 
@@ -226,6 +252,7 @@ Sections:
 
 | Section | Purpose |
 | --- | --- |
+| `Measurement Identity` | Context digest, operator id, backend, and raw target-precision declaration state |
 | `Means` | Overall prompt, response, entropy, deviation, and curvature averages |
 | `Observed Spaces` | Which spaces were measured and how many rows they produced |
 | `Largest Scalar Shifts` | Biggest pairwise deltas across metrics like entropy and curvature |

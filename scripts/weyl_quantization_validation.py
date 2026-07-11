@@ -33,15 +33,17 @@ import logging
 import math
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from scipy.stats import spearmanr
 
 from modelcypher.backends import initialize_default_backend
-from modelcypher.backends.mlx_training_adapter import MLXTrainingAdapter
 from modelcypher.core.domain.training.quantization_weyl_precheck import (
     run_quantization_weyl_precheck,
 )
+
+if TYPE_CHECKING:
+    from modelcypher.backends.mlx_training_adapter import MLXTrainingAdapter
 
 # Default pairs: Codex's 8-bit derived models
 DEFAULT_PAIRS = [
@@ -77,6 +79,13 @@ def _clear_gpu_cache() -> None:
             mx.metal.clear_cache()
     except Exception:
         pass
+
+
+def _build_training_adapter(backend: Any) -> MLXTrainingAdapter:
+    """Import the MLX adapter only when the real-model workflow starts."""
+    from modelcypher.backends.mlx_training_adapter import MLXTrainingAdapter
+
+    return MLXTrainingAdapter(backend)
 
 
 def _extract_layer_weights_streaming(
@@ -507,7 +516,7 @@ def main() -> None:
             raise FileNotFoundError(f"Quantized model not found: {q_path}")
 
     backend = initialize_default_backend()
-    adapter = MLXTrainingAdapter(backend)
+    adapter = _build_training_adapter(backend)
 
     results: list[dict[str, Any]] = []
     for pair_idx, (fp_path, q_path) in enumerate(pairs):

@@ -1,6 +1,6 @@
 # Research Roadmap
 
-**Updated:** 2026-03-26
+**Updated:** 2026-07-11
 
 ## What This File Is For
 
@@ -55,50 +55,11 @@ new canonical result families, or repeated agent-driven run families.
 
 | ID | Goal | Primary evidence family | Exit criterion |
 | --- | --- | --- | --- |
-| `A1` | Observation-bundle closure for workflow-first `mc analyze` | `results/measurement_atlas/`, `results/pipeline_validation/`, and CLI/service contract tests | `capture`, `family`, `compare`, and `report` are stable, documented, and produce commensurable observation bundles for prompt and target studies without legacy safety-first packaging or buried command paths |
 | `R1` | Same-model same-data same-eval baseline suite against standard practice for the canonical geometry-derived LoRA path | `results/nblora_vs_standard/` | Pre-registered multi-seed comparison against standard LoRA, rsLoRA, PiSSA, EVA, DoRA, and at least one recipe-level baseline; promotion allowed only if preservation gates stay valid |
 | `R3` | 8B non-ceiling efficacy closure | `results/g5_8b_validation_multiseed/` | The pre-registered seed set on the fixed non-ceiling eval bundle passes the declared gate set without mixed or measurement-invalid outcomes |
 | `R4` | Quantization frontier law | `results/quantization_frontier/`, `results/closedform_sequential_correction/`, `results/quantization_ab_survey/` | One architecture-conditioned frontier statistic orders achieved CKA floor, fixed-basis feature survival, and degeneration across bit-depth sweeps and survives a held-out family |
 | `R5` | Portable cross-architecture adapter certificate | `results/geometry_sota/` plus a MergeBench-style comparison family | A commensurable preservation certificate plus head-to-head merge baselines show portable behavior, not just probe alignment |
 | `R6` | Consolidation operator that adds structure without forgetting | `results/continual_learning/` | A fixed update operator beats replay-style baselines on preservation and capacity under a frozen evaluator and comparison budget |
-
-### A1. Workflow-First Observation Closure
-
-This is the shortest path from "interesting geometry" to "a usable measurement
-workbench." It closes whether users and agents can actually run controlled
-prompt and target studies without stitching together one-off expert commands.
-
-Current state (2026-04-02):
-
-- `mc analyze capture`, `mc analyze family`, and `mc analyze compare` now define
-  the canonical workflow surface.
-- `mc analyze report --bundle ...` now closes the read-side loop for existing
-  observation bundles and retained measurement-atlas artifacts without
-  regenerating artifacts.
-- The follow-on research surface for token-level prompt and generation tracing
-  now lives in `scripts/run_measurement_atlas.py`, writing
-  `results/measurement_atlas/<run_id>/` without promoting a new CLI verb yet.
-- The retained 350M atlas rerun at
-  `results/measurement_atlas/20260402T150954Z-measurement-atlas/` closes the
-  live/replay replay-alignment bug from `20260402T145540Z`. Agreement improved
-  from `0/4 -> 4/4`, `0/2 -> 2/2`, and `1/4 -> 4/4` across the shipped study
-  pack while keeping `errorCount = 0`.
-- The prompt-family manifest is explicit rather than transform-driven:
-  `case_id`, `variant_id`, `text`, optional `tags`, optional
-  `comparison_to`, and optional `annotations` for research studies.
-- Every run is expected to emit the same observation bundle contract:
-  `manifest.json`, `summary.json`, `REPORT.md`, `variants.jsonl`,
-  `layer_metrics.jsonl`, `comparisons.jsonl`.
-- Commensurability metadata must identify prompt context, precision state, and
-  the measurement operator. Corpus averaging and interventions are part of the
-  operator, not incidental run notes.
-- Phase 1 scope is inference-first and checkpoint-comparison-first. Live
-  training-stream telemetry remains deferred.
-- Remaining atlas work is now presentation and study-pack refinement:
-  keep the retained atlas reports compact and decision-friendly, expand or tune
-  the frozen study pack only when a concrete read-side question needs it, and
-  preserve the retained alignment-closure evidence in
-  `docs/research/reports/measurement_atlas/REPORT.md`.
 
 ### R1. Baseline Suite Against Standard Practice
 
@@ -198,6 +159,31 @@ what update law adds new structure without forgetting old structure?
 This is a vision gate, not a current mission-closure substitute.
 
 ## Closed
+
+### A1. Workflow-First Observation Closure
+
+Closed 2026-07-11 as `[VALIDATED-ENG]`, not benchmark efficacy.
+
+- `mc analyze capture`, `family`, `compare`, and `report` are canonical,
+  documented command paths with CLI and README contract tests.
+- Observation bundles use the `mc.analyze.bundle.v2` contract. Prompt context,
+  precision state, and measurement operator each carry a required identity;
+  report loading rejects identity tampering.
+- The read-side report supports both v2 bundles and retained v1 artifacts
+  without rerunning models or rewriting historical evidence.
+- The prompt-family schema remains explicit (`case_id`, `variant_id`, `text`,
+  optional comparison metadata), and the shared bundle artifacts remain
+  `manifest.json`, `summary.json`, `REPORT.md`, `variants.jsonl`,
+  `layer_metrics.jsonl`, and `comparisons.jsonl`.
+- The public README preserves the tracked negative and single-seed verdicts;
+  A1 closure does not promote the failed pipeline bundle or 8B efficacy claim.
+- Hosted GitHub Actions are retired by owner policy. The tracked local gate,
+  `./scripts/run_local_ci.sh`, passed with `7,558` tests, Ruff, mypy, generated
+  documentation checks, lock validation, and the token-budget audit.
+
+Real-model replication for contextual curvature, local intrinsic dimension,
+and fixed-basis feature survival remains an owner-run `WS4.2` task. Those
+results are not implied by this engineering closure.
 
 ### R2. Retained 350M Behavioral Failure
 

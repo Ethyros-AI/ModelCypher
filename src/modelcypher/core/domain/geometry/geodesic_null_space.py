@@ -768,7 +768,9 @@ def filter_delta_svd(
     filtered_norm = _frobenius_norm(delta_filtered_2d, b)
 
     if original_norm > 0:
-        preserved_fraction = filtered_norm / original_norm
+        # Orthogonal projection cannot increase the norm. Enforce the exact
+        # mathematical codomain after finite-precision SVD reconstruction.
+        preserved_fraction = min(1.0, max(0.0, filtered_norm / original_norm))
     else:
         preserved_fraction = 1.0
 

@@ -1,0 +1,37 @@
+{
+  "schema": "mc.research.replication_manifest.v1",
+  "status": "owner_run_required",
+  "linkedBlocker": "R4",
+  "workOrder": "WS4.2 follow-up from SOTA-AUDIT-2026-07",
+  "runId": "r4_fixed_basis_feature_survival_owner_run",
+  "claimContract": "observable = f(geometry_state, architecture_state, scale_state, precision_state, measurement_operator)",
+  "claim": "Reduced-precision states preserve declared reference-basis feature coordinates on identical token observations, or the raw survival measurements identify where that preservation fails.",
+  "primaryObservable": "Reference and candidate reconstruction residual ratios, coefficient relative change and cosine, and per-feature energy ratios in a basis fitted only on the reference precision state.",
+  "explicitFalsifier": "A precision state that appears preserved by perplexity or whole-state similarity exhibits non-commensurable tokenization, increased frozen-basis residual, or concentrated feature-coordinate damage on the identical observations.",
+  "mutableSurface": "scripts/run_fixed_basis_feature_survival.py",
+  "frozenSurfaces": {
+    "referenceModel": "${REFERENCE_MODEL}",
+    "candidateModel": "${CANDIDATE_MODEL}",
+    "basis": "${FROZEN_BASIS}",
+    "basisKeySchema": "layer_<zero-based-index> or layer.<zero-based-index>",
+    "probes": "${PROBE_PATH}",
+    "observationAlignment": "identical prompt order and token IDs",
+    "pooling": "mean over token positions",
+    "thresholdPolicy": "none"
+  },
+  "baselineCommand": "MC_BACKEND=mlx poetry run python scripts/run_fixed_basis_feature_survival.py --reference-model ${REFERENCE_MODEL} --candidate-model ${CANDIDATE_MODEL} --basis ${FROZEN_BASIS} --probes ${PROBE_PATH} --output-dir results/r4_fixed_basis_feature_survival/${RUN_ID}",
+  "comparisonBudget": {
+    "prompts": "all ordered rows in ${PROBE_PATH}",
+    "layers": "all layer matrices declared in ${FROZEN_BASIS}",
+    "precisionPairs": 1
+  },
+  "artifactDirectory": "results/r4_fixed_basis_feature_survival/${RUN_ID}",
+  "ledgerPath": "results/r4_fixed_basis_feature_survival/${RUN_ID}/ledger.tsv",
+  "source": {
+    "paper": "Perplexity Can Miss SAE Feature Damage Under Quantization",
+    "arxiv": "2606.03002",
+    "url": "https://arxiv.org/abs/2606.03002",
+    "repoDecision": "docs/research/SOTA-AUDIT-2026-07.md"
+  },
+  "ownerGate": "Run on Apple Silicon with a reference-fitted basis and real precision pair. Review jointly with perplexity and CKA; do not infer survival from this unrun manifest."
+}

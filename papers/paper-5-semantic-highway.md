@@ -4,24 +4,40 @@
 **Affiliation**: EthyrosAI
 **Date**: December 2025 (Updated January 2026)
 
-> **Status**: [EMPIRICAL] Draft observation; preliminary data supports the pattern.
-> **Experimental Evidence**: Raw data from early experiments (2025-12). See VALIDATION-REPORT.md for current validated results.
+> **Status**: [EXPLORATORY] Historical observation; the cited raw run is not
+> retained and the published-profile replication is pending under `WS4.2`.
+> **Experimental Evidence**: Values transcribed from early experiments
+> (2025-12); they are not a retained validation artifact.
 
 ## Abstract
 
-Pilot runs on three transformer language models (Qwen, Llama, Mistral) suggested a consistent pattern in intrinsic dimension (ID) profiles measured with TwoNN: (1) a sharp early-layer drop in ID ("dimensionality cliff"), and (2) a mid-layer low-ID plateau. The magnitude and layer index of the cliff varied by architecture. We present these results as an observation, not a universal law, and propose a working hypothesis: early transformer layers rapidly project tokenized representations onto a low-dimensional conceptual manifold, after which representations evolve primarily within that manifold. We outline follow-up tests needed to determine how broadly this pattern holds across architectures, scales, languages, and training regimes.
+Historical notes from pilot runs on three transformer language models (Qwen,
+Llama, Mistral) suggested an early-layer intrinsic-dimension drop and a
+mid-layer low-ID plateau. The run artifacts are not retained, so this document
+preserves a hypothesis and replication plan rather than current empirical
+evidence. The proposed mechanism is that early layers project tokenized
+representations onto a lower-dimensional manifold; `WS4.2` must compare that
+claim with published profiles and estimator controls.
 
 ## 1. Introduction
 
-The Platonic Representation Hypothesis (Huh et al., 2024) suggests that independently trained neural networks converge to similar internal representations. Our prior work ([Paper 1](paper-1-invariant-semantic-structure.md)) reported high cross-family similarity on several anchor sets (reproduction pending). An open question remains: *what dynamics produce this convergence across architectures?*
+The Platonic Representation Hypothesis (Huh et al., 2024) suggests that
+independently trained neural networks may converge to similar internal
+representations. Historical ModelCypher notes reported high cross-family
+similarity on several anchor sets, but reproduction is pending. An open
+question remains: *what dynamics, if any, are commensurable across
+architectures?*
 
-This paper reports a simple empirical observation about *intrinsic dimension over depth* in three transformer LLMs. When we measure ID using TwoNN across a fixed semantic probe corpus, all three models show an early-layer ID collapse followed by a low-ID plateau. We use "semantic highway" as a shorthand label for this plateau regime, but treat it as a **working hypothesis** rather than a universal property.
+This paper records a historical observation about *intrinsic dimension over
+depth* in three transformer LLMs. The missing artifacts prevent promotion to
+an empirical result. We use "semantic highway" only as a shorthand hypothesis
+for the reported plateau regime.
 
 ### 1.1 Contributions
 
-1. **Observed early-layer cliff (3 models)**: A sharp reduction in intrinsic dimension within the first layers for all tested models (reproduction pending).
+1. **Historically reported early-layer cliff (3 models)**: Reproduction pending.
 
-2. **Observed low-ID plateau (3 models)**: A mid-layer low-ID plateau for all tested models (reproduction pending).
+2. **Historically reported low-ID plateau (3 models)**: Reproduction pending.
 
 3. **Domain-dependent compression (Qwen)**: Pilot analysis suggested higher initial domain ID correlates with stronger compression (reproduction pending).
 
@@ -90,7 +106,7 @@ For each model:
 
 ## 3. Results
 
-### 3.1 Verified: Layer-wise Intrinsic Dimension (January 2026) [EMPIRICAL]
+### 3.1 Historical Layer-wise Intrinsic Dimension (January 2026) [EXPLORATORY]
 
 We measured intrinsic dimension across layers of SmolLM-135M:
 
@@ -113,7 +129,9 @@ This pattern is consistent with the hypothesis: early layers compress tokenized 
 
 ### 3.2 Historical Pilot Results (December 2025)
 
-> Historical pilot runs on Qwen, Llama, and Mistral exist but are not reproduced in this repo. The pattern above from SmolLM-135M provides preliminary support.
+> Historical pilot runs on Qwen, Llama, and Mistral are not reproduced in this
+> repo. The unretained SmolLM-135M values above motivate replication but do not
+> support an evidence promotion.
 
 ## 4. Discussion
 
@@ -148,7 +166,9 @@ This suggests a hypothesis that mid-layer merges may be more stable than early/l
 
 ### 4.5 Limitations and Follow-Up Experiments
 
-This document reports a pattern observed in **three** models. That is enough to motivate a hypothesis, not enough to claim a universal property.
+This document preserves a pattern historically reported in **three** models.
+Without retained artifacts it motivates a hypothesis, not an empirical or
+universal claim.
 
 Key limitations:
 - **Model coverage**: Only three instruction-tuned transformer models; broader coverage (base models, multilingual, different training data, more scales) is required.
@@ -185,7 +205,9 @@ poetry run mc --output json geometry atlas dimensionality-study /path/to/model -
 
 ## 7. Conclusion
 
-Pilot runs suggested an early-layer intrinsic-dimension collapse followed by a low-ID plateau. Rather than claiming universality, we treat this as a concrete observation and a working hypothesis about representation geometry over depth. If the pattern holds more broadly, it may:
+Pilot notes suggested an early-layer intrinsic-dimension collapse followed by
+a low-ID plateau. We treat this as an archival hypothesis about representation
+geometry over depth. If a retained replication supports the pattern, it may:
 
 1. **Help explain representation convergence**: architectures may rapidly project onto a shared low-dimensional regime
 2. **Support transfer learning**: mid-layer compatibility could be higher than early/late layers

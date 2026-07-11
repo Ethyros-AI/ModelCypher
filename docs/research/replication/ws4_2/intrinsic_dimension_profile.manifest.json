@@ -1,0 +1,50 @@
+{
+  "schema": "mc.research.replication_manifest.v1",
+  "status": "owner_run_required",
+  "linkedBlocker": "A1",
+  "workOrder": "WS4.2",
+  "runId": "ws4_2_intrinsic_dimension_profile_owner_run",
+  "claimContract": "observable = f(geometry_state, architecture_state, scale_state, precision_state, measurement_operator)",
+  "claim": "The declared local model and prompt inventory reproduce or clearly disagree with the published layerwise expansion-compression profile when global TwoNN, Levina-Bickel MLE, and local nearest-neighbor ID are reported separately.",
+  "primaryObservable": "Per-layer global TwoNN estimate with bootstrap interval, Levina-Bickel Eq. 8 MLE at the minimum connected geodesic neighborhood, and the full local-ID map with mean, mode, spread, and neighborhood identity.",
+  "explicitFalsifier": "The estimators do not show a commensurable expansion-compression profile, disagree beyond their reported finite-sample behavior, or fail sample-convergence and synthetic coverage controls.",
+  "mutableSurface": "mc analyze dimension-profile output contract",
+  "frozenSurfaces": {
+    "model": "${MODEL_PATH}",
+    "probes": "${PROBE_PATH}",
+    "probeOrder": "file order",
+    "pooling": "existing ActivationProvider post-block mean pooling",
+    "distanceOperator": "minimum-connected geodesic graph",
+    "estimators": [
+      "Facco TwoNN regression",
+      "Levina-Bickel Eq. 8 MLE",
+      "local nearest-neighbor map"
+    ]
+  },
+  "baselineCommand": "MC_BACKEND=mlx poetry run mc --json analyze dimension-profile --model ${MODEL_PATH} --probes ${PROBE_PATH} --samples ${PROBE_COUNT} --local --with-mle --with-ci > results/ws4_2_intrinsic_dimension/${RUN_ID}/dimension_profile.json",
+  "comparisonBudget": {
+    "prompts": "all ordered non-empty rows in ${PROBE_PATH}",
+    "layers": "all transformer blocks exposed by the model",
+    "estimators": 3
+  },
+  "artifactDirectory": "results/ws4_2_intrinsic_dimension/${RUN_ID}",
+  "ledgerPath": "results/ws4_2_intrinsic_dimension/${RUN_ID}/ledger.tsv",
+  "sources": [
+    {
+      "title": "Estimating the intrinsic dimension of datasets by a minimal neighborhood information",
+      "method": "TwoNN",
+      "url": "https://doi.org/10.1038/s41598-017-11873-y"
+    },
+    {
+      "title": "Maximum Likelihood Estimation of Intrinsic Dimension",
+      "method": "nearest-neighbor MLE",
+      "url": "https://papers.nips.cc/paper/2004/hash/74934548253bcab8490ebd74afed7031-Abstract.html"
+    },
+    {
+      "title": "Local Intrinsic Dimension of Representations Predicts Alignment and Generalization",
+      "method": "local versus global comparison",
+      "url": "https://arxiv.org/abs/2601.22722"
+    }
+  ],
+  "ownerGate": "Run on Apple Silicon with a frozen prompt file, retain the JSON output and convergence evidence, and document discrepancies before creating REPORT.md or a validation tag."
+}

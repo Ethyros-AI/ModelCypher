@@ -197,7 +197,7 @@ def test_main_emits_analysis_config_and_aggregate(monkeypatch, tmp_path):
 
     monkeypatch.setattr(weyl_validation, "_parse_args", lambda: args)
     monkeypatch.setattr(weyl_validation, "initialize_default_backend", lambda: object())
-    monkeypatch.setattr(weyl_validation, "MLXTrainingAdapter", lambda backend: object())
+    monkeypatch.setattr(weyl_validation, "_build_training_adapter", lambda backend: object())
     monkeypatch.setattr(
         weyl_validation,
         "_validate_pair",
@@ -215,5 +215,4 @@ def test_main_emits_analysis_config_and_aggregate(monkeypatch, tmp_path):
     assert payload["analysis_config"]["error_norm_mode"] == "exact_svd"
     assert payload["aggregate"]["max_error_over_gap_ratio"] == 4.0
     assert payload["aggregate"]["tail_match_pct"] == 100.0
-
 
