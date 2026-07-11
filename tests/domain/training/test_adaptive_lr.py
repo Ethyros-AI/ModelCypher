@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from modelcypher.backends.mlx_training_adapter import EpochMetrics
+from modelcypher.backends.mlx_training_adapter_metrics import EpochMetrics
 from modelcypher.core.domain.training.mass_step_size import (
     CONTROLLER_MODE_BEHAVIORAL_PROBE,
     OPTIMIZER_MODE_CAYLEY_STIEFEL_MASS,
