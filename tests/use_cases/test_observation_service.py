@@ -21,6 +21,13 @@ class _StubBackend:
     def tolist(self, value):
         return value
 
+    def get_system_info(self) -> dict[str, object]:
+        return {
+            "available": True,
+            "version": "test",
+            "device_platforms": ["cpu"],
+        }
+
 
 class _StubModelLoader:
     def load_model(self, model_path: str, adapter_path: str | None = None):
@@ -201,12 +208,31 @@ def test_family_bundle_writes_manifest_summary_and_comparisons(tmp_path: Path) -
     assert (bundle_dir / "comparisons.jsonl").exists()
 
     summary = json.loads((bundle_dir / "summary.json").read_text(encoding="utf-8"))
+    persisted_manifest = json.loads(
+        (bundle_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert persisted_manifest["bundleVersion"] == "mc.analyze.bundle.v2"
+    assert persisted_manifest["contextState"]["promptFamilyDigest"]["algorithm"] == "sha256"
+    assert persisted_manifest["contextState"]["variantOrder"] == [
+        {"caseId": "case1", "variantId": "control"},
+        {"caseId": "case1", "variantId": "all_caps"},
+    ]
+    assert persisted_manifest["precisionState"]["backend"]["type"] == "_StubBackend"
+    assert persisted_manifest["precisionState"]["allTargetsDeclared"] is False
+    assert (
+        persisted_manifest["measurementOperator"]["id"]
+        == "modelcypher.workflow_observation.v1"
+    )
     assert summary["workflow"] == "family"
     assert summary["variantCount"] == 2
     assert summary["comparisonCount"] == 1
+    assert summary["identity"]["contextDigest"] == persisted_manifest["contextState"][
+        "promptFamilyDigest"
+    ]["value"]
 
     report = (bundle_dir / "REPORT.md").read_text(encoding="utf-8")
     assert "## Observed Spaces" in report
+    assert "## Measurement Identity" in report
     assert "## Largest Scalar Shifts" in report
     assert "## Most Shifted Layers" in report
 
