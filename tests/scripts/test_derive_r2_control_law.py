@@ -12,13 +12,28 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import derive_r2_control_law as derive_r2
 
+RETAINED_STAGE_A = (
+    REPO_ROOT / "results" / "nblora_vs_standard" / "validate_derived_stage_a_seed42.json"
+)
+
+
+def _require_retained_stage_a() -> None:
+    if not RETAINED_STAGE_A.exists():
+        pytest.skip(
+            "owner-local retained R2 artifact is absent; see "
+            "docs/research/OWNER-ARTIFACT-POLICY.md"
+        )
+
 
 def test_derive_control_law_passes_retained_artifact_checks() -> None:
+    _require_retained_stage_a()
     law, state_table, validation = derive_r2.derive_control_law()
 
     assert validation["all_passed"] is True
@@ -31,6 +46,7 @@ def test_derive_control_law_passes_retained_artifact_checks() -> None:
 
 
 def test_state_table_contains_expected_arm_epochs_for_counterexamples() -> None:
+    _require_retained_stage_a()
     _law, state_table, _validation = derive_r2.derive_control_law()
     summary_rows = {
         row["artifact_id"]: row

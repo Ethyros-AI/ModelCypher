@@ -173,10 +173,12 @@ def detect_default_backend_type() -> BackendType:
     if _try_jax_available():
         return "jax"
 
-    message = "No GPU backend available. ModelCypher requires GPU acceleration."
+    message = "No backend available."
     if mlx_error:
         message = f"{message} MLX probe error: {mlx_error}."
-    raise RuntimeError(f"{message} Install MLX (macOS), CUDA (NVIDIA), or JAX (TPU/GPU).")
+    raise RuntimeError(
+        f"{message} Install MLX (macOS), CUDA (NVIDIA), or JAX (CPU/GPU/TPU)."
+    )
 
 
 def get_backend(backend_type: BackendType) -> Backend:

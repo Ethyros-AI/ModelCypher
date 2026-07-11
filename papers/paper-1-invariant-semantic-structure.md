@@ -3,19 +3,31 @@
 **Author**: Jason Kempf
 **Affiliation**: EthyrosAI
 **Date**: December 2025 (Updated January 2026)
-**Status**: [PROVEN: by construction] intra-model; [CONJECTURAL] cross-model (reproduction pending)
+**Status**: [PROVEN: fitted training probes only]; [CONJECTURAL] held-out and cross-model (reproduction pending)
 
-> **Note**: Intra-model alignment invariance is proven by construction (`F = pinv(source) @ target` → CKA = 1.0 on training probes). The empirical finding is raw CKA = 0.60 (representations related by linear transformation). See VALIDATION-REPORT.md for current results across 3 model families.
+> **Note**: The fitted-probe identity is proven by construction
+> (`F = pinv(source) @ target` gives CKA = 1.0 on those training probes).
+> It does not prove held-out semantic invariance: a held-out failure means the
+> probe set did not cover the relevant geometry. The empirical raw-CKA result
+> and cross-model claims remain lower-evidence observations.
 
 ---
 
 ## Abstract
 
-Large language models exhibit invariant geometric structure in their representation spaces. Using Centered Kernel Alignment (CKA) on normalized Gram matrices, we demonstrate that:
+This paper separates an exact fitted-probe alignment identity from the open
+empirical question of held-out and cross-model invariance. Using Centered
+Kernel Alignment (CKA) on normalized Gram matrices:
 
-1. **Alignment invariance is verified**: After Procrustes alignment, CKA = 1.0 exactly (intra-model, layer-wise comparison). Run `poetry run mc analyze crm-build` + `poetry run mc analyze crm-compare` to reproduce.
+1. **Fitted-probe alignment is exact by construction**: After closed-form
+   alignment, CKA = 1.0 on the probes used to fit the map. Run
+   `poetry run mc analyze crm-build` plus `poetry run mc analyze crm-compare`
+   to reproduce the workflow; held-out preservation is a separate test.
 
-2. **Cross-model alignment is theoretically grounded**: Prior runs reported high cross-family CKA (0.94 ± 0.01 between Qwen, Llama, and Mistral); formal reproduction pending.
+2. **Cross-model alignment remains historical and conjectural**: Prior runs
+   reported high cross-family CKA (0.94 ± 0.01 between Qwen, Llama, and
+   Mistral), but their artifacts are not retained and formal reproduction is
+   pending.
 
 Ongoing work investigates whether semantic primes differ from other concepts in geometric cluster density, connectivity, or cross-linguistic stability.
 
@@ -27,7 +39,8 @@ Can we compare representations across neural networks without a shared coordinat
 
 ### 1.1 Contributions
 
-1. **Universal Invariance**: Prior runs reported high cross-model CKA for both semantic primes and random word sets (reproduction pending).
+1. **Historical invariance hypothesis**: Prior runs reported high cross-model
+   CKA for both semantic primes and random word sets; reproduction is pending.
 
 2. **Gram Matrix Methodology**: Dimension-independent comparison via normalized Gram matrices enables alignment between models of different hidden dimensions.
 
@@ -103,9 +116,10 @@ Null sample count should be derived from desired confidence and runtime budget.
 
 ## 4. Experiments
 
-### 4.0 Alignment Invariance (January 2026) [PROVEN: by construction]
+### 4.0 Fitted-Probe Identity (January 2026) [PROVEN: by construction]
 
-We verified the core alignment invariance property using the ModelCypher toolkit:
+The retained equation establishes the fitted-probe identity. The numerical
+example below is historical because its run artifact was not preserved:
 
 **Model**: SmolLM-135M
 **Method**: Extract activations from 15 semantic probes at layers 7 and 22, compute raw CKA, apply Procrustes alignment, compute aligned CKA.
@@ -116,9 +130,12 @@ We verified the core alignment invariance property using the ModelCypher toolkit
 | Aligned CKA | 1.000 |
 | Numerical deviation | 0.0 |
 
-**Interpretation**: The transformation `F = pinv(source) @ target` achieves CKA = 1.0 by construction. This demonstrates that different representations of the same concepts have identical relational structure—only the coordinate systems differ.
+**Interpretation**: The transformation `F = pinv(source) @ target` achieves
+CKA = 1.0 on the data used to fit `F` by construction. It does not demonstrate
+held-out identity or show that coordinate mismatch is the only difference.
 
-**Source**: Early experiment data (2025-12, artifact not preserved). See VALIDATION-REPORT.md for current validated results.
+**Source**: Early experiment data (2025-12, artifact not preserved). This row
+is not current validation evidence.
 
 ---
 

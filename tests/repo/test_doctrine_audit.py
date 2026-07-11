@@ -13,6 +13,8 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
 _ROOT = Path(__file__).resolve().parents[2]
 _SRC = _ROOT / "src"
 _RESULTS = _ROOT / "results"
@@ -74,6 +76,32 @@ _GRANDFATHERED_CANONICAL_RESULTS = {
     "tangent_subspace_id_mechanism",
     "weight_geometry",
 }
+_OWNER_LOCAL_RESULT_FAMILIES = _GRANDFATHERED_CANONICAL_RESULTS | {
+    "measurement_atlas",
+    "repo_research_inventory",
+}
+_OWNER_LOCAL_DATA_REFERENCES = {
+    "data/training/r1_quick_aligned_train.jsonl",
+    "data/training/r1_quick_aligned_val.jsonl",
+}
+
+
+def _is_declared_owner_local_reference(rel_path: str) -> bool:
+    parts = Path(rel_path).parts
+    if len(parts) >= 2 and parts[0] == "results":
+        return parts[1] in _OWNER_LOCAL_RESULT_FAMILIES
+    return rel_path in _OWNER_LOCAL_DATA_REFERENCES
+
+
+def test_owner_local_reference_policy_is_narrow() -> None:
+    assert _is_declared_owner_local_reference(
+        "results/repo_research_inventory/results_registry.json"
+    )
+    assert _is_declared_owner_local_reference(
+        "data/training/r1_quick_aligned_train.jsonl"
+    )
+    assert not _is_declared_owner_local_reference("results/unknown_new_family/result.json")
+    assert not _is_declared_owner_local_reference("src/modelcypher/missing.py")
 
 
 def test_deleted_probe_shim_stays_deleted() -> None:
@@ -145,6 +173,8 @@ def test_maintained_docs_reference_existing_repo_paths() -> None:
             if "*" in rel_path:
                 continue
             if not (_ROOT / rel_path).exists():
+                if _is_declared_owner_local_reference(rel_path):
+                    continue
                 violations.append(
                     f"{doc_path.relative_to(_ROOT)}: missing referenced path '{rel_path}'"
                 )
@@ -153,11 +183,13 @@ def test_maintained_docs_reference_existing_repo_paths() -> None:
 
 
 def test_new_canonical_result_families_require_complete_bundle() -> None:
-    registry = json.loads(
-        (_RESULTS / "repo_research_inventory" / "results_registry.json").read_text(
-            encoding="utf-8"
+    registry_path = _RESULTS / "repo_research_inventory" / "results_registry.json"
+    if not registry_path.exists():
+        pytest.skip(
+            "owner-local research inventory is absent; see "
+            "docs/research/OWNER-ARTIFACT-POLICY.md"
         )
-    )
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
     violations: list[str] = []
     for record in registry:
         family = record["family"]

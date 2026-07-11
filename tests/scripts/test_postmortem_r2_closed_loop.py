@@ -5,10 +5,26 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import postmortem_r2_closed_loop as postmortem_r2
+
+RETAINED_CLOSED_LOOP = (
+    REPO_ROOT
+    / "results"
+    / "nblora_vs_standard"
+    / "validate_derived_r2_closed_loop_seed42_quick.json"
+)
+pytestmark = pytest.mark.skipif(
+    not RETAINED_CLOSED_LOOP.exists(),
+    reason=(
+        "owner-local retained R2 artifact is absent; see "
+        "docs/research/OWNER-ARTIFACT-POLICY.md"
+    ),
+)
 
 
 def test_build_postmortem_reports_unarmed_retained_artifact() -> None:

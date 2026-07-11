@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: poetry install
       - name: Run tests
-        run: poetry run pytest -m "not real_model and not slow" -q
+        run: poetry run pytest -n 2 -m "not real_model and not slow" -q
 
   test-ubuntu-jax:
     name: Ubuntu JAX CPU fallback tests
@@ -42,7 +42,7 @@ jobs:
       - name: Install dependencies
         run: poetry install --extras jax
       - name: Run tests
-        run: poetry run pytest -m "not real_model and not slow" -q
+        run: poetry run pytest -n 2 -m "not real_model and not slow" -q
 
   ruff:
     name: Ruff
@@ -57,7 +57,35 @@ jobs:
       - name: Install dependencies
         run: poetry install
       - name: Run ruff
-        run: poetry run ruff check
+        run: poetry run ruff check .
+
+  public-truth:
+    name: README and evidence contracts
+    runs-on: ubuntu-latest
+    env:
+      MC_DISABLE_MLX: "1"
+      MC_BACKEND: jax
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Poetry
+        run: python -m pip install poetry
+      - name: Install dependencies
+        run: poetry install --extras jax
+      - name: Check generated README surfaces
+        run: |
+          poetry run python scripts/generate_knob_matrix.py --check
+          poetry run python scripts/update_test_count.py --check
+      - name: Check README commands and evidence
+        run: |
+          poetry run pytest \
+            tests/cli/commands/test_readme_command_contract.py \
+            tests/repo/test_readme_truth.py \
+            tests/repo/test_ws4_2_replication_manifests.py \
+            tests/test_knob_matrix.py \
+            -q
 
   mypy:
     name: Mypy

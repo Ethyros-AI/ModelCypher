@@ -4,17 +4,17 @@ ModelCypher supports multiple platform backends. This guide helps you select the
 
 Notes:
 - In this repo, run CLI commands as `poetry run mc ...`.
-- ModelCypher does not auto-fallback to CPU. If no accelerator backend is available, it fails fast with an install hint.
+- JAX CPU is an engineering fallback for CI and domain tests. It does not imply
+  end-to-end Linux model-loader or expert-CLI parity.
 
 ## Quick Selection
 
-| Platform | Default Backend | Install Command |
-|----------|-----------------|-----------------|
-| macOS Apple Silicon | macOS backend | `poetry install` |
-| Linux + NVIDIA GPU | NVIDIA backend | `poetry install` |
-| Linux + TPU | TPU backend | `poetry install` |
-
-For accelerator backends, enable the optional extras listed in `pyproject.toml`.
+| Platform | Backend | Install Command | Product status |
+|----------|---------|-----------------|----------------|
+| macOS Apple Silicon | MLX | `poetry install` | Primary end-to-end path |
+| Linux + NVIDIA GPU | CUDA | `poetry install --extras cuda` | Protocol available; loader/CLI parity partial |
+| Linux + TPU/GPU | JAX | `poetry install --extras jax` | Protocol available; loader/CLI parity partial |
+| Linux CPU | JAX | `poetry install --extras jax` | CI/domain-test fallback only |
 
 ## Performance Characteristics
 
@@ -39,7 +39,7 @@ result = backend.matmul(a, b)
 backend.eval(result)  # Forces computation
 ```
 
-### TPU Backend
+### JAX Backend
 
 **Strengths:**
 - JIT compilation for optimized kernels
@@ -51,9 +51,10 @@ backend.eval(result)  # Forces computation
 - Debugging can be complex (traced execution)
 - Less intuitive for imperative code
 
-**Typical use cases:** TPU training, research, large-scale experiments
+**Typical use cases:** Backend-protocol research and CPU CI; accelerated
+end-to-end workflows remain subject to the parity table below.
 
-### NVIDIA Backend
+### CUDA Backend
 
 **Strengths:**
 - Mature tooling and debugging
@@ -137,13 +138,14 @@ performance defaults and no platform-only blockers in shared paths.
 
 ### Current Snapshot
 
-- Backend protocol coverage is complete.
-- Training engine stubs are wired through the backend abstraction.
-- Unified inference exists through the backend abstraction.
+- Shared domain geometry is expressed through the Backend protocol.
+- Backend selection and tensor-level operations are covered by cross-platform tests.
+- Model loading, activation collection, evaluation, and adapter workflows are
+  not yet end-to-end portable.
 
 ### Parity Status
 
-| Capability | macOS | TPU | NVIDIA |
+| Capability | MLX/macOS | JAX | CUDA |
 |------------|-------|-----|--------|
 | Backend selection via MC_BACKEND | ✓ | ✓ | ✓ |
 | System health reports | ✓ | ✓ | ✓ |
