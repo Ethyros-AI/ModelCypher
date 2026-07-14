@@ -220,6 +220,41 @@ def _sanitize_visual_weights(raw_weights: dict) -> dict:
     return visual
 
 
+def _prepare_quantized_visual_encoder(
+    visual_encoder: Qwen35VisionEncoder,
+    visual_weights: dict,
+    full_config: dict,
+) -> int:
+    """Match visual modules to a quantized checkpoint before loading weights.
+
+    Qwen3.5 checkpoints may quantize only part of the vision tower. The presence
+    of a ``.scales`` tensor is the checkpoint-level source of truth; quantizing
+    every Linear/Embedding would incorrectly convert float modules such as
+    ``patch_embed`` in the current g64 exports.
+    """
+
+    quantization = full_config.get("quantization") or full_config.get(
+        "quantization_config"
+    )
+    if not isinstance(quantization, dict):
+        return 0
+    quantized_prefixes = {
+        key[: -len(".scales")]
+        for key in visual_weights
+        if key.endswith(".scales")
+    }
+    if not quantized_prefixes:
+        return 0
+    nn.quantize(
+        visual_encoder,
+        group_size=int(quantization["group_size"]),
+        bits=int(quantization["bits"]),
+        mode=str(quantization.get("mode", "affine")),
+        class_predicate=lambda path, _module: path in quantized_prefixes,
+    )
+    return len(quantized_prefixes)
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -278,6 +313,10 @@ def load_qwen35_vl_model(model_path: str):
     # 4. Instantiate visual encoder
     vision_config = Qwen35VisionConfig.from_dict(vision_cfg_dict)
     visual_encoder = Qwen35VisionEncoder(vision_config)
+
+    # Quantized exports carry ``weight`` + ``scales`` + ``biases`` only for
+    # modules that were actually quantized. Mirror that mixed layout exactly.
+    _prepare_quantized_visual_encoder(visual_encoder, visual_weights, full_config)
 
     # 5. Load weights into visual encoder
     visual_encoder.load_weights(list(visual_weights.items()))

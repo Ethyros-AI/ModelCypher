@@ -36,6 +36,13 @@ from modelcypher.backends._mlx_training_loop_helpers import (
     summarize_fisher_state,
 )
 from modelcypher.backends.mlx_training_adapter_core import *  # noqa: F403
+from modelcypher.core.domain.training.diagonal_fisher_preconditioner import (
+    init_fisher_state,
+    update_fisher_state,
+)
+from modelcypher.core.domain.training.diagonal_fisher_preconditioner import (
+    precondition_gradient as fisher_precondition,
+)
 from modelcypher.core.domain.training.geometric_early_stopping import (  # noqa: F401
     check_effective_rank_declining,
     check_loss_stable,
@@ -268,6 +275,130 @@ class _MLXTrainingAdapterTrainMixin(_MLXTrainingAdapterBudgetMixin):
         if use_bilm_margin and use_vl:
             raise ValueError("BiLM-margin topology loss is text-only and cannot be combined with VL batches")
 
+        # Build the active objective before constructing its matching iterator.
+        # This block was accidentally dropped when iterator/state setup moved to
+        # helpers, leaving every real train_loop path without a loss closure.
+        if geometric_reshape and paired_dataset is not None:
+            base = getattr(model, "model", model)
+            reshape_target_layers = list(range(len(base.layers)))
+            loss_fn = make_geometric_reshaping_loss(reshape_target_layers)
+            loss_value_and_grad = nn.value_and_grad(model, loss_fn)
+            calib_iter = iterate_structured_batches(
+                paired_dataset,
+                batch_size,
+                seq_length,
+                logic_groups=logic_groups or {},
+                template_groups=template_groups or {},
+                loop=False,
+                seed=seed,
+            )
+            cb, cl, cam, cinv, ccf = next(calib_iter)
+            (init_loss, _), _ = loss_value_and_grad(model, cb, cl, cam, cinv, ccf)
+            mx.eval(init_loss)
+            calib_info = calibrate_geometric_weights(
+                model, loss_fn, cb, cl, cam, cinv, ccf,
+            )
+            loss_value_and_grad = nn.value_and_grad(model, loss_fn)
+            logger.info(
+                "Geometric reshaping: target_layers=%s w_expand=%.4g w_contrast=%.4g",
+                reshape_target_layers,
+                calib_info["w_expand"],
+                calib_info["w_contrast"],
+            )
+        elif use_constrained:
+            loss_fn = make_constrained_loss(constraint_state, constraint_config)
+            loss_value_and_grad = nn.value_and_grad(model, loss_fn)
+        elif answer_masked_dataset is not None:
+            if entropy_regularization:
+                baseline_ent = measure_baseline_entropy(
+                    model,
+                    train_dataset,
+                    batch_size,
+                    seq_length,
+                    n_batches=eval_batches,
+                )
+                ent_floor = (
+                    baseline_ent * entropy_floor_fraction
+                    if entropy_floor_fraction is not None
+                    else self._derive_entropy_floor_or_fail(
+                        baseline_entropy=baseline_ent,
+                        dataset_samples=len(train_dataset),
+                        scope="answer_masked_training",
+                    )
+                )
+                am_loss_fn = make_entropy_regularized_answer_masked_loss(ent_floor)
+            else:
+                def am_loss_fn(model, inputs, targets, masks):
+                    logits = model(inputs).astype(mx.float32)
+                    ce = nn.losses.cross_entropy(logits, targets, reduction="none")
+                    masked_ce = ce * masks
+                    ntoks = masks.sum()
+                    return masked_ce.sum() / mx.maximum(ntoks, mx.array(1.0)), ntoks
+
+            loss_fn = am_loss_fn
+            loss_value_and_grad = nn.value_and_grad(model, loss_fn)
+            use_answer_mask = True
+        elif use_vl:
+            image_token_id = train_dataset[0].get("image_token_id")
+            video_token_id = train_dataset[0].get("video_token_id")
+            loss_fn = make_vl_loss(
+                image_token_id=image_token_id,
+                video_token_id=video_token_id,
+            )
+            loss_value_and_grad = nn.value_and_grad(model, loss_fn)
+        elif use_bilm_margin:
+            import numpy as np
+
+            direction_path = bilm_margin_config.get("direction_path")
+            if not direction_path:
+                raise ValueError("bilm_margin_config requires direction_path")
+            direction_np = np.load(str(direction_path)).astype("float32")
+            if direction_np.ndim == 2:
+                direction_np = direction_np[0]
+            if direction_np.ndim != 1:
+                raise ValueError(
+                    f"BiLM direction must be 1-D or [n,d], got shape {direction_np.shape}"
+                )
+            direction_sign = float(bilm_margin_config.get("direction_sign", 1.0))
+            direction_np = direction_np * direction_sign
+            loss_fn = make_bilm_margin_loss(
+                layer_index=int(bilm_margin_config.get("layer_index", 19)),
+                direction=mx.array(direction_np, dtype=mx.float32),
+                auxiliary_weight=float(bilm_margin_config.get("auxiliary_weight", 0.1)),
+                margin=float(bilm_margin_config.get("margin", 1.0)),
+                normalize_direction=bool(bilm_margin_config.get("normalize_direction", True)),
+            )
+            loss_value_and_grad = nn.value_and_grad(model, loss_fn)
+            logger.info(
+                "BiLM topology margin: layer=%d lambda=%.4f margin=%.4f direction_dim=%d",
+                int(bilm_margin_config.get("layer_index", 19)),
+                float(bilm_margin_config.get("auxiliary_weight", 0.1)),
+                float(bilm_margin_config.get("margin", 1.0)),
+                int(direction_np.shape[0]),
+            )
+        else:
+            if entropy_regularization:
+                baseline_ent = measure_baseline_entropy(
+                    model,
+                    train_dataset,
+                    batch_size,
+                    seq_length,
+                    n_batches=eval_batches,
+                )
+                ent_floor = (
+                    baseline_ent * entropy_floor_fraction
+                    if entropy_floor_fraction is not None
+                    else self._derive_entropy_floor_or_fail(
+                        baseline_entropy=baseline_ent,
+                        dataset_samples=len(train_dataset),
+                        scope="full_sequence_training",
+                    )
+                )
+                loss_fn = make_entropy_regularized_loss(ent_floor)
+            else:
+                loss_fn = base_ce_loss
+            loss_value_and_grad = nn.value_and_grad(model, loss_fn)
+
         batch_iter, n_batches_per_epoch, grad_accum_steps = build_batch_iterator_plan(
             geometric_reshape=geometric_reshape,
             use_constrained=use_constrained,
@@ -286,6 +417,45 @@ class _MLXTrainingAdapterTrainMixin(_MLXTrainingAdapterBudgetMixin):
         )
         if n_batches_per_epoch <= 0:
             raise ValueError("Training dataset produced zero batches")
+
+        # Initialize the state consumed throughout the loop. These values were
+        # formerly adjacent to objective construction and must remain explicit;
+        # none can be inferred safely after the first update.
+        losses: list[tuple[int, float, float]] = []
+        val_losses: list[float] = []
+        epoch_metrics_list: list[EpochMetrics] = []
+        epoch_step_traces: list[dict[str, Any]] = []
+        last_max_spectral_ratio: float | None = None
+        dim_snapshots: list[Any] = []
+        stop_reason: str | None = None
+        use_pissa_lora = self._has_pissa_lora(model)
+        enforce_structural_budget = self._structural_sigma_budget_is_enforceable(
+            use_pissa_lora=use_pissa_lora,
+        )
+        best_val_loss = float("inf")
+        best_weights: dict[str, Any] | None = None
+        val_loss_baseline: float | None = None
+        margin_history: list[float] = []
+        stable_rank_history: list[float] = []
+        adapter_rank_for_stopping: int | None = None
+        effective_rank_history: list[float] = []
+        closed_loop_frozen_layers: set[str] = set()
+        closed_loop_interventions_used = 0
+        baseline_accuracy = (
+            len(online_eval_baseline_ids or frozenset()) / max(len(online_eval_problems), 1)
+            if online_eval_problems
+            else None
+        )
+        optimizer = None
+
+        # MASS begins from the geometry-derived static Weyl ceiling. The
+        # per-step SPS/Weyl controller can only tighten this bound; it must be
+        # initialized before optimizer construction and the sqrt(N) correction.
+        eta_ceiling = self._derive_spectral_ceiling(
+            sigma_k_min=sigma_k_min,
+            sigma_max_global=sigma_max,
+        )
+        current_eta = eta_ceiling
 
         # Initialize fisher_state and optimizer now that n_batches_per_epoch
         # is known. Both paths use the same derived β₁ and β₂.

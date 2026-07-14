@@ -333,6 +333,29 @@ class _MLXTrainingAdapterAdapterIOMixin:
             # LoRA forward: x @ lora_a @ lora_b
             # Weight delta for [out, in] weight layout: lora_b^T @ lora_a^T
             delta = mx.matmul(mx.transpose(lora_b), mx.transpose(lora_a))
+            if isinstance(linear, nn.QuantizedLinear):
+                # Packed quantized weights have shape [out, in * bits / 32], so
+                # adding a full [out, in] LoRA delta directly is both invalid and
+                # mathematically wrong. Continuation training needs the exact
+                # merged weight as its frozen base; dequantize this target module
+                # and replace it with an equivalent float Linear first.
+                weight = mx.dequantize(
+                    linear.weight,
+                    linear.scales,
+                    linear.biases,
+                    linear.group_size,
+                    linear.bits,
+                )
+                replacement = nn.Linear(
+                    int(weight.shape[1]),
+                    int(weight.shape[0]),
+                    bias=getattr(linear, "bias", None) is not None,
+                )
+                replacement.weight = weight
+                if getattr(linear, "bias", None) is not None:
+                    replacement.bias = linear.bias
+                setattr(parent, attr_name, replacement)
+                linear = replacement
             delta = delta.astype(linear.weight.dtype)
             linear.weight = linear.weight + delta
             mx.eval(linear.weight)

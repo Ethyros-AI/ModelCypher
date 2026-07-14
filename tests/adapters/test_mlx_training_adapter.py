@@ -901,6 +901,46 @@ def test_extract_weight_matrices_dequantizes() -> None:
 
 
 @pytest.mark.mlx
+def test_apply_standard_lora_adapter_dequantizes_before_merge(tmp_path) -> None:
+    """Continuation merges a full LoRA delta into quantized weights exactly."""
+
+    backend = _get_backend_or_fail("mlx")
+    model = _QuantizedToyModel(n_layers=1, hidden_dim=128)
+    mx.eval(model.parameters())
+    projection = model.model.layers[0].self_attn.q_proj
+    base_weight = mx.dequantize(
+        projection.weight,
+        projection.scales,
+        projection.biases,
+        projection.group_size,
+        projection.bits,
+    )
+    rank = 2
+    lora_a = mx.ones((128, rank), dtype=base_weight.dtype) * 0.01
+    lora_b = mx.ones((rank, 128), dtype=base_weight.dtype) * 0.02
+    expected_delta = lora_b.T @ lora_a.T
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir()
+    mx.save_safetensors(
+        str(adapter_dir / "adapters.safetensors"),
+        {
+            "model.layers.0.self_attn.q_proj.lora_a": lora_a,
+            "model.layers.0.self_attn.q_proj.lora_b": lora_b,
+        },
+    )
+
+    adapter = MLXTrainingAdapter(backend)
+    merged = adapter.apply_standard_lora_adapter(model, adapter_dir)
+    updated = model.model.layers[0].self_attn.q_proj
+    mx.eval(updated.weight)
+
+    assert merged == 1
+    assert isinstance(updated, nn.Linear)
+    assert updated.weight.shape == (128, 128)
+    assert mx.allclose(updated.weight, base_weight + expected_delta, atol=1e-5).item()
+
+
+@pytest.mark.mlx
 def test_quantized_geometry_weyl_bound() -> None:
     """Validate Weyl bound: quantization error < spectral_gap / 2.
 
